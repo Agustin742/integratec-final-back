@@ -1,0 +1,81 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - test
+      - main
+  push:
+    branches:
+      - develop
+
+jobs:
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce promotion source branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$BASE_REF:$HEAD_REF" in
+            test:develop|main:test) ;;
+            *)
+              echo "Pull requests into '$BASE_REF' must come from the promotion branch (got '$HEAD_REF')." >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - name: Detect backend package
+        id: package
+        shell: bash
+        run: |
+          if [[ -f package.json && ! -f pnpm-lock.yaml ]]; then
+            echo "package.json exists, but pnpm-lock.yaml is missing; CI requires the pnpm lockfile." >&2
+            exit 1
+          fi
+          if [[ -f package.json ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js 22
+        if: steps.package.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: steps.package.outputs.present == 'true'
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Run tests
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.test ? 0 : 1)"; then
+            pnpm test
+          else
+            echo "::notice title=Tests not configured::No test script is configured; no tests were run."
+            {
+              echo '## Tests not configured'
+              echo 'No `test` script is configured in `package.json`; no tests were run.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Report docs-only backend
+        if: steps.package.outputs.present == 'false'
+        shell: bash
+        run: |
+          echo "::notice title=Tests not configured::No package.json or test script is present; no tests were run."
+          {
+            echo '## Tests not configured'
+            echo 'This backend has no `package.json` or test script; no tests were run.'
+          } >> "$GITHUB_STEP_SUMMARY"
