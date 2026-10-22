@@ -7,7 +7,7 @@
 
 Aplicación web de **convivencia, comunicación y organización en salas virtuales tridimensionales**, presentada desde una **cámara isométrica**. Los usuarios se representan mediante avatares personalizables, se desplazan por el escenario y acceden a herramientas de productividad mediante interacciones con el entorno.
 
-El valor central es facilitar la organización y la colaboración en un espacio compartido con presencia social, **no crear un MMO ni un videojuego competitivo**. La ambientación concreta se define en `rules/direccion-artistica.md` del [repositorio frontend](https://github.com/Agustin742/integratec-final-front); no se duplica como regla del backend.
+El valor central es facilitar la organización y la colaboración en un espacio compartido con presencia social, **no crear un MMO ni un videojuego competitivo**. La ambientación concreta se especifica en `rules/art-direction.md`.
 
 El producto combinará salas personales, compartidas y generales; tareas, comunicación, reuniones, interacciones espaciales y un asistente de IA capaz de informar y ejecutar acciones autorizadas.
 
@@ -93,9 +93,9 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 - **Representación:** escenas tridimensionales con geometría, modelos, materiales, iluminación y animaciones 3D.
 - **Tecnología principal:** **Three.js**, integrada en una aplicación **React**. **React Three Fiber** permite organizar declarativamente la escena Three.js desde React.
-- **Cámara:** perspectiva isométrica; la proyección y el encuadre se detallan en `rules/direccion-artistica.md` del repositorio frontend, con valores sujetos a validación.
+- **Cámara:** perspectiva isométrica, con proyección ortográfica y encuadre definido en `rules/`.
 - **Referencia de estética:** el lenguaje visual 3D de **Pokémon Pokopia** como referencia general de tono, claridad y legibilidad; no se copiarán personajes, modelos ni recursos del juego.
-- **Dirección artística detallada:** se especifica en `rules/direccion-artistica.md` del repositorio frontend, sin fijar aquí paleta, proporciones, materiales ni características particulares.
+- **Dirección artística detallada:** se especifica en `rules/art-direction.md`, sin fijar aquí paleta, proporciones, materiales ni características particulares.
 - Se mantiene la personalización de avatares; al adoptar 3D se descarta el sistema anterior de sprites y variantes por orientación.
 
 ### 3.2 Interfaz y accesibilidad 
@@ -188,7 +188,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
                  └── Amazon Bedrock desde NestJS
 ```
 
-**Decisión de separación:** NestJS y Colyseus son responsabilidades lógicas distintas y, de inicio, **servicios desplegables separados**. Colyseus no reemplaza la API REST ni PostgreSQL. Los contratos lógicos entre NestJS y Colyseus pertenecen al backend; la distribución y propiedad de contratos necesarios entre los repositorios frontend y backend siguen sin decidirse. Para coordinar operaciones persistentes, Colyseus utilizará contratos y servicios de aplicación seguros; nunca confiará en permisos aportados solo por el cliente. La integración específica entre ambos servicios se documentará en `rules/arquitectura.md`.
+**Decisión de separación:** NestJS y Colyseus son responsabilidades lógicas distintas y, de inicio, **servicios desplegables separados**. Colyseus no reemplaza la API REST ni PostgreSQL. Los contratos lógicos entre NestJS y Colyseus pertenecen al backend; la distribución y propiedad de contratos necesarios entre los repositorios frontend y backend siguen sin decidirse. Para coordinar operaciones persistentes, Colyseus utilizará contratos y servicios de aplicación seguros; nunca confiará en permisos aportados solo por el cliente. La integración específica entre ambos servicios se documentará en `rules/architecture.md`.
 
 ### 6.2 Canales y propiedad de los datos
 
@@ -222,7 +222,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 
 Entidades del dominio: `User`, `Session`, `AvatarConfiguration`, `Room`, `Membership`, `RoomItem`, `Task`, `Message`, `Meeting`/`Announcement`, `BotConversation`, `DailyReviewDelivery`. Las relaciones esenciales incluyen usuario→sala personal, usuario↔salas compartidas mediante membresía, sala→tareas/mensajes/elementos y usuario→resumen diario.
 
-**No son filas persistentes por defecto:** cada frame del movimiento, posiciones transitorias, conexiones activas o estados interpolados de avatares. El modelo relacional y sus restricciones se definirán en `rules/datos.md`.
+**No son filas persistentes por defecto:** cada frame del movimiento, posiciones transitorias, conexiones activas o estados interpolados de avatares. El modelo relacional y sus restricciones se definirán en `rules/data.md`.
 
 ## 7. Integración y despliegue en AWS
 
@@ -347,7 +347,7 @@ Esta sección **traduce los criterios del PDF en verificaciones del proyecto**. 
 | **R3** | GitHub con historial real de todos, README completo, `.gitignore`, `.env.example` y ningún secreto. | Auditar historial, contribuciones, árbol del repositorio y variables publicadas. |
 | **R4** | Frontend/backend con URL pública **HTTPS**, DB en nube, variables de entorno, disponibilidad hasta terminar defensas y credenciales de cada rol. | Desplegar en AWS; verificar acceso externo desde otra red, sesiones WSS y cuentas de prueba. |
 | **R5** | Flujo principal funcional en producción, **CRUD completo** de entidad asociada al usuario, validación doble y errores/cargas/vacíos visibles. | Demostrar el flujo de tareas desde la sala 3D con crear/listar/editar/eliminar, errores de formulario y persistencia. |
-| **R6** | Documento justificando herramientas relevantes, alternativas y concesiones. | Crear `docs/justificacion-tecnica.md`: stack principal, autenticación, DB/ORM, despliegue e IA. |
+| **R6** | Documento justificando herramientas relevantes, alternativas y concesiones. | Crear `docs/technical-justification.md`: stack principal, autenticación, DB/ORM, despliegue e IA. |
 | **R7** | ORM/consultas seguras, CORS adecuado y respuestas sin errores internos ni hashes. | Pruebas de API, revisión de configuración de producción y de DTOs/serialización. |
 | **R8** | Defensa en vivo **sobre producción**, con explicación de problema, solución, arquitectura y decisiones; dominio individual del código. | Ensayo con todas las cuentas, demo de control de acceso y participación explicativa de cada integrante. |
 
@@ -355,7 +355,7 @@ Esta sección **traduce los criterios del PDF en verificaciones del proyecto**. 
 
 ### 10.2 Uso de inteligencia artificial
 
-- **Obligatorio en el proceso:** documentar en el repositorio herramientas de IA usadas, tareas donde ayudaron, **un caso acertado** y **uno que debió corregirse**, incluyendo verificación humana (`docs/uso-de-ia.md`).
+- **Obligatorio en el proceso:** documentar en el repositorio herramientas de IA usadas, tareas donde ayudaron, **un caso acertado** y **uno que debió corregirse**, incluyendo verificación humana (`docs/ai-usage.md`).
 - **Recomendado en el producto:** integrar al menos una funcionalidad que consuma una API de modelo de IA desde el backend. El asistente y el repaso diario cubrirían esta recomendación si funcionan de verdad en el deploy, con manejo de errores, límites y claves protegidas.
 - Todo integrante debe comprender y poder defender el código independientemente de quién o qué lo haya generado.
 
@@ -414,7 +414,7 @@ El **README obligatorio** contendrá al menos: descripción, enlaces de frontend
 
 ## 11. Justificación arquitectónica de alto nivel
 
-Esta sección resume el fundamento; la comparación formal requerida por **R6** se desarrollará en `docs/justificacion-tecnica.md`.
+Esta sección resume el fundamento; la comparación formal requerida por **R6** se desarrollará en `docs/technical-justification.md`.
 
 | Decisión | Motivo en este proyecto | Alternativas y costo principal |
 |---|---|---|
@@ -448,22 +448,24 @@ Este documento es el **índice conceptual y fuente de decisiones generales**. El
 ```text
 master-document.md
 rules/
-  arquitectura.md
-  movimiento-e-interacciones.md
-  avatares-y-personalizacion.md
-  colyseus-y-multijugador.md
-  salas-y-permisos.md
-  tareas-y-productividad.md
-  comunicacion-y-reuniones.md
-  bot-ia-y-repaso-diario.md
-  datos.md
-  seguridad-y-autenticacion.md
-  infraestructura-aws.md
-  pruebas-y-calidad.md
+  architecture.md
+  3d-world-and-camera.md
+  movement-and-interactions.md
+  art-direction.md
+  avatars-and-customization.md
+  colyseus-and-multiplayer.md
+  rooms-and-permissions.md
+  tasks-and-productivity.md
+  communication-and-meetings.md
+  ai-bot-and-daily-briefing.md
+  data.md
+  security-and-authentication.md
+  aws-infrastructure.md
+  quality-and-testing.md
 docs/
-  justificacion-tecnica.md
-  uso-de-ia.md
-  arquitectura.md
+  technical-justification.md
+  ai-usage.md
+  architecture.md
 ```
 
-Los archivos `rules/` desarrollan los detalles de implementación y experiencia sin contradecir este contrato general. La regla de dirección artística pertenece únicamente al repositorio frontend.
+Los archivos `rules/` desarrollan los detalles de implementación y experiencia sin contradecir este contrato general.
