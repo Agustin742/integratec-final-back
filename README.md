@@ -2,6 +2,10 @@
 
 This repository currently contains project documentation only; no backend package or tests are configured.
 
+## Documentation
+
+Design diagrams (use cases, architecture, realtime, data model, classes, and sequences) live in [`docs/diagrams/`](./docs/diagrams/README.md). They are written in Mermaid, which is the single source of truth.
+
 ## Repository flow
 
 Changes are promoted through pull requests: `develop` → `test` → `main`. CI accepts only `develop` as the source for `test` and `test` as the source for `main`.
