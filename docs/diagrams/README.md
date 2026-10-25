@@ -1,81 +1,82 @@
-# Diagramas — IntegrarTEC 2026
+# Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
-> **Documento de diagramas** · Plataforma de salas de convivencia y organización  
-> **Estado:** baseline de diseño v0.4 (reorganización modular con prefijos numéricos, tercer rol Moderador, Mermaid como única fuente)  
+> **Directorio de arquitectura de diseño** · Plataforma de salas de convivencia y organización  
+> **Estado:** baseline de diseño v0.5 (organización modular en vistas arquitectónicas, 100% compatible con GitHub Mermaid)  
 > **Última actualización:** 25 de octubre de 2026
-
-## 1. Alcance y estado
-
-Este directorio reúne los diagramas de arquitectura, comunicación, casos de uso, modelo de datos, clases y secuencias del proyecto. Sirve de referencia común para implementar backend y frontend, y de material de defensa para la entrega integradora.
-
-**Los diagramas describen el sistema objetivo, no el sistema implementado.** El repositorio contiene únicamente documentación: no hay código de aplicación, ni `package.json`, ni migraciones, ni tests de producto ([README](../../README.md)). Todo lo que aparece aquí es un diseño derivado del [documento maestro](../../master-document.md) y de las [reglas del proyecto](../../rules/README.md), y debe contrastarse con el código a medida que se implemente.
-
-Consecuencia práctica: no existen todavía endpoints, verbos HTTP, DTOs, payloads ni nombres definitivos de eventos. Cada punto que depende de una definición pendiente está marcado con **(propuesto)**. Los huecos conocidos se consolidan en [Huecos declarados](./09-gaps.md).
-
-### 1.1 Fuentes
-
-| Documento | Qué aporta |
-|---|---|
-| [Documento maestro](../../master-document.md) | Alcance del producto, stack, entidades, canales, flujos y reglas de negocio |
-| [Reglas del proyecto](../../rules/README.md) | Convenciones permanentes de diseño, seguridad, calidad y flujo de trabajo |
-| [Requisitos del curso](../../rules/project-requirements.md) | Requisitos académicos R1–R8 y criterios de evaluación |
-| [Seguridad](../../rules/security.md) | Autenticación, autorización, validación, CORS y manejo de secretos |
-| [Uso de IA](../../rules/ai-usage.md) | Límites de consumo, fallback y no-elusión de permisos |
-
-### 1.2 Índice de documentos
-
-El prefijo numérico fija el **orden natural de lectura y diseño**:
-
-| Archivo | Contenido | Propósito |
-|---|---|---|
-| [01-use-cases.md](./01-use-cases.md) | Actores (Miembro, Moderador, Admin), diagrama general, catálogo granular y matriz de permisos | Alcance funcional y roles de usuario |
-| [02-architecture.md](./02-architecture.md) | Despliegue AWS, matriz de canales, flujo de salas y comunicación por actor | Topología física y límites de autoridad |
-| [03-data-model.md](./03-data-model.md) | Modelo relacional ER, entidades de dominio y administración, invariantes | Persistencia en RDS PostgreSQL |
-| [04-realtime.md](./04-realtime.md) | Ciclo de conexión WSS, catálogo de eventos, consistencia y difusión | Multijugador y estado efímero en Colyseus |
-| [05-classes.md](./05-classes.md) | Clases por capa (frontend, backend, realtime) y jerarquía de guards | Responsabilidades y contratos de código |
-| [06-sequences-core.md](./06-sequences-core.md) | Secuencias del núcleo S1 a S7 | Flujos esenciales (login, ingreso, movimiento, tareas, chat, bot, reconexión) |
-| [07-sequences-admin.md](./07-sequences-admin.md) | Secuencias de administración S8 a S12 | Flujos de gestión (invitaciones, solicitudes, expulsión, anuncios, 403) |
-| [08-conventions.md](./08-conventions.md) | Códigos HTTP/WS, orden de verificación, idempotencia y límites de IA | Reglas transversales obligatorias |
-| [09-gaps.md](./09-gaps.md) | Catálogo de huecos declarados con estado y referencias | Puntos abiertos pendientes de definición |
-
-### 1.3 Cómo leer los diagramas
-
-| Elemento | Significado |
-|---|---|
-| `HTTPS / REST` | Petición request-response contra NestJS a través del ALB |
-| `WSS` | Canal persistente contra Colyseus |
-| Línea punteada | Dependencia indirecta, credencial de runtime o acceso que **no** existe |
-| **(propuesto)** | Decisión de diseño sin respaldo explícito en el documento maestro |
-| Estado efímero | Vive en memoria de Colyseus o del cliente; se pierde al desconectar |
-| Estado persistente | Fila en Amazon RDS for PostgreSQL, escrita solo por NestJS mediante Prisma |
-
-La distinción central del sistema es de **autoridad**, no de tecnología: NestJS y PostgreSQL mandan sobre todo lo que debe sobrevivir a la sesión; Colyseus manda sobre presencia y movimiento, que nunca se persisten. Una sala del producto en PostgreSQL no equivale a una instancia `Room` de Colyseus ([documento maestro](../../master-document.md)).
-
-### 1.4 Cómo usar estos diagramas
-
-| Momento | Diagramas recomendados | Para qué |
-|---|---|---|
-| **Antes de codear** | [01 Casos de uso](./01-use-cases.md), [03 Modelo de datos](./03-data-model.md) | Cierran el alcance del MVP y los roles; alimentan `rules/data.md` y `rules/rooms-and-permissions.md` |
-| **Al implementar** | [06-07 Secuencias](./06-sequences-core.md), [05 Clases](./05-classes.md) | Contrato de cada PR: quién escribe, qué guard va primero, cuándo se difunde |
-| **Al testear (R2)** | [01 Casos de uso](./01-use-cases.md), [08 Convenciones](./08-conventions.md) | Cada caso de uso es un caso de prueba; la matriz de roles se verifica con tests de API |
-| **En la defensa (R8)** | [02 Arquitectura](./02-architecture.md), [04 Realtime](./04-realtime.md), una secuencia (S5, S10 o S4) | Tres diagramas explican el sistema completo; el resto es respaldo |
-
-### 1.5 Mermaid como única fuente
-
-Todos los diagramas son bloques Mermaid dentro de `docs/diagrams/`, que GitHub renderiza directamente. No hay dependencias de tableros externos: un cambio de contenido se versiona junto con el código del repositorio.
 
 ---
 
-## 2. Fuentes y mantenimiento
+## 1. Organización de las Vistas de Arquitectura
 
-### 2.1 Cómo actualizar estos documentos
+El diseño se organiza en carpetas temáticas para facilitar su lectura progresiva, desde la visión funcional de negocio hasta los detalles de implementación y secuencias temporales:
 
-1. Modificar el bloque Mermaid en el archivo correspondiente (`01` al `09`), que es la fuente de verdad.
-2. Si el cambio resuelve un ítem de [09 Huecos declarados](./09-gaps.md), actualizar su estado y quitar la marca **(propuesto)** en los diagramas afectados.
-3. Si cambia un flujo en el código, el PR que lo introduce debe actualizar su respectivo diagrama.
+```mermaid
+flowchart TD
+  subgraph F["01-functional (Vista Funcional)"]
+    direction LR
+    UC["use-cases.md<br/>Casos de uso y permisos"]
+  end
+  subgraph S["02-system-architecture (Vista de Sistemas)"]
+    direction LR
+    DEP["deployment-and-network.md<br/>Topología AWS y Canales"]
+    RT["realtime-colyseus.md<br/>WebSocket y Consistencia"]
+  end
+  subgraph E["03-structural (Vista Estructural)"]
+    direction LR
+    DM["data-model.md<br/>Modelo Relacional ER"]
+    CL["class-design.md<br/>Clases y Guards"]
+  end
+  subgraph B["04-behavioral (Vista Dinámica)"]
+    direction LR
+    SC["core-flows.md<br/>Secuencias S1 a S7"]
+    SA["admin-flows.md<br/>Secuencias S8 a S12"]
+  end
+  subgraph R["05-reference (Referencia)"]
+    direction LR
+    CV["conventions.md<br/>Códigos y Reglas"]
+    GP["gaps.md<br/>27 Huecos Declarados"]
+  end
 
-### 2.2 Relación con otros documentos
+  F --> S
+  S --> E
+  E --> B
+  B -.-> R
+```
 
-- El [documento maestro](../../master-document.md) define el producto; estos documentos definen su arquitectura de diseño. Si hay conflicto, manda el documento maestro.
-- Cuando se escriban `rules/data.md` y `rules/rooms-and-permissions.md`, el [03 Modelo de datos](./03-data-model.md) se alineará con el esquema real de Prisma y la matriz de permisos formalizará el [02 Flujo de salas](./02-architecture.md).
-- Las reglas de [seguridad](../../rules/security.md) y [uso de IA](../../rules/ai-usage.md) son de cumplimiento estricto: si un diagrama las contradice, el diagrama debe corregirse.
+### Índice General
+
+| Módulo / Vista | Contenido | Archivos |
+|---|---|---|
+| [**01. Funcional**](./01-functional/README.md) | Actores (Miembro, Moderador, Admin), diagrama general de casos de uso y matriz de permisos por rol | [use-cases.md](./01-functional/use-cases.md) |
+| [**02. Sistemas y Red**](./02-system-architecture/README.md) | Topología AWS (Amplify, ALB, ECS, RDS, S3, Bedrock), canales REST/WSS y ciclo Colyseus | [deployment-and-network.md](./02-system-architecture/deployment-and-network.md) · [realtime-colyseus.md](./02-system-architecture/realtime-colyseus.md) |
+| [**03. Estructural**](./03-structural/README.md) | Diagrama entidad-relación de PostgreSQL (Prisma) y arquitectura de clases/guards en NestJS y React | [data-model.md](./03-structural/data-model.md) · [class-design.md](./03-structural/class-design.md) |
+| [**04. Dinámica**](./04-behavioral/README.md) | Interacciones temporales: flujos principales (S1-S7) y flujos de administración/moderación (S8-S12) | [core-flows.md](./04-behavioral/core-flows.md) · [admin-flows.md](./04-behavioral/admin-flows.md) |
+| [**05. Referencia**](./05-reference/README.md) | Convenciones de errores, orden obligatorio de validación y matriz de seguimiento de huecos | [conventions.md](./05-reference/conventions.md) · [gaps.md](./05-reference/gaps.md) |
+
+---
+
+## 2. Lectura según el Objetivo
+
+| Si tu objetivo es... | Rutas y diagramas recomendados | Qué obtendrás |
+|---|---|---|
+| **Definir alcance y roles** | [01-functional/use-cases.md](./01-functional/use-cases.md) | Cuáles son las capacidades exactas de Miembro, Moderador y Admin. |
+| **Diseñar base de datos** | [03-structural/data-model.md](./03-structural/data-model.md) | Estructura de tablas, claves foráneas, enums e invariantes para Prisma. |
+| **Implementar endpoints / WebSocket** | [02-system-architecture](./02-system-architecture/README.md) y [04-behavioral](./04-behavioral/README.md) | Qué llamadas son REST, qué eventos viajan por WSS y el orden de ejecución. |
+| **Escribir pruebas de seguridad (R2)** | [01-functional/use-cases.md](./01-functional/use-cases.md) y [05-reference/conventions.md](./05-reference/conventions.md) | Escenarios que deben devolver 401 (sin sesión) y 403 (rol insuficiente). |
+| **Preparar la defensa técnica (R8)** | [02-system-architecture/deployment-and-network.md](./02-system-architecture/deployment-and-network.md) y [04-behavioral/core-flows.md](./04-behavioral/core-flows.md) | Explicación clara de la separación de responsabilidades y flujo integral. |
+
+---
+
+## 3. Principios de Consistencia de los Diagramas
+
+1. **Mermaid como Fuente Única:** Todos los diagramas son código Mermaid en archivos Markdown, renderizados automáticamente por GitHub sin depender de herramientas externas.
+2. **Autoridad Única:** NestJS y PostgreSQL son la autoridad exclusiva de los datos persistentes (usuarios, salas, tareas, chat). Colyseus gestiona únicamente estado efímero en memoria (presencia y movimiento).
+3. **Regla de Escritura y Difusión:** El cliente envía las acciones persistentes por HTTPS REST a NestJS; una vez confirmada la escritura en RDS, NestJS notifica a Colyseus para que difunda el evento a la sala.
+
+---
+
+## 4. Fuentes y Mantenimiento
+
+- **Documento Maestro:** [master-document.md](../../master-document.md) es la fuente de verdad del producto. Los diagramas ilustran su arquitectura objetivo.
+- **Reglas del Proyecto:** Las especificaciones de [rules/security.md](../../rules/security.md) y [rules/project-requirements.md](../../rules/project-requirements.md) son de cumplimiento mandatorio.
+- **Actualización:** Cuando una decisión de código altere un contrato o resuelva un ítem de [05-reference/gaps.md](./05-reference/gaps.md), el PR correspondiente debe actualizar el diagrama asociado.

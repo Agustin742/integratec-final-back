@@ -1,6 +1,6 @@
 # Realtime: WebSockets y Colyseus
 
-> Ciclo de conexión, eventos y la regla de consistencia entre REST y WSS. Parte del [índice de diagramas](./README.md).
+> Ciclo de conexión, eventos y la regla de consistencia entre REST y WSS. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -10,7 +10,7 @@
   - [1.3 Regla de consistencia y autoridad](#13-regla-de-consistencia-y-autoridad)
   - [1.4 Eventos adicionales de administración](#14-eventos-adicionales-de-administración)
 
-← [Modelo de datos](./03-data-model.md) · [Índice](./README.md) · [Clases por capa](./05-classes.md) →
+← [Modelo de datos](../03-structural/data-model.md) · [Índice](../README.md) · [Clases por capa](../03-structural/class-design.md) →
 
 ---
 
@@ -131,4 +131,4 @@ Socket.IO **no se usa en el MVP**: ninguno de estos casos justifica un canal dis
 
 ---
 
-← [Modelo de datos](./03-data-model.md) · [Índice](./README.md) · [Clases por capa](./05-classes.md) →
+← [Modelo de datos](../03-structural/data-model.md) · [Índice](../README.md) · [Clases por capa](../03-structural/class-design.md) →

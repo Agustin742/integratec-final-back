@@ -468,15 +468,25 @@ docs/
   architecture.md
   diagrams/
     README.md
-    01-use-cases.md
-    02-architecture.md
-    03-data-model.md
-    04-realtime.md
-    05-classes.md
-    06-sequences-core.md
-    07-sequences-admin.md
-    08-conventions.md
-    09-gaps.md
+    01-functional/
+      README.md
+      use-cases.md
+    02-system-architecture/
+      README.md
+      deployment-and-network.md
+      realtime-colyseus.md
+    03-structural/
+      README.md
+      data-model.md
+      class-design.md
+    04-behavioral/
+      README.md
+      core-flows.md
+      admin-flows.md
+    05-reference/
+      README.md
+      conventions.md
+      gaps.md
 ```
 
 Los archivos `rules/` desarrollan los detalles de implementación y experiencia sin contradecir este contrato general.

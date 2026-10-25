@@ -1,6 +1,6 @@
 # Convenciones transversales
 
-> Códigos de error, orden de verificación, idempotencia y límites de IA. Parte del [índice de diagramas](./README.md).
+> Códigos de error, orden de verificación, idempotencia y límites de IA. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -11,7 +11,7 @@
   - [1.4 Límites de IA](#14-límites-de-ia)
   - [1.5 Qué nunca se persiste](#15-qué-nunca-se-persiste)
 
-← [Secuencias de administración (S8 a S12)](./07-sequences-admin.md) · [Índice](./README.md) · [Huecos declarados](./09-gaps.md) →
+← [Secuencias de administración (S8 a S12)](../04-behavioral/admin-flows.md) · [Índice](../README.md) · [Huecos declarados](./gaps.md) →
 
 ---
 
@@ -54,4 +54,4 @@ Posición por fotograma, posiciones transitorias, estados interpolados de avatar
 
 ---
 
-← [Secuencias de administración (S8 a S12)](./07-sequences-admin.md) · [Índice](./README.md) · [Huecos declarados](./09-gaps.md) →
+← [Secuencias de administración (S8 a S12)](../04-behavioral/admin-flows.md) · [Índice](../README.md) · [Huecos declarados](./gaps.md) →

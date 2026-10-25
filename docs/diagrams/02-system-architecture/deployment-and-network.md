@@ -1,6 +1,6 @@
 # Arquitectura y comunicación
 
-> Cómo se conectan frontend, NestJS y Colyseus, y quién es la autoridad de cada dato. Parte del [índice de diagramas](./README.md).
+> Cómo se conectan frontend, NestJS y Colyseus, y quién es la autoridad de cada dato. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -10,7 +10,7 @@
   - [1.3 Flujo de usuarios y salas](#13-flujo-de-usuarios-y-salas)
   - [1.4 Comunicación por actor](#14-comunicación-por-actor)
 
-← [Casos de uso](./01-use-cases.md) · [Índice](./README.md) · [Modelo de datos](./03-data-model.md) →
+← [Casos de uso](../01-functional/use-cases.md) · [Índice](../README.md) · [Modelo de datos](../03-structural/data-model.md) →
 
 ---
 
@@ -170,4 +170,4 @@ La asimetría es intencional: **el cliente escribe por REST y escucha por WSS**.
 
 ---
 
-← [Casos de uso](./01-use-cases.md) · [Índice](./README.md) · [Modelo de datos](./03-data-model.md) →
+← [Casos de uso](../01-functional/use-cases.md) · [Índice](../README.md) · [Modelo de datos](../03-structural/data-model.md) →

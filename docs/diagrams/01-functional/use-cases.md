@@ -1,6 +1,6 @@
 # Casos de uso
 
-> Qué puede hacer cada actor y qué entidades, canales y señales intervienen. Parte del [índice de diagramas](./README.md).
+> Qué puede hacer cada actor y qué entidades, canales y señales intervienen. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -10,13 +10,13 @@
   - [1.3 Catálogo granular](#13-catálogo-granular)
   - [1.4 Matriz de permisos por rol (propuesto)](#14-matriz-de-permisos-por-rol-propuesto)
 
-[Índice](./README.md) · [Arquitectura y comunicación](./02-architecture.md) →
+[Índice](../README.md) · [Arquitectura](../02-system-architecture/deployment-and-network.md) →
 
 ---
 
 ## 1. Casos de uso
 
-Esta sección describe **qué puede hacer cada actor** y qué entidades, canales y señales intervienen. Es diseño objetivo (to-be): los endpoints, nombres de evento y códigos marcados **(propuesto)** no están definidos en el [documento maestro](../../master-document.md). La fuente exige como mínimo dos niveles de rol, administrador de sala (dueño) y miembro (`master-document.md:85`) y deja abiertos otros roles; el **Moderador** es un tercer rol de sala **(propuesto)**. La matriz exacta sigue pendiente (hueco 8).
+Esta sección describe **qué puede hacer cada actor** y qué entidades, canales y señales intervienen. Es diseño objetivo (to-be): los endpoints, nombres de evento y códigos marcados **(propuesto)** no están definidos en el [documento maestro](../../../master-document.md). La fuente exige como mínimo dos niveles de rol, administrador de sala (dueño) y miembro (`master-document.md:85`) y deja abiertos otros roles; el **Moderador** es un tercer rol de sala **(propuesto)**. La matriz exacta sigue pendiente (hueco 8).
 
 ### 1.1 Actores y glosario
 
@@ -117,7 +117,7 @@ flowchart LR
 
 ### 1.3 Catálogo granular
 
-Convenciones de las tablas: **Canal** es el transporte del disparo; todo efecto persistente pasa por NestJS ([04-realtime §1.3](./04-realtime.md#13-regla-de-consistencia-y-autoridad)). **Señales** son los eventos realtime que se emiten después de confirmar. Los códigos de error siguen la [08-conventions §1.1](./08-conventions.md#11-códigos-de-error). Endpoints y eventos son **(propuesto)**. **MVP** según `master-document.md:312-327`.
+Convenciones de las tablas: **Canal** es el transporte del disparo; todo efecto persistente pasa por NestJS ([02-system-architecture/realtime-colyseus.md](../02-system-architecture/realtime-colyseus.md#13-regla-de-consistencia-y-autoridad)). **Señales** son los eventos realtime que se emiten después de confirmar. Los códigos de error siguen la [05-reference/conventions.md](../05-reference/conventions.md#11-códigos-de-error). Endpoints y eventos son **(propuesto)**. **MVP** según `master-document.md:312-327`.
 
 #### Cuenta
 
@@ -188,8 +188,8 @@ Convenciones de las tablas: **Canal** es el transporte del disparo; todo efecto 
 | Configurar visibilidad y objetos de la sala (UC-21, 27) | No | No | Sí |
 | Eliminar la sala o transferir propiedad (UC-28) | No | No | Sí |
 
-Restricciones: ningún rol puede actuar sobre otro de igual o mayor jerarquía salvo el Admin sobre el resto; el último Admin no puede salir, degradarse ni ser expulsado (`409`). La matriz se verifica siempre en el servidor con `RoomAdminGuard` y `RoomModeratorGuard` ([clases](./05-classes.md#12-clases-adicionales)); ocultar un botón en el cliente no otorga ni quita permisos.
+Restricciones: ningún rol puede actuar sobre otro de igual o mayor jerarquía salvo el Admin sobre el resto; el último Admin no puede salir, degradarse ni ser expulsado (`409`). La matriz se verifica siempre en el servidor con `RoomAdminGuard` y `RoomModeratorGuard` ([clases](../03-structural/class-design.md#12-clases-adicionales)); ocultar un botón en el cliente no otorga ni quita permisos.
 
 ---
 
-[Índice](./README.md) · [Arquitectura y comunicación](./02-architecture.md) →
+[Índice](../README.md) · [Arquitectura](../02-system-architecture/deployment-and-network.md) →

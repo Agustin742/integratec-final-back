@@ -1,6 +1,6 @@
 # Secuencias del núcleo (S1 a S7)
 
-> Cuenta, ingreso a sala, movimiento, tareas, chat, repaso diario y reconexión. Parte del [índice de diagramas](./README.md).
+> Cuenta, ingreso a sala, movimiento, tareas, chat, repaso diario y reconexión. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -13,7 +13,7 @@
   - [1.6 S6 — Repaso diario del bot](#16-s6--repaso-diario-del-bot)
   - [1.7 S7 — Reconexión, token expirado y logout](#17-s7--reconexión-token-expirado-y-logout)
 
-← [Clases por capa](./05-classes.md) · [Índice](./README.md) · [Secuencias de administración (S8 a S12)](./07-sequences-admin.md) →
+← [Clases por capa](../03-structural/class-design.md) · [Índice](../README.md) · [Secuencias de administración (S8 a S12)](./admin-flows.md) →
 
 ---
 
@@ -163,7 +163,7 @@ Los dos guards son la traducción del orden de verificación: primero autenticac
 
 ### 1.5 S5 — Mensaje de chat
 
-El mensaje pertenece a una sala y tiene historial persistente (`master-document.md:69`). Para respetar el camino único de escritura de la [04-realtime §1.3](./04-realtime.md#13-regla-de-consistencia-y-autoridad), **el envío va por REST a NestJS** y Colyseus solo difunde el mensaje ya confirmado a la sala; el historial también se recupera por REST (`master-document.md:199,284`). Decisión de diseño (propuesto): reemplaza la versión anterior, donde Colyseus llamaba a NestJS para persistir.
+El mensaje pertenece a una sala y tiene historial persistente (`master-document.md:69`). Para respetar el camino único de escritura de la [02-system-architecture/realtime-colyseus.md](../02-system-architecture/realtime-colyseus.md#13-regla-de-consistencia-y-autoridad), **el envío va por REST a NestJS** y Colyseus solo difunde el mensaje ya confirmado a la sala; el historial también se recupera por REST (`master-document.md:199,284`). Decisión de diseño (propuesto): reemplaza la versión anterior, donde Colyseus llamaba a NestJS para persistir.
 
 ```mermaid
 sequenceDiagram
@@ -272,4 +272,4 @@ El backoff no tiene algoritmo definido en la fuente (`master-document.md:64,201`
 
 ---
 
-← [Clases por capa](./05-classes.md) · [Índice](./README.md) · [Secuencias de administración (S8 a S12)](./07-sequences-admin.md) →
+← [Clases por capa](../03-structural/class-design.md) · [Índice](../README.md) · [Secuencias de administración (S8 a S12)](./admin-flows.md) →

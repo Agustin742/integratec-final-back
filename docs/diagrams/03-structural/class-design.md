@@ -1,6 +1,6 @@
 # Clases por capa
 
-> Quién ejecuta cada responsabilidad en frontend, backend y realtime. Parte del [índice de diagramas](./README.md).
+> Quién ejecuta cada responsabilidad en frontend, backend y realtime. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -8,7 +8,7 @@
   - [1.1 Clases por capa](#11-clases-por-capa)
   - [1.2 Clases adicionales](#12-clases-adicionales)
 
-← [Realtime: WebSockets y Colyseus](./04-realtime.md) · [Índice](./README.md) · [Secuencias del núcleo (S1 a S7)](./06-sequences-core.md) →
+← [Realtime: WebSockets y Colyseus](../02-system-architecture/realtime-colyseus.md) · [Índice](../README.md) · [Secuencias del núcleo (S1 a S7)](../04-behavioral/core-flows.md) →
 
 ---
 
@@ -358,8 +358,8 @@ classDiagram
   RoomAdminGuard --|> RoomModeratorGuard
 ```
 
-La jerarquía de guards replica la de roles: `RoomModeratorGuard` exige `moderator` u `owner` (UC-23, UC-25, UC-26) y `RoomAdminGuard` exige `owner` (UC-21, UC-22, UC-24, UC-27, UC-28). Ambos se ejecutan en el mismo orden obligatorio de la [08-conventions §1.2](./08-conventions.md#12-orden-obligatorio-de-verificación): autenticación, autorización, validación y escritura. `MembershipsService.assertCanActOn` impide que un rol actúe sobre otro de igual o mayor jerarquía, salvo el Admin. `RealtimePublisher.disconnectUser` es el único punto por donde NestJS pide a Colyseus cerrar una sesión (UC-25).
+La jerarquía de guards replica la de roles: `RoomModeratorGuard` exige `moderator` u `owner` (UC-23, UC-25, UC-26) y `RoomAdminGuard` exige `owner` (UC-21, UC-22, UC-24, UC-27, UC-28). Ambos se ejecutan en el mismo orden obligatorio de la [05-reference/conventions.md](../05-reference/conventions.md#12-orden-obligatorio-de-verificación): autenticación, autorización, validación y escritura. `MembershipsService.assertCanActOn` impide que un rol actúe sobre otro de igual o mayor jerarquía, salvo el Admin. `RealtimePublisher.disconnectUser` es el único punto por donde NestJS pide a Colyseus cerrar una sesión (UC-25).
 
 ---
 
-← [Realtime: WebSockets y Colyseus](./04-realtime.md) · [Índice](./README.md) · [Secuencias del núcleo (S1 a S7)](./06-sequences-core.md) →
+← [Realtime: WebSockets y Colyseus](../02-system-architecture/realtime-colyseus.md) · [Índice](../README.md) · [Secuencias del núcleo (S1 a S7)](../04-behavioral/core-flows.md) →

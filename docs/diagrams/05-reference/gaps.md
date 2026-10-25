@@ -1,12 +1,12 @@
 # Huecos declarados
 
-> Decisiones que la documentación actual no resuelve y los diagramas que dependen de ellas. Parte del [índice de diagramas](./README.md).
+> Decisiones que la documentación actual no resuelve y los diagramas que dependen de ellas. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
 - [1. Huecos declarados](#1-huecos-declarados)
 
-← [Convenciones transversales](./08-conventions.md) · [Índice](./README.md)
+← [Convenciones transversales](./conventions.md) · [Índice](../README.md)
 
 ---
 
@@ -44,8 +44,8 @@ Ninguno de estos puntos está resuelto en la documentación actual. Los diagrama
 | 26 | Si un recurso no visible responde `403` o `404` | Abierto | 01 §1.3 |
 | 27 | Rol Moderador: existencia, permisos exactos y edición de tareas ajenas (propuesto) | Con propuesta | 01 §1.4, 03 §1.2, S10, S12 |
 
-Los huecos 10, 11, 12, 15 y 22 tienen ahora una **propuesta** en [Modelo de datos](./03-data-model.md#12-entidades-adicionales), [Eventos](./04-realtime.md#14-eventos-adicionales-de-administración) y [Casos de uso](./01-use-cases.md#1-casos-de-uso), pero siguen sin respaldo en la fuente.
+Los huecos 10, 11, 12, 15 y 22 tienen ahora una **propuesta** en [Modelo de datos](../03-structural/data-model.md#12-entidades-adicionales), [Eventos](../02-system-architecture/realtime-colyseus.md#14-eventos-adicionales-de-administración) y [Casos de uso](../01-functional/use-cases.md#1-casos-de-uso), pero siguen sin respaldo en la fuente.
 
 ---
 
-← [Convenciones transversales](./08-conventions.md) · [Índice](./README.md)
+← [Convenciones transversales](./conventions.md) · [Índice](../README.md)

@@ -1,6 +1,6 @@
 # Modelo de datos
 
-> Entidades persistentes, relaciones e invariantes. Parte del [índice de diagramas](./README.md).
+> Entidades persistentes, relaciones e invariantes. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -8,13 +8,13 @@
   - [1.1 Modelo de dominio](#11-modelo-de-dominio)
   - [1.2 Entidades adicionales](#12-entidades-adicionales)
 
-← [Arquitectura y comunicación](./02-architecture.md) · [Índice](./README.md) · [Realtime: WebSockets y Colyseus](./04-realtime.md) →
+← [Arquitectura y comunicación](../02-system-architecture/deployment-and-network.md) · [Índice](../README.md) · [Realtime: WebSockets y Colyseus](../02-system-architecture/realtime-colyseus.md) →
 
 ---
 
 ## 1. Modelo de datos
 
-Esta sección fija el **modelo de dominio**: qué entidades existen y cómo se relacionan. La estructura de clases por capa está en [Clases por capa](./05-classes.md#11-clases-por-capa). Ninguna de las dos es una especificación ejecutable.
+Esta sección fija el **modelo de dominio**: qué entidades existen y cómo se relacionan. La estructura de clases por capa está en [Clases por capa](./class-design.md#11-clases-por-capa). Ninguna de las dos es una especificación ejecutable.
 
 El esquema definitivo se definirá en `rules/data.md`, que todavía no existe. Los atributos de este diagrama son una propuesta del equipo y deben validarse antes de generar la migración de Prisma. La hoja de hechos deja constancia de que ningún campo de entidad está definido en el documento fuente (`master-document.md:223`); solo se conocen los nombres de las entidades, algunas relaciones y un puñado de comportamientos. Por eso lo que sigue es un **modelo lógico, no DDL**: no fija nombres de tablas, tipos SQL nativos, índices, collations ni políticas de retención. Los tipos `uuid`, `string`, `datetime`, `enum`, `boolean`, `int` y `decimal` son genéricos y se traducirán a tipos de PostgreSQL recién en la migración. La matriz de permisos por rol también está pendiente: se delega a `rules/rooms-and-permissions.md`, archivo que no existe (`master-document.md:85`).
 
@@ -225,4 +225,4 @@ Con estas tres entidades el modelo pasa de doce a quince. Invariantes: el códig
 
 ---
 
-← [Arquitectura y comunicación](./02-architecture.md) · [Índice](./README.md) · [Realtime: WebSockets y Colyseus](./04-realtime.md) →
+← [Arquitectura y comunicación](../02-system-architecture/deployment-and-network.md) · [Índice](../README.md) · [Realtime: WebSockets y Colyseus](../02-system-architecture/realtime-colyseus.md) →

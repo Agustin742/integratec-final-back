@@ -1,6 +1,6 @@
 # Secuencias de administración (S8 a S12)
 
-> Invitaciones, solicitudes de ingreso, expulsión, anuncios y control de permisos. Parte del [índice de diagramas](./README.md).
+> Invitaciones, solicitudes de ingreso, expulsión, anuncios y control de permisos. Parte del [índice de diagramas](../README.md).
 
 **En este archivo**
 
@@ -11,13 +11,13 @@
   - [1.4 S11 — Publicar un anuncio o reunión y confirmar asistencia](#14-s11--publicar-un-anuncio-o-reunión-y-confirmar-asistencia)
   - [1.5 S12 — Moderador intenta una acción exclusiva del Admin](#15-s12--moderador-intenta-una-acción-exclusiva-del-admin)
 
-← [Secuencias del núcleo (S1 a S7)](./06-sequences-core.md) · [Índice](./README.md) · [Convenciones transversales](./08-conventions.md) →
+← [Secuencias del núcleo (S1 a S7)](./core-flows.md) · [Índice](../README.md) · [Convenciones transversales](../05-reference/conventions.md) →
 
 ---
 
 ## 9. Escenarios de administración
 
-Escenarios de gestión de la sala. Siguen las mismas convenciones que las [secuencias del núcleo](./06-sequences-core.md): REST hacia NestJS, difusión por Colyseus solo después de confirmar la escritura, y orden autenticación → autorización → validación → escritura.
+Escenarios de gestión de la sala. Siguen las mismas convenciones que las [secuencias del núcleo](./core-flows.md): REST hacia NestJS, difusión por Colyseus solo después de confirmar la escritura, y orden autenticación → autorización → validación → escritura.
 
 ### 1.1 S8 — Admin crea una invitación y un miembro la canjea
 
@@ -153,7 +153,7 @@ sequenceDiagram
 
 ### 1.5 S12 — Moderador intenta una acción exclusiva del Admin
 
-Caso de prueba negativo para la matriz de la [01-use-cases §1.4](./01-use-cases.md#14-matriz-de-permisos-por-rol-propuesto): un Moderador intenta cambiar el rol de otro miembro (UC-24). El rechazo ocurre antes de validar el DTO y de tocar Prisma, y manipular el cliente no cambia el resultado.
+Caso de prueba negativo para la matriz de la [01-functional/use-cases.md](../01-functional/use-cases.md#14-matriz-de-permisos-por-rol-propuesto): un Moderador intenta cambiar el rol de otro miembro (UC-24). El rechazo ocurre antes de validar el DTO y de tocar Prisma, y manipular el cliente no cambia el resultado.
 
 ```mermaid
 sequenceDiagram
@@ -176,4 +176,4 @@ sequenceDiagram
 
 ---
 
-← [Secuencias del núcleo (S1 a S7)](./06-sequences-core.md) · [Índice](./README.md) · [Convenciones transversales](./08-conventions.md) →
+← [Secuencias del núcleo (S1 a S7)](./core-flows.md) · [Índice](../README.md) · [Convenciones transversales](../05-reference/conventions.md) →
