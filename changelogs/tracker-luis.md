@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-10-26 — Synchronize shared engineering and coordination rules
+
+- **Status:** completed
+- **Area / files:** `rules/`, `AGENTS.md`, `changelogs/tracker-luis.md`
+- **Change:** Integrated 8 shared engineering rules from the frontend repository (GitHub Projects coordination, API contracts, data and time, error handling, configuration, deployment, observability, and documentation decisions); updated the rules index accordingly.
+- **Reason:** Maintain consistent cross-repository development practices, contracts, and board coordination without introducing frontend-specific visual or UI rules.
+- **Next step:** Review backend architecture and proceed with NestJS/database implementation.
+
 ## 2026-10-26 — Align master document and add functional specification
 
 - **Status:** completed

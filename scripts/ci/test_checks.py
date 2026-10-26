@@ -41,7 +41,7 @@ class PromotionTests(unittest.TestCase):
 class PackageTests(unittest.TestCase):
     def test_package_detection(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        script = workflow.split('      - name: Detect frontend package\n', 1)[1]
+        script = workflow.split('      - name: Detect backend package\n', 1)[1]
         script = script.split('        run: |\n', 1)[1].split('\n      - name:', 1)[0]
         for name, package, lock, code, output, error in [
             ('no_package', False, False, 0, 'present=false\n', ''),
@@ -70,9 +70,9 @@ class PackageTests(unittest.TestCase):
             ('Run tests',
              '::notice title=Tests not configured::No test script is configured; no tests were run.\n',
              '## Tests not configured\nNo `test` script is configured in `package.json`; no tests were run.\n'),
-            ('Report docs-only frontend',
+            ('Report docs-only backend',
              '::notice title=Tests not configured::No package.json or test script is present; no tests were run.\n',
-             '## Tests not configured\nThis frontend has no `package.json` or test script; no tests were run.\n'),
+             '## Tests not configured\nThis backend has no `package.json` or test script; no tests were run.\n'),
         ]
         for step, notice, summary in cases:
             script = workflow.split(f'      - name: {step}\n', 1)[1]
