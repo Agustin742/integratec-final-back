@@ -21,4 +21,4 @@ Users must be able to tell whether an operation is pending, confirmed, rejected,
 
 ## Verification
 
-Check initial failure, failure after data is already visible, pending writes, uncertain outcomes, and recovery paths relevant to the changed feature. UI announcements follow [Accessibility](./ui-and-accessibility.md).
+Check initial failure, failure after data is already visible, pending writes, uncertain outcomes, and recovery paths relevant to the changed feature.

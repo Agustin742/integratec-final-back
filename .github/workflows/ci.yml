@@ -3,6 +3,7 @@ name: Backend CI
 on:
   pull_request:
     branches:
+      - develop
       - test
       - main
   push:
@@ -21,7 +22,7 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           case "$BASE_REF:$HEAD_REF" in
-            test:develop|main:test) ;;
+            develop:*|test:develop|main:test) ;;
             *)
               echo "Pull requests into '$BASE_REF' must come from the promotion branch (got '$HEAD_REF')." >&2
               exit 1
@@ -29,6 +30,37 @@ jobs:
           esac
 
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check documentation and CI regressions
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
+          python3 scripts/ci/check_docs.py
+
+      - name: Check proposed diff whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            base="$PR_BASE"
+          elif [[ "$PUSH_BEFORE" =~ ^0+$ ]]; then
+            base=$(git hash-object -t tree /dev/null)
+          else
+            base="$PUSH_BEFORE"
+          fi
+          git diff --check "$base" HEAD --
+
+      - name: Validate workflow with actionlint 1.7.7
+        env:
+          GOBIN: ${{ runner.temp }}
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$GOBIN/actionlint" .github/workflows/ci.yml
 
       - name: Detect backend package
         id: package
@@ -66,7 +98,7 @@ jobs:
             echo "::notice title=Tests not configured::No test script is configured; no tests were run."
             {
               echo '## Tests not configured'
-              echo 'No `test` script is configured in `package.json`; no tests were run.'
+              echo "No \`test\` script is configured in \`package.json\`; no tests were run."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -77,5 +109,5 @@ jobs:
           echo "::notice title=Tests not configured::No package.json or test script is present; no tests were run."
           {
             echo '## Tests not configured'
-            echo 'This backend has no `package.json` or test script; no tests were run.'
+            echo "This backend has no \`package.json\` or test script; no tests were run."
           } >> "$GITHUB_STEP_SUMMARY"
