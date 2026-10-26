@@ -3,13 +3,20 @@
 > **Documento maestro del proyecto** · IntegrarTEC 2026 — Programación Web con IA aplicada  
 > **Alcance documental:** aquí se describe **qué tendrá el producto**, sus decisiones estructurales y cómo se verificará el cumplimiento del proyecto integrador. Las reglas específicas de cada módulo se desarrollarán por separado en `rules/`.
 
+### Control de versiones
+
+| Versión | Fecha | Autor | Cambios principales |
+|---|---|---|---|
+| 0.1 | 2026-10-22 | Equipo | Documento maestro inicial y alcance arquitectónico base. |
+| 0.2 | 2026-10-26 | Luis Calegari | Alineación con la ERS (`docs/functional-requirements.md`): modelo de Oficinas y Habitaciones, matriz de roles por oficina sin Superadmin, invitaciones por enlace único con vencimiento, chat de oficina/habitación para MVP y bot de IA acotado a consultas y resúmenes. |
+
 ## 1. Visión y objetivo
 
 Aplicación web de **convivencia, comunicación y organización en salas virtuales tridimensionales**, presentada desde una **cámara isométrica**. Los usuarios se representan mediante avatares personalizables, se desplazan por el escenario y acceden a herramientas de productividad mediante interacciones con el entorno.
 
 El valor central es facilitar la organización y la colaboración en un espacio compartido con presencia social, **no crear un MMO ni un videojuego competitivo**. La ambientación concreta se especifica en `rules/art-direction.md`.
 
-El producto combinará salas personales, compartidas y generales; tareas, comunicación, reuniones, interacciones espaciales y un asistente de IA capaz de informar y ejecutar acciones autorizadas.
+El producto combinará oficinas virtuales compuestas por habitaciones (principal y secundarias/privadas); tareas, comunicación, reuniones, interacciones espaciales y un asistente de IA capaz de informar, consultar y resumir la actividad para el MVP.
 
 ### 1.1 Usuarios y problema
 
@@ -19,20 +26,23 @@ El producto combinará salas personales, compartidas y generales; tareas, comuni
 
 ## 2. Alcance funcional del producto
 
-### 2.1 Salas
+### 2.1 Oficinas y habitaciones
 
-| Tipo de sala | Acceso | Función |
+La unidad organizativa del producto es la **Oficina**, que actúa como espacio contenedor persistente y agrupa una o más **Habitaciones**:
+
+| Nivel / Espacio | Acceso y creación | Función |
 |---|---|---|
-| **Personal** | Privada por defecto; visibilidad configurable | Espacio propio, organización personal, avatar y personalización. |
-| **Compartida** | Según membresía, permisos o invitación | Colaboración, mensajes, tareas y presencia de integrantes. |
-| **General** | Usuarios habilitados | Punto de encuentro, anuncios, reuniones y acceso a otras salas. |
+| **Oficina propia** | Se crea automáticamente al registrarse el usuario | Espacio propio persistente del usuario; configurable. |
+| **Oficinas compartidas** | Acceso por invitación mediante enlace único | Colaboración grupal, organización, tareas y convivencia. |
+| **Habitación principal** | Acceso para todos los miembros de la oficina | Punto de encuentro general, anuncios y tablero principal. |
+| **Habitaciones secundarias** | Acceso según asignación de membresía | Espacios temáticos, por área o privados configurables por Dueño, Administrador o Líder. |
 
-- Una sala personal se crea automáticamente al registrar un usuario.
-- Las salas representan **espacios persistentes del producto**, aunque no haya personas conectadas; la presencia de los avatares es temporal.
-- El acceso entre salas puede realizarse mediante puertas u otros mecanismos espaciales; el servidor siempre verifica permisos.
-- Se podrán crear salas compartidas e invitar a otros usuarios por enlace o código.
+- Cada oficina cuenta con una **habitación principal** por defecto.
+- Las oficinas y habitaciones representan **espacios persistentes del producto**, independientemente de si hay avatares conectados en ese momento; la presencia es temporal.
+- El acceso entre habitaciones se realiza mediante puertas u objetos de transición 3D; el servidor siempre verifica permisos.
+- La incorporación de nuevos miembros se realiza mediante un **enlace único de invitación**, revocable y con vencimiento temporal.
 - La configuración de privacidad y visibilidad será administrable por quienes tengan los permisos adecuados.
-- **Distinción técnica importante:** una sala del producto almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus. Esta última gestiona una sesión de tiempo real asociada al espacio y sus usuarios conectados.
+- **Distinción técnica importante:** una habitación del producto almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus. Esta última gestiona una sesión de tiempo real asociada al espacio y sus usuarios conectados.
 
 ### 2.2 Objetos y elementos interactuables 
 
@@ -66,10 +76,10 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 ### 2.4 Comunicación y reuniones
 
-- Chat asociado a salas, con historial persistente según sus reglas de acceso.
-- Mensajería privada mediante interfaz contextual, vinculada a interfaces como la del teléfono.
-- Reuniones y avisos desde la sala general y otros espacios habilitados; posibilidad de confirmar asistencia.
-- Presencia y estados de actividad de los integrantes.
+- Chat persistente por oficina y por habitación, accesible según los permisos del usuario.
+- En el MVP, la mensajería privada uno a uno queda diferida como evolución; el foco del MVP es la interacción contextual en los chats de oficina y habitación.
+- Cartelera y reuniones convocadas en la habitación principal u otras habilitadas, con confirmación de asistencia.
+- Presencia en tiempo real y estados de disponibilidad de los integrantes conectados.
 
 ### 2.5 Productividad
 
@@ -81,11 +91,13 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 ### 2.6 Acceso, roles y permisos 
 
-- Registro, inicio de sesión y cierre de sesión.
-- Dos niveles de autorización diferenciados como mínimo: **administrador de sala (dueño)** y **miembro**. El alcance exacto de permisos, además de posibles administradores de plataforma o invitados, se especifica en `rules/`.
-- Rutas y operaciones privadas protegidas; pertenencia a sala y propiedad de recursos verificadas en el servidor.
-- Las salas personales son privadas por defecto. Se contempla visibilidad configurable, acceso directo o solicitud de ingreso.
-- Un usuario no puede leer ni alterar recursos ajenos manipulando identificadores o mensajes de red.
+- Registro, inicio de sesión seguro con hash y sesiones con vencimiento y revocación.
+- **Sin Superadministrador global:** los roles y permisos se gestionan de forma aislada dentro de cada oficina:
+  - **Dueño (Owner):** control total de la oficina; único que puede nombrar Administradores o transferir/eliminar la oficina.
+  - **Administrador (Admin):** puede gestionar miembros, generar invitaciones, asignar Líderes y moderar anuncios/reuniones.
+  - **Líder de habitación (Leader):** gestiona el acceso y configuración de su habitación específica (puede haber varios).
+  - **Miembro (Member):** participa en las habitaciones asignadas, interactúa con tareas y utiliza el chat.
+- Validación estricta en backend: cada endpoint HTTP o mensaje de red verifica membresía y permisos. Un usuario no puede acceder ni modificar recursos ajenos manipulando identificadores.
 
 ## 3. Experiencia y dirección visual
 
@@ -108,15 +120,12 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 ## 4. Bot con inteligencia artificial
 
-El bot forma parte del mundo como personaje o entidad interactiva; permite conversaciones, consultas y acciones a través de herramientas del backend.
+El bot forma parte del mundo como personaje o entidad interactiva; permite responder consultas y generar resúmenes dentro del alcance autorizado.
 
-**Capacidades del bot:**
+**Capacidades y alcance del bot:**
 
-- Responder preguntas y ayudar con la organización dentro del alcance autorizado.
-- Consultar tareas, reuniones, anuncios y pendientes relevantes para el usuario.
-- Crear, actualizar o completar tareas y realizar otras operaciones **mediante herramientas del servidor**, sujetas a permisos.
-- Resumir actividad de conversaciones o espacios a los que el usuario tiene acceso.
-- Reaccionar a eventos pertinentes del sistema; la personalidad y representación concreta se definirán luego.
+- **Para el MVP (consultas y resúmenes):** el bot asiste al usuario respondiendo preguntas frecuentes de organización, consultando tareas, reuniones y anuncios pendientes, y resumiendo la actividad de sus habitaciones autorizadas. Para acotar la superficie de riesgo en la entrega inicial, **no ejecuta modificaciones directas en la base de datos**.
+- **Evolución futura:** ejecución de acciones autónomas (crear/actualizar tareas mediante tools) sujetas a confirmación explícita.
 
 ### 4.1 Rutina de repaso del día en la primera conexión 
 
@@ -220,7 +229,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 
 ### 6.4 Modelo de información (general)
 
-Entidades del dominio: `User`, `Session`, `AvatarConfiguration`, `Room`, `Membership`, `RoomItem`, `Task`, `Message`, `Meeting`/`Announcement`, `BotConversation`, `DailyReviewDelivery`. Las relaciones esenciales incluyen usuario→sala personal, usuario↔salas compartidas mediante membresía, sala→tareas/mensajes/elementos y usuario→resumen diario.
+Entidades del dominio: `User`, `Session`, `AvatarConfiguration`, `Office`, `Room`, `OfficeMember`, `RoomAccess`, `RoomItem`, `Task`, `Message`, `Meeting`/`Announcement`, `BotConversation`, `DailyReviewDelivery`, `Invitation`. Las relaciones esenciales incluyen usuario↔oficinas mediante membresía, oficina→habitaciones, habitación→tareas/mensajes/elementos y usuario→resumen diario.
 
 **No son filas persistentes por defecto:** cada frame del movimiento, posiciones transitorias, conexiones activas o estados interpolados de avatares. El modelo relacional y sus restricciones se definirán en `rules/data.md`.
 
