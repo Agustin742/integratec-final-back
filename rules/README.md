@@ -28,11 +28,30 @@ Rules describe **how the project must be designed and built**. They are not impl
 
 ## Rule index
 
+### Foundation and course policies
+
 - [Course requirements and evaluation](./project-requirements.md) — academic minimums, recommendations, documentation, milestones, and evaluation criteria.
 - [Git and GitHub workflow](./git-workflow.md) — branches, English Conventional Commits, pull requests, reviews, and merges.
 - [Code quality and testing](./quality-and-testing.md) — English code, verification, and definition of done.
 - [Security](./security.md) — secrets, permissions, validation, and frontend/backend boundaries.
 - [Responsible AI usage](./ai-usage.md) — human verification, privacy, and declaration of use.
+
+### Coordination and decisions
+
+- [GitHub Projects](./github-projects.md) — work ownership, status, issue/PR traceability, and completion evidence without assuming board configuration.
+- [Documentation and decisions](./documentation-and-decisions.md) — approved choices, proposals, exceptions, and authoritative sources.
+
+### Architecture and integration
+
+- [API contracts](./api-contracts.md) — cross-repository ownership, payloads, compatibility, and integration evidence.
+- [Data and time](./data-and-time.md) — opaque identity, optional values, dates, time zones, and persistence boundaries.
+
+### Operation and reliability
+
+- [Configuration and environments](./configuration-and-environments.md) — configuration validation, secret boundaries, and environment isolation.
+- [Deployment and operations](./deployment-and-operations.md) — environment-based configuration, build integrity, and deployment readiness.
+- [Error handling and feedback](./error-handling-and-feedback.md) — error reporting, recovery, and sensitive data protection.
+- [Observability and privacy](./observability-and-privacy.md) — runtime logging, health indicators, sensitive data redaction, and auditability.
 
 ## How to use the rules
 
