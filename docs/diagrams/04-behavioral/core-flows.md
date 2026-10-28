@@ -5,7 +5,7 @@
 **En este archivo**
 
 - [1. Diagramas de secuencia](#1-diagramas-de-secuencia)
-  - [1.1 S1 — Registro, login y sala personal](#11-s1--registro-login-y-sala-personal)
+  - [1.1 S1 — Registro, login, oficina y principal](#11-s1--registro-login-oficina-y-principal)
   - [1.2 S2 — Ingreso a una sala](#12-s2--ingreso-a-una-sala)
   - [1.3 S3 — Movimiento de avatar](#13-s3--movimiento-de-avatar)
   - [1.4 S4 — Crear una tarea](#14-s4--crear-una-tarea)
@@ -23,9 +23,9 @@ Los siete escenarios de esta sección recorren el ciclo completo del producto: a
 
 Todo lo que sigue es **diseño objetivo (to-be)**, no relevamiento de implementación: el repositorio solo contiene documentación y no hay código de aplicación (`README.md:3`). Por eso no existen endpoints, verbos, DTOs ni payloads definitivos, y los eventos son ilustrativos y no definitivos (`master-document.md:207`). Se rotulan con **(propuesto)** los contratos y parámetros que la fuente deja sin definir —tickets, tokens, formatos de error no documentados, frecuencia de envío, timeouts y backoff—; los nombres de componentes internos como guards, validadores y publicadores son nombres de diseño. Los únicos códigos de error documentados son 401 sin autenticación y 403 sin permisos (`master-document.md:219`).
 
-### 1.1 S1 — Registro, login y sala personal
+### 1.1 S1 — Registro, login, oficina y principal
 
-El alta crea tres cosas que deben quedar consistentes entre sí: el `User`, su sala personal y la `Membership` que lo hace dueño de esa sala. La sala personal se crea automáticamente al registrar el usuario y es privada por defecto (`master-document.md:30,26,87`); el hash de contraseña admite Argon2 o bcrypt y aquí se elige Argon2 (`master-document.md:301`). La sesión se gestiona en NestJS con expiración (`master-document.md:215`), y todo el tráfico React hacia NestJS pasa por HTTPS a través del ALB (`master-document.md:280-281`).
+El registro crea usuario, oficina propia, membresía de Dueño y habitación principal; además inicializa avatar, columnas por defecto y canales de chat según RF-AUT-001, RF-OFI-001 y RF-TAR-006. La principal pertenece a la oficina y todos sus miembros pueden acceder; no es una sala personal independiente. Agrupar el alta en una transacción es propuesta técnica para preservar RN-01/RN-04. La selección concreta de hash, sesión y validación backend no queda aprobada por este diagrama.
 
 ```mermaid
 sequenceDiagram
@@ -37,14 +37,14 @@ sequenceDiagram
 
     user->>web: completar formulario validado con Zod
     web->>api: POST de registro por HTTPS al ALB
-    api->>api: validar DTO con Zod y hashear con Argon2
+    api->>api: validar DTO en servidor y aplicar hash seguro
     api->>orm: abrir transacción de alta (propuesto)
-    orm->>db: INSERT User, sala personal y Membership owner
+    orm->>db: INSERT User, Office, OfficeMember owner y Room principal
     alt email ya registrado
         db-->>api: violación de unicidad
         api-->>web: 409 email ya registrado (propuesto)
     else alta aceptada
-        db-->>api: filas confirmadas
+        db-->>api: avatar, columnas y canales inicializados; alta confirmada
         api->>orm: INSERT Session con expiración
         orm-->>api: SessionToken emitido (propuesto)
         api-->>web: 201 con SessionToken y expiración
@@ -59,7 +59,7 @@ sequenceDiagram
     end
 ```
 
-La doble validación con Zod —cliente y servidor— es la regla general de validación (`master-document.md:153`), y el hash nunca sale de NestJS. La atomicidad del alta no está especificada en la fuente, de modo que agrupar `User`, sala y `Membership` en una transacción es una propuesta; lo mismo vale para el formato del `SessionToken` y para el 409 por email repetido, que la fuente no cataloga. El login repite el mismo contrato de sesión y devuelve 401 cuando las credenciales no son válidas (`master-document.md:219`).
+Cliente y servidor validan entradas (RN-17); usar Zod también en backend es una propuesta, no una consecuencia de que los formularios React lo utilicen. El hash nunca se devuelve. Formato de sesión, mecanismo de almacenamiento cliente y código de conflicto son propuestas sujetas a diseño de autenticación.
 
 ### 1.2 S2 — Ingreso a una sala
 
@@ -75,17 +75,17 @@ sequenceDiagram
 
     user->>web: elegir una sala
     web->>api: pedir autorización de ingreso por REST
-    api->>db: SELECT Membership y visibilidad de Room
-    alt sin membresía o sala no visible
+    api->>db: SELECT Office activa, OfficeMember activo y acceso a Room
+    alt oficina inactiva, sin membresía o sin acceso
         db-->>api: sin filas autorizadas
         api-->>web: 403 sin permisos
         Note over web,api: sin autorización no se abre el WSS
-    else membresía válida
-        db-->>api: membresía y visibilidad confirmadas
+    else acceso vigente confirmado
+        db-->>api: rol de oficina y acceso de habitación confirmados
         api-->>web: ticket de sala de corta vida (propuesto)
         web->>colyseus: conectar al WSS con el ticket
         colyseus->>api: verificar el ticket contra NestJS
-        api-->>colyseus: identidad y sala autorizadas
+        api-->>colyseus: sesión vigente, oficina activa y habitación autorizada
         colyseus->>colyseus: crear sesión y vincular la Room persistente con la instancia activa
         colyseus->>web: room:joined y presence:changed a los demás
         web->>colyseus: pedir snapshot inicial (propuesto)
@@ -141,12 +141,11 @@ sequenceDiagram
 
     user->>web: abrir el panel del tablero
     web->>api: POST de tarea con TanStack Query
-    api->>api: JwtAuthGuard valida el token
-    alt sin permiso en la sala
+    api->>api: SessionAuthGuard y RoomAccessGuard verifican sesión, oficina y acceso
+    alt sin permiso en la habitación
         api-->>web: 403 sin permisos
         Note over api,db: la escritura nunca ocurre
     else autorizado
-        api->>api: RoomMembershipGuard verifica pertenencia y rol
         api->>api: Zod valida el DTO de Task
         api->>orm: INSERT Task en transacción
         orm->>db: INSERT Task asociada a Room
@@ -159,11 +158,11 @@ sequenceDiagram
     end
 ```
 
-Los dos guards son la traducción del orden de verificación: primero autenticación, después permisos sobre la sala, y solo entonces validación de datos. El 403 corta antes de tocar Prisma, así que la escritura no existe ni parcialmente. La difusión de `task:changed` va después del 201 porque la regla es notificar una operación ya confirmada (`master-document.md:203,284`); la invalidación de caché en el cliente es lo que reconcilia el estado REST con el evento recibido. La matriz de permisos por rol sigue sin estar definida, de modo que el detalle de qué rol puede crear tareas es una propuesta.
+Los dos guards son la traducción del orden de verificación: primero autenticación, después permisos sobre la sala, y solo entonces validación de datos. El 403 corta antes de tocar Prisma, así que la escritura no existe ni parcialmente. La difusión de `task:changed` va después del 201 porque la regla es notificar una operación ya confirmada (`master-document.md:203,284`); la invalidación de caché en el cliente es lo que reconcilia el estado REST con el evento recibido. RF-TAR-002 a RF-TAR-005 permiten crear, editar, mover y eliminar tareas a cualquier miembro con acceso, también tareas ajenas. La columna elegida pertenece al mismo tablero; la estructura de columnas la gestiona Líder/Admin/Dueño.
 
 ### 1.5 S5 — Mensaje de chat
 
-El mensaje pertenece a una sala y tiene historial persistente (`master-document.md:69`). Para respetar el camino único de escritura de la [02-system-architecture/realtime-colyseus.md](../02-system-architecture/realtime-colyseus.md#13-regla-de-consistencia-y-autoridad), **el envío va por REST a NestJS** y Colyseus solo difunde el mensaje ya confirmado a la sala; el historial también se recupera por REST (`master-document.md:199,284`). Decisión de diseño (propuesto): reemplaza la versión anterior, donde Colyseus llamaba a NestJS para persistir.
+El mensaje tiene un canal de oficina o de habitación, elegido por el usuario, con historial persistente (RF-CHA-001 a RF-CHA-007). Para respetar el camino único de escritura de la [02-system-architecture/realtime-colyseus.md](../02-system-architecture/realtime-colyseus.md#13-regla-de-consistencia-y-autoridad), **el envío va por REST a NestJS** y Colyseus solo difunde el mensaje ya confirmado a la sala; el historial también se recupera por REST (`master-document.md:199,284`). Decisión de diseño (propuesto): reemplaza la versión anterior, donde Colyseus llamaba a NestJS para persistir.
 
 ```mermaid
 sequenceDiagram
@@ -172,20 +171,20 @@ sequenceDiagram
     participant api as NestJS
     participant db as RDS PostgreSQL
     participant colyseus as Colyseus
-    participant peers as Otros clientes de la sala
+    participant peers as Suscriptores autorizados del canal
 
-    user->>web: escribir y enviar un mensaje
+    user->>web: elegir canal de oficina o habitación y escribir mensaje
     web->>api: POST de mensaje por HTTPS (propuesto)
-    api->>api: JwtAuthGuard y RoomMembershipGuard
-    alt sin sesión o sin membresía
+    api->>api: sesión y membresía activa; acceso adicional si es canal de habitación
+    alt sin sesión o sin autorización de canal
         api-->>web: 401 o 403, sin persistir
     else autorizado
         api->>api: validar el cuerpo con Zod
-        api->>db: INSERT Message en RDS
+        api->>db: INSERT Message con destino único oficina o habitación
         db-->>api: fila confirmada
         api-->>web: 201 con id y timestamp del servidor
         api->>colyseus: RealtimePublisher notifica el mensaje confirmado
-        colyseus->>peers: difundir chat:message a la sala
+        colyseus->>peers: difundir chat:message solo al canal autorizado
         peers->>peers: ordenar por timestamp y renderizar
     end
     Note over colyseus,db: no se difunde antes de persistir
@@ -195,44 +194,44 @@ El orden es la garantía: el `INSERT` y la confirmación de RDS preceden a la di
 
 ### 1.6 S6 — Repaso diario del bot
 
-El repaso se dispara en la primera conexión autenticada del día y no se repite por recarga, cambio de sala ni reconexión (`master-document.md:123,130`). NestJS calcula la fecha en `America/Argentina/Buenos_Aires`, deja un marcador persistente por usuario y fecha y consulta RDS; Bedrock genera el texto desde NestJS, con fallback a resumen estructurado si no está disponible (`master-document.md:130,285,134`).
+RF-BOT-003/004 y RF-BOT-006 a RF-BOT-009: solo lectura de datos autorizados, primera conexión autenticada del día y fallback estructurado. La fecha del servidor usa America/Argentina/Buenos_Aires, como las demás reglas del producto. La propuesta técnica debe distinguir reserva de generación y entrega completada: encontrar una reserva no prueba que el usuario ya recibió su repaso.
 
 ```mermaid
 sequenceDiagram
-    actor user as Usuario
     participant web as React
     participant api as NestJS
     participant db as RDS PostgreSQL
     participant bedrock as Amazon Bedrock
-    participant colyseus as Colyseus
 
-    web->>api: primera conexión autenticada del día
-    api->>api: calcular la fecha en America/Argentina/Buenos_Aires
-    api->>db: INSERT DailyReviewDelivery con unique de usuario y fecha (propuesto)
-    alt marcador ya existente
-        db-->>api: violación de unicidad
-        api-->>web: sin repaso, ya fue entregado hoy
-    else marcador insertado
-        db-->>api: marcador confirmado
-        api->>db: SELECT Task pendientes, Meeting del día y Announcement autorizados
-        db-->>api: datos autorizados para armar el contexto
-        api->>bedrock: InvokeModel con timeout (propuesto)
-        alt Bedrock no disponible
-            bedrock-->>api: error o timeout
-            api->>api: fallback a resumen estructurado sin generación de texto
-        else Bedrock disponible
-            bedrock-->>api: texto generado
+    web->>api: primera conexión autenticada; solicitar repaso
+    api->>api: validar sesión y fecha de Buenos Aires
+    api->>db: reclamar usuario y fecha de forma atómica (propuesto)
+    alt entrega ya completada
+        db-->>api: estado entregado
+        api-->>web: no repetir presentación hoy
+    else generación en curso
+        db-->>api: reserva existente, no entrega confirmada
+        api-->>web: estado pendiente; no generar duplicado
+    else reserva obtenida
+        api->>db: consultar tareas, reuniones y anuncios con permisos vigentes
+        db-->>api: datos autorizados
+        api->>api: construir repaso estructurado
+        opt redacción IA habilitada (Could MVP)
+            api->>bedrock: solicitar redacción con límite y timeout (propuestos)
+            alt respuesta válida
+                bedrock-->>api: texto para el repaso
+            else error o timeout
+                api->>api: conservar repaso estructurado sin IA
+            end
         end
-        api->>db: INSERT BotConversation con el repaso
-        api-->>web: 200 con el repaso del día
-        api->>colyseus: publicar bot:summary-ready
-        colyseus->>web: difundir bot:summary-ready
+        api->>db: guardar resultado y estado de generación (propuesto)
+        api-->>web: repaso privado del usuario, nunca difusión a la habitación
+        web->>api: confirmar presentación (propuesto)
+        api->>db: registrar entrega completada de usuario y fecha
     end
-    Note over api,db: la verificación es atómica, un repaso por usuario y día
-    Note over api: el repaso solo lee y no modifica datos sin pedido
 ```
 
-La atomicidad no depende de un lock en memoria: la resuelve el constraint único sobre usuario y fecha, y solo el proceso que gana la inserción continúa. Ese constraint, su nombre exacto y la forma del marcador son una propuesta, porque la unicidad figura entre los huecos declarados (`master-document.md:121,130`). El timeout de Bedrock y los límites de consumo tampoco están cuantificados (`master-document.md:130,309`). El repaso es de lectura: las acciones del bot pasan por herramientas del servidor y respetan las mismas reglas de acceso (`master-document.md:117,134,204`), así que no altera tareas, reuniones ni anuncios sin un pedido explícito.
+La clave única usuario/fecha es una propuesta para evitar duplicados; recuperación de reservas, reintentos y confirmación de presentación necesitan contrato técnico antes de implementar. No se afirma entrega exactamente una vez por insertar un marcador anticipado. RF-BOT-008 permite el resumen sin IA y RF-BOT-009 agrega redacción IA como Could; el proveedor no bloquea el resumen estructurado. El bot no crea, modifica ni elimina tareas, reuniones o anuncios, **aunque el usuario se lo pida** (RF-BOT-004); esas acciones son Evolución (RF-BOT-010). Persistir la propia entrega del repaso no habilita escritura de negocio por el bot.
 
 ### 1.7 S7 — Reconexión, token expirado y logout
 
@@ -250,10 +249,10 @@ sequenceDiagram
         web->>web: reintentar con backoff (propuesto)
         web->>colyseus: reconectar y presentar el ticket
         colyseus->>api: revalidar el ticket
-        api-->>colyseus: ticket válido y sesión vigente
+        api-->>colyseus: ticket y sesión vigentes; oficina, membresía y acceso activos
         colyseus-->>web: restaurar la sala y difundir presence:changed
     else token expirado
-        colyseus-->>web: 401 sesión vencida
+        colyseus-->>web: rechazo realtime por sesión vencida (no código HTTP tras handshake)
         web->>web: limpiar AuthStore y cerrar el socket
         web->>web: redirigir al login
     else logout del usuario
@@ -265,7 +264,7 @@ sequenceDiagram
         colyseus-->>web: desconectar y difundir presence:changed
         web->>web: limpiar la caché de TanStack Query
     end
-    Note over web,api: el 401 puede venir de Colyseus o de NestJS
+    Note over web,api: REST usa 401; realtime expresa autenticación fallida en su protocolo
 ```
 
 El backoff no tiene algoritmo definido en la fuente (`master-document.md:64,201`), por eso la rama de reconexión lo marca como propuesto: lo único documentado es que Colyseus revalida permisos antes de restaurar la presencia. En el token vencido no se reintenta: el cliente descarta el estado de autenticación, cierra el socket y vuelve al login. En el logout, la invalidación de la `Session` en NestJS es la que corta el acceso, y la desconexión de Colyseus solo propaga el cambio de presencia a la sala; la caché de TanStack Query se limpia para que ningún dato del usuario anterior quede visible.
