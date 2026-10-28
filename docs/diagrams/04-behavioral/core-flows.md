@@ -25,7 +25,7 @@ Todo lo que sigue es **diseño objetivo (to-be)**, no relevamiento de implementa
 
 ### 1.1 S1 — Registro, login, oficina y principal
 
-El registro crea usuario, oficina propia, membresía de Dueño y habitación principal; además inicializa avatar, columnas por defecto y canales de chat según RF-AUT-001, RF-OFI-001 y RF-TAR-006. La principal pertenece a la oficina y todos sus miembros pueden acceder; no es una sala personal independiente. Agrupar el alta en una transacción es propuesta técnica para preservar RN-01/RN-04. La selección concreta de hash, sesión y validación backend no queda aprobada por este diagrama.
+El registro crea usuario, oficina propia, membresía de Dueño y habitación principal; además inicializa avatar, columnas por defecto y canales de chat según RF-AUT-001, RF-OFI-001 y RF-TAR-006. La principal pertenece a la oficina y todos sus miembros pueden acceder; no es una sala personal independiente. El alta atómica es obligatoria según [Authentication](../../../rules/authentication-and-session.md#credentials-and-registration) y [Data](../../../rules/data.md#entities). La selección concreta de hash, sesión y validación backend no queda aprobada por este diagrama.
 
 ```mermaid
 sequenceDiagram
@@ -38,7 +38,7 @@ sequenceDiagram
     user->>web: completar formulario validado con Zod
     web->>api: POST de registro por HTTPS al ALB
     api->>api: validar DTO en servidor y aplicar hash seguro
-    api->>orm: abrir transacción de alta (propuesto)
+    api->>orm: abrir transacción de alta obligatoria
     orm->>db: INSERT User, Office, OfficeMember owner y Room principal
     alt email ya registrado
         db-->>api: violación de unicidad
@@ -95,7 +95,7 @@ sequenceDiagram
     Note over api,colyseus: Colyseus no confía en el cliente
 ```
 
-El ticket de corta vida y el snapshot inicial no figuran en la fuente: el primero materializa la autorización previa sin reutilizar la sesión completa, el segundo es el mecanismo de sincronización que el documento no detalla. Lo que sí es regla es el orden: la autorización se verifica en el servidor ([documento maestro](../../../master-document.md)), y Colyseus revalida el ticket contra NestJS en lugar de aceptar la palabra del cliente. El `alt` de 403 corta antes de abrir el WSS, de modo que un usuario sin membresía nunca llega a Colyseus.
+Los `403` de este ejemplo representan falta de permiso sobre el espacio solicitado; el caso de recurso de otra oficina mantiene la decisión `403`/`404` abierta en [Authentication](../../../rules/authentication-and-session.md#authorization-responses). El ticket de corta vida y el snapshot inicial no figuran en la fuente: el primero materializa la autorización previa sin reutilizar la sesión completa, el segundo es el mecanismo de sincronización que el documento no detalla. Lo que sí es regla es el orden: la autorización se verifica en el servidor ([documento maestro](../../../master-document.md)), y Colyseus revalida el ticket contra NestJS en lugar de aceptar la palabra del cliente. El `alt` de 403 corta antes de abrir el WSS, de modo que un usuario sin membresía nunca llega a Colyseus.
 
 ### 1.3 S3 — Movimiento de avatar
 
@@ -194,7 +194,7 @@ El orden es la garantía: el `INSERT` y la confirmación de RDS preceden a la di
 
 ### 1.6 S6 — Repaso diario del bot
 
-RF-BOT-003/004 y RF-BOT-006 a RF-BOT-009: solo lectura de datos autorizados, primera conexión autenticada del día y fallback estructurado. La fecha del servidor usa America/Argentina/Buenos_Aires, como las demás reglas del producto. La propuesta técnica debe distinguir reserva de generación y entrega completada: encontrar una reserva no prueba que el usuario ya recibió su repaso.
+RF-BOT-003/004 y RF-BOT-006 a RF-BOT-009: solo lectura de datos autorizados, primera conexión autenticada del día y fallback estructurado. La fecha del servidor usa America/Argentina/Buenos_Aires para el repaso, sin extender esa política a otras funciones, según [su regla](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing). La propuesta técnica debe distinguir reserva de generación y entrega completada: encontrar una reserva no prueba que el usuario ya recibió su repaso.
 
 ```mermaid
 sequenceDiagram
@@ -231,7 +231,7 @@ sequenceDiagram
     end
 ```
 
-La clave única usuario/fecha es una propuesta para evitar duplicados; recuperación de reservas, reintentos y confirmación de presentación necesitan contrato técnico antes de implementar. No se afirma entrega exactamente una vez por insertar un marcador anticipado. RF-BOT-008 permite el resumen sin IA y RF-BOT-009 agrega redacción IA como Could; el proveedor no bloquea el resumen estructurado. El bot no crea, modifica ni elimina tareas, reuniones o anuncios, **aunque el usuario se lo pida** (RF-BOT-004); esas acciones son Evolución (RF-BOT-010). Persistir la propia entrega del repaso no habilita escritura de negocio por el bot.
+La clave única usuario/fecha y la decisión atómica son obligatorias según [Data](../../../rules/data.md#constraints-and-uniqueness) y [la regla del bot](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing); recuperación de reservas, reintentos y confirmación de presentación necesitan contrato técnico antes de implementar. No se afirma entrega exactamente una vez por insertar un marcador anticipado. RF-BOT-008 permite el resumen sin IA y RF-BOT-009 agrega redacción IA como Could; el proveedor no bloquea el resumen estructurado. El bot no crea, modifica ni elimina tareas, reuniones o anuncios, **aunque el usuario se lo pida** (RF-BOT-004); esas acciones son Evolución (RF-BOT-010). Persistir la propia entrega del repaso no habilita escritura de negocio por el bot.
 
 ### 1.7 S7 — Reconexión, token expirado y logout
 

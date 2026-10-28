@@ -10,7 +10,7 @@
 | 0.1 | 2026-10-22 | Equipo | Documento maestro inicial y alcance arquitectónico base. |
 | 0.2 | 2026-10-26 | Luis Calegari | Alineación con la ERS (`docs/functional-requirements.md`): modelo de Oficinas y Habitaciones, matriz de roles por oficina sin Superadmin, invitaciones por enlace único con vencimiento, chat de oficina/habitación para MVP y bot de IA acotado a consultas y resúmenes. |
 
-**Fuentes y estado:** la [ERS de Luis](docs/functional-requirements.md) define el comportamiento funcional, las reglas RN y las prioridades del MVP. Las [decisiones de requisitos](docs/requirements-decision.md#confirmaciones-para-la-alineación-documental) registran las confirmaciones de Three.js + React Three Fiber, zona horaria para todo el producto y propiedad no transferible. Este documento conserva el alcance y las decisiones generales; los diagramas son vistas derivadas, no los reemplazan. Lo descrito es objetivo de entrega, no evidencia de implementación. Los supuestos de la ERS no confirmados expresamente siguen pendientes.
+**Fuentes y estado:** la [ERS de Luis](docs/functional-requirements.md) define el comportamiento funcional, las reglas RN y las prioridades del MVP. Las [decisiones de requisitos](docs/requirements-decision.md#confirmaciones-para-la-alineación-documental) registran las confirmaciones de Three.js + React Three Fiber, propiedad no transferible y conciliación posterior con las reglas del PR #5. Las restricciones se consultan en [rules/](rules/README.md) y sus motivos en la [justificación técnica](docs/technical-justification.md). Este documento conserva el alcance y las decisiones generales; los diagramas son vistas derivadas, no los reemplazan. Lo descrito es objetivo de entrega, no evidencia de implementación. Los supuestos de la ERS no confirmados expresamente siguen pendientes.
 
 ## 1. Visión y objetivo
 
@@ -91,7 +91,7 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 - Listado y tablero Kanban para organización.
 - Fechas, estados y responsables de tareas según las reglas del módulo.
 - Calendario y reuniones vinculados a las habitaciones correspondientes.
-- Fechas, horas de visualización, programación local y reglas por día usan **America/Argentina/Buenos_Aires para todo el producto** (RN-19), no solo para el repaso diario. Los instantes conservan una representación inequívoca con zona u offset; las fechas sin hora no se convierten accidentalmente en instantes ni cambian por la zona del navegador, según las [reglas de datos y tiempo](rules/data-and-time.md#dates-and-time-zones).
+- Fechas e instantes siguen [Data and time](rules/data-and-time.md#dates-and-time-zones). La zona del repaso se define en [su regla](rules/ai-bot-and-daily-briefing.md#daily-briefing), sin herencia implícita a otras funciones; reuniones sigue [Communication and meetings](rules/communication-and-meetings.md#meetings-and-attendance). La representación de almacenamiento pendiente de la ERS se conserva abierta en [Data](rules/data.md#open-decisions).
 - Validación de datos, feedback de errores y actualización de vistas sin perder el contexto del entorno 3D.
 
 ### 2.6 Acceso, roles y permisos 
@@ -488,6 +488,7 @@ docs/
   architecture.md
   diagrams/
     README.md
+    review-guide.md
     01-functional/
       README.md
       use-cases.md

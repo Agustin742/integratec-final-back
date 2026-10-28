@@ -148,6 +148,6 @@ Resumen de la [matriz de la ERS](../../functional-requirements.md#3-permisos). R
 | Dar de baja/recuperar oficina | No | No | No | Sí |
 | Transferir propiedad | No | No | No | No |
 
-Toda operación se valida en servidor: sin sesión `401`; con sesión pero sin permiso `403` (RN-16). No se propone devolver `404` en reemplazo de los rechazos exigidos por la ERS. Ocultar botones no sustituye autorización. La pérdida de acceso también impide leer historial, desconecta presencia de esa habitación y deja tareas asignadas huérfanas (RN-12, HAB-010); la expulsión preserva los contenidos generados (RN-13).
+Toda operación se valida en servidor: sin sesión `401`; con sesión pero sin permiso `403` (RN-16). Para recursos de otra oficina, la elección uniforme `403`/`404` sigue abierta en [Authentication and session](../../../rules/authentication-and-session.md#authorization-responses); los ejemplos no la resuelven. La [matriz normativa](../../../rules/rooms-and-permissions.md#permission-matrix) y [Tasks](../../../rules/tasks-and-productivity.md) gobiernan esta vista. Ocultar botones no sustituye autorización. La pérdida de acceso también impide leer historial, desconecta presencia de esa habitación y deja tareas asignadas huérfanas (RN-12, HAB-010); la expulsión preserva los contenidos generados (RN-13).
 
 [Índice](../README.md) · [Arquitectura](../02-system-architecture/deployment-and-network.md) →

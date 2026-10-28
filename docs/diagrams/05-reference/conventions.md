@@ -29,7 +29,7 @@ Estas convenciones derivan de la [ERS](../../functional-requirements.md), las [d
 | `422` | (propuesto) DTO válido en forma pero inválido en regla de negocio | Validación con Zod después de los guards |
 | `429` | (propuesto) Límite de consumo de IA excedido | Endpoints del bot |
 
-RN-16 define `401` y `403` para HTTP; no se reemplaza 403 por 404 para los casos exigidos por la ERS. La no revelación de recursos ajenos se respeta sin publicar detalles internos. Solo estos dos códigos están fijados en esta vista. El resto es propuesta y debe confirmarse antes de implementar el manejador global de errores.
+Las respuestas siguen [Authentication and session](../../../rules/authentication-and-session.md#authorization-responses). Para recursos de otra oficina, la elección uniforme `403`/`404` sigue abierta; no se revela existencia ni se decide un código por dibujarlo. Los demás códigos de la tabla son propuestas.
 
 ### 1.2 Orden obligatorio de verificación
 
@@ -39,8 +39,8 @@ Todo endpoint protegido ejecuta, en este orden: **autenticación → autorizaci�
 
 | Operación | Riesgo | Mecanismo |
 |---|---|---|
-| Repaso diario del bot | Dos repasos el mismo día | (propuesto) Clave usuario/fecha y reserva atómica; no confundir generación pendiente con entrega completada; ver S6 |
-| Alta de usuario | Dos cuentas con el mismo email | (propuesto) Índice único normalizado; email como login es supuesto P-01 |
+| Repaso diario del bot | Dos repasos el mismo día | Unicidad usuario/fecha y decisión atómica obligatorias según [Data](../../../rules/data.md#constraints-and-uniqueness); reserva, recuperación y confirmación concretas siguen abiertas, ver S6 |
+| Alta de usuario | Dos cuentas con el mismo email | Unicidad de email normalizado obligatoria según [Data](../../../rules/data.md#constraints-and-uniqueness); email como login conserva el supuesto P-01 |
 | Mensaje de chat | Duplicado por reintento | (propuesto) Idempotency key por mensaje del cliente |
 | Escritura persistente + difusión | Difusión repetida | (propuesto) `revision` monotónica por sala; el cliente descarta revisiones viejas |
 
@@ -58,4 +58,4 @@ Posición por fotograma, posiciones transitorias, estados interpolados de avatar
 
 ## 2. Tiempo y alcance de datos
 
-America/Argentina/Buenos_Aires aplica al producto completo para presentación, programación local y reglas por día; no convierte una fecha sin hora en un instante. El servidor decide vencimientos y plazos. Ver [Data and time](../../../rules/data-and-time.md). Toda lectura/escritura distingue oficina activa, membresía activa y acceso de habitación. La membresía sola no habilita contenidos de todas las habitaciones.
+La zona del repaso sigue [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing), sin herencia implícita a otras funciones. Reuniones sigue [Communication and meetings](../../../rules/communication-and-meetings.md#meetings-and-attendance). Fechas e instantes siguen [Data and time](../../../rules/data-and-time.md); almacenamiento permanece abierto donde lo indica [Data](../../../rules/data.md#open-decisions).

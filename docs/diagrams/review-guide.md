@@ -35,20 +35,24 @@ Los nombres abreviados del dibujo corresponden al historial local de preparació
 ## Qué confirmar
 
 - La [ERS](../functional-requirements.md) y sus RF/RN gobiernan el comportamiento; los supuestos P# permanecen visibles.
-- [Propiedad, renderizado y zona horaria](../requirements-decision.md#confirmaciones-para-la-alineación-documental) reflejan las confirmaciones de Alejo: no transferencia, Three.js + R3F y Buenos Aires para todo el producto.
+- La [conciliación posterior](../requirements-decision.md#confirmaciones-para-la-alineación-documental) sigue las [reglas integradas del PR #5](../../rules/README.md) y enlaza la [justificación técnica](../technical-justification.md). Se mantienen no transferencia y Three.js + R3F; zona horaria y respuestas se rigen por sus reglas específicas, incluidas las decisiones abiertas.
 - Oficina, membresía, acceso y liderazgo no se confunden; la principal no es una sala general global.
 - Tareas colaborativas y columnas configurables, canales de oficina/habitación, asistencia MVP y bot solo lectura coinciden entre vistas.
 - Invitaciones pueden tener límite opcional de usos; expulsión conserva contenido; baja de oficina se recupera durante 15 días.
 - No hay esquemas Prisma, endpoints, guards ni mecanismos de entrega aprobados simplemente por estar dibujados.
+
+## Conciliación con el PR #5
+
+El PR #5 ya fue integrado por el equipo. Su `develop` se incorpora solo a la rama del PR #6, preservando la historia de Agustín. Los cortes anteriores de la tabla son históricos: el estado vigente es el head del PR #6. Registro atómico, unicidad de entrega y hash de invitación son restricciones obligatorias, no propuestas. Métodos, campos y contratos concretos siguen propuestos donde las reglas los dejan abiertos. No se mergea el PR #6 a `develop`.
 
 ## Verificación observada y límites
 
 En el estado de documentación alineada se observaron:
 
 - **5 tests de tooling CI:** pasan. No son pruebas de una aplicación backend.
-- **Enlaces internos Markdown:** pasan; el cierre añade esta guía a los documentos revisados.
+- **Enlaces internos Markdown:** pasan para 55 archivos tras incorporar la documentación del PR #5.
 - **Whitespace:** se comprueba el diff completo contra `develop`, incluidos los documentos originales, para coincidir con el alcance real del PR y su CI.
-- **Lectura estructural:** 24 bloques Mermaid, nueve comprobaciones de alineación y conservación de la ascendencia Git original. No es un parser de gramática Mermaid.
+- **Lectura estructural:** 24 bloques Mermaid en `docs/diagrams/` y conservación de las historias originales. La conciliación comprueba referencias a las reglas y decisiones abiertas sin confundirlas con propuestas; no es un parser de gramática Mermaid.
 
 **No verificado:** render visual/gramática con Mermaid y validación local actionlint, porque esos ejecutables no están instalados. No se instalaron dependencias. No hay código de aplicación ni despliegue que probar como parte de esta actualización. Se corrigieron antes del cierre un enlace de ancla, whitespace nuevo y errores del script local de inspección; no quedan esos controles fallando. La primera inspección de llaves confundía cardinalidades ER con bloques y se corrigió para contar solo declaraciones.
 

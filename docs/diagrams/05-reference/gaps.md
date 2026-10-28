@@ -15,11 +15,11 @@ La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirem
 | 3 | Tick rate y movimiento | Sin frecuencia aprobada; validar límites/colisiones es funcional (RF-MUN-005/007) | Realtime, S3 |
 | 4 | Endpoints, verbos y DTOs | Propuestos, no catálogo implementado | Casos de uso, secuencias |
 | 5 | Errores fuera de 401/403 | Propuestos; RN-16 fija autenticación y autorización HTTP | Convenciones |
-| 6 | Campos, claves, índices y tipos SQL | Diseño backend pendiente; ERS §7 sí define entidades conceptuales | Modelo ER |
+| 6 | Campos, claves, índices y tipos SQL | [Data](../../../rules/data.md) ya fija entidades, claves foráneas y unicidades obligatorias; nombres, tipos e índices concretos permanecen abiertos donde la regla lo indica | Modelo ER |
 | 7 | Cardinalidades | ERS define oficina/habitaciones, avatar, membresía, acceso y liderazgo; sesiones e historial del bot son diseño técnico | Modelo ER |
 | 8 | Matriz de permisos | Definida en ERS §3 y RN-07 a RN-11; conservar supuestos P-07/P-08/P-13 explícitos | Casos de uso, clases |
 | 9 | Visibilidad de habitación | Acceso por oficina y habitación, no enum público/global propuesto; principal accesible a miembros (RN-03/04) | Arquitectura, ER |
-| 10 | Invitaciones | Funcional definido RF-OFI-005 a 009: enlace único, vencimiento, revocación, límite opcional de usos. Tokens y duración concreta pendientes (P-03) | S8, ER |
+| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Rooms](../../../rules/rooms-and-permissions.md#invitations-and-membership-changes) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
 | 11 | Solicitud de ingreso | Could · Evolución, RF-OFI-018; no aprobación adicional en canje de enlace MVP | S9 |
 | 12 | Expulsión y revocación | RN-12/13 y RF-OFI-012: baja lógica, conservar contenido, acceso revocado y tareas huérfanas; no se añade ban | S10, clases |
 | 13 | Estados de tarea | RF-TAR-004/006/007: columnas configurables, no enum fijo. Nombres iniciales en P-14; migración pendiente | ER, S4 |
@@ -31,16 +31,17 @@ La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirem
 | 19 | Sala general | Resuelto: no existe sala global; cada oficina tiene principal no eliminable, hasta 5 adicionales (RN-04/05) | Arquitectura, ER |
 | 20 | Historial de chat | Persistencia y control definidos (RF-CHA-006/007); recuperación de acceso está señalada P-11; retención técnica pendiente | S5, canales |
 | 21 | Uploads S3 | Endpoints, tipos, autorización y entrega de objetos pendientes; no se aprueban por topología | Arquitectura |
-| 22 | Socket.IO | Solo uso puntual justificado según maestro; no hay caso adicional aprobado en estas vistas | Arquitectura, realtime |
-| 23 | Entrega de repaso diario | RF-BOT-007 fija una vez por día; clave usuario/fecha, reservas, recuperación y confirmación son propuestas | ER, S6 |
+| 22 | Socket.IO | Excluido del MVP según [Realtime](../../../rules/realtime-and-presence.md#scaling-and-deployment); cualquier uso requiere justificación independiente | Arquitectura, realtime |
+| 23 | Entrega de repaso diario | Unicidad usuario/fecha y decisión atómica obligatorias en [Data](../../../rules/data.md#constraints-and-uniqueness); reservas, recuperación y confirmación concretas abiertas en [Bot](../../../rules/ai-bot-and-daily-briefing.md#open-decisions) | ER, S6 |
 | 24 | Camino de chat | REST para envío + WSS para difusión es propuesta; contrato debe servir oficina y habitación, aunque usuario cambie de habitación | S5, realtime |
 | 25 | Tareas ajenas y administración | ERS §3: tareas colaborativas con acceso; solo Dueño nombra Admin; Líder solo gestiona su habitación y contenido propio | Casos de uso, S12 |
-| 26 | Rechazo de recurso ajeno | RN-16/HAB-011 exigen 403 sin permiso y no revelar existencia; no se reemplaza unilateralmente por 404 | Convenciones, autorización |
+| 26 | Rechazo de recurso ajeno | [Authentication](../../../rules/authentication-and-session.md#authorization-responses) mantiene abierta la elección uniforme 403/404 para recursos de otra oficina, sin revelar existencia; no se elige aquí | Convenciones, autorización |
 | 27 | Moderador | Retirado del diseño: roles de oficina Dueño/Admin/Miembro y liderazgo de habitación separado | Casos de uso, clases |
 
 ### Decisiones confirmadas y pendientes que no deben confundirse
 
-- **Confirmadas:** Three.js + R3F elegidos; Buenos Aires para todo el producto; propiedad única y no transferible según Luis (RN-02/RN-15).
+- **Confirmadas:** Three.js + R3F elegidos y propiedad no transferible. La [conciliación](../../requirements-decision.md#confirmaciones-para-la-alineación-documental) sigue las reglas integradas del PR #5 para zona horaria, respuestas y restricciones de persistencia; sustituye la anterior generalización de zona horaria.
+- **Normas y motivos:** [reglas de dominio](../../../rules/README.md) y [justificación técnica](../../technical-justification.md), sin duplicar sus explicaciones ni reabrir lo ya obligatorio.
 - **Ciclo de oficina:** baja lógica, recuperación durante 15 días y eliminación definitiva están descritas en RN-14 y RF-OFI-014 a 016. P-05 (crear otra oficina después) sigue abierto.
 - **Supuestos ERS:** recuperación por email, eliminación de habitación, permisos propuestos y prioridades conservan sus P#; no se decide aquí la implementación ni se dan por cerrados por reproducirlos en un diagrama.
 - **Integración:** dueño y distribución de contratos entre frontend/backend, routing de canales de oficina/habitación/usuario y mecanismos de entrega requieren diseño técnico coordinado.

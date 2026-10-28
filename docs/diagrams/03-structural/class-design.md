@@ -16,7 +16,7 @@
 
 ### 1.1 Clases por capa
 
-Esta vista propone responsabilidades, no clases implementadas. Nombres, métodos, DTOs y guards son propuestas técnicas sujetas a la [ERS](../../functional-requirements.md). Se separan frontend previsto en Amplify, NestJS y Colyseus en ECS/Fargate, sin memoria compartida. La propiedad y distribución de contratos entre repositorios sigue pendiente.
+Esta vista propone responsabilidades, no clases implementadas. Nombres, métodos, DTOs y guards son propuestas técnicas sujetas a la [ERS](../../functional-requirements.md). Se separan frontend previsto en Amplify, NestJS y Colyseus en ECS/Fargate, sin memoria compartida. La propiedad y distribución de contratos entre repositorios sigue pendiente. Las responsabilidades deben cumplir [Architecture](../../../rules/architecture.md#module-boundaries-inside-nestjs), [Authentication](../../../rules/authentication-and-session.md) y [Rooms](../../../rules/rooms-and-permissions.md); estos nombres de clases no sustituyen esas reglas.
 
 ```mermaid
 classDiagram

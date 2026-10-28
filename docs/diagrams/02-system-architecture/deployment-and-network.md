@@ -65,6 +65,8 @@ flowchart LR
   colyseus -.->|"credenciales en runtime"| secrets
 ```
 
+Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento. Los recursos deben gestionarse con [Terraform](../../../rules/infrastructure-as-code.md), respetando [AWS infrastructure](../../../rules/aws-infrastructure.md); alternativas y concesiones se explican en la [justificación técnica](../../technical-justification.md#5-deployment). No se afirma infraestructura desplegada.
+
 **Autoridad de cada dato**
 
 | Dato | Autoridad | Persistencia | Transporte |

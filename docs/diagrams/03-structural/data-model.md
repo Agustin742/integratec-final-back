@@ -16,7 +16,7 @@
 
 Esta sección fija el **modelo de dominio**: qué entidades existen y cómo se relacionan. La estructura de clases por capa está en [Clases por capa](./class-design.md#11-clases-por-capa). Ninguna de las dos es una especificación ejecutable.
 
-La [ERS, sección 7](../../functional-requirements.md#7-entidades-conceptuales), define entidades conceptuales y la [sección 3](../../functional-requirements.md#3-permisos) define permisos. Esta vista los traduce a nombres técnicos propuestos, no a un esquema Prisma aprobado ni a DDL. Los atributos, tipos genéricos, claves y mecanismos concretos deben validarse antes de implementar migraciones; no existe un límite de doce entidades. Las restricciones funcionales citadas por RN/RF sí deben preservarse. Se aplican las [reglas de datos y tiempo](../../../rules/data-and-time.md).
+La [ERS, sección 7](../../functional-requirements.md#7-entidades-conceptuales), define entidades conceptuales y la [sección 3](../../functional-requirements.md#3-permisos) define permisos. Esta vista los traduce a nombres técnicos propuestos, no a un esquema Prisma aprobado ni a DDL. Los atributos, tipos genéricos, claves y mecanismos concretos deben validarse antes de implementar migraciones; no existe un límite de doce entidades. Las restricciones funcionales y de persistencia obligatorias se consultan en [Data](../../../rules/data.md); solo lo que esa regla deja abierto sigue siendo propuesto. Se aplican las [reglas de datos y tiempo](../../../rules/data-and-time.md).
 
 ### 1.1 Modelo de dominio
 
@@ -154,8 +154,8 @@ erDiagram
     uuid id PK
     string title
     string description
-    datetime scheduledAt
-    int durationMin
+    datetime startsAt
+    datetime endsAt
     string state "activa o cancelada"
     uuid roomId FK
     uuid createdById FK
@@ -263,9 +263,9 @@ erDiagram
   }
 ```
 
-`Invitation` y `Attendance` corresponden al MVP; `JoinRequest` es **Evolución** (RF-OFI-018), no una alternativa obligatoria a la invitación. Una invitación pertenece a la oficina y solo la emite/revoca Dueño o Admin; su aceptación incorpora como Miembro con acceso inicial a la principal, sin aprobación posterior de un Líder (RN-06/RN-11). Debe estar vigente y no revocada; el límite de usos es opcional (RF-OFI-005), por lo que `usedCount < maxUses` aplica solo si hay límite. Guardar hash del token y consumirlo de forma atómica son propuestas técnicas, no un contrato de código ya aprobado.
+`Invitation` y `Attendance` corresponden al MVP; `JoinRequest` es **Evolución** (RF-OFI-018), no una alternativa obligatoria a la invitación. Una invitación pertenece a la oficina y solo la emite/revoca Dueño o Admin; su aceptación incorpora como Miembro con acceso inicial a la principal, sin aprobación posterior de un Líder (RN-06/RN-11). Debe estar vigente y no revocada; el límite de usos es opcional (RF-OFI-005), por lo que `usedCount < maxUses` aplica solo si hay límite. Guardar solo hash y validar/consumir el uso atómicamente son obligatorios según [Rooms and permissions](../../../rules/rooms-and-permissions.md#invitations-and-membership-changes); formato y campos concretos siguen siendo diseño, no código implementado.
 
-`Attendance` es única por usuario/reunión. Las respuestas, el acceso a la reunión y la cancelación respetan RF-CAR-006/007. El código de invitación, las claves de unión y los campos de estado requieren diseño de datos backend; no se genera ninguna migración con esta actualización.
+El inicio y fin de reunión deben conservar un intervalo válido según [Communication](../../../rules/communication-and-meetings.md#meetings-and-attendance); los nombres de campos son ilustrativos. `Attendance` es única por usuario/reunión. Las respuestas, el acceso a la reunión y la cancelación respetan RF-CAR-006/007. El código de invitación, las claves de unión y los campos de estado requieren diseño de datos backend; no se genera ninguna migración con esta actualización.
 
 ---
 

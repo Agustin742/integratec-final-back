@@ -43,12 +43,14 @@ Estas confirmaciones de Alejo durante la revisión de alineación mantienen la E
 | Tema | Decisión y fundamento | Referencia |
 | --- | --- | --- |
 | Renderizado | **Three.js + React Three Fiber están elegidos** para el mundo 3D real e integración declarativa con React. La selección ya no está pendiente; PixiJS 2.5D queda descartado, según la justificación del documento maestro. | [Documento maestro, sección 3.1](../master-document.md#31-entorno-tridimensional-isométrico) y sección 11 |
-| Zona horaria | **America/Argentina/Buenos_Aires para todo el producto**, no solo para el repaso diario. Se aplica a visualización, programación local y reglas por día; se preserva la distinción entre instantes inequívocos y fechas sin hora, sin depender de la zona del navegador. | ERS RN-19 y [reglas de datos y tiempo](../rules/data-and-time.md#dates-and-time-zones) |
+| Zona horaria | Se siguen las reglas integradas de Agustín (PR #5), por indicación posterior de Alejo: Buenos Aires para el día del repaso, sin herencia implícita; las reuniones tienen su regla propia. Esto reemplaza la confirmación anterior de alcance global, sin decidir la representación de almacenamiento pendiente de la ERS. | [Repaso](../rules/ai-bot-and-daily-briefing.md#daily-briefing), [reuniones](../rules/communication-and-meetings.md#meetings-and-attendance), [Data](../rules/data.md#open-decisions) |
 | Propiedad de oficina | Se acepta la regla de Luis: **un único Dueño, sin transferencia de propiedad**. El Dueño no abandona su oficina; puede darla de baja. Se descarta la transferencia mencionada antes en el maestro. | ERS RN-02, RN-15, RF-OFI-013 a RF-OFI-016 |
 | Alta de espacios | El registro crea automáticamente la **oficina propia y su habitación principal**. No hay una acción para crear una segunda oficina propia ni una sala general global. | ERS RN-01, RN-04, RF-AUT-001 y RF-OFI-001 |
 | Invitaciones | **Enlace único no significa de un solo uso**. Tiene vencimiento, es revocable y puede tener un límite opcional de usos; no se impone un consumo único por defecto. | ERS RF-OFI-005 a RF-OFI-009 |
 
 La baja de oficina es lógica y recuperable por el Dueño durante 15 días; después se elimina definitivamente (RN-14). Sigue abierto **P-05**: si el usuario podrá crear una oficina nueva después de esa eliminación. Esta alineación no resuelve ese punto ni cambia la ERS o sus historias.
+
+Alejo pidió respetar también las respuestas de [Authentication and session](../rules/authentication-and-session.md#authorization-responses): `401` sin autenticación, `403` sin permiso y elección uniforme `403`/`404` todavía abierta para recursos de otra oficina, sin revelar su existencia. No se elige una opción mediante un diagrama. Las restricciones ya obligatorias de [Data](../rules/data.md) y [Architecture](../rules/architecture.md) no son propuestas por estar dibujadas.
 
 Los diagramas deben reflejar estos contratos. Sus nombres de clases, eventos, endpoints o campos siguen siendo propuestas cuando no hay un contrato técnico aprobado; Mermaid no reemplaza la autoridad de los requisitos.
 

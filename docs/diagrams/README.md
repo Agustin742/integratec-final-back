@@ -71,12 +71,13 @@ flowchart TD
 
 1. **Mermaid como formato editable:** Los diagramas son código Mermaid en Markdown. Son vistas derivadas de la ERS, las decisiones y las reglas; no una fuente de requisitos nuevos ni evidencia de implementación. La representación visual debe verificarse con un renderer compatible, no asumirse por usar Mermaid.
 2. **Autoridad Única:** NestJS y PostgreSQL son la autoridad exclusiva de los datos persistentes (usuarios, salas, tareas, chat). Colyseus gestiona únicamente estado efímero en memoria (presencia y movimiento).
-3. **Regla de Escritura y Difusión:** El cliente envía las acciones persistentes por HTTPS REST a NestJS; una vez confirmada la escritura en RDS, NestJS notifica a Colyseus para que difunda el evento a la sala.
+3. **Persistencia antes de difusión:** NestJS valida y confirma en RDS antes de notificar a destinatarios autorizados. Las secuencias REST son ejemplos; el camino de envío del chat permanece abierto según [Communication and meetings](../../rules/communication-and-meetings.md#chat).
 
 ---
 
 ## 4. Fuentes y Mantenimiento
 
+- **Normas y motivos:** [reglas de dominio y arquitectura](../../rules/README.md), [justificación técnica](../technical-justification.md) y [arquitectura general](../architecture.md). Estas vistas detallan casos, entidades y secuencias, sin duplicar sus políticas.
 - **Base funcional:** [ERS](../functional-requirements.md), [historias](../user-stories.md) y [decisiones](../requirements-decision.md). Roles, fases y prioridades vienen de sus RF/RN; los supuestos P# siguen visibles.
 - **Documento Maestro:** [master-document.md](../../master-document.md) es la fuente de verdad del producto. Los diagramas ilustran su arquitectura objetivo.
 - **Reglas del Proyecto:** Las especificaciones de [rules/security.md](../../rules/security.md) y [rules/project-requirements.md](../../rules/project-requirements.md) son de cumplimiento mandatorio.
@@ -86,4 +87,4 @@ La [guía de revisión](./review-guide.md) describe la entrega en un único PR h
 
 ## 5. Alcance de esta alineación
 
-Oficinas con principal y habitaciones adicionales; membresía de oficina separada de acceso y liderazgo; columnas configurables, tareas colaborativas, chat por oficina/habitación, asistencia MVP y bot de solo lectura. Se conserva la organización original de vistas, actualizando su contenido según la ERS de Luis. La propiedad no se transfiere; el Dueño puede dar de baja y recuperar durante 15 días. Three.js + R3F están elegidos y Buenos Aires es la zona del producto. No se implementa backend, migración ni infraestructura con estos documentos.
+Oficinas con principal y habitaciones adicionales; membresía de oficina separada de acceso y liderazgo; columnas configurables, tareas colaborativas, chat por oficina/habitación, asistencia MVP y bot de solo lectura. Se conserva la organización original de vistas, actualizando su contenido según la ERS de Luis. La propiedad no se transfiere; el Dueño puede dar de baja y recuperar durante 15 días. Three.js + R3F están elegidos; zona horaria y respuestas siguen sus reglas específicas, sin resolver decisiones abiertas. No se implementa backend, migración ni infraestructura con estos documentos.

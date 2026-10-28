@@ -77,7 +77,7 @@ Los nombres de la tabla son los ocho eventos que lista el documento fuente, más
 
 ### 1.3 Regla de consistencia y autoridad
 
-Una escritura persistente tiene un único camino válido. El cliente no la manda a Colyseus: la manda a NestJS por REST, y Colyseus solo aparece después de que RDS confirmó.
+Se ilustra el camino REST propuesto, seguido de difusión después del commit. La autoridad de persistencia es NestJS; el transporte de envío del chat sigue abierto entre REST y un mensaje realtime validado y procesado por NestJS, según [Communication](../../../rules/communication-and-meetings.md#chat). El ejemplo no descarta esa alternativa ni duplica la [regla de arquitectura](../../../rules/architecture.md#integration-between-nestjs-and-colyseus).
 
 ```mermaid
 sequenceDiagram
@@ -109,8 +109,8 @@ Reglas operativas:
 
 1. **Autoridad única de escritura:** NestJS, con Prisma como único acceso a RDS. Colyseus no persiste nada y no puede promover un estado efímero a persistente por su cuenta ([documento maestro](../../../master-document.md)).
 2. **Nunca se persiste lo efímero:** posición por fotograma, posiciones transitorias, conexiones activas, presencia y estados interpolados no son filas de la base ([documento maestro](../../../master-document.md)).
-3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual, solo se pierde la difusión. La fuente de verdad es RDS; el documento no define cómo se recuperan los eventos perdidos, así que la resincronización por REST al reconectar es una propuesta.
-4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada en RDS y el fallo es del plano efímero. No hay garantía de entrega exacta ni de deduplicación definida; registrar el fallo y reconciliar por REST es propuesta.
+3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual, solo se pierde la difusión. La fuente de verdad es RDS; el documento no define cómo se recuperan los eventos perdidos, así que la recuperación de notificaciones perdidas es obligatoria según [Architecture](../../../rules/architecture.md#integration-between-nestjs-and-colyseus); su protocolo concreto sigue abierto.
+4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada en RDS y el fallo es del plano efímero. No hay garantía de entrega exacta ni de deduplicación definida; recuperar el cambio es obligatorio según [Architecture](../../../rules/architecture.md#integration-between-nestjs-and-colyseus), con mecanismo concreto por definir.
 5. **La autorización se verifica siempre en el servidor:** Colyseus valida sesión, oficina activa, membresía y acceso vigente antes de unir o reconectar al cliente ([documento maestro](../../../master-document.md)), y ni el cliente ni Colyseus deciden permisos por su cuenta ([documento maestro](../../../master-document.md)).
 
 
@@ -127,7 +127,7 @@ Extienden el [catálogo de la 04-realtime §1.2](#12-catálogo-de-eventos). Todo
 | `invitation:revoked` | Dueño/Admin de oficina | UC-22 | `{ officeId, invitationId }` | Indirecto (vía NestJS) |
 | `room:settings-changed` | Sala | UC-21 o UC-27 | `{ roomId, revision }` | Indirecto (vía NestJS) |
 
-No se propone un caso adicional de Socket.IO en estas vistas. El maestro permite uso puntual técnicamente justificado, sin reemplazar Colyseus; no se transforma esa posibilidad en obligación o prohibición nueva. La entrega por oficina/habitación/usuario necesita contratos de suscripción y revocación explícitos, no difusión indiscriminada a toda Room.
+Socket.IO está excluido del MVP según [Realtime and presence](../../../rules/realtime-and-presence.md#scaling-and-deployment); cualquier uso requiere justificación independiente y no sustituye a Colyseus. La entrega por oficina/habitación/usuario necesita contratos de suscripción y revocación explícitos, no difusión indiscriminada a toda Room.
 
 ---
 

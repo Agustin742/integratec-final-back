@@ -108,4 +108,4 @@ The reasoning behind these choices is in the [technical justification](./technic
 
 - Session mechanism and contract distribution between repositories.
 - Internal transport between NestJS and Colyseus.
-- Unmerged team diagram proposals differ from the requirements in role scoping, board status modeling, and the room model; the requirements prevail until the team reconciles them.
+- Detailed [design views](./diagrams/README.md) derive roles, board columns, and the office/room model from the domain rules. They supplement this overview without redefining its constraints.
