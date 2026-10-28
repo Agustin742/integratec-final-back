@@ -153,7 +153,7 @@ sequenceDiagram
 
 ### 1.5 S12 — Moderador intenta una acción exclusiva del Admin
 
-Caso de prueba negativo para la matriz de la [01-functional/use-cases.md](../01-functional/use-cases.md#14-matriz-de-permisos-por-rol-propuesto): un Moderador intenta cambiar el rol de otro miembro (UC-24). El rechazo ocurre antes de validar el DTO y de tocar Prisma, y manipular el cliente no cambia el resultado.
+Caso de prueba negativo para la matriz de la [01-functional/use-cases.md](../01-functional/use-cases.md#14-matriz-de-permisos-por-rol): un Moderador intenta cambiar el rol de otro miembro (UC-24). El rechazo ocurre antes de validar el DTO y de tocar Prisma, y manipular el cliente no cambia el resultado.
 
 ```mermaid
 sequenceDiagram
