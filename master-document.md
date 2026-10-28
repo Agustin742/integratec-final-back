@@ -452,23 +452,23 @@ La implementación seguirá entregas incrementales, con despliegue desde etapas 
 
 ## 13. Organización documental
 
-Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional podrá desarrollarse en los archivos propuestos de `rules/`, por ejemplo. Los nombres listados a continuación son **planificados, no una afirmación de que esos archivos ya existan**:
+Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional se desarrolla en los archivos de `rules/` y `docs/` de este repositorio (backend). Los archivos marcados como *(frontend)* son responsabilidad del repositorio frontend y **no existen en este repositorio**; los demás reflejan los nombres reales:
 
 ```text
 master-document.md
 rules/
   architecture.md
-  3d-world-and-camera.md
-  movement-and-interactions.md
-  art-direction.md
-  avatars-and-customization.md
-  colyseus-and-multiplayer.md
+  3d-world-and-camera.md                (frontend, aún planificado)
+  movement-and-interactions.md          (frontend)
+  art-direction.md                      (frontend)
+  avatars-and-customization.md          (frontend)
+  realtime-and-presence.md
   rooms-and-permissions.md
   tasks-and-productivity.md
   communication-and-meetings.md
   ai-bot-and-daily-briefing.md
   data.md
-  security-and-authentication.md
+  authentication-and-session.md
   aws-infrastructure.md
   quality-and-testing.md
 docs/
