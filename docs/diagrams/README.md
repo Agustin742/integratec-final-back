@@ -1,6 +1,6 @@
 # Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
-> **Directorio de arquitectura de diseño** · Plataforma de salas de convivencia y organización  
+> **Directorio de arquitectura de diseño** · Plataforma de salas de convivencia y organización
 > **Estado:** diseño objetivo alineado con la ERS; contratos técnicos propuestos, no implementación
 > **Última actualización:** 28 de octubre de 2026
 
@@ -82,7 +82,7 @@ flowchart TD
 - **Reglas del Proyecto:** Las especificaciones de [rules/security.md](../../rules/security.md) y [rules/project-requirements.md](../../rules/project-requirements.md) son de cumplimiento mandatorio.
 - **Actualización:** Cuando una decisión de código altere un contrato o resuelva un ítem de [05-reference/gaps.md](./05-reference/gaps.md), el PR correspondiente debe actualizar el diagrama asociado.
 
-La [guía de revisión](./review-guide.md) indica las ramas locales, sus bases y los controles observados, sin confundirlos con PRs publicados.
+La [guía de revisión](./review-guide.md) describe la entrega en un único PR hacia `develop`, los commits por tema y los controles observados.
 
 ## 5. Alcance de esta alineación
 
