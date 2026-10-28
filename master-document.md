@@ -10,6 +10,8 @@
 | 0.1 | 2026-10-22 | Equipo | Documento maestro inicial y alcance arquitectónico base. |
 | 0.2 | 2026-10-26 | Luis Calegari | Alineación con la ERS (`docs/functional-requirements.md`): modelo de Oficinas y Habitaciones, matriz de roles por oficina sin Superadmin, invitaciones por enlace único con vencimiento, chat de oficina/habitación para MVP y bot de IA acotado a consultas y resúmenes. |
 
+**Fuentes y estado:** la [ERS de Luis](docs/functional-requirements.md) define el comportamiento funcional, las reglas RN y las prioridades del MVP. Las [decisiones de requisitos](docs/requirements-decision.md#confirmaciones-para-la-alineación-documental) registran las confirmaciones de Three.js + React Three Fiber, propiedad no transferible y conciliación posterior con las reglas del PR #5. Las restricciones se consultan en [rules/](rules/README.md) y sus motivos en la [justificación técnica](docs/technical-justification.md). Este documento conserva el alcance y las decisiones generales; los diagramas son vistas derivadas, no los reemplazan. Lo descrito es objetivo de entrega, no evidencia de implementación. Los supuestos de la ERS no confirmados expresamente siguen pendientes.
+
 ## 1. Visión y objetivo
 
 Aplicación web de **convivencia, comunicación y organización en salas virtuales tridimensionales**, presentada desde una **cámara isométrica**. Los usuarios se representan mediante avatares personalizables, se desplazan por el escenario y acceden a herramientas de productividad mediante interacciones con el entorno.
@@ -35,12 +37,14 @@ La unidad organizativa del producto es la **Oficina**, que actúa como espacio c
 | **Oficina propia** | Se crea automáticamente al registrarse el usuario | Espacio propio persistente del usuario; configurable. |
 | **Oficinas compartidas** | Acceso por invitación mediante enlace único | Colaboración grupal, organización, tareas y convivencia. |
 | **Habitación principal** | Acceso para todos los miembros de la oficina | Punto de encuentro general, anuncios y tablero principal. |
-| **Habitaciones secundarias** | Acceso según asignación de membresía | Espacios temáticos, por área o privados configurables por Dueño, Administrador o Líder. |
+| **Habitaciones secundarias** | Acceso explícito para miembros; Dueño y Administrador acceden a todas | Espacios temáticos, por área o privados; creados, renombrados y eliminados por Dueño o Administrador. El Líder gestiona accesos a su habitación. |
 
-- Cada oficina cuenta con una **habitación principal** por defecto.
+- El registro crea automáticamente **una oficina propia y su habitación principal**, con el usuario como único Dueño; no puede crear una segunda oficina propia (RN-01, RF-OFI-001).
+- Cada oficina cuenta con una **habitación principal**, accesible para todos sus miembros y no eliminable, y hasta **5 habitaciones adicionales** (RN-04/RN-05). No existe una sala general global.
+- La propiedad **no se transfiere**. El Dueño no puede abandonar su oficina: puede darla de baja de forma lógica, recuperable durante **15 días** antes de la eliminación definitiva (RN-02, RN-14/RN-15). Sigue pendiente decidir si podrá crear otra tras esa eliminación (ERS P-05).
 - Las oficinas y habitaciones representan **espacios persistentes del producto**, independientemente de si hay avatares conectados en ese momento; la presencia es temporal.
 - El acceso entre habitaciones se realiza mediante puertas u objetos de transición 3D; el servidor siempre verifica permisos.
-- La incorporación de nuevos miembros se realiza mediante un **enlace único de invitación**, revocable y con vencimiento temporal.
+- La incorporación de nuevos miembros se realiza mediante un **enlace único de invitación**, revocable, con vencimiento temporal y límite opcional de usos (RF-OFI-005). Único no significa de un solo uso. Quien acepta ingresa como Miembro con acceso inicial solo a la habitación principal.
 - La configuración de privacidad y visibilidad será administrable por quienes tengan los permisos adecuados.
 - **Distinción técnica importante:** una habitación del producto almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus. Esta última gestiona una sesión de tiempo real asociada al espacio y sus usuarios conectados.
 
@@ -56,10 +60,10 @@ Los siguientes son **ejemplos, no una lista cerrada ni un límite de funcionalid
 | Puertas y accesos | Cambiar de sala con control de permisos. |
 | Computadora o pizarra | Abrir chat, notas o herramientas compartidas. |
 | Calendario | Revisar eventos, vencimientos y reuniones. |
-| Mascota o robot | Iniciar conversaciones y acciones con el bot IA. |
+| Mascota o robot | Consultar al bot IA y recibir resúmenes; acciones de escritura solo como evolución. |
 | Indicador de estado | Consultar o actualizar disponibilidad/actividad. |
 
-**Separación visual y funcional:** Three.js representa la escena 3D, detecta selecciones e interacciones con los objetos y comunica la intención a la aplicación. **React implementa las interfaces de los elementos interactuables cuando corresponda** (formularios, ventanas, paneles, chat, Kanban, calendarios y configuraciones). No toda interacción necesita una interfaz React: una puerta puede ejecutar una transición directamente, y un elemento decorativo puede responder con una animación 3D.
+**Separación visual y funcional:** Three.js, con React Three Fiber como integración declarativa elegida, representa la escena 3D, detecta selecciones e interacciones con los objetos y comunica la intención a la aplicación. **React implementa las interfaces de los elementos interactuables cuando corresponda** (formularios, ventanas, paneles, chat, Kanban, calendarios y configuraciones). No toda interacción necesita una interfaz React: una puerta puede ejecutar una transición directamente, y un elemento decorativo puede responder con una animación 3D.
 
 Las acciones con efectos de negocio se validan en el backend; interactuar con un objeto no otorga por sí mismo permisos sobre el recurso correspondiente.
 
@@ -83,20 +87,22 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 ### 2.5 Productividad
 
-- CRUD completo de tareas asociadas a usuarios y/o salas autorizadas.
+- CRUD completo de tareas de una **habitación**, disponible para cualquier miembro con acceso a ella; el responsable es opcional y debe tener acceso vigente al asignarse (RF-TAR-002 a RF-TAR-008).
 - Listado y tablero Kanban para organización.
 - Fechas, estados y responsables de tareas según las reglas del módulo.
-- Calendario y reuniones vinculados a los espacios correspondientes.
+- Calendario y reuniones vinculados a las habitaciones correspondientes.
+- Fechas e instantes siguen [Data and time](rules/data-and-time.md#dates-and-time-zones). La zona del repaso se define en [su regla](rules/ai-bot-and-daily-briefing.md#daily-briefing), sin herencia implícita a otras funciones; reuniones sigue [Communication and meetings](rules/communication-and-meetings.md#meetings-and-attendance). La representación de almacenamiento pendiente de la ERS se conserva abierta en [Data](rules/data.md#open-decisions).
 - Validación de datos, feedback de errores y actualización de vistas sin perder el contexto del entorno 3D.
 
 ### 2.6 Acceso, roles y permisos 
 
 - Registro, inicio de sesión seguro con hash y sesiones con vencimiento y revocación.
 - **Sin Superadministrador global:** los roles y permisos se gestionan de forma aislada dentro de cada oficina:
-  - **Dueño (Owner):** control total de la oficina; único que puede nombrar Administradores o transferir/eliminar la oficina.
+  - **Dueño (Owner):** único por oficina y no transferible; control total, único que nombra o quita Administradores y da de baja o recupera la oficina. No puede abandonarla.
   - **Administrador (Admin):** puede gestionar miembros, generar invitaciones, asignar Líderes y moderar anuncios/reuniones.
-  - **Líder de habitación (Leader):** gestiona el acceso y configuración de su habitación específica (puede haber varios).
+  - **Líder de habitación (Leader):** rol adicional por habitación (puede haber varios); gestiona acceso de miembros existentes y columnas del tablero, y publica anuncios/reuniones. Solo edita o elimina sus propios anuncios y edita o cancela sus propias reuniones; no crea, renombra ni elimina habitaciones, ni invita gente a la oficina.
   - **Miembro (Member):** participa en las habitaciones asignadas, interactúa con tareas y utiliza el chat.
+- Dueño y Administrador acceden a todas las habitaciones con permisos de Líder; el Administrador no puede actuar sobre el Dueño. El rol de oficina y el liderazgo de habitación son ámbitos distintos (RN-07 a RN-11).
 - Validación estricta en backend: cada endpoint HTTP o mensaje de red verifica membresía y permisos. Un usuario no puede acceder ni modificar recursos ajenos manipulando identificadores.
 
 ## 3. Experiencia y dirección visual
@@ -104,7 +110,7 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 ### 3.1 Entorno tridimensional isométrico 
 
 - **Representación:** escenas tridimensionales con geometría, modelos, materiales, iluminación y animaciones 3D.
-- **Tecnología principal:** **Three.js**, integrada en una aplicación **React**. **React Three Fiber** permite organizar declarativamente la escena Three.js desde React.
+- **Tecnología elegida:** **Three.js + React Three Fiber**, integrada en una aplicación **React**. React Three Fiber organiza declarativamente la escena Three.js desde React; la selección no está pendiente ni implica que la escena esté implementada.
 - **Cámara:** perspectiva isométrica, con proyección ortográfica y encuadre definido en `rules/`.
 - **Referencia de estética:** el lenguaje visual 3D de **Pokémon Pokopia** como referencia general de tono, claridad y legibilidad; no se copiarán personajes, modelos ni recursos del juego.
 - **Dirección artística detallada:** se especifica en `rules/art-direction.md`, sin fijar aquí paleta, proporciones, materiales ni características particulares.
@@ -158,17 +164,19 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Base de datos | **Amazon RDS for PostgreSQL** | Persistencia de usuarios, salas, membresías, tareas y mensajes. |
 | Acceso a datos | **Prisma ORM** | Consultas, relaciones y migraciones sobre PostgreSQL alojado en RDS; Prisma **no es** la base de datos. |
 | Repositorios | **Frontend:** `Agustin742/integratec-final-front`; **backend:** `Agustin742/integratec-final-back`. | Repositorios independientes, con CI, build y responsabilidad de despliegue propios. La distribución y propiedad de contratos entre repositorios siguen pendientes de decisión. |
-| IA | **Amazon Bedrock + herramientas NestJS** | Inferencia y ejecución de acciones autorizadas por el bot. |
+| IA | **Amazon Bedrock + herramientas NestJS** | Inferencia, consultas y resúmenes autorizados en el MVP; herramientas de escritura solo como evolución con confirmación explícita. |
 | Formularios y validación | **React Hook Form + Zod** | Formularios React y validación de entradas; el backend vuelve a validar. |
 | Kanban | **dnd-kit** | Interacciones de arrastrar y soltar en paneles React. |
 | Sonido | **Librerías de audio web** | Efectos y control de reproducción del entorno. |
 | Pruebas | **Vitest + Playwright** | Pruebas unitarias/integración y recorridos end-to-end. |
 | Calidad de código | **ESLint + Prettier** | Análisis estático y formato. |
-| Automatización | **GitHub Actions** | Ejecución de lint, tests y pipeline de despliegue. |
+| Automatización | **GitHub Actions** | CI documental y verificaciones de tooling existentes; lint/tests de aplicación y despliegue como objetivo al introducir los servicios. |
 | Infraestructura | **AWS** | Frontend, servicios persistentes, datos, archivos, identidad de servicios y observabilidad. |
 | Infraestructura como código | **Terraform** | Definición versionada y revisable de los recursos AWS; estado remoto en S3 y planes revisados antes de aplicar. Vive en el repositorio backend. |
 
 ## 6. Arquitectura general actualizada 
+
+La arquitectura siguiente describe el diseño previsto, no servicios ya implementados o desplegados. El estado observado del repositorio y su CI se documenta en el [README](README.md#ci).
 
 ### 6.1 Componentes
 
@@ -211,7 +219,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Entrada, salida y reconexión | Colyseus + verificación de permisos | Colyseus/WSS |
 | Estado persistente de objetos | NestJS / PostgreSQL | REST; difusión a clientes cuando corresponda |
 | Notificación de cambio en una sala activa | Colyseus, tras confirmar la operación | Colyseus/WSS |
-| Consultas y acciones del bot | NestJS + proveedor IA | HTTPS; eventos si se necesita actualización en vivo |
+| Consultas y resúmenes del bot (MVP) | NestJS + proveedor IA | HTTPS; eventos si se necesita actualización en vivo |
 | Mensajería en vivo | Colyseus en salas activas o canal dedicado justificado | Colyseus/WSS por defecto |
 
 **Eventos y contratos ilustrativos (no definitivos):** `avatar:input`, `avatar:state`, `presence:changed`, `room:joined`, `chat:message`, `task:changed`, `meeting:announced`, `bot:summary-ready`. Los cambios de datos persistentes ocurren primero a través de la autoridad de negocio y luego se difunden; se evitarán escrituras duplicadas o mensajes que no correspondan al estado confirmado.
@@ -225,12 +233,12 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 - NestJS valida las credenciales y gestiona las sesiones con expiración.
 - El ingreso a una instancia Colyseus requiere una identidad verificable y autorización para la sala asociada.
 - Las operaciones en NestJS y los mensajes/acciones recibidos en Colyseus aplican controles de permisos coherentes.
-- Se separan los roles globales (si se implementan) de las membresías y permisos particulares de una sala.
+- No hay Superadministrador ni rol global de gestión: se verifican el rol por oficina, el acceso y el liderazgo por habitación.
 - El backend debe responder correctamente **401** ante ausencia/invalidación de autenticación y **403** ante falta de permisos en endpoints HTTP protegidos. Los rechazos de conexión/mensajes de Colyseus deben representar los mismos principios, aunque no necesariamente tengan códigos de respuesta HTTP equivalentes.
 
 ### 6.4 Modelo de información (general)
 
-Entidades del dominio: `User`, `Session`, `AvatarConfiguration`, `Office`, `Room`, `OfficeMember`, `RoomAccess`, `RoomItem`, `Task`, `Message`, `Meeting`/`Announcement`, `BotConversation`, `DailyReviewDelivery`, `Invitation`. Las relaciones esenciales incluyen usuario↔oficinas mediante membresía, oficina→habitaciones, habitación→tareas/mensajes/elementos y usuario→resumen diario.
+La [vista conceptual de la ERS](docs/functional-requirements.md#7-entidades-conceptuales) define las entidades funcionales: usuario y avatar; oficina, membresía, invitación, habitación, acceso y liderazgo; objetos, columnas y tareas; anuncios, reuniones y asistencia; mensajes, notificaciones y entrega del repaso diario. Las relaciones esenciales incluyen usuario↔oficinas mediante membresía, oficina→habitaciones, acceso y liderazgo por habitación, habitación→columnas→tareas y mensajes de oficina o habitación. Sesiones y almacenamiento de conversaciones son detalles técnicos de diseño; no sustituyen entidades funcionales ni fijan un límite de entidades.
 
 **No son filas persistentes por defecto:** cada frame del movimiento, posiciones transitorias, conexiones activas o estados interpolados de avatares. El modelo relacional y sus restricciones se definirán en `rules/data.md`.
 
@@ -280,7 +288,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 | **ECS con Fargate** | Dos servicios de contenedores Node.js persistentes: NestJS y Colyseus. | Mantiene vivos los procesos y conexiones de salas; no se utiliza Lambda para hospedar las Rooms. |
 | **ECR** | Imágenes Docker versionadas de cada servicio. | GitHub Actions publica las imágenes; ECS despliega las versiones correspondientes. |
 | **RDS for PostgreSQL** | Base de datos relacional persistente. | NestJS se conecta por red privada y utiliza Prisma ORM para consultas/migraciones. Colyseus obtiene/verifica datos persistentes a través de la capa de negocio. |
-| **Amazon Bedrock** | Inferencia de modelos para el bot. | NestJS invoca Bedrock desde el servidor con permisos IAM y ejecuta sus propias herramientas autorizadas. |
+| **Amazon Bedrock** | Inferencia de modelos para el bot. | NestJS invoca Bedrock desde el servidor con permisos IAM y herramientas de consulta autorizadas en el MVP; no modifica datos por pedido del bot. |
 | **S3** | Archivos subidos y recursos del mundo 3D que requieran almacenamiento de objetos. | Acceso controlado desde el backend; recursos públicos se entregan con políticas de distribución adecuadas. |
 | **Secrets Manager + IAM** | Secretos de la aplicación y permisos entre servicios. | Credenciales y secretos no quedan en Git ni en el bundle del frontend. |
 | **CloudWatch + AWS Budgets** | Registros, observabilidad, alarmas y presupuesto. | Supervisión de fallos, latencia, consumo y costos continuos. |
@@ -326,12 +334,12 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 
 El MVP debe completar **un recorrido utilizable en producción**:
 
-1. Una persona se registra, inicia sesión y obtiene su sala personal.
+1. Una persona se registra y obtiene automáticamente su oficina propia con la habitación principal; inicia sesión y ve su lista de oficinas.
 2. Ingresa a la escena 3D isométrica, controla su avatar con WASD y mouse y puede interactuar con un elemento.
-3. Crea una sala compartida o accede a una autorizada y observa la presencia de otros usuarios cuando están conectados.
+3. Accede a su oficina o a otra mediante invitación y observa la presencia de sus miembros conectados. Dueño y Administrador pueden crear habitaciones adicionales dentro del límite de la oficina.
 4. Abre desde un objeto una interfaz React y administra tareas con **CRUD completo y persistencia real**.
 5. Intercambia mensajes en el contexto de una sala con autorización válida.
-6. Consulta anuncios o reuniones en la sala general.
+6. Consulta anuncios o reuniones de una habitación autorizada, incluida la principal de cada oficina.
 7. Interactúa con el bot y, en su primera conexión diaria, recibe el repaso de su día.
 8. Puede cerrar sesión; el sistema impide accesos no autorizados y conserva los datos luego de recargas y reinicios.
 
@@ -478,6 +486,28 @@ docs/
   technical-justification.md
   ai-usage.md
   architecture.md
+  diagrams/
+    README.md
+    review-guide.md
+    01-functional/
+      README.md
+      use-cases.md
+    02-system-architecture/
+      README.md
+      deployment-and-network.md
+      realtime-colyseus.md
+    03-structural/
+      README.md
+      data-model.md
+      class-design.md
+    04-behavioral/
+      README.md
+      core-flows.md
+      admin-flows.md
+    05-reference/
+      README.md
+      conventions.md
+      gaps.md
 ```
 
 Los archivos `rules/` desarrollan los detalles de implementación y experiencia sin contradecir este contrato general.
