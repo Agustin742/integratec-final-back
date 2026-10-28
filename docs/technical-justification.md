@@ -41,6 +41,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Why:** Colyseus needs long-running processes and WebSocket connections, which Fargate supports and Lambda does not suit. One cloud provider also hosts the database and the AI service.
 - **Alternatives:** A managed PaaS or EC2.
 - **Trade-off:** Fargate, ALB, and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required.
+- **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
 - **Open:** Contract distribution between the frontend and backend repositories (API contracts) is undecided; see [API contracts](../rules/api-contracts.md). Region, domain, and pipeline authentication are also open.
 
 ## 6. Artificial intelligence

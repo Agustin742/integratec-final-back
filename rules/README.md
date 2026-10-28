@@ -60,6 +60,7 @@ Rules describe **how the project must be designed and built**. They are not impl
 ### Operation and reliability
 
 - [AWS infrastructure](./aws-infrastructure.md) — service roles, network isolation, least-privilege identity, and cost control.
+- [Infrastructure as code](./infrastructure-as-code.md) — Terraform layout, pinned versions, remote state, secrets, and reviewed plans.
 - [Configuration and environments](./configuration-and-environments.md) — configuration validation, secret boundaries, and environment isolation.
 - [Deployment and operations](./deployment-and-operations.md) — environment-based configuration, build integrity, and deployment readiness.
 - [Error handling and feedback](./error-handling-and-feedback.md) — error reporting, recovery, and sensitive data protection.

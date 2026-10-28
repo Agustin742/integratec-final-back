@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-10-28 — Adopt Terraform for infrastructure as code
+
+- **Status:** completed
+- **Area / files:** `rules/infrastructure-as-code.md`, `rules/aws-infrastructure.md`, `rules/README.md`, `rules/documentation-and-decisions.md`, `docs/technical-justification.md`, `master-document.md`, `.gitignore`
+- **Change:** Added the Terraform rule (location in `infra/`, pinned versions, S3 remote state with locking, secrets, reviewed plans, drift handling); linked it from the AWS rule, index, justification, and master document; ignored Terraform state and variable files; fixed leftover "rendering technology unresolved" wording. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** AWS infrastructure had no reproducible definition; Terraform was chosen over AWS CDK.
+- **Next step:** Team to confirm the decision in the pull request; resolve open points (task definition ownership with the image pipeline, Amplify management, pipeline authentication); create `infra/`.
+
 ## 2026-10-27 — Add backend domain rules and project docs
 
 - **Status:** completed

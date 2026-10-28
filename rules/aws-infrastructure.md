@@ -5,6 +5,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 ## Authority and scope
 
 - Topology and service roles come from [master §7](../master-document.md#7-integración-y-despliegue-en-aws). Configuration and secrets follow [Configuration and environments](./configuration-and-environments.md); release, verification, and recovery follow [Deployment and operations](./deployment-and-operations.md). They are not repeated here.
+- These resources **MUST** be defined and changed through Terraform as described in [Infrastructure as code](./infrastructure-as-code.md).
 - Course requirement R4 requires public HTTPS, a cloud database, environment-based configuration, and availability until the defenses end ([project requirements](./project-requirements.md)).
 
 ## Services

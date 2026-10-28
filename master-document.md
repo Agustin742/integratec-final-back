@@ -166,6 +166,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Calidad de código | **ESLint + Prettier** | Análisis estático y formato. |
 | Automatización | **GitHub Actions** | Ejecución de lint, tests y pipeline de despliegue. |
 | Infraestructura | **AWS** | Frontend, servicios persistentes, datos, archivos, identidad de servicios y observabilidad. |
+| Infraestructura como código | **Terraform** | Definición versionada y revisable de los recursos AWS; estado remoto en S3 y planes revisados antes de aplicar. Vive en el repositorio backend. |
 
 ## 6. Arquitectura general actualizada 
 
@@ -298,6 +299,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 
 - Los repositorios frontend y backend tienen **CI, build y responsabilidad de despliegue independientes**. El frontend produce su build web de React/Vite; el backend produce imágenes Docker para la API NestJS y el servidor Colyseus.
 - Cada repositorio administra su propio flujo de **GitHub Actions** y sus verificaciones. La publicación del frontend en Amplify y de las imágenes backend en ECR, seguida de la actualización de ECS, corresponde a sus respectivos flujos; la coordinación entre ellos no presupone un workspace compartido.
+- Los recursos AWS se definen y modifican con **Terraform** desde el repositorio backend (`infra/`), sin cambios manuales en la consola sobre recursos gestionados. El detalle está en `rules/infrastructure-as-code.md` del backend.
 - El **ALB** termina TLS con certificado de **AWS Certificate Manager**; dirige `/api/*` a NestJS y una ruta/host reservado al servicio Colyseus. Se configuran explícitamente endpoints de matchmaking, conexiones WebSocket y orígenes permitidos sin mezclar los servicios.
 - Los servicios ECS tienen **Security Groups** específicos. **RDS permanece en subredes privadas**, accesible solo desde los componentes autorizados. Las tareas ECS usan roles IAM de mínimo privilegio; Bedrock se invoca desde NestJS, nunca desde el navegador.
 - Las credenciales, claves de sesión y cadenas de conexión se inyectan por configuración segura. El frontend recibe únicamente valores públicos (por ejemplo, URL de API y URL de Colyseus).
@@ -470,6 +472,7 @@ rules/
   data.md
   authentication-and-session.md
   aws-infrastructure.md
+  infrastructure-as-code.md
   quality-and-testing.md
 docs/
   technical-justification.md
