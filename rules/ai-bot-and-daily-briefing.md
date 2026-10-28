@@ -18,7 +18,7 @@ The bot is a read-and-summarize assistant that runs entirely in NestJS and sees 
 - Every bot request **MUST** be authenticated and run with the permissions of the asking user. The bot **MUST NOT** hold a privileged identity.
 - Data for a prompt **MUST** be retrieved through the same application services and filters as the REST API, scoped to the user's offices and accessible rooms. Content from rooms or offices the user cannot access **MUST NOT** enter a prompt, a response, or the briefing (RF-BOT-003).
 - Access loss **MUST** take effect on the next request; the bot **MUST NOT** reuse cached content from rooms the user can no longer access.
-- The tool catalog is limited to read operations: tasks, meetings, announcements, and recent activity summaries. No tool **MUST** create, update, or delete tasks, announcements, meetings, accesses, or messages (RF-BOT-004). A request to modify data **MUST** be declined with a pointer to the application.
+- The tool catalog is limited to read operations: tasks, meetings, announcements, and recent activity summaries. Tools **MUST NOT** create, update, or delete tasks, announcements, meetings, accesses, or messages (RF-BOT-004). A request to modify data **MUST** be declined with a pointer to the application.
 - User text and stored content (chat, task descriptions) are untrusted. The server **MUST NOT** let them alter tool permissions or system instructions, and **MUST** treat a request to ignore permissions as refused.
 - Model output **MUST** be returned as text and **MUST NOT** be executed or trusted as authorization input.
 

@@ -41,7 +41,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - User email **MUST** be unique after normalization.
 - (Office, user) **MUST** be unique among memberships; (room, member) **MUST** be unique for access and for leadership.
 - An office **MUST** have exactly one Owner membership, and it **MUST NOT** be reassigned.
-- A user **MUST** have at most one own office at a time (RN-01).
+- A user **MUST** have exactly one own office, created at registration (RN-01). Whether a user may exist without one after permanent office deletion remains open (P-05).
 - Each office **MUST** have exactly one main room; additional rooms **MUST NOT** exceed the configured limit (default 5), enforced transactionally.
 - Board column names **MUST** be unique within a room, and a room **MUST** keep at least one column.
 - Attendance **MUST** be unique per (meeting, user).
