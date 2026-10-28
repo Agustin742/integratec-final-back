@@ -2,7 +2,7 @@
 
 > Parte de la [documentación de diagramas](../README.md).
 
-Esta carpeta contiene la **estructura estática del sistema**: el modelo de persistencia relacional en PostgreSQL y la arquitectura de capas de código con sus contratos.
+Esta carpeta contiene la **estructura estática del sistema**: un modelo lógico propuesto para PostgreSQL y responsabilidades de capas. No es un esquema Prisma aprobado ni relevamiento de código existente.
 
 ## Documentos
 

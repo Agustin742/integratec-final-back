@@ -16,13 +16,13 @@
 
 ## 1. WebSockets y Colyseus
 
-El sistema tiene dos planos de comunicación con responsabilidades disjuntas. Todo lo que debe sobrevivir a la sesión —usuarios, sesiones, salas, membresías, tareas, mensajes, reuniones, configuración de avatar— viaja por REST/HTTPS hacia NestJS y termina en Amazon RDS for PostgreSQL (`master-document.md:197-199,284`). Lo efímero —posición de avatares, presencia, entrada y salida, notificaciones a la sala activa, mensajería en vivo— viaja por WSS sobre Colyseus (`master-document.md:200-205`). La regla que une ambos planos es una sola: toda acción persistente se envía a NestJS, se valida y se guarda en RDS, y **recién entonces** se notifica a los clientes conectados a la sala mediante Colyseus (`master-document.md:284`). Colyseus nunca es la autoridad de un dato persistente y nunca escribe en la base (`master-document.md:283-284`). Socket.IO existe como recurso puntual y no sustituye a Colyseus (`master-document.md:148`); el MVP asume una única instancia de Colyseus, y escalarla exige estrategia de presencia, matchmaking, ruteo y reconexión (`master-document.md:295`).
+El sistema tiene dos planos de comunicación con responsabilidades disjuntas. Todo lo que debe sobrevivir a la sesión —usuarios, sesiones, salas, membresías, tareas, mensajes, reuniones, configuración de avatar— viaja por REST/HTTPS hacia NestJS y termina en Amazon RDS for PostgreSQL ([documento maestro](../../../master-document.md)). Lo efímero —posición de avatares, presencia, entrada y salida, notificaciones a la sala activa, mensajería en vivo— viaja por WSS sobre Colyseus ([documento maestro](../../../master-document.md)). La regla que une ambos planos es una sola: toda acción persistente se envía a NestJS, se valida y se guarda en RDS, y **recién entonces** se notifica a los clientes conectados a la sala mediante Colyseus ([documento maestro](../../../master-document.md)). Colyseus nunca es la autoridad de un dato persistente y nunca escribe en la base ([documento maestro](../../../master-document.md)). Socket.IO existe como recurso puntual y no sustituye a Colyseus ([documento maestro](../../../master-document.md)); el MVP asume una única instancia de Colyseus, y escalarla exige estrategia de presencia, matchmaking, ruteo y reconexión ([documento maestro](../../../master-document.md)).
 
-Conviene separar dos conceptos que el documento distingue explícitamente: una sala del producto almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus (`master-document.md:35`). El identificador persistente de la sala es el que manda; la instancia de Colyseus es un objeto en memoria, descartable, que se recrea al sincronizar.
+Conviene separar dos conceptos que el documento distingue explícitamente: una sala del producto almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus ([documento maestro](../../../master-document.md)). El identificador persistente de la sala es el que manda; la instancia de Colyseus es un objeto en memoria, descartable, que se recrea al sincronizar.
 
 ### 1.1 Ciclo de conexión
 
-El ciclo arranca con el login REST y termina en una de tres salidas: sesión activa, desconexión o rechazo. Los dos motivos de rechazo son los únicos códigos que el documento define: 401 sin autenticación y 403 sin permisos (`master-document.md:219,390`).
+El ciclo arranca con el login REST y termina en una de tres salidas: sesión activa, desconexión o rechazo. Los dos motivos de rechazo son los únicos códigos que el documento define: 401 sin autenticación y 403 sin permisos ([documento maestro](../../../master-document.md)).
 
 ```mermaid
 stateDiagram-v2
@@ -51,12 +51,12 @@ stateDiagram-v2
 Tres aclaraciones sobre el diagrama:
 
 - Los dos motivos de 401 —credenciales ausentes al hacer login y token vencido durante una sesión activa— comparten el estado terminal `rejected401` para expresar una misma causa de rechazo; no hay límite funcional de estados. La diferencia queda en la transición que los origina.
-- `authorized` no es un estado de Colyseus: es la verificación que hace el backend antes de habilitar el handshake (`master-document.md:282`). Si esa verificación falla, no hay conexión WSS que abrir.
-- El algoritmo de reconexión y el backoff no están especificados (`master-document.md:64,201`). `reconnecting` existe como estado porque el ciclo lo contempla, pero su temporización es una propuesta, no un dato del documento.
+- `authorized` no es un estado de Colyseus: es la verificación que hace el backend antes de habilitar el handshake ([documento maestro](../../../master-document.md)). Si esa verificación falla, no hay conexión WSS que abrir.
+- El algoritmo de reconexión y el backoff no están especificados ([documento maestro](../../../master-document.md)). `reconnecting` existe como estado porque el ciclo lo contempla, pero su temporización es una propuesta, no un dato del documento.
 
 ### 1.2 Catálogo de eventos
 
-Los nombres de la tabla son los ocho eventos que lista el documento fuente, más los que el ciclo de vida necesita. El documento los declara **ilustrativos y no definitivos** (`master-document.md:207`), y no define payloads, direccionalidad, namespaces ni acknowledgements (`master-document.md:207-208`). Por lo tanto, nombres, direcciones y payloads de esta tabla son **propuesta**.
+Los nombres de la tabla son los ocho eventos que lista el documento fuente, más los que el ciclo de vida necesita. El documento los declara **ilustrativos y no definitivos** ([documento maestro](../../../master-document.md)), y no define payloads, direccionalidad, namespaces ni acknowledgements ([documento maestro](../../../master-document.md)). Por lo tanto, nombres, direcciones y payloads de esta tabla son **propuesta**.
 
 | Evento | Dirección | Disparador | Payload mínimo | Persiste en PostgreSQL |
 |---|---|---|---|---|
@@ -73,7 +73,7 @@ Los nombres de la tabla son los ocho eventos que lista el documento fuente, más
 | `room:reconnected` | servidor → cliente | la reconexión se completó y la presencia volvió a sincronizarse | `{ roomId, userId }` | No |
 | `room:error` | servidor → cliente | fallo de autorización, sesión vencida o error de sala | `{ roomId, code, reason }` | No |
 
-> **Nota:** los payloads de la columna "Payload mínimo" son una **propuesta de trabajo**, no un dato del documento fuente: `master-document.md:207-208` declara los eventos como ilustrativos y deja explícitamente sin definir payloads, direccionalidad, namespaces y acknowledgements. `channelScope` identifica oficina o habitación, sin permitir suscribir canales ajenos; no es una forma de payload aprobada. RN-03 y RF-CHA-007 exigen revalidar acceso, también al recuperar historial. RF-MUN-010 permite ver quién está en qué habitación de la oficina, sin conceder acceso a sus contenidos. Ningún evento de esta tabla escribe por sí mismo en PostgreSQL; lo que persiste —historial de mensajes, tareas, reuniones, el marcador del repaso diario— se guarda por REST en NestJS antes de emitir el evento, y por eso la columna dice "Indirecto (vía NestJS)". El tick rate exacto del movimiento tampoco está especificado.
+> **Nota:** los payloads de la columna "Payload mínimo" son una **propuesta de trabajo**, no un dato del documento fuente: [documento maestro](../../../master-document.md) declara los eventos como ilustrativos y deja explícitamente sin definir payloads, direccionalidad, namespaces y acknowledgements. `channelScope` identifica oficina o habitación, sin permitir suscribir canales ajenos; no es una forma de payload aprobada. RN-03 y RF-CHA-007 exigen revalidar acceso, también al recuperar historial. RF-MUN-010 permite ver quién está en qué habitación de la oficina, sin conceder acceso a sus contenidos. Ningún evento de esta tabla escribe por sí mismo en PostgreSQL; lo que persiste —historial de mensajes, tareas, reuniones, el marcador del repaso diario— se guarda por REST en NestJS antes de emitir el evento, y por eso la columna dice "Indirecto (vía NestJS)". El tick rate exacto del movimiento tampoco está especificado.
 
 ### 1.3 Regla de consistencia y autoridad
 
@@ -100,18 +100,18 @@ sequenceDiagram
     colyseus-->>rds: ninguna escritura directa
 ```
 
-Dos hechos que el diagrama deja fijados, y que son la regla completa (`master-document.md:283-284`):
+Dos hechos que el diagrama deja fijados, y que son la regla completa ([documento maestro](../../../master-document.md)):
 
 - **Colyseus no escribe en RDS.** No tiene camino de escritura a la base; si el plano realtime se cae, la escritura ya ocurrió igual.
 - **La difusión va después de la confirmación.** El cliente que originó la acción recibe su respuesta REST cuando RDS confirmó, no cuando Colyseus difundió. Los demás clientes de la sala reciben el evento solo después de esa confirmación, de modo que nunca observan un cambio que la base todavía no aceptó.
 
 Reglas operativas:
 
-1. **Autoridad única de escritura:** NestJS, con Prisma como único acceso a RDS. Colyseus no persiste nada y no puede promover un estado efímero a persistente por su cuenta (`master-document.md:283-284`).
-2. **Nunca se persiste lo efímero:** posición por fotograma, posiciones transitorias, conexiones activas, presencia y estados interpolados no son filas de la base (`master-document.md:225,283`).
+1. **Autoridad única de escritura:** NestJS, con Prisma como único acceso a RDS. Colyseus no persiste nada y no puede promover un estado efímero a persistente por su cuenta ([documento maestro](../../../master-document.md)).
+2. **Nunca se persiste lo efímero:** posición por fotograma, posiciones transitorias, conexiones activas, presencia y estados interpolados no son filas de la base ([documento maestro](../../../master-document.md)).
 3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual, solo se pierde la difusión. La fuente de verdad es RDS; el documento no define cómo se recuperan los eventos perdidos, así que la resincronización por REST al reconectar es una propuesta.
 4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada en RDS y el fallo es del plano efímero. No hay garantía de entrega exacta ni de deduplicación definida; registrar el fallo y reconciliar por REST es propuesta.
-5. **La autorización se verifica siempre en el servidor:** Colyseus valida sesión, oficina activa, membresía y acceso vigente antes de unir o reconectar al cliente (`master-document.md:282`), y ni el cliente ni Colyseus deciden permisos por su cuenta (`master-document.md:86,88,217`).
+5. **La autorización se verifica siempre en el servidor:** Colyseus valida sesión, oficina activa, membresía y acceso vigente antes de unir o reconectar al cliente ([documento maestro](../../../master-document.md)), y ni el cliente ni Colyseus deciden permisos por su cuenta ([documento maestro](../../../master-document.md)).
 
 
 ### 1.4 Eventos adicionales de administración

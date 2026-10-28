@@ -301,8 +301,8 @@ classDiagram
 
 Cuatro decisiones que el diagrama deja explícitas y conviene no perder de vista:
 
-1. **Las escrituras publican después de persistir.** `RealtimePublisher` cuelga de `RoomsService`, `TasksService` y `MessagesService`, nunca de los controllers. Así el evento de sala solo puede emitirse después de que Prisma confirmó la escritura, que es la regla de consistencia del documento (`master-document.md:284`). El controller no tiene forma de publicar por su cuenta.
-2. **`PersistenceBridge` cruza a NestJS, no a Prisma.** Sus dos dependencias son `RoomsService` y `MessagesService`; el proceso de Colyseus no tiene cliente de base de datos ni credenciales de RDS (`master-document.md:282-284`). El precio es una llamada de red más por reconexión (rehidratación del snapshot). El chat ya no pasa por este puente: se envía por REST (S5).
+1. **Las escrituras publican después de persistir.** `RealtimePublisher` cuelga de `RoomsService`, `TasksService` y `MessagesService`, nunca de los controllers. Así el evento de sala solo puede emitirse después de que Prisma confirmó la escritura, que es la regla de consistencia del documento ([documento maestro](../../../master-document.md)). El controller no tiene forma de publicar por su cuenta.
+2. **`PersistenceBridge` cruza a NestJS, no a Prisma.** Sus dos dependencias son `RoomsService` y `MessagesService`; el proceso de Colyseus no tiene cliente de base de datos ni credenciales de RDS ([documento maestro](../../../master-document.md)). El precio es una llamada de red más por reconexión (rehidratación del snapshot). El chat ya no pasa por este puente: se envía por REST (S5).
 3. **Autenticación y autorización son distintas.** `SessionAuthGuard` no decide entre JWT y cookies. `RoomAccessGuard` verifica oficina activa, membresía activa y acceso a la habitación, no solo pertenencia a la oficina. Chat de oficina requiere membresía; chat de habitación requiere también acceso vigente.
 4. **No se duplican autoridades.** `RoomStore` conserva contexto de oficina/habitación, mientras tareas y columnas se consultan e invalidan mediante TanStack Query. El bot invoca solo consultas autorizadas en el MVP, nunca métodos de escritura.
 
@@ -312,11 +312,11 @@ Cuatro decisiones que el diagrama deja explícitas y conviene no perder de vista
 
 | Capa | Puede | No puede | Cómo se verifica |
 |---|---|---|---|
-| Frontend React | Renderizar UI y escena 3D, mantener estado efímero, llamar REST y WSS, aplicar actualización optimista | Invocar Bedrock, escribir en RDS, decidir permisos, entrar a una sala sin autorización | Toda mutación se confirma por REST y el servidor revalida; el cliente nunca es autoridad (`master-document.md:86,88`) |
-| NestJS | Autenticar, autorizar, persistir con Prisma, invocar Bedrock y publicar eventos ya confirmados | Sostener presencia o posición como fuente de verdad; tocar la memoria de Colyseus sin pasar por su API | Es el único camino de escritura a RDS (`master-document.md:281,284`) |
-| Colyseus | Sincronizar presencia, validar movimiento, retransmitir chat vivo y eventos de sala | Escribir en RDS, invocar Bedrock, emitir tokens, decidir permisos por su cuenta | Valida identidad y membresía con NestJS antes del handshake (`master-document.md:282`) |
+| Frontend React | Renderizar UI y escena 3D, mantener estado efímero, llamar REST y WSS, aplicar actualización optimista | Invocar Bedrock, escribir en RDS, decidir permisos, entrar a una sala sin autorización | Toda mutación se confirma por REST y el servidor revalida; el cliente nunca es autoridad ([documento maestro](../../../master-document.md)) |
+| NestJS | Autenticar, autorizar, persistir con Prisma, invocar Bedrock y publicar eventos ya confirmados | Sostener presencia o posición como fuente de verdad; tocar la memoria de Colyseus sin pasar por su API | Es el único camino de escritura a RDS ([documento maestro](../../../master-document.md)) |
+| Colyseus | Sincronizar presencia, validar movimiento, retransmitir chat vivo y eventos de sala | Escribir en RDS, invocar Bedrock, emitir tokens, decidir permisos por su cuenta | Valida identidad y membresía con NestJS antes del handshake ([documento maestro](../../../master-document.md)) |
 | Contratos de integración | Describir tipos y payloads | Imponer un paquete compartido no aprobado o decidir permisos | Propiedad/distribución pendientes; seguir [API contracts](../../../rules/api-contracts.md) |
-| Prisma y RDS | Guardar filas, transacciones, constraints e índices | Ser invocados desde Colyseus o desde el navegador | Único cliente: `PrismaService` dentro de NestJS (`master-document.md:150,272`) |
+| Prisma y RDS | Guardar filas, transacciones, constraints e índices | Ser invocados desde Colyseus o desde el navegador | Único cliente: `PrismaService` dentro de NestJS ([documento maestro](../../../master-document.md)) |
 
 
 ### 1.2 Clases adicionales

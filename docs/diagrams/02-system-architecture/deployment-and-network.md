@@ -16,7 +16,7 @@
 
 ## 1. Conexiones frontend y backend
 
-Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be)**: el repositorio solo contiene documentación y no hay código de aplicación implementado (`README.md:3`), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos que aparecen son ilustrativos y los puntos marcados como **(propuesto)** dependen de documentación que aún no existe.
+Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be)**: el repositorio solo contiene documentación y no hay código de aplicación implementado ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos que aparecen son ilustrativos y los puntos marcados como **(propuesto)** dependen de documentación que aún no existe.
 
 ### 1.1 Arquitectura de despliegue y comunicación
 
@@ -77,7 +77,7 @@ flowchart LR
 | Estado de objetos de sala | NestJS confirma la operación; Colyseus la difunde | `RoomItem` en RDS | HTTPS / REST + difusión WSS |
 | Repaso diario | NestJS, con Bedrock solo del lado servidor | `DailyReviewDelivery` por usuario y fecha, zona `America/Argentina/Buenos_Aires` | HTTPS / REST en la primera conexión autenticada del día |
 
-> **Lectura del diagrama.** El navegador solo tiene dos canales de aplicación hacia AWS: HTTPS/REST hacia el `target group` de NestJS y WSS hacia el de Colyseus, ambos a través del ALB con TLS (`master-document.md:269,280-282`). Bedrock se invoca únicamente desde NestJS con permisos IAM (`master-document.md:273,293`); la arista punteada hacia Bedrock marca justamente que el cliente no tiene acceso directo. RDS es la base relacional persistente: la escriben NestJS con Prisma y, para verificar datos, Colyseus a través de la capa de negocio (`master-document.md:272,281`). Una sala del producto en PostgreSQL no equivale a una instancia `Room` de Colyseus (`master-document.md:35`).
+> **Lectura del diagrama.** El navegador solo tiene dos canales de aplicación hacia AWS: HTTPS/REST hacia el `target group` de NestJS y WSS hacia el de Colyseus, ambos a través del ALB con TLS ([documento maestro](../../../master-document.md)). Bedrock se invoca únicamente desde NestJS con permisos IAM ([documento maestro](../../../master-document.md)); la arista punteada hacia Bedrock marca justamente que el cliente no tiene acceso directo. RDS es la base relacional persistente: la escriben NestJS con Prisma y, para verificar datos, Colyseus a través de la capa de negocio ([documento maestro](../../../master-document.md)). Una sala del producto en PostgreSQL no equivale a una instancia `Room` de Colyseus ([documento maestro](../../../master-document.md)).
 
 > **Huecos declarados.** El mecanismo de sesión (JWT, cookie, duración, refresh, revocación) no está especificado. Los permisos funcionales están definidos en la [ERS](../../functional-requirements.md#3-permisos); los detalles de sesión, contratos internos y duraciones concretas siguen propuestos. El acceso de habitación se deriva de membresía y acceso/liderazgo, no de un enum público/privado inventado.
 
@@ -95,7 +95,7 @@ flowchart LR
 | Consultas y resúmenes del bot | Cliente | NestJS y Bedrock | HTTPS; notificación privada si corresponde | Solo lectura, con permisos del usuario (RN-18) | Entrega del repaso, no cambios de tareas/reuniones |
 | Mensajería en vivo | Cliente → NestJS → Colyseus → destinatarios autorizados | REST para envío y WSS para difusión (propuesto) | Canal de oficina o habitación seleccionado; acceso vigente | Mensaje persistido antes de difusión |
 
-> **Huecos declarados.** No hay catálogo de endpoints, verbos ni DTOs; los eventos (`avatar:input`, `avatar:state`, `presence:changed`, `room:joined`, `chat:message`, `task:changed`, `meeting:announced`, `bot:summary-ready`) son ilustrativos y no definitivos (`master-document.md:207`). Tampoco están especificados el orden ni la deduplicación de mensajes, los payloads, los acknowledgements ni los namespaces.
+> **Huecos declarados.** No hay catálogo de endpoints, verbos ni DTOs; los eventos (`avatar:input`, `avatar:state`, `presence:changed`, `room:joined`, `chat:message`, `task:changed`, `meeting:announced`, `bot:summary-ready`) son ilustrativos y no definitivos ([documento maestro](../../../master-document.md)). Tampoco están especificados el orden ni la deduplicación de mensajes, los payloads, los acknowledgements ni los namespaces.
 
 ### 1.3 Flujo de usuarios y salas
 

@@ -1,51 +1,48 @@
 # Huecos declarados
 
-> Decisiones que la documentación actual no resuelve y los diagramas que dependen de ellas. Parte del [índice de diagramas](../README.md).
+> Registro de decisiones funcionales y propuestas técnicas que afectan los diagramas. El estado del trabajo vive en Projects, no en esta tabla.
 
-**En este archivo**
-
-- [1. Huecos declarados](#1-huecos-declarados)
-
-← [Convenciones transversales](./conventions.md) · [Índice](../README.md)
-
----
+← [Convenciones](./conventions.md) · [Índice](../README.md)
 
 ## 1. Huecos declarados
 
-Ninguno de estos puntos está resuelto en la documentación actual. Los diagramas que dependen de ellos usan **(propuesto)** y deben revisarse cuando se cierren.
+La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirements-decision.md#confirmaciones-para-la-alineación-documental) ya resuelven parte de los 27 puntos originales. Se conserva su numeración para trazabilidad: **definido funcionalmente** no significa esquema/API aprobados ni implementación. Los supuestos P-01 a P-15 de la ERS siguen identificados allí; esta revisión no los aprueba en bloque.
 
-| # | Hueco | Estado | Impacta en |
+| # | Tema | Estado actual y fuente | Vista afectada |
 |---|---|---|---|
-| 1 | Nombres definitivos de eventos realtime | Abierto | 04 §1.1, 04 §1.2, S2–S7 |
-| 2 | Payloads, direccionalidad, namespaces y acknowledgements | Abierto | 04 §1.2, S3–S7 |
-| 3 | Tick rate y autoridad exacta del movimiento | Abierto | 04 §1.2, S3 |
-| 4 | Endpoints, verbos y DTOs | Abierto | 02 §1.2, S1–S7 |
-| 5 | Catálogo de errores más allá de 401 y 403 | Abierto | 08 §1.1 |
-| 6 | Campos exactos de toda entidad | Abierto | 03 §1.1 |
-| 7 | Cardinalidades de `User`–`AvatarConfiguration`, `User`–`Session`, `Room`–`Meeting`, `User`–`BotConversation` | Abierto | 03 §1.1 |
-| 8 | Matriz de permisos por rol (`rules/rooms-and-permissions.md` no existe) | Abierto | 02 §1.3, 03 §1.1, S4 |
-| 9 | Valores de visibilidad de una sala | Abierto | 02 §1.3, 03 §1.1 |
-| 10 | Formato, expiración y revocación de invitaciones | Con propuesta | 02 §1.3 |
-| 11 | Flujo de solicitud y aprobación de ingreso | Con propuesta | 02 §1.3 |
-| 12 | Expulsión, ban y revocación de membresía | Con propuesta | 04 §1.1 |
-| 13 | Estados y transiciones de `Task` | Abierto | 03 §1.1 |
-| 14 | Modelo de mensajería privada | Abierto | 03 §1.1 |
-| 15 | Modelo de asistencia a reuniones (entidad `Attendance`) | Con propuesta | 03 §1.1 |
-| 16 | Modelo de `BotConversation` y catálogo de herramientas del bot | Abierto | 03 §1.1, S6 |
-| 17 | Límites numéricos de consumo de IA | Abierto | 08 §1.4, S6 |
-| 18 | Mecanismo de sesión: JWT o cookie, duración, refresh, revocación | Abierto | 02 §1.1, S1, S7 |
-| 19 | Cantidad y administración de salas generales | Abierto | 02 §1.3 |
-| 20 | Retención y reglas de acceso al historial de mensajes | Abierto | S5 |
-| 21 | Uploads a S3: endpoints, tipos permitidos, URLs prefirmadas | Abierto | 02 §1.1 |
-| 22 | Casos de uso de Socket.IO | Con propuesta | 02 §1.1 |
-| 23 | Unicidad de `DailyReviewDelivery` | Abierto | 03 §1.1, S6 |
-| 24 | Decisión de camino de chat (REST + difusión) frente a mensaje por WSS; adoptada como propuesta en S5 | Con propuesta | 04 §1.2, S5 |
-| 25 | Matriz de permisos fina del Admin (UC-20 a UC-28) y del Miembro sobre tareas ajenas | Abierto | 01 §1.3 |
-| 26 | Si un recurso no visible responde `403` o `404` | Abierto | 01 §1.3 |
-| 27 | Rol Moderador: existencia, permisos exactos y edición de tareas ajenas (propuesto) | Con propuesta | 01 §1.4, 03 §1.2, S10, S12 |
+| 1 | Nombres de eventos realtime | Propuesta; requiere contrato de productor/consumidor | Realtime, S2–S13 |
+| 2 | Payloads, direcciones, suscripciones y acknowledgements | Propuesta; distinguir comandos, confirmaciones y notificaciones según rules/api-contracts.md | Realtime, clases |
+| 3 | Tick rate y movimiento | Sin frecuencia aprobada; validar límites/colisiones es funcional (RF-MUN-005/007) | Realtime, S3 |
+| 4 | Endpoints, verbos y DTOs | Propuestos, no catálogo implementado | Casos de uso, secuencias |
+| 5 | Errores fuera de 401/403 | Propuestos; RN-16 fija autenticación y autorización HTTP | Convenciones |
+| 6 | Campos, claves, índices y tipos SQL | Diseño backend pendiente; ERS §7 sí define entidades conceptuales | Modelo ER |
+| 7 | Cardinalidades | ERS define oficina/habitaciones, avatar, membresía, acceso y liderazgo; sesiones e historial del bot son diseño técnico | Modelo ER |
+| 8 | Matriz de permisos | Definida en ERS §3 y RN-07 a RN-11; conservar supuestos P-07/P-08/P-13 explícitos | Casos de uso, clases |
+| 9 | Visibilidad de habitación | Acceso por oficina y habitación, no enum público/global propuesto; principal accesible a miembros (RN-03/04) | Arquitectura, ER |
+| 10 | Invitaciones | Funcional definido RF-OFI-005 a 009: enlace único, vencimiento, revocación, límite opcional de usos. Tokens y duración concreta pendientes (P-03) | S8, ER |
+| 11 | Solicitud de ingreso | Could · Evolución, RF-OFI-018; no aprobación adicional en canje de enlace MVP | S9 |
+| 12 | Expulsión y revocación | RN-12/13 y RF-OFI-012: baja lógica, conservar contenido, acceso revocado y tareas huérfanas; no se añade ban | S10, clases |
+| 13 | Estados de tarea | RF-TAR-004/006/007: columnas configurables, no enum fijo. Nombres iniciales en P-14; migración pendiente | ER, S4 |
+| 14 | Mensajería privada | Could · Evolución (RF-CHA-009); no se incorpora al MVP | Casos de uso, ER |
+| 15 | Asistencia | Must · MVP (RF-CAR-007), por usuario/reunión; entidad conceptual definida, esquema técnico propuesto | ER, S11 |
+| 16 | Conversaciones y herramientas del bot | RN-18 y RF-BOT-004 fijan solo lectura en MVP; almacenamiento del diálogo y catálogo concreto pendientes | Clases, S6 |
+| 17 | Límites numéricos IA | Pendientes; timeout/rate limit sin cifras inventadas | Convenciones, S6 |
+| 18 | Sesión | Expiración, renovación y revocación funcionales (AUT); JWT/cookie y parámetros pendientes (P-03) | S1, S7 |
+| 19 | Sala general | Resuelto: no existe sala global; cada oficina tiene principal no eliminable, hasta 5 adicionales (RN-04/05) | Arquitectura, ER |
+| 20 | Historial de chat | Persistencia y control definidos (RF-CHA-006/007); recuperación de acceso está señalada P-11; retención técnica pendiente | S5, canales |
+| 21 | Uploads S3 | Endpoints, tipos, autorización y entrega de objetos pendientes; no se aprueban por topología | Arquitectura |
+| 22 | Socket.IO | Solo uso puntual justificado según maestro; no hay caso adicional aprobado en estas vistas | Arquitectura, realtime |
+| 23 | Entrega de repaso diario | RF-BOT-007 fija una vez por día; clave usuario/fecha, reservas, recuperación y confirmación son propuestas | ER, S6 |
+| 24 | Camino de chat | REST para envío + WSS para difusión es propuesta; contrato debe servir oficina y habitación, aunque usuario cambie de habitación | S5, realtime |
+| 25 | Tareas ajenas y administración | ERS §3: tareas colaborativas con acceso; solo Dueño nombra Admin; Líder solo gestiona su habitación y contenido propio | Casos de uso, S12 |
+| 26 | Rechazo de recurso ajeno | RN-16/HAB-011 exigen 403 sin permiso y no revelar existencia; no se reemplaza unilateralmente por 404 | Convenciones, autorización |
+| 27 | Moderador | Retirado del diseño: roles de oficina Dueño/Admin/Miembro y liderazgo de habitación separado | Casos de uso, clases |
 
-Los huecos 10, 11, 12, 15 y 22 tienen ahora una **propuesta** en [Modelo de datos](../03-structural/data-model.md#12-entidades-adicionales), [Eventos](../02-system-architecture/realtime-colyseus.md#14-eventos-adicionales-de-administración) y [Casos de uso](../01-functional/use-cases.md#1-casos-de-uso), pero siguen sin respaldo en la fuente.
+### Decisiones confirmadas y pendientes que no deben confundirse
 
----
+- **Confirmadas:** Three.js + R3F elegidos; Buenos Aires para todo el producto; propiedad única y no transferible según Luis (RN-02/RN-15).
+- **Ciclo de oficina:** baja lógica, recuperación durante 15 días y eliminación definitiva están descritas en RN-14 y RF-OFI-014 a 016. P-05 (crear otra oficina después) sigue abierto.
+- **Supuestos ERS:** recuperación por email, eliminación de habitación, permisos propuestos y prioridades conservan sus P#; no se decide aquí la implementación ni se dan por cerrados por reproducirlos en un diagrama.
+- **Integración:** dueño y distribución de contratos entre frontend/backend, routing de canales de oficina/habitación/usuario y mecanismos de entrega requieren diseño técnico coordinado.
 
-← [Convenciones transversales](./conventions.md) · [Índice](../README.md)
+← [Convenciones](./conventions.md) · [Índice](../README.md)

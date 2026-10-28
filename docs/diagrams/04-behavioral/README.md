@@ -9,7 +9,7 @@ Esta carpeta contiene los **diagramas de secuencia** que modelan cómo interact�
 | Archivo | Escenarios | Contenido clave |
 |---|---|---|
 | [core-flows.md](./core-flows.md) | S1 a S7 (Núcleo) | Registro y sesión, ingreso a sala y handshake WSS, movimiento y predicción local, creación de tareas, chat con persistencia y difusión, repaso diario del bot, reconexión y logout. |
-| [admin-flows.md](./admin-flows.md) | S8 a S12 (Administración) | Creación y canje de invitaciones, solicitud y aprobación de acceso, expulsión forzada, publicación de eventos/asistencia, y rechazo 403 ante acciones no autorizadas. |
+| [admin-flows.md](./admin-flows.md) | S8 a S13 (Administración) | Invitación a oficina, solicitud de ingreso (Evolución), baja lógica de membresía, reuniones/asistencia MVP, rechazo al nombramiento de Admin sin ser Dueño y baja/recuperación de oficina. |
 
 ## Navegación
 

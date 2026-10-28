@@ -210,12 +210,12 @@ Las columnas iniciales son **Pendiente, En curso, Hecho**, en ese orden (RF-TAR-
 
 | Dato | Regla | Motivo |
 |---|---|---|
-| `User.email` | Único, normalizado en minúsculas; es la identidad de login | Evita dos cuentas con la misma credencial; la fuente no define otro identificador natural (`master-document.md:215`) |
-| `Session.expiresAt` | Obligatorio y verificado en cada request protegido; el logout marca `revokedAt` y no borra la fila | Las sesiones vencen y el logout invalida el acceso sin perder datos (`master-document.md:302,389`) |
+| `User.email` | Único, normalizado en minúsculas; es la identidad de login | Evita dos cuentas con la misma credencial; la fuente no define otro identificador natural ([documento maestro](../../../master-document.md)) |
+| `Session.expiresAt` | Obligatorio y verificado en cada request protegido; el logout marca `revokedAt` y no borra la fila | Las sesiones vencen y el logout invalida el acceso sin perder datos ([documento maestro](../../../master-document.md)) |
 | `Office` / `Room` | Una habitación principal por oficina, no eliminable y accesible para todos sus miembros; hasta 5 adicionales | RN-01, RN-04, RN-05 |
 | `OfficeMember` | Pertenencia única por usuario/oficina; un solo Dueño, que no transfiere ni abandona; baja lógica al expulsar | RN-02, RN-13, RN-15 |
 | Acceso y liderazgo | Solo miembros activos de la misma oficina; puede haber varios Líderes, todos con acceso. Dueño/Admin acceden a todas | RN-07, RN-10, RN-11 |
-| `DailyReviewDelivery` | Clave única compuesta (`userId`, `deliveryDate`), con fecha local en `America/Argentina/Buenos_Aires` e inserción atómica | El repaso no se repite por recarga, cambio de sala ni reconexión, y se evitan ejecuciones concurrentes (`master-document.md:130`) |
+| `DailyReviewDelivery` | Clave única compuesta (`userId`, `deliveryDate`), con fecha local en `America/Argentina/Buenos_Aires` e inserción atómica | El repaso no se repite por recarga, cambio de sala ni reconexión, y se evitan ejecuciones concurrentes ([documento maestro](../../../master-document.md)) |
 | `BoardColumn` / `Task` | Columna y tarea pertenecen a la misma habitación; nombres de columna únicos por tablero | RF-TAR-004, RF-TAR-007 |
 | `Task.assigneeId` | Opcional; se asigna solo con acceso vigente; si lo pierde, la tarea permanece marcada huérfana hasta reasignación | RN-12, RF-TAR-008/009 |
 | `Meeting` / `Announcement` | Habitación obligatoria; Líder gestiona los propios, Dueño/Admin también los ajenos | RF-CAR-002 a RF-CAR-006 |
