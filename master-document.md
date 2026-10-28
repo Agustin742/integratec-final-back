@@ -458,7 +458,7 @@ Este documento es el **índice conceptual y fuente de decisiones generales**. El
 master-document.md
 rules/
   architecture.md
-  3d-world-and-camera.md                (frontend, aún planificado)
+  3d-world-and-camera.md                (frontend)
   movement-and-interactions.md          (frontend)
   art-direction.md                      (frontend)
   avatars-and-customization.md          (frontend)
