@@ -1,179 +1,189 @@
-# Secuencias de administración (S8 a S12)
+# Secuencias de administración (S8 a S13)
 
-> Invitaciones, solicitudes de ingreso, expulsión, anuncios y control de permisos. Parte del [índice de diagramas](../README.md).
+> Gestión de oficina, accesos y contenido según la [ERS](../../functional-requirements.md). Nombres de guards, operaciones y respuestas no exigidas por RF son propuestas, no implementación.
 
 **En este archivo**
 
-- [9. Escenarios de administración](#9-escenarios-de-administración)
-  - [1.1 S8 — Admin crea una invitación y un miembro la canjea](#11-s8--admin-crea-una-invitación-y-un-miembro-la-canjea)
+- [1. Escenarios de administración](#1-escenarios-de-administración)
+  - [1.1 S8 — Invitación a oficina](#11-s8--invitación-a-oficina)
   - [1.2 S9 — Solicitud de ingreso y aprobación](#12-s9--solicitud-de-ingreso-y-aprobación)
-  - [1.3 S10 — Moderador o Admin expulsa a un miembro](#13-s10--moderador-o-admin-expulsa-a-un-miembro)
-  - [1.4 S11 — Publicar un anuncio o reunión y confirmar asistencia](#14-s11--publicar-un-anuncio-o-reunión-y-confirmar-asistencia)
-  - [1.5 S12 — Moderador intenta una acción exclusiva del Admin](#15-s12--moderador-intenta-una-acción-exclusiva-del-admin)
+  - [1.3 S10 — Expulsión de un miembro](#13-s10--expulsión-de-un-miembro)
+  - [1.4 S11 — Reunión y asistencia](#14-s11--reunión-y-asistencia)
+  - [1.5 S12 — Admin intenta nombrar otro Admin](#15-s12--admin-intenta-nombrar-otro-admin)
+  - [1.6 S13 — Baja y recuperación de oficina](#16-s13--baja-y-recuperación-de-oficina)
 
-← [Secuencias del núcleo (S1 a S7)](./core-flows.md) · [Índice](../README.md) · [Convenciones transversales](../05-reference/conventions.md) →
+← [Secuencias del núcleo](./core-flows.md) · [Índice](../README.md) · [Convenciones](../05-reference/conventions.md) →
 
----
+## 1. Escenarios de administración
 
-## 9. Escenarios de administración
+Las escrituras pasan por NestJS, con autenticación, autorización contextual y validación. Se difunde solo después de confirmar y solo a destinatarios autorizados. Roles de oficina y liderazgo de habitación son ámbitos distintos, no una jerarquía Moderador/Admin.
 
-Escenarios de gestión de la sala. Siguen las mismas convenciones que las [secuencias del núcleo](./core-flows.md): REST hacia NestJS, difusión por Colyseus solo después de confirmar la escritura, y orden autenticación → autorización → validación → escritura.
+### 1.1 S8 — Invitación a oficina
 
-### 1.1 S8 — Admin crea una invitación y un miembro la canjea
+RF-OFI-005 a RF-OFI-009: Dueño o Admin invitan; el Líder no incorpora usuarios nuevos. Enlace único significa identificable, no necesariamente de un solo uso: el límite de usos es opcional.
 
 ```mermaid
 sequenceDiagram
-    actor admin as Admin de sala
-    actor guest as Usuario invitado
-    participant web as React
+    actor manager as Dueño o Admin de oficina
+    actor guest as Invitado
     participant api as NestJS
     participant db as RDS PostgreSQL
-    participant colyseus as Colyseus
 
-    admin->>web: pedir invitación para la sala
-    web->>api: POST de invitación (propuesto)
-    api->>api: JwtAuthGuard y RoomAdminGuard
-    alt no es Admin de la sala
-        api-->>web: 403 sin permisos
-    else es Admin
-        api->>db: INSERT Invitation con hash del código
-        db-->>api: fila confirmada
-        api-->>web: 201 con el código en claro, una sola vez
+    manager->>api: generar enlace de invitación (contrato propuesto)
+    api->>api: validar sesión, oficina activa y rol Dueño/Admin
+    alt sin permiso
+        api-->>manager: 403 sin crear invitación
+    else autorizado
+        api->>db: guardar invitación con vencimiento y límite opcional de usos
+        db-->>api: escritura confirmada
+        api-->>manager: enlace único copiable
     end
-    admin-->>guest: compartir enlace o código
-    guest->>web: abrir el enlace
-    web->>api: POST de canje con el código
-    api->>api: validar sesión y DTO
-    api->>db: SELECT Invitation vigente y INSERT Membership(member)
-    alt invitación expirada, revocada o agotada
-        db-->>api: sin invitación válida
-        api-->>web: 410 invitación no válida (propuesto)
-    else canje válido
-        db-->>api: membresía confirmada y usedCount incrementado
-        api-->>web: 201 con la sala
-        api->>colyseus: notificar member:joined
-        colyseus->>colyseus: difundir a la sala si hay presentes
+    manager-->>guest: compartir enlace
+    guest->>api: abrir enlace; autenticarse o registrarse si hace falta
+    api->>api: validar invitación y oficina activas
+    alt vencida, revocada, agotada u oficina dada de baja
+        api-->>guest: rechazo con motivo; sin nueva membresía
+    else usuario ya es miembro activo
+        api-->>guest: ingresar sin duplicar membresía ni consumo de alta
+    else incorporación permitida
+        api->>db: crear o reactivar OfficeMember member y consumir uso atómicamente (propuesto)
+        db-->>api: membresía confirmada; acceso inicial solo a principal
+        api-->>guest: oficina disponible sin aprobación posterior
     end
 ```
 
-El código se devuelve en claro una sola vez y solo se guarda su hash. El incremento de `usedCount` y la creación de la `Membership` van en la misma transacción para que dos canjes simultáneos no superen `maxUses`.
+La reinvitación de una persona expulsada no restaura sus accesos anteriores (RF-OFI-008). Hash de token, transacción y respuestas concretas requieren diseño técnico; el flujo no impone consumo único ni aprobación manual después de aceptar el enlace.
 
 ### 1.2 S9 — Solicitud de ingreso y aprobación
+
+**Could · Evolución**, RF-OFI-018. No es un camino obligatorio del MVP ni corresponde a un Líder de habitación por ser Líder.
 
 ```mermaid
 sequenceDiagram
     actor user as Usuario solicitante
-    actor admin as Moderador o Admin
-    participant web as React
+    actor manager as Dueño o Admin de oficina
     participant api as NestJS
     participant db as RDS PostgreSQL
-    participant colyseus as Colyseus
 
-    user->>web: pedir acceso a una sala
-    web->>api: POST de solicitud (propuesto)
-    api->>db: INSERT JoinRequest pending
-    alt ya existe una solicitud pendiente
-        db-->>api: violación de unicidad
-        api-->>web: 409 solicitud ya enviada
-    else solicitud creada
-        db-->>api: fila confirmada
-        api-->>web: 201
-        api->>colyseus: joinrequest:created a los Admins
-        colyseus-->>admin: notificación de solicitud
-    end
-    admin->>web: aprobar o rechazar
-    web->>api: POST de resolución
-    api->>api: JwtAuthGuard y RoomModeratorGuard
-    alt aprobada
-        api->>db: UPDATE JoinRequest y INSERT Membership(member)
-        api->>colyseus: member:joined a la sala
-        api-->>web: 200
-    else rechazada
-        api->>db: UPDATE JoinRequest rejected
-        api-->>web: 200
+    user->>api: solicitar ingreso a oficina que lo permita (propuesto)
+    api->>api: validar sesión, oficina y solicitud
+    api->>db: guardar JoinRequest pendiente (propuesto)
+    manager->>api: aprobar o rechazar solicitud
+    api->>api: validar rol de oficina y solicitud pendiente
+    alt aprobación autorizada
+        api->>db: resolver solicitud y crear membresía sin duplicados
+        db-->>api: escritura confirmada
+        api-->>user: incorporación como Miembro
+    else rechazo autorizado
+        api->>db: registrar rechazo
+    else sin permiso
+        api-->>manager: 403 sin resolver solicitud
     end
 ```
 
-### 1.3 S10 — Moderador o Admin expulsa a un miembro
+### 1.3 S10 — Expulsión de un miembro
+
+**Must · MVP**, RF-OFI-012 y RN-13: baja lógica de membresía; se conservan mensajes, tareas y anuncios del usuario. No se elimina físicamente la membresía como mecanismo de expulsión.
 
 ```mermaid
 sequenceDiagram
-    actor admin as Moderador o Admin
-    participant web as React
+    actor manager as Dueño o Admin de oficina
     participant api as NestJS
     participant db as RDS PostgreSQL
-    participant colyseus as Colyseus
-    participant target as Cliente expulsado
+    participant col as Colyseus
+    participant target as Usuario expulsado
 
-    admin->>web: expulsar a un miembro
-    web->>api: DELETE de membresía (propuesto)
-    api->>api: JwtAuthGuard y RoomModeratorGuard
-    alt el destino tiene igual o mayor rol, o es el último owner
-        api-->>web: 403 sin permisos o 409 conflicto
+    manager->>api: solicitar expulsión de miembro
+    api->>api: validar sesión, rol de oficina y usuario destino
+    alt destino Dueño, o Admin intenta expulsar otro Admin
+        api-->>manager: 403 sin modificar membresía
     else expulsión permitida
-        api->>db: DELETE Membership
-        db-->>api: fila eliminada
-        api-->>web: 204
-        api->>colyseus: disconnectUser y member:kicked
-        colyseus-->>target: member:kicked y cierre del WSS
-        colyseus->>colyseus: difundir presence:changed a la sala
+        api->>db: dar de baja OfficeMember y revocar accesos/liderazgos efectivos
+        api->>db: conservar contenido y marcar tareas asignadas huérfanas
+        db-->>api: cambios confirmados
+        api->>col: revocar suscripciones y desconectar acceso a toda la oficina
+        col-->>target: cierre de sesiones y canales de esa oficina
+        api-->>manager: expulsión confirmada
     end
-    target->>api: intento de reingreso
-    api-->>target: 403 sin membresía
+    target->>api: intentar entrar o leer historial con sesión vieja
+    api-->>target: 403 por membresía inactiva
 ```
 
-Aunque el cliente expulsado conserve un ticket de sala viejo, Colyseus lo revalida contra NestJS (S2), y sin `Membership` la revalidación falla: la expulsión no depende de que la desconexión forzada llegue.
+La revalidación de membresía/accesos impide reingreso aunque falle una notificación de desconexión. Quitar solo acceso a una habitación aplica RN-12 y RF-HAB-010: se conserva pertenencia a la oficina, pero se pierde contenido e historial de esa habitación; el avatar se redirige a la principal según la ERS.
 
-### 1.4 S11 — Publicar un anuncio o reunión y confirmar asistencia
+### 1.4 S11 — Reunión y asistencia
+
+RF-CAR-005 a RF-CAR-008: Líder de esa habitación, Dueño o Admin crean; el Líder gestiona solo sus propias reuniones. **Confirmar asistencia es Must · MVP**, no funcionalidad complementaria.
 
 ```mermaid
 sequenceDiagram
-    actor admin as Moderador o Admin
-    actor member as Miembro
-    participant web as React
+    actor publisher as Líder de habitación, Dueño o Admin
+    actor member as Miembro con acceso
     participant api as NestJS
     participant db as RDS PostgreSQL
-    participant colyseus as Colyseus
+    participant col as Colyseus
 
-    admin->>web: crear reunión
-    web->>api: POST de reunión (propuesto)
-    api->>api: JwtAuthGuard, RoomModeratorGuard y validación Zod
-    api->>db: INSERT Meeting y Attendance pending por miembro (propuesto)
-    db-->>api: filas confirmadas
-    api-->>web: 201
-    api->>colyseus: meeting:announced
-    colyseus-->>member: aviso en la sala
-    member->>web: confirmar asistencia
-    web->>api: PUT de asistencia
-    api->>api: JwtAuthGuard y RoomMembershipGuard
-    api->>db: UPDATE Attendance confirmed
-    db-->>api: fila confirmada
-    api-->>web: 200
+    publisher->>api: crear reunión de habitación autorizada
+    api->>api: validar sesión, acceso y capacidad de publicación
+    api->>db: guardar Meeting con creador y habitación obligatoria
+    db-->>api: escritura confirmada
+    api->>col: notificar solo a destinatarios autorizados
+    member->>api: confirmar o declinar asistencia
+    api->>api: verificar acceso vigente y reunión no cancelada ni pasada
+    api->>db: guardar respuesta propia sin duplicar usuario/reunión (propuesto)
+    db-->>api: respuesta confirmada
+    api-->>member: estado actualizado
 ```
 
-### 1.5 S12 — Moderador intenta una acción exclusiva del Admin
+La respuesta de asistencia puede cambiarse antes de la reunión, nunca si está cancelada o pasada (RF-CAR-007). Gestionar anuncios ajenos o editar/cancelar reuniones ajenas corresponde únicamente a Dueño/Admin (RF-CAR-004/006). La misma regla aplica aunque el cliente manipule un ID. La programación usa Buenos Aires con un instante inequívoco, no la zona incidental del navegador.
 
-Caso de prueba negativo para la matriz de la [01-functional/use-cases.md](../01-functional/use-cases.md#14-matriz-de-permisos-por-rol): un Moderador intenta cambiar el rol de otro miembro (UC-24). El rechazo ocurre antes de validar el DTO y de tocar Prisma, y manipular el cliente no cambia el resultado.
+### 1.5 S12 — Admin intenta nombrar otro Admin
+
+RF-OFI-011, RN-09: solo el Dueño nombra o quita Administradores. El rechazo no depende de ocultar el botón ni de una jerarquía de guard heredada.
 
 ```mermaid
 sequenceDiagram
-    actor mod as Moderador
-    participant web as React
+    actor admin as Administrador de oficina
     participant api as NestJS
     participant db as RDS PostgreSQL
 
-    mod->>web: intentar promover a un miembro (UI oculta o manipulada)
-    web->>api: PATCH de rol de miembro (propuesto)
-    api->>api: JwtAuthGuard valida la sesión
-    api->>db: SELECT Membership del solicitante en la sala
-    db-->>api: role = moderator
-    api->>api: RoomAdminGuard exige owner
-    api-->>web: 403 sin permisos
-    Note over api,db: no hay escritura ni evento member:role-changed
-    web->>api: mismo PATCH sin sesión
-    api-->>web: 401 sin autenticación
+    admin->>api: solicitar nombramiento de otro Admin (propuesto)
+    api->>api: validar sesión
+    api->>db: consultar rol activo de oficina
+    db-->>api: role admin, no owner
+    api-->>admin: 403 sin cambiar roles
+    Note over api,db: no hay escritura ni notificación de cambio
+    admin->>api: mismo intento sin sesión
+    api-->>admin: 401 sin modificar datos
 ```
 
----
+### 1.6 S13 — Baja y recuperación de oficina
 
-← [Secuencias del núcleo (S1 a S7)](./core-flows.md) · [Índice](../README.md) · [Convenciones transversales](../05-reference/conventions.md) →
+RF-OFI-014 a RF-OFI-016 y RN-14/RN-15: solo Dueño; no hay transferencia de propiedad ni abandono del Dueño. La baja es lógica y recuperable durante **15 días**; después se elimina definitivamente. No se decide aquí la reposición de oficina tras eliminación (P-05).
+
+```mermaid
+sequenceDiagram
+    actor owner as Dueño de oficina
+    participant api as NestJS
+    participant db as RDS PostgreSQL
+    participant col as Colyseus
+
+    owner->>api: confirmar baja explícita de su oficina
+    api->>api: validar sesión, propiedad y confirmación
+    api->>db: registrar baja lógica y fecha
+    db-->>api: escritura confirmada
+    api->>col: cerrar acceso y canales de oficina para todos
+    Note over api,db: nadie puede entrar; solo Dueño ve la opción de recuperar
+    alt Dueño solicita recuperación dentro de 15 días
+        owner->>api: recuperar oficina
+        api->>api: verificar propiedad y plazo con reloj servidor
+        api->>db: restaurar oficina con miembros, accesos y datos anteriores
+        db-->>api: restauración confirmada
+    else plazo de recuperación vencido
+        api->>db: eliminación definitiva por sistema (mecanismo por diseñar)
+    end
+```
+
+Eliminar una habitación adicional es un flujo diferente: requiere Dueño/Admin, advertencia del contenido perdido y confirmación; la principal nunca se elimina (RF-HAB-005). Los mecanismos técnicos de eliminación y recuperación deben diseñarse y probarse antes de implementarlos; estos diagramas no ejecutan borrados.
+
+← [Secuencias del núcleo](./core-flows.md) · [Índice](../README.md) · [Convenciones](../05-reference/conventions.md) →
