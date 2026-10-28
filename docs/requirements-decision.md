@@ -36,6 +36,22 @@ Anuncios, reuniones y el alcance del Líder cambian respecto de la versión ante
 - El Administrador puede asignar Líderes.
 - Cualquiera con acceso a la habitación borra tareas.
 
+## Confirmaciones para la alineación documental
+
+Estas confirmaciones de Alejo durante la revisión de alineación mantienen la ERS de Luis como base funcional; no declaran implementación ni aprueban los demás supuestos pendientes de la ERS.
+
+| Tema | Decisión y fundamento | Referencia |
+| --- | --- | --- |
+| Renderizado | **Three.js + React Three Fiber están elegidos** para el mundo 3D real e integración declarativa con React. La selección ya no está pendiente; PixiJS 2.5D queda descartado, según la justificación del documento maestro. | [Documento maestro, sección 3.1](../master-document.md#31-entorno-tridimensional-isométrico) y sección 11 |
+| Zona horaria | **America/Argentina/Buenos_Aires para todo el producto**, no solo para el repaso diario. Se aplica a visualización, programación local y reglas por día; se preserva la distinción entre instantes inequívocos y fechas sin hora, sin depender de la zona del navegador. | ERS RN-19 y [reglas de datos y tiempo](../rules/data-and-time.md#dates-and-time-zones) |
+| Propiedad de oficina | Se acepta la regla de Luis: **un único Dueño, sin transferencia de propiedad**. El Dueño no abandona su oficina; puede darla de baja. Se descarta la transferencia mencionada antes en el maestro. | ERS RN-02, RN-15, RF-OFI-013 a RF-OFI-016 |
+| Alta de espacios | El registro crea automáticamente la **oficina propia y su habitación principal**. No hay una acción para crear una segunda oficina propia ni una sala general global. | ERS RN-01, RN-04, RF-AUT-001 y RF-OFI-001 |
+| Invitaciones | **Enlace único no significa de un solo uso**. Tiene vencimiento, es revocable y puede tener un límite opcional de usos; no se impone un consumo único por defecto. | ERS RF-OFI-005 a RF-OFI-009 |
+
+La baja de oficina es lógica y recuperable por el Dueño durante 15 días; después se elimina definitivamente (RN-14). Sigue abierto **P-05**: si el usuario podrá crear una oficina nueva después de esa eliminación. Esta alineación no resuelve ese punto ni cambia la ERS o sus historias.
+
+Los diagramas deben reflejar estos contratos. Sus nombres de clases, eventos, endpoints o campos siguen siendo propuestas cuando no hay un contrato técnico aprobado; Mermaid no reemplaza la autoridad de los requisitos.
+
 ## Formato de los requisitos
 
 Cada requisito funcional lleva un ID trazable, para que cada historia de usuario del Kanban referencie el requisito del que sale.
@@ -62,9 +78,9 @@ Ejemplo:
 | Criterio 2 | Dado un usuario sin acceso a la habitación, cuando intenta mover la tarea, entonces el sistema responde 403. |
 | Criterio 3 | Dados otros usuarios conectados a esa habitación, cuando se mueve la tarea, entonces ven el cambio. |
 
-## Módulos propuestos
+## Módulos de la ERS
 
-Los requisitos se agrupan en diez módulos; los prefijos de ID son una propuesta para validar.
+La [ERS v0.1](./functional-requirements.md) ya agrupa los requisitos en estos diez módulos y utiliza los siguientes prefijos de ID:
 
 | N.º | Módulo | Prefijo |
 | --- | --- | --- |
@@ -79,11 +95,12 @@ Los requisitos se agrupan en diez módulos; los prefijos de ID son una propuesta
 | 9 | Bot y repaso diario | BOT |
 | 10 | Objetos interactuables (extensibilidad) | OBJ |
 
-## Pendientes y próximo paso
+## Estado de la ERS y próximos pasos
 
-Quedan dos puntos menores por confirmar antes de redactar el primer módulo.
+La [ERS v0.1](./functional-requirements.md) y las [historias de usuario](./user-stories.md) ya están redactadas; no son evidencia de implementación. La matriz anterior se consulta junto con los requisitos RF y reglas RN de la ERS.
 
-- La recuperación de contraseña necesita enviar emails, así que el email entraría en el MVP al menos para eso. Falta confirmar si se acepta o si se deja para la evolución.
-- Por ahora se asume que las notificaciones por email son evolución y que las notificaciones dentro de la app alcanzan para el MVP.
+- La recuperación por email figura como **Should · MVP** en RF-AUT-006; su confirmación sigue registrada como P-04 en la ERS, no como una decisión nueva de esta alineación.
+- Las notificaciones dentro de la aplicación se describen en el módulo NOT; las notificaciones por email siguen en **Evolución** (RF-NOT-006).
+- Los demás supuestos de la sección 9 de la ERS siguen abiertos donde no haya una confirmación explícita. En particular, no se inventa una política de reemplazo de oficina tras la eliminación definitiva (P-05).
 
-Próximo paso: redactar los requisitos módulo por módulo, mostrándolos en el chat para su revisión antes de armar el documento formal. Se empieza por Cuenta y autenticación, que es la base de R2.
+Próximo paso: alinear los diagramas con esta base, conservar explícitas las propuestas técnicas y revisar los supuestos restantes con el equipo antes de implementar los comportamientos afectados.
