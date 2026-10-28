@@ -30,17 +30,17 @@ stateDiagram-v2
     disconnected --> authenticated: login REST aceptado
     disconnected --> rejected401: login REST rechazado, 401 no autenticado
     authenticated --> roomRequested: el cliente solicita una sala
-    roomRequested --> authorized: NestJS verifica identidad y membresía
-    roomRequested --> rejected403: 403 sin membresía en la sala
+    roomRequested --> authorized: NestJS verifica oficina, membresía y acceso
+    roomRequested --> rejected403: 403 sin acceso vigente a habitación
     roomRequested --> rejected401: sesión vencida antes de autorizar
     authorized --> connecting: request de conexión WSS a Colyseus
     connecting --> syncing: handshake aceptado, presencia en curso
     connecting --> rejected403: handshake rechazado por permisos
     syncing --> joined: presencia sincronizada
     joined --> reconnecting: corte de red detectado
-    reconnecting --> syncing: reconexión exitosa
+    reconnecting --> authorized: revalidar sesión y acceso antes de reconectar
     reconnecting --> disconnected: reintentos agotados
-    joined --> disconnected: conexión perdida o logout
+    joined --> disconnected: logout, expulsión o acceso revocado
     syncing --> rejected401: sesión expirada, token vencido
     joined --> rejected401: sesión expirada, token vencido
     disconnected --> [*]
@@ -50,7 +50,7 @@ stateDiagram-v2
 
 Tres aclaraciones sobre el diagrama:
 
-- Los dos motivos de 401 —credenciales ausentes al hacer login y token vencido durante una sesión activa— comparten el estado terminal `rejected401` para no exceder el límite de diez estados. La diferencia queda en la transición que los origina.
+- Los dos motivos de 401 —credenciales ausentes al hacer login y token vencido durante una sesión activa— comparten el estado terminal `rejected401` para expresar una misma causa de rechazo; no hay límite funcional de estados. La diferencia queda en la transición que los origina.
 - `authorized` no es un estado de Colyseus: es la verificación que hace el backend antes de habilitar el handshake (`master-document.md:282`). Si esa verificación falla, no hay conexión WSS que abrir.
 - El algoritmo de reconexión y el backoff no están especificados (`master-document.md:64,201`). `reconnecting` existe como estado porque el ciclo lo contempla, pero su temporización es una propuesta, no un dato del documento.
 
@@ -64,16 +64,16 @@ Los nombres de la tabla son los ocho eventos que lista el documento fuente, más
 | `avatar:state` | servidor → cliente | tick de simulación con la posición autoritativa del avatar | `{ userId, position, yaw, ts }` | No |
 | `presence:changed` | servidor → cliente | un miembro entra, sale o cambia de estado dentro de la sala | `{ roomId, userId, status }` | No |
 | `room:joined` | servidor → cliente | la sala aceptó al cliente y la presencia quedó sincronizada | `{ roomId, userId, sessionId }` | No |
-| `chat:message` | servidor → cliente | NestJS confirmó el `INSERT` del mensaje (enviado por REST) y Colyseus lo difunde a la sala | `{ roomId, messageId, body, sentAt }` | Indirecto (vía NestJS) |
+| `chat:message` | servidor → cliente | NestJS confirmó el `INSERT` del mensaje (enviado por REST) y Colyseus lo difunde a suscriptores autorizados del canal | `{ channelScope, messageId, body, sentAt }` | Indirecto (vía NestJS) |
 | `task:changed` | servidor → cliente | NestJS confirmó una escritura de `Task` y pide notificar la sala | `{ roomId, taskId, revision }` | Indirecto (vía NestJS) |
 | `meeting:announced` | servidor → cliente | se publicó una reunión o anuncio en la sala | `{ roomId, meetingId, title, scheduledAt }` | Indirecto (vía NestJS) |
-| `bot:summary-ready` | servidor → cliente | Bedrock terminó el repaso diario y hay resumen disponible | `{ userId, deliveryId, summary }` | Indirecto (vía NestJS) |
+| `bot:summary-ready` | servidor → cliente | repaso generado con Bedrock o fallback, solo al usuario destinatario | `{ userId, deliveryId, summary }` | Indirecto (vía NestJS) |
 | `room:left` | bidireccional | el cliente abandona la sala o el servidor lo saca por fin de sesión | `{ roomId, userId }` | No |
 | `room:reconnecting` | bidireccional | se detectó un corte y comienza el intento de reconexión | `{ roomId, userId, attempt }` | No |
 | `room:reconnected` | servidor → cliente | la reconexión se completó y la presencia volvió a sincronizarse | `{ roomId, userId }` | No |
 | `room:error` | servidor → cliente | fallo de autorización, sesión vencida o error de sala | `{ roomId, code, reason }` | No |
 
-> **Nota:** los payloads de la columna "Payload mínimo" son una **propuesta de trabajo**, no un dato del documento fuente: `master-document.md:207-208` declara los eventos como ilustrativos y deja explícitamente sin definir payloads, direccionalidad, namespaces y acknowledgements. Ningún evento de esta tabla escribe por sí mismo en PostgreSQL; lo que persiste —historial de mensajes, tareas, reuniones, el marcador del repaso diario— se guarda por REST en NestJS antes de emitir el evento, y por eso la columna dice "Indirecto (vía NestJS)". El tick rate exacto del movimiento tampoco está especificado.
+> **Nota:** los payloads de la columna "Payload mínimo" son una **propuesta de trabajo**, no un dato del documento fuente: `master-document.md:207-208` declara los eventos como ilustrativos y deja explícitamente sin definir payloads, direccionalidad, namespaces y acknowledgements. `channelScope` identifica oficina o habitación, sin permitir suscribir canales ajenos; no es una forma de payload aprobada. RN-03 y RF-CHA-007 exigen revalidar acceso, también al recuperar historial. RF-MUN-010 permite ver quién está en qué habitación de la oficina, sin conceder acceso a sus contenidos. Ningún evento de esta tabla escribe por sí mismo en PostgreSQL; lo que persiste —historial de mensajes, tareas, reuniones, el marcador del repaso diario— se guarda por REST en NestJS antes de emitir el evento, y por eso la columna dice "Indirecto (vía NestJS)". El tick rate exacto del movimiento tampoco está especificado.
 
 ### 1.3 Regla de consistencia y autoridad
 
@@ -111,7 +111,7 @@ Reglas operativas:
 2. **Nunca se persiste lo efímero:** posición por fotograma, posiciones transitorias, conexiones activas, presencia y estados interpolados no son filas de la base (`master-document.md:225,283`).
 3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual, solo se pierde la difusión. La fuente de verdad es RDS; el documento no define cómo se recuperan los eventos perdidos, así que la resincronización por REST al reconectar es una propuesta.
 4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada en RDS y el fallo es del plano efímero. No hay garantía de entrega exacta ni de deduplicación definida; registrar el fallo y reconciliar por REST es propuesta.
-5. **La autorización se verifica siempre en el servidor:** Colyseus valida identidad y membresía antes de unir al cliente (`master-document.md:282`), y ni el cliente ni Colyseus deciden permisos por su cuenta (`master-document.md:86,88,217`).
+5. **La autorización se verifica siempre en el servidor:** Colyseus valida sesión, oficina activa, membresía y acceso vigente antes de unir o reconectar al cliente (`master-document.md:282`), y ni el cliente ni Colyseus deciden permisos por su cuenta (`master-document.md:86,88,217`).
 
 
 ### 1.4 Eventos adicionales de administración
@@ -120,14 +120,14 @@ Extienden el [catálogo de la 04-realtime §1.2](#12-catálogo-de-eventos). Todo
 
 | Evento | Destino de la difusión | Disparador | Payload mínimo | Persiste en PostgreSQL |
 |---|---|---|---|---|
-| `member:joined` | Sala | UC-08 o UC-23 creó la `Membership` | `{ roomId, userId }` | Indirecto (vía NestJS) |
-| `member:role-changed` | Sala | UC-24 | `{ roomId, userId, role }` | Indirecto (vía NestJS) |
-| `member:kicked` | Usuario expulsado, luego la sala | UC-25 | `{ roomId, userId, reason }` | Indirecto (vía NestJS) |
-| `joinrequest:created` | Admins de la sala | UC-09 | `{ roomId, requestId, userId }` | Indirecto (vía NestJS) |
-| `invitation:revoked` | Admins de la sala | UC-22 | `{ roomId, invitationId }` | Indirecto (vía NestJS) |
+| `member:joined` | Oficina autorizada | UC-08 creó/reactivó `OfficeMember`; UC-23 es Evolución | `{ roomId, userId }` | Indirecto (vía NestJS) |
+| `member:role-changed` | Oficina autorizada | UC-24 | `{ officeId, userId, role }` | Indirecto (vía NestJS) |
+| `member:kicked` | Usuario expulsado, luego oficina autorizada | UC-25 | `{ roomId, userId, reason }` | Indirecto (vía NestJS) |
+| `joinrequest:created` | Dueño/Admin de oficina; Evolución | UC-09 | `{ officeId, requestId, userId }` | Indirecto (vía NestJS) |
+| `invitation:revoked` | Dueño/Admin de oficina | UC-22 | `{ officeId, invitationId }` | Indirecto (vía NestJS) |
 | `room:settings-changed` | Sala | UC-21 o UC-27 | `{ roomId, revision }` | Indirecto (vía NestJS) |
 
-Socket.IO **no se usa en el MVP**: ninguno de estos casos justifica un canal distinto de Colyseus (`master-document.md:148,211`).
+No se propone un caso adicional de Socket.IO en estas vistas. El maestro permite uso puntual técnicamente justificado, sin reemplazar Colyseus; no se transforma esa posibilidad en obligación o prohibición nueva. La entrega por oficina/habitación/usuario necesita contratos de suscripción y revocación explícitos, no difusión indiscriminada a toda Room.
 
 ---
 
