@@ -16,7 +16,7 @@
 
 ### 1.1 Clases por capa
 
-El diagrama técnico no repite el modelo de datos: muestra quién ejecuta cada responsabilidad y qué dependencias reales existen en el código. Las cuatro capas se corresponden con los tres despliegues del sistema —frontend en Amplify, NestJS y Colyseus en ECS Fargate— más los contratos que comparten (`master-document.md:268-270`). Los contratos son DTOs: tienen campos, no comportamiento.
+Esta vista propone responsabilidades, no clases implementadas. Nombres, métodos, DTOs y guards son propuestas técnicas sujetas a la [ERS](../../functional-requirements.md). Se separan frontend previsto en Amplify, NestJS y Colyseus en ECS/Fargate, sin memoria compartida. La propiedad y distribución de contratos entre repositorios sigue pendiente.
 
 ```mermaid
 classDiagram
@@ -34,8 +34,7 @@ classDiagram
     }
     class RoomStore {
       +setActiveRoom(roomId)
-      +upsertTask(task)
-      +removeTask(taskId)
+      +setActiveOffice(officeId)
     }
     class ColyseusClient {
       +connect(roomId, token)
@@ -56,11 +55,11 @@ classDiagram
     class TaskPanel {
       +open(taskId)
       +submit(task)
-      +move(taskId, status)
+      +move(taskId, columnId)
     }
     class ChatPanel {
-      +loadHistory(roomId)
-      +send(body)
+      +loadHistory(channelScope)
+      +send(channelScope, body)
       +onMessage(event)
     }
     class BotPanel {
@@ -87,9 +86,20 @@ classDiagram
       +create(dto)
       +join(roomId)
     }
+    class OfficesService {
+      +createOwnOfficeWithMainRoom(userId)
+      +assertActiveMembership(userId, officeId)
+      +listForUser(userId)
+      +deactivate(ownerId, officeId)
+      +restore(ownerId, officeId)
+    }
+    class RoomAccessService {
+      +assertAccess(userId, roomId)
+      +grantToExistingMember(actorId, memberId, roomId)
+      +revokeAndMarkOrphans(actorId, memberId, roomId)
+    }
     class RoomsService {
-      +createPersonalRoom(userId)
-      +assertMembership(userId, roomId)
+      +createAdditionalRoom(actorId, officeId, dto)
       +listForUser(userId)
       +snapshot(roomId)
     }
@@ -102,14 +112,14 @@ classDiagram
     class TasksService {
       +create(userId, dto)
       +update(userId, taskId, dto)
-      +move(taskId, status)
+      +move(taskId, columnId)
     }
     class MessagesController {
-      +history(roomId, cursor)
+      +history(channelScope, cursor)
       +send(dto)
     }
     class MessagesService {
-      +list(roomId, cursor)
+      +listAuthorized(userId, channelScope, cursor)
       +create(authorId, dto)
     }
     class BotController {
@@ -121,11 +131,11 @@ classDiagram
       +buildDailyReview(userId)
       +buildFallbackSummary(userId)
     }
-    class JwtAuthGuard {
+    class SessionAuthGuard {
       +canActivate(context)
       +resolveSession(request)
     }
-    class RoomMembershipGuard {
+    class RoomAccessGuard {
       +canActivate(context)
       +resolveRoom(request)
     }
@@ -142,9 +152,9 @@ classDiagram
       +converse(messages)
       +invoke(prompt)
     }
-    class ToolRegistry {
-      +register(tool)
-      +execute(name, args, context)
+    class ReadOnlyToolRegistry {
+      +registerQuery(query)
+      +executeQuery(name, args, context)
     }
   }
 
@@ -166,19 +176,18 @@ classDiagram
     }
     class AuthVerifier {
       +verify(token, roomId)
-      +loadMembership(userId, roomId)
+      +assertOfficeAndRoomAccess(userId, roomId)
     }
     class MovementValidator {
       +validate(from, to, delta)
       +clamp(position)
     }
     class ChatRelay {
-      +onChat(client, payload)
+      +broadcastConfirmed(channelScope, event)
       +broadcast(roomId, event)
     }
     class PersistenceBridge {
       +loadSnapshot(roomId)
-      +persistChat(message)
     }
   }
 
@@ -198,11 +207,11 @@ classDiagram
     class TaskEvent {
       +roomId uuid
       +taskId uuid
-      +status TaskStatus
+      +columnId uuid
       +revision int
     }
     class ChatEvent {
-      +roomId uuid
+      +channelScope string
       +messageId uuid
       +authorId uuid
       +sentAt datetime
@@ -222,7 +231,7 @@ classDiagram
   RoomStore --> RoomSnapshot
   SceneController --> RoomStore : items
   TaskPanel --> ApiClient
-  TaskPanel --> RoomStore
+  TaskPanel --> RoomStore : active context only
   ChatPanel --> ApiClient
   ChatPanel --> ColyseusClient
   BotPanel --> ApiClient
@@ -235,19 +244,26 @@ classDiagram
   InteractionController --> ColyseusClient : input
 
   AuthController --> AuthService
-  AuthController --> JwtAuthGuard : logout and me
+  AuthController --> SessionAuthGuard : logout and me
   RoomsController --> RoomsService
-  RoomsController --> JwtAuthGuard
-  RoomsController --> RoomMembershipGuard : room routes
+  RoomsController --> SessionAuthGuard
+  RoomsController --> RoomAccessGuard : existing room routes
+  RoomsController --> OfficeManagementGuard : create additional room
   TasksController --> TasksService
-  TasksController --> JwtAuthGuard
-  TasksController --> RoomMembershipGuard
+  TasksController --> SessionAuthGuard
+  TasksController --> RoomAccessGuard
   MessagesController --> MessagesService
-  MessagesController --> JwtAuthGuard
-  MessagesController --> RoomMembershipGuard
+  MessagesController --> SessionAuthGuard
+  MessagesController --> RoomAccessGuard : room channel only
+  MessagesController --> OfficesService : active office membership for office channel
   BotController --> BotService
-  BotController --> JwtAuthGuard
+  BotController --> SessionAuthGuard
   AuthService --> PrismaService
+  AuthService --> OfficesService : registration
+  OfficesService --> PrismaService
+  RoomAccessService --> OfficesService
+  RoomAccessService --> PrismaService
+  RoomAccessService --> RealtimePublisher : access revoked
   AuthService --> SessionToken
   RoomsService --> PrismaService
   RoomsService --> RealtimePublisher
@@ -259,11 +275,11 @@ classDiagram
   MessagesService --> ChatEvent
   BotService --> PrismaService
   BotService --> BedrockClient
-  BotService --> ToolRegistry
-  JwtAuthGuard --> AuthService : validateSession
-  RoomMembershipGuard --> RoomsService : assertMembership
-  ToolRegistry --> TasksService
-  ToolRegistry --> RoomsService
+  BotService --> ReadOnlyToolRegistry
+  SessionAuthGuard --> AuthService : validateSession
+  RoomAccessGuard --> RoomAccessService : assertAccess
+  ReadOnlyToolRegistry --> TasksService : authorized queries only
+  ReadOnlyToolRegistry --> RoomsService : authorized queries only
   RealtimePublisher --> TaskEvent
   RealtimePublisher --> ChatEvent
 
@@ -271,7 +287,7 @@ classDiagram
   RoomState *-- AvatarState : members
   RoomLifecycle --> AuthVerifier : onJoin
   RoomLifecycle --> MovementValidator : onUpdate
-  RoomLifecycle --> ChatRelay : onChat
+  RoomLifecycle --> ChatRelay : confirmed notifications
   RoomLifecycle --> PersistenceBridge : rehydrate
   AuthVerifier --> AuthService : verify token
   AuthVerifier --> SessionToken
@@ -283,11 +299,12 @@ classDiagram
   PersistenceBridge --> MessagesService : history
 ```
 
-Tres decisiones que el diagrama deja explícitas y conviene no perder de vista:
+Cuatro decisiones que el diagrama deja explícitas y conviene no perder de vista:
 
 1. **Las escrituras publican después de persistir.** `RealtimePublisher` cuelga de `RoomsService`, `TasksService` y `MessagesService`, nunca de los controllers. Así el evento de sala solo puede emitirse después de que Prisma confirmó la escritura, que es la regla de consistencia del documento (`master-document.md:284`). El controller no tiene forma de publicar por su cuenta.
 2. **`PersistenceBridge` cruza a NestJS, no a Prisma.** Sus dos dependencias son `RoomsService` y `MessagesService`; el proceso de Colyseus no tiene cliente de base de datos ni credenciales de RDS (`master-document.md:282-284`). El precio es una llamada de red más por reconexión (rehidratación del snapshot). El chat ya no pasa por este puente: se envía por REST (S5).
-3. **Los guards son dependencias de los controllers que protegen.** `JwtAuthGuard` aparece en los cinco controllers y `RoomMembershipGuard` en los tres que operan sobre una sala. Son decoradores en el código real, pero la dependencia existe: sin ellos el controller no puede resolver identidad ni membresía (`master-document.md:86,88,217`).
+3. **Autenticación y autorización son distintas.** `SessionAuthGuard` no decide entre JWT y cookies. `RoomAccessGuard` verifica oficina activa, membresía activa y acceso a la habitación, no solo pertenencia a la oficina. Chat de oficina requiere membresía; chat de habitación requiere también acceso vigente.
+4. **No se duplican autoridades.** `RoomStore` conserva contexto de oficina/habitación, mientras tareas y columnas se consultan e invalidan mediante TanStack Query. El bot invoca solo consultas autorizadas en el MVP, nunca métodos de escritura.
 
 > **Frontera entre `RealtimePublisher` y Colyseus.** El publisher no referencia ninguna clase de la capa Realtime porque cruza un límite de proceso: habla con la API del servidor de Colyseus, no con `RoomState` en memoria. Dibujar una flecha hacia `RoomState` sugeriría memoria compartida, que es justamente lo que la arquitectura evita.
 
@@ -298,7 +315,7 @@ Tres decisiones que el diagrama deja explícitas y conviene no perder de vista:
 | Frontend React | Renderizar UI y escena 3D, mantener estado efímero, llamar REST y WSS, aplicar actualización optimista | Invocar Bedrock, escribir en RDS, decidir permisos, entrar a una sala sin autorización | Toda mutación se confirma por REST y el servidor revalida; el cliente nunca es autoridad (`master-document.md:86,88`) |
 | NestJS | Autenticar, autorizar, persistir con Prisma, invocar Bedrock y publicar eventos ya confirmados | Sostener presencia o posición como fuente de verdad; tocar la memoria de Colyseus sin pasar por su API | Es el único camino de escritura a RDS (`master-document.md:281,284`) |
 | Colyseus | Sincronizar presencia, validar movimiento, retransmitir chat vivo y eventos de sala | Escribir en RDS, invocar Bedrock, emitir tokens, decidir permisos por su cuenta | Valida identidad y membresía con NestJS antes del handshake (`master-document.md:282`) |
-| Contratos compartidos | Definir tipos y payloads entre capas | Contener reglas de negocio, validaciones de autorización o acceso a datos | Se versionan con el código; el servidor no confía en lo que declara el cliente (`rules/security.md:16,18`) |
+| Contratos de integración | Describir tipos y payloads | Imponer un paquete compartido no aprobado o decidir permisos | Propiedad/distribución pendientes; seguir [API contracts](../../../rules/api-contracts.md) |
 | Prisma y RDS | Guardar filas, transacciones, constraints e índices | Ser invocados desde Colyseus o desde el navegador | Único cliente: `PrismaService` dentro de NestJS (`master-document.md:150,272`) |
 
 
@@ -307,58 +324,64 @@ Tres decisiones que el diagrama deja explícitas y conviene no perder de vista:
 ```mermaid
 classDiagram
   class InvitationsController {
-    +create(roomId, dto)
+    +create(officeId, dto)
     +revoke(invitationId)
     +redeem(code)
   }
   class InvitationsService {
-    +issue(adminId, roomId, options)
-    +revoke(adminId, invitationId)
+    +issue(actorId, officeId, options)
+    +revoke(actorId, invitationId)
     +redeem(userId, code)
   }
   class JoinRequestsService {
-    +submit(userId, roomId)
+    +submit(userId, officeId)
     +resolve(adminId, requestId, decision)
   }
   class MembershipsService {
-    +changeRole(adminId, roomId, userId, role)
-    +kick(actorId, roomId, userId)
-    +leave(userId, roomId)
-    +assertNotLastOwner(roomId, userId)
-    +assertCanActOn(actorRole, targetRole)
+    +assignAdmin(ownerId, officeId, userId)
+    +deactivateMembership(actorId, officeId, userId)
+    +leave(userId, officeId)
+    +assertNotOwner(userId, officeId)
+    +assertCanManageTarget(actorId, targetId, officeId)
   }
   class MeetingsService {
     +create(actorId, dto)
     +respondAttendance(userId, meetingId, status)
   }
-  class RoomModeratorGuard {
-    +canActivate(context)
-    +assertModeratorOrOwner(userId, roomId)
+  class OfficeManagementGuard {
+    +assertOwnerOrAdmin(userId, officeId)
   }
-  class RoomAdminGuard {
-    +canActivate(context)
-    +assertOwner(userId, roomId)
+  class OfficeOwnerGuard {
+    +assertOwner(userId, officeId)
+  }
+  class RoomLeadershipPolicy {
+    +assertLeaderOrOfficeManagement(userId, roomId)
+    +assertCanManageContent(userId, content)
   }
   class RealtimePublisher {
     +publishToRoom(roomId, event)
     +publishToUser(userId, event)
     +disconnectUser(roomId, userId)
   }
-  class RoomMembershipGuard {
+  class RoomAccessGuard {
     +canActivate(context)
   }
 
   InvitationsController --> InvitationsService
-  InvitationsController --> RoomAdminGuard : create y revoke
+  InvitationsController --> OfficeManagementGuard : create and revoke
+  MembershipsService --> OfficeOwnerGuard : assign or remove admin
+  MeetingsService --> RoomLeadershipPolicy : own versus others
   InvitationsService --> RealtimePublisher
   JoinRequestsService --> RealtimePublisher
   MembershipsService --> RealtimePublisher
   MeetingsService --> RealtimePublisher
-  RoomModeratorGuard --|> RoomMembershipGuard
-  RoomAdminGuard --|> RoomModeratorGuard
+  RoomLeadershipPolicy --> RoomAccessGuard : room access required
+  OfficeManagementGuard --> OfficesService : active office role
 ```
 
-La jerarquía de guards replica la de roles: `RoomModeratorGuard` exige `moderator` u `owner` (UC-23, UC-25, UC-26) y `RoomAdminGuard` exige `owner` (UC-21, UC-22, UC-24, UC-27, UC-28). Ambos se ejecutan en el mismo orden obligatorio de la [05-reference/conventions.md](../05-reference/conventions.md#12-orden-obligatorio-de-verificación): autenticación, autorización, validación y escritura. `MembershipsService.assertCanActOn` impide que un rol actúe sobre otro de igual o mayor jerarquía, salvo el Admin. `RealtimePublisher.disconnectUser` es el único punto por donde NestJS pide a Colyseus cerrar una sesión (UC-25).
+No se modela una herencia lineal de roles. `OfficeManagementGuard` comprueba Dueño/Admin; `OfficeOwnerGuard` protege nombramientos y baja/recuperación; `RoomLeadershipPolicy` limita al Líder a su habitación y contenido propio. Cualquier miembro con acceso gestiona tareas, también ajenas. Admin no expulsa Dueño ni otro Admin. La expulsión es baja lógica que conserva contenido y revoca acceso en toda la oficina; el Dueño no abandona ni transfiere.
+
+`JoinRequestsService` es Evolución (RF-OFI-018). Columnas, liderazgo múltiple, notificaciones y asistencia se detallarán en sus módulos, sin omitir sus RF porque no se enumeren todas las clases aquí. Se aplica el [orden de verificación](../05-reference/conventions.md#12-orden-obligatorio-de-verificación), con difusión solo a destinatarios autorizados. `RealtimePublisher.disconnectUser` y la revalidación cortan acceso aunque se conserve un ticket anterior.
 
 ---
 
