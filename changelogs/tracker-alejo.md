@@ -1,5 +1,13 @@
 # Tracker — Alejo
 
+## 2026-10-28 — Reconcile PR #6 with merged domain rules
+
+- **Status:** in-progress
+- **Area / files:** `docs/diagrams/`, `master-document.md`, `docs/requirements-decision.md`, `rules/data-and-time.md`, `README.md`
+- **Change:** Bringing merged PR #5 from `develop` into the PR #6 feature branch, preserving Agustin's domain rules and contributor history. Reconciliation will follow his timezone/authorization policies, promote already-mandatory constraints out of proposal status, and link the rules and technical justification without duplicating them.
+- **Reason:** PR #6 was prepared before those rules were merged; its examples and source references must match the current baseline.
+- **Next step:** Finish source/diagram reconciliation, verify, and update PR #6. No PR merge or closure is authorized.
+
 ## 2026-10-28 — Align diagrams and documentation with the functional baseline
 
 - **Status:** completed

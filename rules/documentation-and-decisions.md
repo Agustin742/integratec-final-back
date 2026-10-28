@@ -6,9 +6,7 @@ Documentation must distinguish approved requirements, proposals, and observed im
 
 - Course obligations belong to [Course requirements](./project-requirements.md); overall product scope belongs to the [project document](../master-document.md).
 - Permanent engineering constraints belong to [rules](./README.md). Work status belongs to [GitHub Projects](./github-projects.md), not rule documents.
-- Functional behavior and permissions are specified in the [ERS](../docs/functional-requirements.md); confirmed clarifications belong in [Requirements decisions](../docs/requirements-decision.md). The project document and technical rules **MUST** remain consistent with those decisions without treating unresolved ERS assumptions as approved.
-- The visual target and rendering stack are agreed: **Three.js + React Three Fiber**, as recorded in the [project document](../master-document.md#31-entorno-tridimensional-isométrico). This choice is not evidence of implementation.
-- Diagrams are derived views, not authority over requirements or approved decisions. Mermaid is the editable diagram format; its content **MUST NOT** silently override those sources.
+- The expected visual target in frontend art direction is agreed, and the rendering technology is Three.js with React Three Fiber, as stated in the [project document](../master-document.md).
 - A proposal **MUST NOT** become mandatory because it appears in an example, diagram, generated document, or AI response.
 - Conflicts **MUST** be recorded and resolved with the team before the conflicting implementation proceeds. Contributors **MUST NOT** silently choose whichever source is convenient.
 

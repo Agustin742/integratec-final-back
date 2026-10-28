@@ -1,2 +1,11 @@
 .codegraph/
 /.vscode/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!example.tfvars
+crash.log
+*.tfplan

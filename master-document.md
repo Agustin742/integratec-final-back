@@ -172,6 +172,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Calidad de código | **ESLint + Prettier** | Análisis estático y formato. |
 | Automatización | **GitHub Actions** | CI documental y verificaciones de tooling existentes; lint/tests de aplicación y despliegue como objetivo al introducir los servicios. |
 | Infraestructura | **AWS** | Frontend, servicios persistentes, datos, archivos, identidad de servicios y observabilidad. |
+| Infraestructura como código | **Terraform** | Definición versionada y revisable de los recursos AWS; estado remoto en S3 y planes revisados antes de aplicar. Vive en el repositorio backend. |
 
 ## 6. Arquitectura general actualizada 
 
@@ -306,6 +307,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 
 - Los repositorios frontend y backend tienen **CI, build y responsabilidad de despliegue independientes**. El frontend produce su build web de React/Vite; el backend produce imágenes Docker para la API NestJS y el servidor Colyseus.
 - Cada repositorio administra su propio flujo de **GitHub Actions** y sus verificaciones. La publicación del frontend en Amplify y de las imágenes backend en ECR, seguida de la actualización de ECS, corresponde a sus respectivos flujos; la coordinación entre ellos no presupone un workspace compartido.
+- Los recursos AWS se definen y modifican con **Terraform** desde el repositorio backend (`infra/`), sin cambios manuales en la consola sobre recursos gestionados. El detalle está en `rules/infrastructure-as-code.md` del backend.
 - El **ALB** termina TLS con certificado de **AWS Certificate Manager**; dirige `/api/*` a NestJS y una ruta/host reservado al servicio Colyseus. Se configuran explícitamente endpoints de matchmaking, conexiones WebSocket y orígenes permitidos sin mezclar los servicios.
 - Los servicios ECS tienen **Security Groups** específicos. **RDS permanece en subredes privadas**, accesible solo desde los componentes autorizados. Las tareas ECS usan roles IAM de mínimo privilegio; Bedrock se invoca desde NestJS, nunca desde el navegador.
 - Las credenciales, claves de sesión y cadenas de conexión se inyectan por configuración segura. El frontend recibe únicamente valores públicos (por ejemplo, URL de API y URL de Colyseus).
@@ -460,24 +462,25 @@ La implementación seguirá entregas incrementales, con despliegue desde etapas 
 
 ## 13. Organización documental
 
-Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional podrá desarrollarse en los archivos propuestos de `rules/`, por ejemplo. Los nombres listados a continuación son **planificados, no una afirmación de que esos archivos ya existan**:
+Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional se desarrolla en los archivos de `rules/` y `docs/` de este repositorio (backend). Los archivos marcados como *(frontend)* son responsabilidad del repositorio frontend y **no existen en este repositorio**; los demás reflejan los nombres reales:
 
 ```text
 master-document.md
 rules/
   architecture.md
-  3d-world-and-camera.md
-  movement-and-interactions.md
-  art-direction.md
-  avatars-and-customization.md
-  colyseus-and-multiplayer.md
+  3d-world-and-camera.md                (frontend)
+  movement-and-interactions.md          (frontend)
+  art-direction.md                      (frontend)
+  avatars-and-customization.md          (frontend)
+  realtime-and-presence.md
   rooms-and-permissions.md
   tasks-and-productivity.md
   communication-and-meetings.md
   ai-bot-and-daily-briefing.md
   data.md
-  security-and-authentication.md
+  authentication-and-session.md
   aws-infrastructure.md
+  infrastructure-as-code.md
   quality-and-testing.md
 docs/
   technical-justification.md
