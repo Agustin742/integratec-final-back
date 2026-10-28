@@ -43,11 +43,23 @@ Rules describe **how the project must be designed and built**. They are not impl
 
 ### Architecture and integration
 
+- [Architecture](./architecture.md) — NestJS and Colyseus boundaries, their integration, and module responsibilities.
 - [API contracts](./api-contracts.md) — cross-repository ownership, payloads, compatibility, and integration evidence.
 - [Data and time](./data-and-time.md) — opaque identity, optional values, dates, time zones, and persistence boundaries.
+- [Data](./data.md) — relational entities, constraints, deletion policy, and migration discipline.
+- [Realtime and presence](./realtime-and-presence.md) — Colyseus rooms, join authorization, ephemeral state, and reconnection.
+
+### Domain rules
+
+- [Authentication and session](./authentication-and-session.md) — credentials, hashing, expiring sessions, logout, and `401` versus `403`.
+- [Offices, rooms, and permissions](./rooms-and-permissions.md) — roles, permission matrix, invitations, and server-side access checks.
+- [Tasks and productivity](./tasks-and-productivity.md) — task authority, validation, and board consistency.
+- [Communication and meetings](./communication-and-meetings.md) — chat history access, announcements, meetings, and attendance.
+- [AI bot and daily briefing](./ai-bot-and-daily-briefing.md) — Bedrock integration, read-only bot, once-per-day briefing, and fallback.
 
 ### Operation and reliability
 
+- [AWS infrastructure](./aws-infrastructure.md) — service roles, network isolation, least-privilege identity, and cost control.
 - [Configuration and environments](./configuration-and-environments.md) — configuration validation, secret boundaries, and environment isolation.
 - [Deployment and operations](./deployment-and-operations.md) — environment-based configuration, build integrity, and deployment readiness.
 - [Error handling and feedback](./error-handling-and-feedback.md) — error reporting, recovery, and sensitive data protection.
