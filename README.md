@@ -6,7 +6,7 @@ This repository currently contains project documentation and CI tooling; no back
 
 The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints.
 
-Design diagrams (use cases, architecture, realtime, data model, classes, and sequences) live in [`docs/diagrams/`](./docs/diagrams/README.md). Mermaid is their editable source format, not authority over requirements or approved decisions. Diagram alignment is in progress; technical proposals are not implemented or approved contracts merely because they appear in a diagram.
+Design diagrams (use cases, architecture, realtime, data model, classes, and sequences) live in [`docs/diagrams/`](./docs/diagrams/README.md). Mermaid is their editable source format, not authority over requirements or approved decisions. The views are aligned with the functional baseline; technical proposals are not implemented or approved contracts merely because they appear in a diagram. The [review guide](./docs/diagrams/review-guide.md) records local review slices, observed checks, and outstanding visual/remote verification.
 
 ## Repository flow
 

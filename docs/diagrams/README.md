@@ -82,6 +82,8 @@ flowchart TD
 - **Reglas del Proyecto:** Las especificaciones de [rules/security.md](../../rules/security.md) y [rules/project-requirements.md](../../rules/project-requirements.md) son de cumplimiento mandatorio.
 - **Actualización:** Cuando una decisión de código altere un contrato o resuelva un ítem de [05-reference/gaps.md](./05-reference/gaps.md), el PR correspondiente debe actualizar el diagrama asociado.
 
+La [guía de revisión](./review-guide.md) indica las ramas locales, sus bases y los controles observados, sin confundirlos con PRs publicados.
+
 ## 5. Alcance de esta alineación
 
 Oficinas con principal y habitaciones adicionales; membresía de oficina separada de acceso y liderazgo; columnas configurables, tareas colaborativas, chat por oficina/habitación, asistencia MVP y bot de solo lectura. Se conserva la organización original de vistas, actualizando su contenido según la ERS de Luis. La propiedad no se transfiere; el Dueño puede dar de baja y recuperar durante 15 días. Three.js + R3F están elegidos y Buenos Aires es la zona del producto. No se implementa backend, migración ni infraestructura con estos documentos.
