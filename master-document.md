@@ -102,7 +102,7 @@ Interfaz lo más simple posible:
 - **Moneda única de puntos**, obtenida por calificaciones de actividades.
 - Los puntos compran **ítems del aula** (juegos, mejoras) y **accesorios de la mascota**. Los ítems deben aportar funcionalidad real.
 - **Racha de conexión:** cuenta solo cuando ocurre una actividad real, no por el mero inicio de sesión.
-- **Mascota:** una por aula, con accesorios; puede iniciar la conversación con el bot.
+- **Mascota:** una por aula, con accesorios comprados con puntos; es un elemento de motivación y no está vinculada al bot IA.
 - **Minijuegos del aula** (por ejemplo Tetris, Pong): no pueden jugarse durante la clase; el profesor los deshabilita cuando quiera.
 - **Medallas** por logros.
 
@@ -137,7 +137,8 @@ Los siguientes son **ejemplos, no una lista cerrada**. Se podrán incorporar nue
 | Cartelera | Tablón de anuncios del aula. |
 | Boletín o libro de notas | Calificaciones, puntos y medallas. |
 | Tienda | Comprar ítems del aula y accesorios de la mascota. |
-| Mascota | Conversar con el bot IA; ver accesorios. |
+| Mascota | Ver la mascota del aula y sus accesorios. |
+| Bot tutor | Conversar con el bot IA (guía de estudio). |
 | Consola o máquina de juegos | Minijuegos (deshabilitables por el profesor). |
 | Puertas y accesos | Entrar o salir del aula con control de permisos. |
 | Pantalla o proyector | Videollamada y presentación en vivo. |
@@ -186,7 +187,7 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 ## 4. Bot con inteligencia artificial
 
-El bot forma parte del mundo como personaje (la mascota del aula) y también está disponible desde el modo 2D. Funciona como **guía de estudio**: responde consultas sobre el material del aula y orienta al alumno sin resolverle las tareas.
+El bot forma parte del mundo como un personaje propio (el tutor del aula), independiente de la mascota, y también está disponible desde el modo 2D. Funciona como **guía de estudio**: responde consultas sobre el material del aula y orienta al alumno sin resolverle las tareas.
 
 **Capacidades y reglas del bot:**
 
@@ -561,7 +562,7 @@ La implementación seguirá entregas incrementales, con despliegue desde etapas 
 
 ## 13. Organización documental
 
-Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional se desarrolla en los archivos de `rules/` y `docs/` de este repositorio (backend). Los archivos marcados como *(frontend)* son responsabilidad del repositorio frontend y **no existen en este repositorio**; los marcados como *(nuevo, planificado)* aún no existen y se crearán al realinear las reglas; los demás reflejan los nombres reales:
+Este documento es el **índice conceptual y fuente de decisiones generales**. El detalle técnico y funcional se desarrolla en los archivos de `rules/` y `docs/` de este repositorio (backend). Los archivos marcados como *(frontend)* son responsabilidad del repositorio frontend y **no existen en este repositorio**; los demás reflejan los nombres reales:
 
 ```text
 master-document.md
@@ -572,16 +573,13 @@ rules/
   art-direction.md                      (frontend)
   avatars-and-customization.md          (frontend)
   realtime-and-presence.md
-  classrooms-and-roles.md               (nuevo, planificado; reemplaza rooms-and-permissions.md)
-  activities-and-grading.md             (nuevo, planificado; reemplaza tasks-and-productivity.md)
-  points-and-shop.md                    (nuevo, planificado)
-  live-classroom-tools.md               (nuevo, planificado; credenciales de medios y sincronización colaborativa)
-  notifications.md                      (nuevo, planificado; email y notificaciones; UI en frontend)
-  rooms-and-permissions.md              (a realinear)
-  tasks-and-productivity.md             (a realinear)
-  communication-and-meetings.md         (a realinear: chat, anuncios y @menciones)
-  ai-bot-and-daily-briefing.md          (a realinear: RAG, bloqueo en exámenes, anticopia)
-  data.md                               (a realinear al modelo escolar)
+  classrooms-and-roles.md
+  activities-and-grading.md
+  points-and-shop.md
+  live-classroom-tools.md
+  communication-and-notifications.md    (chat, anuncios, @menciones, mensajes de padres, notificaciones y email)
+  ai-bot-and-daily-briefing.md
+  data.md
   authentication-and-session.md
   aws-infrastructure.md
   infrastructure-as-code.md
@@ -592,6 +590,6 @@ docs/
   architecture.md
 ```
 
-**Seguimiento pendiente:** los archivos `rules/` existentes todavía describen el modelo anterior de oficinas y habitaciones y deben **realinearse** con este documento. Hasta entonces, ante contradicción, prevalece este documento maestro.
+**Seguimiento pendiente:** los archivos `rules/` de este repositorio ya están realineados con el modelo escolar. Los archivos de `docs/` (requisitos funcionales, historias de usuario, decisiones de requisitos, justificación técnica y arquitectura) todavía describen el modelo anterior de oficinas y habitaciones y deben realinearse; hasta entonces, ante contradicción, prevalece este documento maestro.
 
 Los archivos `rules/` desarrollan los detalles de implementación y experiencia sin contradecir este contrato general.
