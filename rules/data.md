@@ -59,9 +59,10 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - User email **MUST** be unique after normalization.
 - (School, user) **MUST** be unique among school memberships; a school **MUST** have exactly one Owner membership, which **MUST NOT** be reassigned except through the transfer operation.
 - (Classroom, student) **MUST** be unique among enrollments.
+- A student **MUST** have at most **2** guardians (active ParentLinks); the server **MUST** reject a third.
 - (Parent, child, classroom context) **MUST** be unique among parent links. ParentLink creation **MUST** be rejected for a classroom in adult mode.
 - A Classroom **MUST** have exactly one Pet. Accessory ownership **MUST** be unique per (pet, shop item).
-- A Submission **MUST** be unique per (activity, student) unless resubmission history is adopted (open); a Grade **MUST** be unique per submission.
+- A Submission **MUST** be unique per (activity, student) unless the activity allows resubmission (teacher-configured per activity; history representation is open); a Grade **MUST** be unique per submission.
 - A PointsTransaction **MUST** be unique per (source type, source id) for earnings, and entries **MUST** be immutable.
 - Streak **MUST** have one row per student, and the qualifying-day record **MUST** be unique per (student, local day).
 - Mention **MUST** be unique per (source, mentioned user).
@@ -107,7 +108,7 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 
 - Final table and column names, enum values, and field limits.
 - Session storage, if the chosen mechanism needs it ([Authentication and session](./authentication-and-session.md)).
-- Ledger scope (per classroom or global) and medal catalog.
+- Medal catalog.
 - Resubmission history and grade history representation.
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.
 - School, classroom, and account deletion effects.

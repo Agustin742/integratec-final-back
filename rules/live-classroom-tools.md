@@ -18,8 +18,8 @@ Live classroom tools are teacher-driven controls and collaboration channels that
 ### Freeze and seat lock
 
 - **Freeze** sends every avatar to its assigned seat and locks it there. The server owns the seat assignment (one seat per avatar, assigned by the server) and the lock; it **MUST** reject movement input from frozen avatars rather than rely on clients to stop sending it.
-- Avatars that join or reconnect while the classroom is frozen **MUST** be placed at a seat and locked. Avatars that cannot be seated (more users than seats) are an **open** case.
-- Whether the teacher is exempt from the lock (the default is that teacher-level users are exempt) and whether students may still use seat-bound interactions (chat, desk, bot) while frozen are **open**; the rule recorded **MUST** be enforced by the server.
+- Avatars that join or reconnect while the classroom is frozen **MUST** be placed at a seat and locked. Seats grow with the number of students: there **MUST** always be one seat per enrolled student.
+- Freeze does **not** lock the teacher; teacher-level users keep free movement. What students may do while frozen (seat-bound interactions such as chat, desk, bot) is **open**; the rule recorded **MUST** be enforced by the server.
 - Unfreezing releases the lock and restores free movement without teleporting avatars.
 
 ### Mute everyone
@@ -73,6 +73,6 @@ Tests **MUST** cover: each control rejected for student, parent, other-classroom
 
 - Media service (LiveKit or Amazon Chime SDK) and credential format.
 - Collaborative sync approach (Colyseus state or a CRDT such as Yjs) and persistence of boards.
-- Seat assignment when seats are fewer than users, teacher exemption, and what students may do while frozen.
+- What students may do while frozen.
 - Hand raising and selective unmuting; student presenters.
 - Recording of calls (not in scope).

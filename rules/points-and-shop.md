@@ -11,7 +11,7 @@ Points are a server-owned ledger. The client never sets a balance, a price, a st
 ## Points ledger
 
 - There is a **single currency of points**. Every change is a **PointsTransaction** appended to a ledger: positive for earnings, negative for purchases, and compensating entries for corrections. Entries are immutable; a balance is the sum of a student's entries and **MUST NOT** be a client-writable field.
-- The ledger is scoped to a student and a classroom (or to the student globally); which scope applies is **open**. Whichever is chosen, a purchase **MUST** only spend points the buyer can use for that item.
+- The points balance is per student (an individual ledger). A purchase **MUST** only spend points the buyer can use for that item.
 - Each entry records the reason and source (for example grade of a submission, purchase, correction, medal) and **MUST** reference its source record so an earning cannot be duplicated: a unique constraint on (source type, source id) **MUST** make the earning idempotent.
 - Balance changes and the records that justify them (grade, purchase) **MUST** commit in the same transaction.
 - A balance **MUST NOT** go negative. A purchase **MUST** check and debit under a lock or equivalent atomic condition so concurrent purchases cannot overspend.
@@ -23,7 +23,7 @@ Points are a server-owned ledger. The client never sets a balance, a price, a st
 - The streak counts consecutive days with a **real activity** (for example submitting an activity, completing a review, or another qualifying action list recorded as a decision). A bare login or connection **MUST NOT** extend it.
 - The server decides what counts and which day an activity belongs to, using server time and the zone chosen in [Data and time](./data-and-time.md). Client clocks are never authoritative.
 - Recording the day's activity **MUST** be idempotent per (student, local day). Concurrent qualifying actions on one day **MUST** count once.
-- The rule for breaking the streak (a missed day, grace period, vacation or non-school days) is **open**. The server **MUST** compute it consistently, and a streak **MUST NOT** be restorable by a client request.
+- The streak **MUST** break when the requirement (a real activity in the period) is not met. Grace periods and non-school days are deferred to implementation. The server **MUST** compute it consistently, and a streak **MUST NOT** be restorable by a client request.
 - Whether the streak yields points or medals is **open**.
 
 ## Shop and items
@@ -31,7 +31,7 @@ Points are a server-owned ledger. The client never sets a balance, a price, a st
 - The **ShopItem** catalog defines what can be bought, its price, and its kind: **classroom items** (games, upgrades) and **pet accessories**. A catalog change by an administrator or teacher **MUST NOT** alter the price already paid in past ledger entries.
 - A **ClassroomItem** is the instance a classroom owns after a purchase. Items **MUST** map to real, working functionality; a catalog entry without an implemented effect **MUST NOT** be purchasable.
 - Purchase is one atomic operation: verify authorization, item availability, and balance; debit the ledger; create the classroom item or accessory. A retried request **MUST** be idempotent (for example an idempotency key) and **MUST NOT** charge twice.
-- Who may buy (a student for themselves, a student for the classroom, or the teacher on behalf of the classroom) and whether classroom items are paid collectively are **open**. The ownership rule recorded **MUST** be enforced by the server.
+- Classroom items are bought by students, debited from the buyer's individual balance; the server **MUST** enforce this ownership rule.
 - Prices and effects are server-side data. The client **MUST NOT** send a price.
 - Refunds are **open**. If allowed, they are compensating ledger entries, never deletions.
 - Items that are consumable versus permanent, stacking, and limits per classroom are **open**.
@@ -68,8 +68,7 @@ Tests **MUST** cover: grade-to-points idempotency; concurrent purchases never ov
 
 ## Open decisions
 
-- Ledger scope (per classroom or global) and buyer/owner of classroom items.
-- Streak definition, break rule, and rewards.
+- Streak grace periods, non-school days, and rewards.
 - Additional earning sources, medal catalog, and refunds.
 - Default state and rewards of mini-games.
 - Visibility of other students' balances.

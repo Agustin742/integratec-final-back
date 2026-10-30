@@ -17,7 +17,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 ## Join authorization
 
 - Joining **MUST** require a verifiable identity and current access to the target classroom, confirmed by NestJS from persisted state: enrollment (student), teacher-level authority (teacher, or school Owner or Admin), or no live access (Parent; parents do not enter the 3D classroom). A join without that confirmation **MUST** be rejected.
-- Rejection **MUST** apply the same principles as `401` and `403` (no authentication, no permission) and **MUST NOT** reveal whether a foreign classroom exists.
+- Rejection **MUST** apply the same principles as `401` and `403` (no authentication, no permission) and **MUST NOT** reveal whether a foreign classroom exists (foreign resources respond `404`).
 - A user **MUST NOT** hold more simultaneous live presences than the product allows; the duplicate-connection policy is **open**.
 - Access can change while connected. When a user is removed from the classroom, loses the session, or the classroom becomes unavailable, the server **MUST** remove them from the live room promptly and **MUST** reject reconnection. The propagation mechanism is **open** and is part of the [Architecture](./architecture.md) integration contract.
 - Join credentials **MUST NOT** be written to logs.
@@ -42,7 +42,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 ## Classroom controls and broadcasts
 
 - Control messages (freeze, mute everyone, collaboration lock, disable games) are accepted only from a user whose current teacher-level authority over the classroom NestJS has confirmed; any other sender is ignored without side effects. See [Live classroom tools](./live-classroom-tools.md).
-- **Freeze** assigns each avatar a seat and locks it there; the lock is ephemeral room state, applied to later joins and reconnections, and reversed by an explicit unfreeze.
+- **Freeze** assigns each student avatar a seat and locks it there (the teacher is not locked); the lock is ephemeral room state, applied to later joins and reconnections, and reversed by an explicit unfreeze.
 - **Chat mute** and **games disabled** are persisted classroom states (the persistent write is by NestJS) and are broadcast to connected clients after the commit (`chat:muted`, a games-state event). A client that connects later receives the current state on join.
 - **Mute everyone** is enforced by the media service permissions as well as announced to clients; the broadcast alone is not enforcement.
 - Illustrative events such as `classroom:frozen`, `chat:muted`, and `whiteboard:update` are not final until specified under [API contracts](./api-contracts.md).

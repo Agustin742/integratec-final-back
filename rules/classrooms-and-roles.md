@@ -56,7 +56,7 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 
 - Every protected read or mutation **MUST** verify authentication, then the relevant membership (school, enrollment, or parent link), then the role, in that order, from current persisted state.
 - Identifiers in paths, bodies, and realtime messages **MUST** be treated as untrusted. The server **MUST** resolve the resource, derive its classroom and school, and check the actor against those, not against client-supplied identifiers (ID tampering).
-- A request for a resource the actor cannot access **MUST NOT** reveal its existence. The `403` versus `404` choice is **open** and tracked in [Authentication and session](./authentication-and-session.md).
+- A request for a resource the actor cannot access **MUST NOT** reveal its existence. Resources outside the actor's scope **MUST** respond `404`; `403` is reserved for insufficient role on a resource the actor can see ([Authentication and session](./authentication-and-session.md)).
 - List endpoints **MUST** filter results by the actor's access rather than rely on the caller to pass a scope.
 - A rejected action **MUST NOT** change persisted state.
 - Interacting with a classroom object (desk, board, shop) grants nothing on the related resource; the resource's own check always applies.
@@ -67,27 +67,27 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 - Onboarding is by **email invitation**: Owner or Admin invite teachers; teachers (and Owner or Admin) invite students and parents to a classroom. An invitation is bound to one target (school or classroom), one role, and one email address.
 - The raw invitation secret **MUST NOT** be stored; only a hash **MUST** be persisted. The invitation **MUST** carry an expiry, be revocable, and be single use. Lifetime defaults are configuration, not fixed in code.
 - Lookup, expiry, revocation, use, and membership creation **MUST** be validated and applied atomically so concurrent acceptances cannot create duplicate memberships.
-- Acceptance **MUST** require authentication as the invited account. Whether the invited email must match the account email exactly is **open**; the default is that it **MUST** match after normalization.
+- Acceptance **MUST** require authentication as the invited account. The invited email **MAY** differ from the account email; possession of the valid, unexpired invitation secret plus authentication is what binds the account.
 - Invitation delivery goes through the email service described in [Communication and notifications](./communication-and-notifications.md). An invitation request **MUST NOT** reveal whether the address already has an account.
 - Invitations **MUST NOT** be accepted for a deleted school or classroom, and accepting twice **MUST NOT** duplicate the membership.
 - Expelling or removing a member is a logical deactivation: created content (messages, submissions, grades) is preserved and attributed. Loss of access **MUST** apply immediately, including to live connections.
 
 ## Parents and adult mode
 
-- A parent is linked to each child by a ParentLink created through an invitation that the school or teacher issues; a parent **MAY** have many children and a child **MAY** have several parents or guardians (count limit is **open**).
+- A parent is linked to each child by a ParentLink created through an invitation that the school or teacher issues; a parent **MAY** have many children and a child **MAY** have several parents or guardians (at most **2** guardians per student).
 - A classroom (or school) **MAY** run in **adult education mode**: students use their own email, and ParentLink creation, parent invitations, and parent notifications **MUST** be rejected for that classroom. The mode is a persisted classroom property.
-- Switching a classroom to adult mode while parent links exist is **open**; until decided, the server **MUST** refuse the switch when active links exist.
+- Switching a classroom to adult mode **MUST** keep existing parent links, but every parent action over the child's account (viewing, messaging, notifications, new links) **MUST** be disabled while the mode is on.
 - Data about minors **MUST** be limited to what the features require and **MUST NOT** be exposed across classrooms or schools; see [Observability and privacy](./observability-and-privacy.md).
 
 ## Verification
 
 Tests **MUST** cover each matrix row for allowed and denied roles; Owner or Admin acting on any classroom of their school and denied on another school; a Teacher denied on another teacher's classroom; a Parent denied on unlinked children; cross-school identifiers; independent-teacher isolation; adult mode rejecting parent links; and expired, revoked, reused, and concurrent invitations. Follow [Quality and testing](./quality-and-testing.md).
 
+## Account paths
+
+- One account **MAY** hold both the school path and the independent-teacher path.
+
 ## Open decisions
 
-- Whether a foreign resource returns `403` or `404`.
-- What Admin delegation covers compared with the Owner (transfer or deletion of the school).
-- Whether the invited email must match the account email exactly.
-- Maximum guardians per child, and behavior when switching a classroom to adult mode with existing links.
-- Whether a user may belong to several schools or both paths with a single account.
+- What Admin delegation covers compared with the Owner (transfer or deletion of the school): deferred to the roles implementation.
 - Account and school deletion effects on retained records.

@@ -40,15 +40,15 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 ## Submissions
 
 - A student may submit only to an activity of a classroom where they are enrolled, only when it is published, and subject to its deadline policy.
-- Author and timestamps are set by the server. There is at most one current submission per (activity, student); resubmission rules are **open**.
+- Author and timestamps are set by the server. There is at most one current submission per (activity, student); whether resubmission is allowed is configured by the teacher per activity.
 - A submission is readable by its student, by staff with authority over the classroom, and, as a grade only, by the student's linked parents. A student **MUST NOT** read other students' submissions.
 - Submitting **MUST** be idempotent for a retried request (for example through an idempotency key) so a network retry does not create duplicates.
 
 ## Grades and weighted points
 
-- Only staff with authority over the classroom may grade. The server **MUST** reject a grade for a submission outside the actor's authority and **MUST** validate the value against the activity's grading scale (scale and bounds are **open**).
+- Only staff with authority over the classroom may grade. The server **MUST** reject a grade for a submission outside the actor's authority and **MUST** validate the value against the activity's grading scale (grades use a **0-100** scale).
 - A grade belongs to exactly one submission; regrading updates it and **MUST** keep a history sufficient to correct points (see below).
-- **A grade is converted to points on the server, weighted by activity type.** An exam is worth more than a TP; the weights are configuration values, not constants in code, and their numeric values are **open**.
+- **A grade is converted to points on the server, weighted by activity type.** An exam is worth more than a TP; the weights are configuration values, not constants in code, and their numeric values are deferred to implementation.
 - The conversion and the resulting ledger entry **MUST** happen in the same transaction as the grade, so a grade without its points, or points without a grade, cannot persist.
 - Publishing the grade to the student and linked parents, and notifying them, happens after the commit; see [Communication and notifications](./communication-and-notifications.md).
 - Regrading **MUST** adjust points through compensating ledger entries, never by editing past ones; see [Points and shop](./points-and-shop.md).
@@ -77,8 +77,8 @@ Tests **MUST** cover: role-by-role CRUD, foreign activity and submission identif
 
 ## Open decisions
 
-- Field limits, grading scale, and point weights per type.
-- Resubmission, attempts, late submission, and partial credit.
+- Field limits; point weights per type (deferred to implementation).
+- Attempts, late submission, and partial credit.
 - Whether exams target the whole classroom or selected students, and how the window is defined.
 - Editing or deleting an activity that already has submissions.
 - ActivityMetric formula and aggregation interval.

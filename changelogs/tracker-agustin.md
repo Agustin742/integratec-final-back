@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-10-30 — Record resolved classroom, grading and points decisions
+
+- **Status:** completed
+- **Area / files:** `rules/` (classrooms-and-roles, authentication-and-session, activities-and-grading, points-and-shop, data, live-classroom-tools, realtime-and-presence)
+- **Change:** Recorded the user's decisions as rules: foreign resources respond `404` (`403` only for insufficient role on a visible resource), invitation email need not match, at most 2 guardians per student, adult mode keeps parent links but disables parent actions, one account may hold both paths, 0-100 grades, teacher-configured resubmission, per-student points ledger, classroom items bought by students, streak breaks when the activity requirement is unmet, one seat per enrolled student, freeze does not lock the teacher. Admin versus Owner delegation and point weights stay deferred. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** These were open decisions blocking implementation.
+- **Next step:** Align the frontend rules; decide Admin delegation during the roles implementation.
+
 ## 2026-10-30 — Realign backend rules with the school niche
 
 - **Status:** completed

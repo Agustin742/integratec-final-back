@@ -31,7 +31,7 @@ The backend is the only authority for identity, session validity, and authorizat
 ## Authorization responses
 
 - A missing, malformed, expired, or revoked credential **MUST** yield `401`. A valid credential without sufficient permission **MUST** yield `403`.
-- A request that names a resource of another school or classroom **MUST NOT** reveal whether the resource exists. Whether such requests answer `403` or `404` is **open**; the choice **MUST** be uniform across the API.
+- A request that names a resource of another school or classroom **MUST NOT** reveal whether the resource exists. Such requests **MUST** answer `404`, uniformly across the API; `403` applies only to insufficient role on a resource the caller can see (for example a student calling a teacher-only endpoint of their own classroom).
 - Authentication and permission checks **MUST** run in guards or equivalent central mechanisms so a new endpoint is protected by default; public endpoints **MUST** be explicitly marked.
 - Role and membership **MUST** be read from persisted state per request, not trusted from session contents, so changes apply immediately.
 
