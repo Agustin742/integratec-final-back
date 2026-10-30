@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-10-30 — Rewrite master document for the school niche
+
+- **Status:** completed
+- **Area / files:** `master-document.md`
+- **Change:** Rewrote the product scope for schools (teachers, students, parents, school owner/admin): organization paths, roles, activities and grades, points and shop, classroom controls, 2D classic mode, RAG-based AI bot, MVP split into core and extended, updated R1-R8 checks, and version 0.3. Removed offices/rooms, Kanban, generic tasks, and meetings. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The team narrowed the product to an education niche; the master document must match before the data model and rules are derived from it.
+- **Next step:** Realign the `rules/` files with the new scope (classrooms and roles, activities and grading, points and shop, live classroom tools, notifications, data, AI bot); decide the candidate technologies in `docs/technical-justification.md`.
+
 ## 2026-10-28 — Adopt Terraform for infrastructure as code
 
 - **Status:** completed
