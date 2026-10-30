@@ -69,7 +69,7 @@ sequenceDiagram
   end
 ```
 
-Rules: [Authentication and session](../rules/authentication-and-session.md), [Rooms and permissions](../rules/rooms-and-permissions.md).
+Rules: [Authentication and session](../rules/authentication-and-session.md), [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
 
 ## AWS deployment
 
@@ -97,9 +97,9 @@ IAM least-privilege roles apply to each service, and AWS Budgets monitors cost. 
 | Concern | Rule |
 |---|---|
 | Authentication and sessions | [Authentication and session](../rules/authentication-and-session.md) |
-| Offices, rooms, roles, invitations | [Offices, rooms, and permissions](../rules/rooms-and-permissions.md) |
-| Tasks and boards | [Tasks and productivity](../rules/tasks-and-productivity.md) |
-| Chat, announcements, meetings | [Communication and meetings](../rules/communication-and-meetings.md) |
+| Offices, rooms, roles, invitations | [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) |
+| Tasks and boards | [Activities and grading](../rules/activities-and-grading.md) |
+| Chat, announcements, meetings | [Communication and notifications](../rules/communication-and-notifications.md) |
 | Bot and daily briefing | [AI bot and daily briefing](../rules/ai-bot-and-daily-briefing.md) |
 
 The reasoning behind these choices is in the [technical justification](./technical-justification.md).

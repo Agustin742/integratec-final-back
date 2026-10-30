@@ -14,7 +14,7 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 2. Authentication and authorization
 
-- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per office (Owner, Administrator, Leader, Member); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Rooms and permissions](../rules/rooms-and-permissions.md).
+- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per office (Owner, Administrator, Leader, Member); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
 - **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-office scoping matches the product model and avoids a privileged global role.
 - **Alternatives:** An external identity service (master allows "an equivalent identity service"); OAuth or social login (a recommended extra, not planned for the MVP).
 - **Trade-off:** Building authentication in the application gives full control and a clear defense story, but the team owns its security.
