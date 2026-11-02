@@ -54,5 +54,5 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 7. Known conflicts and notes
 
-- Team diagram proposals (unmerged) model per-room roles and a fixed task status enum; the requirements specify office-level roles with room leaders and configurable board columns. This project follows the requirements.
+- The [derived design views](./diagrams/README.md) follow the merged domain rules for office roles, room leadership, and configurable columns. Their fields and contracts remain proposals only where the rules leave them open; they are not competing requirements.
 - The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.
