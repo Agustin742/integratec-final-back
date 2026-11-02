@@ -26,7 +26,7 @@ The backend is the only authority for identity, session validity, and authorizat
  - Logout **MUST** invalidate the session server-side so later requests with the same credential fail with `401`; discarding it on the client is insufficient.
  - A password reset **MUST** invalidate that account's previous sessions.
  - Session secrets or tokens stored server-side **MUST** be stored hashed or otherwise unusable if the database is read.
-- Refresh tokens **MUST** be rotated on use. Client-side storage of the access and refresh tokens is **open** and **MUST** be agreed with the frontend before release.
+- Refresh tokens **MUST** be rotated on use. The frontend stores both tokens in `sessionStorage` and sends the access token as `Authorization: Bearer` ([D1](../docs/technical-justification.md#d1-session-mechanism)); the API **MUST NOT** rely on cookies for authentication. Access-token lifetime **MUST** stay short, and reuse of a rotated refresh token **SHOULD** revoke the session.
 
 ## Authorization responses
 

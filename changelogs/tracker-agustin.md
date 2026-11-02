@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record client-side token storage
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/authentication-and-session.md`, `docs/diagrams/05-reference/gaps.md`, `docs/diagrams/02-system-architecture/deployment-and-network.md`, `docs/diagrams/04-behavioral/core-flows.md`
+- **Change:** Closed the D1 open item: the frontend stores both tokens in `sessionStorage` and sends a bearer header; recorded the backend-side mitigations (short access tokens, rotation, refresh reuse revocation, no cookie authentication). Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** D1 required agreeing client-side storage with the frontend before release; the frontend decision FD1 was taken.
+- **Next step:** Implement in #18 (login, refresh, logout).
+
 ## 2026-11-02 — Approve D1–D6 and record invitation model (D7)
 
 - **Status:** completed

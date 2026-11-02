@@ -19,7 +19,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Alternatives:** An external identity service (master allows "an equivalent identity service"); OAuth or social login (a recommended extra, not planned for the MVP).
 - **Trade-off:** Building authentication in the application gives full control and a clear defense story, but the team owns its security.
 - **Session mechanism:** decided and approved by Agustin on 2026-11-02; see [decision D1](#d1-session-mechanism).
-- **Open:** Lifetimes (configuration parameters) and client-side storage of the tokens.
+- **Open:** Lifetimes (configuration parameters). Client-side token storage is decided with the frontend; see [decision D1](#d1-session-mechanism).
 
 ## 3. Database and ORM
 
@@ -67,7 +67,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** Cookie-based opaque session (A); opaque bearer token (C).
 - **Affected contracts:** [Authentication and session](../rules/authentication-and-session.md), [Security](../rules/security.md), REST authentication and the realtime join check (D2).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
-- **Open:** Client-side storage of the access and refresh tokens **MUST** be agreed with the frontend before release.
+- **Client-side storage (agreed with the frontend, approved by Agustin on 2026-11-02):** the frontend stores both tokens in `sessionStorage` and sends the access token as `Authorization: Bearer`; the refresh token is sent only to the refresh endpoint. No cookies are used, so API calls need no CSRF token. Accepted trade-off: tokens are readable by scripts running in the page, so the frontend **MUST** enforce a strict Content-Security-Policy and never render unsanitized HTML; this backend keeps access tokens short-lived and rotates refresh tokens. A refresh token presented after rotation **SHOULD** revoke its session as a reuse signal. See the frontend repository's `docs/technical-justification.md` (FD1).
 
 ### D2. NestJS and Colyseus integration
 

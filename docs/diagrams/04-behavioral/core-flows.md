@@ -63,7 +63,7 @@ sequenceDiagram
     end
 ```
 
-Cliente y servidor validan entradas, pero el servidor es la autoridad (RN-02, RN-20). Que las respuestas de login no revelen si falló el correo o la contraseña es obligatorio. El almacenamiento de los tokens en el cliente está **abierto** y debe acordarse con el frontend antes del lanzamiento ([D1](../../technical-justification.md#d1-session-mechanism)). Que un mismo usuario cumpla el camino Escuela y el de Profesor independiente está **abierto** en [Data](../../../rules/data.md#open-decisions).
+Cliente y servidor validan entradas, pero el servidor es la autoridad (RN-02, RN-20). Que las respuestas de login no revelen si falló el correo o la contraseña es obligatorio. El cliente guarda ambos tokens en `sessionStorage` y envía el de acceso como `Authorization: Bearer` ([D1](../../technical-justification.md#d1-session-mechanism)). Que un mismo usuario cumpla el camino Escuela y el de Profesor independiente está **abierto** en [Data](../../../rules/data.md#open-decisions).
 
 ### 1.2 S2 — Ingreso al aula
 
