@@ -1,189 +1,241 @@
-# Secuencias de administración (S8 a S13)
+# Secuencias de administración y servicios del aula (S8 a S13)
 
-> Gestión de oficina, accesos y contenido según la [ERS](../../functional-requirements.md). Nombres de guards, operaciones y respuestas no exigidas por RF son propuestas, no implementación.
+> Gestión de escuela y aula, accesos, comunicación, tienda y consulta al Bot según la [ERS](../../functional-requirements.md). Nombres de guards, operaciones y respuestas no exigidas por RF son propuestas, no implementación.
 
 **En este archivo**
 
-- [1. Escenarios de administración](#1-escenarios-de-administración)
-  - [1.1 S8 — Invitación a oficina](#11-s8--invitación-a-oficina)
-  - [1.2 S9 — Solicitud de ingreso y aprobación](#12-s9--solicitud-de-ingreso-y-aprobación)
-  - [1.3 S10 — Expulsión de un miembro](#13-s10--expulsión-de-un-miembro)
-  - [1.4 S11 — Reunión y asistencia](#14-s11--reunión-y-asistencia)
-  - [1.5 S12 — Admin intenta nombrar otro Admin](#15-s12--admin-intenta-nombrar-otro-admin)
-  - [1.6 S13 — Baja y recuperación de oficina](#16-s13--baja-y-recuperación-de-oficina)
+- [1. Escenarios de administración y servicios](#1-escenarios-de-administración-y-servicios)
+  - [1.1 S8 — Creación de aula](#11-s8--creación-de-aula)
+  - [1.2 S9 — Invitación y alta en el aula](#12-s9--invitación-y-alta-en-el-aula)
+  - [1.3 S10 — Baja lógica de un miembro](#13-s10--baja-lógica-de-un-miembro)
+  - [1.4 S11 — Aviso con notificación](#14-s11--aviso-con-notificación)
+  - [1.5 S12 — Compra en la tienda](#15-s12--compra-en-la-tienda)
+  - [1.6 S13 — Consulta al Bot Guía de Estudio](#16-s13--consulta-al-bot-guía-de-estudio)
 
 ← [Secuencias del núcleo](./core-flows.md) · [Índice](../README.md) · [Convenciones](../05-reference/conventions.md) →
 
-## 1. Escenarios de administración
+## 1. Escenarios de administración y servicios
 
-Las escrituras pasan por NestJS, con autenticación, autorización contextual y validación. Se difunde solo después de confirmar y solo a destinatarios autorizados. Roles de oficina y liderazgo de habitación son ámbitos distintos, no una jerarquía Moderador/Admin.
+Las escrituras pasan por NestJS, con autenticación, autorización contextual y validación, en ese orden ([Convenciones](../05-reference/conventions.md#12-orden-obligatorio-de-verificación)). Se difunde solo después de confirmar y solo a destinatarios autorizados. La autoridad docente es de quien dicta el aula o, por derivación de `SchoolMember`, del Dueño y del Admin de la escuela (RN-03). Todo es **diseño propuesto**, no implementado. Quedan fuera de esta serie, por ser MVP Extendido, la vinculación Padre-Alumno (RF-AUT-004), los controles de clase en vivo (RF-VIV) y la mascota del aula (RF-GAM-004); sus reglas están en la ERS.
 
-### 1.1 S8 — Invitación a oficina
+### 1.1 S8 — Creación de aula
 
-RF-OFI-005 a RF-OFI-009: Dueño o Admin invitan; el Líder no incorpora usuarios nuevos. Enlace único significa identificable, no necesariamente de un solo uso: el límite de usos es opcional.
+RF-AUL-001 (Must · MVP Core, HU-AUL-001; RN-01, RN-04). Un Profesor independiente o el Dueño/Admin de una escuela crean un aula. El `Classroom` pertenece a exactamente una `School` o a un Profesor independiente, y esa exclusión la garantiza la base de datos. Se inicializan en la misma transacción la `Pet`, los `Desk` base y los controles por defecto.
 
 ```mermaid
 sequenceDiagram
-    actor manager as Dueño o Admin de oficina
-    actor guest as Invitado
-    participant api as NestJS
+    actor creator as Profesor o Dueño/Admin de Escuela
+    participant web as React
+    participant api as NestJS (ClassroomsController y ClassroomsService)
+    participant auth as AuthorizationService
     participant db as RDS PostgreSQL
 
-    manager->>api: generar enlace de invitación (contrato propuesto)
-    api->>api: validar sesión, oficina activa y rol Dueño/Admin
-    alt sin permiso
-        api-->>manager: 403 sin crear invitación
+    creator->>web: completar nombre, materia y modalidad (adultMode)
+    web->>api: crear aula
+    api->>api: SessionAuthGuard valida la sesión
+    api->>auth: ¿puede crear en la escuela o como Profesor independiente?
+    alt Alumno o Padre/Tutor
+        auth-->>api: sin autoridad docente
+        api-->>web: 403
+    else escuela ajena al actor
+        auth-->>api: sin relación con la escuela
+        api-->>web: 404 sin revelar existencia
     else autorizado
-        api->>db: guardar invitación con vencimiento y límite opcional de usos
-        db-->>api: escritura confirmada
-        api-->>manager: enlace único copiable
-    end
-    manager-->>guest: compartir enlace
-    guest->>api: abrir enlace; autenticarse o registrarse si hace falta
-    api->>api: validar invitación y oficina activas
-    alt vencida, revocada, agotada u oficina dada de baja
-        api-->>guest: rechazo con motivo; sin nueva membresía
-    else usuario ya es miembro activo
-        api-->>guest: ingresar sin duplicar membresía ni consumo de alta
-    else incorporación permitida
-        api->>db: crear o reactivar OfficeMember member y consumir uso atómicamente
-        db-->>api: membresía confirmada; acceso inicial solo a principal
-        api-->>guest: oficina disponible sin aprobación posterior
+        api->>api: validar DTO
+        api->>db: transacción: INSERT Classroom (schoolId o independentTeacherId), asignación docente, Pet, Desk base y controles por defecto
+        db-->>api: aula creada
+        api-->>web: aula con chatMuted, collaborationLocked y gamesDisabled en falso
     end
 ```
 
-La reinvitación de una persona expulsada no restaura sus accesos anteriores (RF-OFI-008). Guardar solo hash y validar/consumir la invitación atómicamente son obligatorios en [Rooms and permissions](../../../rules/classrooms-and-roles.md#invitations-and-membership); el formato de token y las respuestas concretas requieren diseño técnico; el flujo no impone consumo único ni aprobación manual después de aceptar el enlace.
+Dueño y Admin obtienen autoridad por su `SchoolMember`, sin una `ClassroomMembership` por aula. Cómo consta el profesor titular en el aula (`ClassroomMembership.role`) es **propuesto** y está **abierto** en [Data](../../../rules/data.md#entities). El alcance de lo que puede hacer un Admin frente al Dueño está **abierto** en [Classrooms and roles](../../../rules/classrooms-and-roles.md). La creación de la escuela y del espacio del Profesor independiente ocurre en el registro (S1).
 
-### 1.2 S9 — Solicitud de ingreso y aprobación
+### 1.2 S9 — Invitación y alta en el aula
 
-**Could · Evolución**, RF-OFI-018. No es un camino obligatorio del MVP ni corresponde a un Líder de habitación por ser Líder.
+RF-AUL-002 (Must · MVP Core, HU-AUL-002; RN-02). El Profesor del aula o el Dueño/Admin emiten una invitación por email o un código/enlace con vencimiento y revocación. Solo se guarda el hash del secreto. El rol lo fija la invitación y el invitado no puede cambiarlo. La validación y el alta de la membresía son una única operación atómica e idempotente.
 
 ```mermaid
 sequenceDiagram
-    actor user as Usuario solicitante
-    actor manager as Dueño o Admin de oficina
-    participant api as NestJS
+    actor teacher as Profesor o Dueño/Admin
+    actor guest as Alumno invitado
+    participant api as NestJS (InvitationsService y MembershipsService)
     participant db as RDS PostgreSQL
+    participant mail as Servicio de email
 
-    user->>api: solicitar ingreso a oficina que lo permita (propuesto)
-    api->>api: validar sesión, oficina y solicitud
-    api->>db: guardar JoinRequest pendiente (propuesto)
-    manager->>api: aprobar o rechazar solicitud
-    api->>api: validar rol de oficina y solicitud pendiente
-    alt aprobación autorizada
-        api->>db: resolver solicitud y crear membresía sin duplicados
-        db-->>api: escritura confirmada
-        api-->>user: incorporación como Miembro
-    else rechazo autorizado
-        api->>db: registrar rechazo
-    else sin permiso
-        api-->>manager: 403 sin resolver solicitud
+    teacher->>api: emitir invitación para el aula con rol alumno
+    api->>api: sesión y autoridad docente sobre el aula
+    alt sin autoridad
+        api-->>teacher: 403 (aula propia) o 404 (aula ajena)
+    else autorizado
+        api->>db: INSERT Invitation con secretHash, aula, rol y expiresAt
+        db-->>api: invitación vigente
+        api->>mail: enviar enlace por email (si es por correo)
+        api-->>teacher: enlace o código copiable
+    end
+    teacher-->>guest: compartir invitación
+    guest->>api: aceptar invitación autenticado (o registrarse primero)
+    api->>db: transacción: validar secreto, estado, vencimiento y aula activa
+    alt vencida, revocada, usada o aula dada de baja
+        db-->>api: invitación no válida
+        api-->>guest: rechazo con mensaje claro, sin membresía
+    else ya es miembro activo
+        db-->>api: membresía existente
+        api-->>guest: ingresar sin duplicar la inscripción
+    else alta permitida
+        db-->>api: crear ClassroomMembership con el rol de la invitación y marcar uso
+        api-->>guest: aula disponible
     end
 ```
 
-### 1.3 S10 — Expulsión de un miembro
+La invitación es de un solo uso, vence y es revocable ([Classrooms and roles](../../../rules/classrooms-and-roles.md#invitations-and-membership)). Que un código o enlace compartido con varios alumnos admita varios usos no queda resuelto por esa regla y se considera **abierto**. Una invitación de Padre/Tutor sigue este mismo patrón pero pertenece a RF-AUT-004 (MVP Extendido) y se rechaza en aulas con `adultMode` (RN-16). El mecanismo de reintentos y rebotes del email está **abierto** en [Communication and notifications](../../../rules/communication-and-notifications.md). La invitación a la escuela (Dueño/Admin invitan Profesores, RF-AUL-004, MVP Extendido) es análoga con destino `schoolId`.
 
-**Must · MVP**, RF-OFI-012 y RN-13: baja lógica de membresía; se conservan mensajes, tareas y anuncios del usuario. No se elimina físicamente la membresía como mecanismo de expulsión.
+### 1.3 S10 — Baja lógica de un miembro
+
+RF-AUL-003 (Must · MVP Core, HU-AUL-003; RN-03, RN-18). Dar de baja a un alumno corta de inmediato su acceso HTTP y su presencia en tiempo real, pero conserva entregas, calificaciones y mensajes atribuidos. No hay borrado físico.
 
 ```mermaid
 sequenceDiagram
-    actor manager as Dueño o Admin de oficina
-    participant api as NestJS
+    actor staff as Profesor o Dueño/Admin
+    participant web as React
+    participant api as NestJS (MembershipsService)
     participant db as RDS PostgreSQL
-    participant col as Colyseus
-    participant target as Usuario expulsado
+    participant rt as RealtimePublisher
+    participant colyseus as Colyseus (ClassroomRoom)
+    actor student as Alumno dado de baja
 
-    manager->>api: solicitar expulsión de miembro
-    api->>api: validar sesión, rol de oficina y usuario destino
-    alt destino Dueño, o Admin intenta expulsar otro Admin
-        api-->>manager: 403 sin modificar membresía
-    else expulsión permitida
-        api->>db: dar de baja OfficeMember y revocar accesos/liderazgos efectivos
-        api->>db: conservar contenido y marcar tareas asignadas huérfanas
-        db-->>api: cambios confirmados
-        api->>col: revocar suscripciones y desconectar acceso a toda la oficina
-        col-->>target: cierre de sesiones y canales de esa oficina
-        api-->>manager: expulsión confirmada
+    staff->>web: confirmar baja del alumno
+    web->>api: dar de baja la membresía
+    api->>api: sesión y autoridad docente sobre el aula
+    alt aula de otro docente o escuela
+        api-->>web: 404
+    else sin autoridad dentro del aula
+        api-->>web: 403
+    else autorizado
+        api->>db: marcar deletedAt en ClassroomMembership y liberar el Desk
+        db-->>api: baja confirmada
+        api->>rt: disconnectUser del aula
+        rt->>colyseus: expulsar al alumno de la sala
+        colyseus-->>student: conexión cerrada
+        api-->>web: alumno fuera del padrón activo
     end
-    target->>api: intentar entrar o leer historial con sesión vieja
-    api-->>target: 403 por membresía inactiva
+    student->>api: intentar leer el aula o reconectar
+    api-->>student: sin acceso (404 en recursos del aula)
 ```
 
-La revalidación de membresía/accesos impide reingreso aunque falle una notificación de desconexión. Quitar solo acceso a una habitación aplica RN-12 y RF-HAB-010: se conserva pertenencia a la oficina, pero se pierde contenido e historial de esa habitación; el avatar se redirige a la principal según la ERS.
+Los contenidos generados (entregas, notas, mensajes, asientos de puntos) se conservan íntegros para trazabilidad académica (RN-18). La propagación a la sala en vivo es un requisito ([Realtime and presence](../../../rules/realtime-and-presence.md)) cuyo mecanismo concreto está **abierto**; el diagrama usa `RealtimePublisher` como propuesta. Los efectos de eliminar una cuenta, un aula o una escuela sobre los registros retenidos siguen **abiertos** en [Data](../../../rules/data.md#open-decisions).
 
-### 1.4 S11 — Reunión y asistencia
+### 1.4 S11 — Aviso con notificación
 
-RF-CAR-005 a RF-CAR-008: Líder de esa habitación, Dueño o Admin crean; el Líder gestiona solo sus propias reuniones. **Confirmar asistencia es Must · MVP**, no funcionalidad complementaria.
+RF-COM-001 y RF-COM-004 (Must · MVP Core, HU-COM-001 y HU-COM-004). El aviso pertenece a la cartelera del aula. El aviso y su notificación son durables en PostgreSQL y el correo es un canal con envío idempotente. La difusión en vivo ocurre solo después de persistir.
 
 ```mermaid
 sequenceDiagram
-    actor publisher as Líder de habitación, Dueño o Admin
-    actor member as Miembro con acceso
-    participant api as NestJS
+    actor author as Profesor o Dueño/Admin
+    participant web as React
+    participant api as NestJS (NotificationsService)
     participant db as RDS PostgreSQL
-    participant col as Colyseus
+    participant mail as Servicio de email
+    participant rt as RealtimePublisher
+    actor reader as Alumno del aula
 
-    publisher->>api: crear reunión de habitación autorizada
-    api->>api: validar sesión, acceso y capacidad de publicación
-    api->>db: guardar Meeting con creador y habitación obligatoria
-    db-->>api: escritura confirmada
-    api->>col: notificar solo a destinatarios autorizados
-    member->>api: confirmar o declinar asistencia
-    api->>api: verificar acceso vigente y reunión no cancelada ni pasada
-    api->>db: guardar respuesta propia sin duplicar usuario/reunión (propuesto)
-    db-->>api: respuesta confirmada
-    api-->>member: estado actualizado
+    author->>web: redactar aviso
+    web->>api: publicar aviso en el aula
+    api->>api: sesión y autoridad docente sobre el aula
+    alt Alumno o Padre/Tutor
+        api-->>web: 403
+    else autorizado
+        api->>db: INSERT Announcement y Notification por destinatario con acceso
+        db-->>api: persistido
+        api->>mail: enqueueEmail con unicidad por notificación y canal
+        api->>rt: avisar a conectados del aula
+        api-->>web: aviso publicado
+    end
+    mail-->>reader: correo con el aviso (cuerpo sin datos sensibles)
+    reader->>api: abrir centro de notificaciones
+    api->>db: leer Notification del propio usuario
+    api->>db: marcar readAt al leerla
 ```
 
-La respuesta de asistencia puede cambiarse antes de la reunión, nunca si está cancelada o pasada (RF-CAR-007). Gestionar anuncios ajenos o editar/cancelar reuniones ajenas corresponde únicamente a Dueño/Admin (RF-CAR-004/006). La misma regla aplica aunque el cliente manipule un ID. La programación sigue la regla de reuniones (pendiente de realinear) y [Data and time](../../../rules/data-and-time.md), sin generalizar la política del repaso.
+Los destinatarios son los alumnos matriculados y, en el MVP Extendido, los Padres/Tutores de los hijos vinculados **si la decisión de producto lo permite**: queda **abierto** en [Communication and notifications](../../../rules/communication-and-notifications.md). Un alumno nunca ve notificaciones ajenas, y la baja de acceso al aula quita la lectura. También **abiertos**: frecuencia, resumen versus envío inmediato para padres, opción de baja de correos no esenciales, y registro y supresión de rebotes. Los correos y los registros nunca incluyen contraseñas, tokens ni datos sensibles de menores (RN-20).
 
-### 1.5 S12 — Admin intenta nombrar otro Admin
+### 1.5 S12 — Compra en la tienda
 
-RF-OFI-011, RN-09: solo el Dueño nombra o quita Administradores. El rechazo no depende de ocultar el botón ni de una jerarquía de guard heredada.
+RF-GAM-003 (Must · MVP Core, HU-GAM-003; RN-09, RN-07). La compra debita puntos y otorga el ítem en una única transacción con bloqueo, de modo que el saldo no queda negativo ni siquiera ante dos peticiones concurrentes.
 
 ```mermaid
 sequenceDiagram
-    actor admin as Administrador de oficina
-    participant api as NestJS
+    actor alumno as Alumno
+    participant web as React (ShopPanel)
+    participant api as NestJS (ShopService)
+    participant ledger as PointsLedgerService
     participant db as RDS PostgreSQL
+    participant rt as RealtimePublisher
 
-    admin->>api: solicitar nombramiento de otro Admin (propuesto)
-    api->>api: validar sesión
-    api->>db: consultar rol activo de oficina
-    db-->>api: role admin, no owner
-    api-->>admin: 403 sin cambiar roles
-    Note over api,db: no hay escritura ni notificación de cambio
-    admin->>api: mismo intento sin sesión
-    api-->>admin: 401 sin modificar datos
-```
-
-### 1.6 S13 — Baja y recuperación de oficina
-
-RF-OFI-014 a RF-OFI-016 y RN-14/RN-15: solo Dueño; no hay transferencia de propiedad ni abandono del Dueño. La baja es lógica y recuperable durante **15 días**; después se elimina definitivamente. No se decide aquí la reposición de oficina tras eliminación (P-05).
-
-```mermaid
-sequenceDiagram
-    actor owner as Dueño de oficina
-    participant api as NestJS
-    participant db as RDS PostgreSQL
-    participant col as Colyseus
-
-    owner->>api: confirmar baja explícita de su oficina
-    api->>api: validar sesión, propiedad y confirmación
-    api->>db: registrar baja lógica y fecha
-    db-->>api: escritura confirmada
-    api->>col: cerrar acceso y canales de oficina para todos
-    Note over api,db: nadie puede entrar; solo Dueño ve la opción de recuperar
-    alt Dueño solicita recuperación dentro de 15 días
-        owner->>api: recuperar oficina
-        api->>api: verificar propiedad y plazo con reloj servidor
-        api->>db: restaurar oficina con miembros, accesos y datos anteriores
-        db-->>api: restauración confirmada
-    else plazo de recuperación vencido
-        api->>db: eliminación definitiva por sistema (mecanismo por diseñar)
+    alumno->>web: elegir ítem de la tienda del aula
+    web->>api: comprar ítem con clave de idempotencia (propuesto)
+    api->>api: sesión y matrícula en el aula
+    alt ítem de otra aula
+        api-->>web: 404
+    else autorizado
+        api->>db: transacción: bloquear el saldo del alumno y leer ShopItem
+        api->>ledger: debit (alumno, pointsCost, origen compra)
+        alt saldo insuficiente o ítem no disponible
+            ledger-->>api: rechazo sin escribir
+            api-->>web: compra rechazada, saldo sin cambios
+        else compra repetida (misma clave)
+            db-->>api: resultado ya registrado
+            api-->>web: mismo resultado, sin doble débito
+        else compra válida
+            ledger->>db: INSERT PointsTransaction negativo y ClassroomItem
+            db-->>api: confirmado
+            api->>rt: actualizar vista del aula si el ítem es visible
+            api-->>web: ítem otorgado y nuevo saldo
+        end
     end
 ```
 
-Eliminar una habitación adicional es un flujo diferente: requiere Dueño/Admin, advertencia del contenido perdido y confirmación; la principal nunca se elimina (RF-HAB-005). Los mecanismos técnicos de eliminación y recuperación deben diseñarse y probarse antes de implementarlos; estos diagramas no ejecutan borrados.
+El libro mayor es inmutable: no se edita ni se borra un asiento (RN-07). Un ítem solo es comprable si su efecto está implementado (RN-09). Siguen **abiertos** en [Points and shop](../../../rules/points-and-shop.md): reembolsos (si existen son asientos compensatorios), ítems consumibles o permanentes, apilado y límites por aula, quién puede comprar y equipar accesorios, y el saldo visible entre compañeros (por defecto no se muestra). El aporte a la mascota (RF-GAM-004) es MVP Extendido y sigue la misma mecánica con `pet_contribution`.
+
+### 1.6 S13 — Consulta al Bot Guía de Estudio
+
+RF-BOT-001 y RF-BOT-002 (Must · MVP Core, HU-BOT-001 y HU-BOT-002; RN-12, RN-13, RN-14). El Bot responde por RAG solo sobre el material que el Profesor habilitó para el aula, es solo de lectura y se bloquea para el alumno mientras tiene un examen en curso. Bedrock se invoca únicamente desde NestJS.
+
+```mermaid
+sequenceDiagram
+    actor alumno as Alumno
+    participant web as React (BotPanel)
+    participant api as NestJS (BotController y BotService)
+    participant db as RDS PostgreSQL
+    participant tools as ReadOnlyToolRegistry
+    participant bedrock as Amazon Bedrock
+
+    alumno->>web: escribir una consulta
+    web->>api: preguntar al Bot en un aula
+    api->>api: sesión y matrícula en el aula
+    alt Padre/Tutor
+        api-->>web: 403 (sin acceso al Bot)
+    else examen en curso según el reloj del servidor
+        api-->>web: Bot bloqueado para este alumno
+    else límite de uso excedido (límite abierto)
+        api-->>web: mensaje claro de límite alcanzado
+    else autorizado
+        api->>db: recuperar fragmentos de AllowedMaterial del aula
+        api->>tools: consultas de solo lectura bajo los permisos del usuario
+        api->>bedrock: consulta, fragmentos y reglas anticopia
+        bedrock-->>api: respuesta con citas al material
+        alt la respuesta no consta en el material aprobado
+            api-->>web: informar la limitación sin inventar contenido
+        else pide resolver una tarea o revelar respuestas de examen
+            api-->>web: orientar el razonamiento sin resolver
+        else respuesta fundada
+            api->>db: registrar metadatos de auditoría pedagógica (BotConversation, abierto)
+            api-->>web: respuesta con fuentes citadas
+        end
+    end
+```
+
+El filtro por aula y material habilitado se aplica en el servidor antes de invocar a Bedrock, y el Bot no crea, edita ni borra datos en el MVP, ni siquiera ante un pedido explícito (RN-14, RF-BOT-004). Siguen **abiertos** en [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md): modelo concreto, límites numéricos por usuario, aula y global, si se persiste `BotConversation` y su retención, la detección de uso indebido y la extensión de las pruebas adversarias. Verificar la disponibilidad de modelos de Bedrock en `sa-east-1` es una condición pendiente de la decisión D5.
+
+---
 
 ← [Secuencias del núcleo](./core-flows.md) · [Índice](../README.md) · [Convenciones](../05-reference/conventions.md) →

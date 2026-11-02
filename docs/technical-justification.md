@@ -1,6 +1,6 @@
 # Technical Justification (R6)
 
-This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions already made in the [project document](../master-document.md); it does not introduce new ones. Choices that are still undecided are marked **Open**.
+This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions made in the [project document](../master-document.md) and the decisions listed in [section 7](#7-architecture-decisions-recorded-on-2026-11-02), which are pending team approval. Choices that are still undecided are marked **Open**.
 
 ## 1. Stack
 
@@ -14,26 +14,28 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 2. Authentication and authorization
 
-- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per office (Owner, Administrator, Leader, Member); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
-- **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-office scoping matches the product model and avoids a privileged global role.
+- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per school or classroom (School Owner, School Admin, Teacher, Student, Parent); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
+- **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-school and per-classroom scoping matches the product model and avoids a privileged global role.
 - **Alternatives:** An external identity service (master allows "an equivalent identity service"); OAuth or social login (a recommended extra, not planned for the MVP).
 - **Trade-off:** Building authentication in the application gives full control and a clear defense story, but the team owns its security.
-- **Open:** The session mechanism (cookie session versus token), lifetime, renewal, and revocation are not decided.
+- **Session mechanism:** decided, pending team approval; see [decision D1](#d1-session-mechanism).
+- **Open:** Lifetimes (configuration parameters) and client-side storage of the tokens.
 
 ## 3. Database and ORM
 
 - **Decision:** Amazon RDS for PostgreSQL accessed with Prisma ORM; Prisma is the access layer, not the database. See [Data](../rules/data.md).
-- **Why:** The domain is relational (users, memberships, offices, rooms, tasks, meetings, and messages with strong relationships and constraints), and the course requires related entities. Prisma gives typed queries, parameterized access, and migrations.
+- **Why:** The domain is relational (users, schools, classrooms, enrollments, activities, submissions, grades, points, and messages with strong relationships and constraints), and the course requires related entities. Prisma gives typed queries, parameterized access, and migrations.
 - **Alternatives:** MongoDB or other document stores; other ORMs or raw SQL.
 - **Trade-off:** Schema changes require disciplined, reviewed migrations. RDS adds a fixed cost.
 
 ## 4. Realtime
 
-- **Decision:** Colyseus for room sessions, presence, and avatar movement, deployed separately from NestJS. Colyseus never writes durable data; persistent changes go through NestJS and are announced afterward. See [Architecture](../rules/architecture.md) and [Realtime and presence](../rules/realtime-and-presence.md).
+- **Decision:** Colyseus for live classroom sessions, presence, and avatar movement, deployed separately from NestJS. Colyseus never writes durable data; persistent changes go through NestJS and are announced afterward. See [Architecture](../rules/architecture.md) and [Realtime and presence](../rules/realtime-and-presence.md).
 - **Why:** Colyseus provides room lifecycle, synchronized state, and reconnection designed for rooms.
 - **Alternatives:** Socket.IO alone, which would require implementing room and state logic; it remains an option only for isolated needs.
 - **Trade-off:** One more service to deploy and learn. The MVP runs one Colyseus instance; scaling out needs a presence and routing strategy that is not defined.
-- **Open:** The internal transport between NestJS and Colyseus, and the final event names and payloads.
+- **Internal transport and service authentication:** decided, pending team approval; see [decision D2](#d2-nestjs-and-colyseus-integration).
+- **Open:** The final event names and payloads.
 
 ## 5. Deployment
 
@@ -42,7 +44,8 @@ This document justifies the relevant technical choices of the project: what was 
 - **Alternatives:** A managed PaaS or EC2.
 - **Trade-off:** Fargate, ALB, and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required.
 - **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
-- **Open:** Contract distribution between the frontend and backend repositories (API contracts) is undecided; see [API contracts](../rules/api-contracts.md). Region, domain, and pipeline authentication are also open.
+- **Decided, pending team approval:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md).
+- **Open:** Domain, and Amazon Bedrock model availability in `sa-east-1` (see D5).
 
 ## 6. Artificial intelligence
 
@@ -52,7 +55,69 @@ This document justifies the relevant technical choices of the project: what was 
 - **Trade-off:** Dependence on AWS availability and inference cost, mitigated by limits and the fallback.
 - **Open:** Specific model and numeric usage limits.
 
-## 7. Known conflicts and notes
+## 7. Architecture decisions recorded on 2026-11-02
 
-- The [derived design views](./diagrams/README.md) follow the merged domain rules for office roles, room leadership, and configurable columns. Their fields and contracts remain proposals only where the rules leave them open; they are not competing requirements.
+Decided by Agustin on 2026-11-02; **pending team approval**. Until the team approves them, they are not agreed team decisions; per [Documentation and decisions](../rules/documentation-and-decisions.md), a conflict with the team **MUST** be resolved before dependent implementation proceeds.
+
+### D1. Session mechanism
+
+- **Question:** How are sessions represented, renewed, and revoked?
+- **Outcome:** A short-lived JWT access token plus an opaque refresh token stored hashed in the database and rotated on use. The access token **MUST** carry a session identifier that the server checks against the stored session on every protected request; a revoked session yields `401`. Lifetimes are configuration parameters.
+- **Rationale:** Short-lived access tokens limit exposure, rotated hashed refresh tokens allow renewal without interruption, and the session identifier check keeps the logout and password-reset invalidation invariants of [Authentication and session](../rules/authentication-and-session.md).
+- **Alternatives:** Cookie-based opaque session (A); opaque bearer token (C).
+- **Affected contracts:** [Authentication and session](../rules/authentication-and-session.md), [Security](../rules/security.md), REST authentication and the realtime join check (D2).
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Open:** Client-side storage of the access and refresh tokens **MUST** be agreed with the frontend before release.
+
+### D2. NestJS and Colyseus integration
+
+- **Question:** How does Colyseus verify a user's session and access before admitting a join?
+- **Outcome:** Colyseus `onAuth` calls an internal NestJS endpoint to verify the user's session and authorization. The call is authenticated with a service secret stored in AWS Secrets Manager. Colyseus rejects joins when NestJS cannot verify.
+- **Rationale:** NestJS stays the single authorization service and the answer comes from current persisted state.
+- **Alternatives:** Signed short-lived join ticket verified offline (B); Colyseus reading sessions from the database directly (C), rejected because it breaks the single authorization service rule.
+- **Affected contracts:** [Architecture](../rules/architecture.md), [Realtime and presence](../rules/realtime-and-presence.md), [AWS infrastructure](../rules/aws-infrastructure.md).
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+
+### D3. Repository layout
+
+- **Question:** How are the two services and shared contracts organized in this repository?
+- **Outcome:** A pnpm workspaces monorepo: `apps/api` (NestJS), `apps/realtime` (Colyseus), and `packages/contracts` (shared types).
+- **Rationale:** Services stay separately deployable while sharing one toolchain and one contracts package.
+- **Alternatives:** Colyseus embedded in the NestJS app; two separate backend repositories.
+- **Affected contracts:** [Architecture](../rules/architecture.md), [Infrastructure as code](../rules/infrastructure-as-code.md), and CI (a `package.json` and `pnpm-lock.yaml` are required once present).
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+
+### D4. Contract distribution
+
+- **Question:** How do the frontend and backend repositories share API contracts?
+- **Outcome:** NestJS generates an OpenAPI document (through `@nestjs/swagger` decorators) served with the Scalar API reference UI; the frontend generates its TypeScript types from that document.
+- **Rationale:** The backend owns one authoritative specification and consumers learn about changes by regenerating types.
+- **Alternatives:** A shared `contracts` npm package with zod schemas published to GitHub Packages (rejected: adds publishing, versioning, and registry authentication); manually copied types (rejected: drifts out of sync).
+- **Affected contracts:** [API contracts](../rules/api-contracts.md) and the README "Shared contracts" section.
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Open:** Distribution of realtime message and state types.
+
+### D5. AWS region
+
+- **Question:** Which AWS region hosts the environment?
+- **Outcome:** `sa-east-1` (Sao Paulo).
+- **Rationale:** The product is sold in Argentina and realtime latency matters.
+- **Alternatives:** `us-east-1`, cheaper and with the widest Amazon Bedrock model availability, but with higher latency from Argentina (rejected because realtime responsiveness matters for the target market).
+- **Trade-off:** Higher cost is accepted.
+- **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md).
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Open:** Amazon Bedrock model availability in `sa-east-1` **MUST** be verified; cross-region inference may be needed.
+
+### D6. Pipeline authentication to AWS
+
+- **Question:** How does the GitHub Actions pipeline authenticate to AWS?
+- **Outcome:** GitHub Actions OIDC federation to an IAM role; no long-lived access keys.
+- **Rationale:** Short-lived credentials leave no stored keys to leak or rotate.
+- **Alternatives:** IAM user access keys in GitHub Secrets, rejected.
+- **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Deployment and operations](../rules/deployment-and-operations.md).
+- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+
+## 8. Known conflicts and notes
+
+- The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
 - The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.

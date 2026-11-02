@@ -4,7 +4,7 @@ The backend is the only authority for identity, session validity, and authorizat
 
 ## Authority and scope
 
-- [Master §2.2](../master-document.md#22-roles-permisos-e-invitaciones), [§6.3](../master-document.md#63-autenticación-entre-servicios), and [§8](../master-document.md#8-seguridad-y-calidad-transversal) establish the requirements; account behavior follows the master document. The `docs/` requirement documents still describe the earlier office model and are pending realignment.
+- [Master §2.2](../master-document.md#22-roles-permisos-e-invitaciones), [§6.3](../master-document.md#63-autenticación-entre-servicios), and [§8](../master-document.md#8-seguridad-y-calidad-transversal) establish the requirements; account behavior follows the master document. The derived design views in `docs/diagrams/` are proposed design, not authoritative requirements.
 - Course requirement R2 ([project requirements](./project-requirements.md)) is mandatory: registration, login, logout, hashing, expiring sessions, protected endpoints, roles, `401`/`403`, and user isolation.
 
 ## Credentials and registration
@@ -19,14 +19,14 @@ The backend is the only authority for identity, session validity, and authorizat
 
 ## Session lifecycle
 
-- **Open decision:** the session mechanism (cookie-based session versus token, lifetime, renewal, and revocation strategy) is not decided. Implementations **MUST NOT** assume one until the team records it per [Documentation and decisions](./documentation-and-decisions.md). The lifetime is a configuration parameter, not a hard-coded value (assumption P-03).
-- Whatever mechanism is chosen, it **MUST** satisfy these invariants:
+- **Decision (D1, pending team approval):** a short-lived JWT access token plus an opaque refresh token stored hashed in the database and rotated on use; see [Technical justification, D1](../docs/technical-justification.md#d1-session-mechanism). The access token **MUST** carry a session identifier that the server checks against the stored session on every protected request, so a revoked session yields `401`. Lifetimes are configuration parameters, not hard-coded values (assumption P-03).
+- The mechanism **MUST** satisfy these invariants:
  - Sessions **MUST** expire and the server **MUST** verify expiry on every protected request; client clocks are never authoritative ([Data and time](./data-and-time.md)).
  - Active users **SHOULD** be renewed before expiry without interruption.
  - Logout **MUST** invalidate the session server-side so later requests with the same credential fail with `401`; discarding it on the client is insufficient.
  - A password reset **MUST** invalidate that account's previous sessions.
  - Session secrets or tokens stored server-side **MUST** be stored hashed or otherwise unusable if the database is read.
-- If a cookie is used, it **MUST** be `HttpOnly`, `Secure` in production, and have an explicit `SameSite` policy, with CSRF protection appropriate to that policy. If a bearer token is used, its client-side storage **MUST** be agreed with the frontend before release.
+- Refresh tokens **MUST** be rotated on use. Client-side storage of the access and refresh tokens is **open** and **MUST** be agreed with the frontend before release.
 
 ## Authorization responses
 
@@ -37,7 +37,7 @@ The backend is the only authority for identity, session validity, and authorizat
 
 ## Realtime authentication
 
-- A Colyseus join **MUST** present a verifiable credential, and the server **MUST** confirm identity and access to the target classroom through NestJS before admission; see [Realtime and presence](./realtime-and-presence.md).
+- A Colyseus join **MUST** present a verifiable credential, and the server **MUST** confirm identity and access to the target classroom through NestJS before admission (`onAuth` calls an internal NestJS endpoint; see [Architecture](./architecture.md)); see [Realtime and presence](./realtime-and-presence.md).
 - Rejected joins and messages **MUST** apply the same principles as `401`/`403` without inventing HTTP codes for WebSocket messages.
 - Logout, session expiry, or loss of access **MUST** end the user's live connections.
 - Join credentials **MUST NOT** appear in URLs that are logged.

@@ -1,5 +1,29 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Add rule routing index for agents
+
+- **Status:** completed
+- **Area / files:** `rules/index.md`, `rules/README.md`, `AGENTS.md`
+- **Change:** Added a routing index that maps task types and touched areas to the rules to read and when to skip each one; pointed agent instructions and the rules README to it. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** Agents were reading every rule for every task, wasting context; the existing README list describes rules but not when they apply.
+- **Next step:** Keep the index in sync when rules are added or renamed.
+
+## 2026-11-02 — Record architecture decisions
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `docs/architecture.md`, `rules/` (authentication-and-session, architecture, api-contracts, aws-infrastructure, infrastructure-as-code), `README.md`, `master-document.md`
+- **Change:** Recorded six decisions made by Agustin: JWT access plus hashed rotating refresh token, Colyseus `onAuth` verification through an internal NestJS endpoint, pnpm monorepo, OpenAPI with Scalar, `sa-east-1`, and GitHub OIDC for the pipeline. Removed them from the open-decision lists. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** These open decisions blocked implementation work items.
+- **Next step:** Team approval of the six decisions; agree client-side token storage with the frontend; verify Bedrock availability in `sa-east-1`.
+
+## 2026-11-02 — Align remaining docs with the school niche model
+
+- **Status:** completed
+- **Area / files:** `docs/architecture.md`, `docs/technical-justification.md`, `rules/classrooms-and-roles.md`, `rules/authentication-and-session.md`, `rules/data.md`, `docs/diagrams/README.md`, `docs/diagrams/05-reference/gaps.md`
+- **Change:** Replaced office/room wording with school/classroom roles and entities; stated that the derived design views still describe the earlier office and room model and are pending realignment (the requirement documents are already aligned). Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** These documents contradicted the school niche source of truth.
+- **Next step:** Realign `docs/diagrams/` (data model, class design, use cases, flows, deployment) to the school model.
+
 ## 2026-10-30 — Record resolved classroom, grading and points decisions
 
 - **Status:** completed
