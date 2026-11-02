@@ -17,7 +17,7 @@
 
 ## 1. Convenciones transversales
 
-Estas convenciones derivan de la [ERS](../../functional-requirements.md), las decisiones D1 a D6 pendientes de aprobación del equipo ([justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02)) y las [reglas](../../../rules/README.md). No establecen requisitos nuevos ni reemplazan sus fuentes; mecanismos no acordados se rotulan como propuestas.
+Estas convenciones derivan de la [ERS](../../functional-requirements.md), las decisiones D1 a D7 aprobadas por Agustín el 2026-11-02 ([justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02)) y las [reglas](../../../rules/README.md). No establecen requisitos nuevos ni reemplazan sus fuentes; mecanismos no acordados se rotulan como propuestas.
 
 ### 1.1 Códigos de error
 

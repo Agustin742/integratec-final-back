@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Approve D1–D6 and record invitation model (D7)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/` (classrooms-and-roles, data, authentication-and-session, architecture, api-contracts, aws-infrastructure, infrastructure-as-code), `docs/diagrams/` (gaps, data-model, README files, review-guide, use-cases, class-design), `README.md`
+- **Change:** Marked D1–D6 as approved by Agustin (decision owner) on 2026-11-02, without claiming team-wide approval. Recorded D7: email invitations (mandatory for teachers and parents) plus a per-classroom join code that grants only the Student role (hashed, expiry, revocable, optional max uses, rate limited, audited). Updated the invitation and session rows in the data rules. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** RN-02, RF-AUL-002, and HU-AUL-002 allowed a shareable code while the rules allowed only email invitations; the Session entity was still marked open although D1 decided it.
+- **Next step:** Decide the join code entity shape in the Prisma baseline schema work item; align `master-document.md` §2.1/§2.2 (still email-only) with D7.
+
 ## 2026-11-02 — Add rule routing index for agents
 
 - **Status:** completed

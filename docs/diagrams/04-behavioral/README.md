@@ -2,7 +2,7 @@
 
 > Parte de la [documentación de diagramas](../README.md).
 
-Esta carpeta contiene los **diagramas de secuencia** que modelan cómo interactúan los componentes en el tiempo a través de llamadas HTTPS REST y mensajes WSS de Colyseus en la plataforma de aulas virtuales 3D para escuelas. Son diseño propuesto, no implementado, y asumen las decisiones D1 (sesión JWT con refresh rotado) y D2 (`onAuth` de Colyseus contra un endpoint interno de NestJS), pendientes de aprobación del equipo.
+Esta carpeta contiene los **diagramas de secuencia** que modelan cómo interactúan los componentes en el tiempo a través de llamadas HTTPS REST y mensajes WSS de Colyseus en la plataforma de aulas virtuales 3D para escuelas. Son diseño propuesto, no implementado, y asumen las decisiones D1 (sesión JWT con refresh rotado) y D2 (`onAuth` de Colyseus contra un endpoint interno de NestJS), aprobadas por Agustín el 2026-11-02.
 
 ## Documentos
 

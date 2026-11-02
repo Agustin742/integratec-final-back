@@ -62,7 +62,7 @@ erDiagram
   Session {
     uuid id PK
     uuid userId FK
-    string refreshTokenHash "D1, pendiente de aprobacion del equipo"
+    string refreshTokenHash "D1, aprobada por Agustin el 2026-11-02"
     datetime expiresAt
     datetime revokedAt "opcional"
     datetime createdAt
@@ -125,7 +125,7 @@ erDiagram
   Invitation {
     uuid id PK
     string secretHash UK
-    string targetEmail
+    string targetEmail "solo invitación por correo; el código de unión (D7) no tiene correo"
     uuid schoolId FK "opcional, excluyente con el aula"
     uuid classroomId FK "opcional, excluyente con la escuela"
     enum_InvitationRole role
@@ -194,7 +194,7 @@ Lecturas del modelo y alcance:
 - **Autoridad derivada, no duplicada.** Dueño y Admin obtienen autoridad docente de `SchoolMember` y del `schoolId` del aula; el modelo no crea una `ClassroomMembership` por aula para ellos (RN-03). Un Profesor solo actúa sobre las aulas en las que consta como docente.
 - **El estado del trabajo del alumno se deriva.** `Pendiente`, `Entregada`, `Corregida` y `Vencida` se calculan desde `Submission`, `Grade` y la hora del servidor; no hay un campo de estado que pueda contradecirlos (RN-05).
 - **Opción múltiple se corrige en el servidor.** `Option.isCorrect` no se selecciona hacia el cliente antes del cierre de la evaluación (RN-06).
-- **`Session` es soporte técnico.** Se mantiene según la decisión D1 ([Technical justification, D1](../../technical-justification.md#d1-session-mechanism), pendiente de aprobación del equipo): el refresh token se guarda hasheado y rotado; el JWT de acceso lleva el identificador de sesión y el servidor lo contrasta con esta fila en cada request. El logout marca `revokedAt` y no borra la fila (RF-AUT-002, RN-04).
+- **`Session` es soporte técnico.** Se mantiene según la decisión D1 ([Technical justification, D1](../../technical-justification.md#d1-session-mechanism), aprobada por Agustín el 2026-11-02): el refresh token se guarda hasheado y rotado; el JWT de acceso lleva el identificador de sesión y el servidor lo contrasta con esta fila en cada request. El logout marca `revokedAt` y no borra la fila (RF-AUT-002, RN-04).
 - **`Desk` y los campos exactos de `AvatarConfiguration` son propuestos.** `Desk` figura en la ERS (RF-ESP-002, RN-10) pero no en la lista de [Data](../../../rules/data.md#entities); su forma queda abierta.
 
 **Enums propuestos.** Por una limitación de la sintaxis `erDiagram`, cada enum se escribe como un único token de tipo `enum_Nombre`. Los conjuntos de valores son propuestos y se confirman en el diseño final.
@@ -218,7 +218,7 @@ Lecturas del modelo y alcance:
 | `Classroom` | Exactamente una de `schoolId` o `independentTeacherId`; restricción en la base de datos | RN-01, [Data](../../../rules/data.md#entities) |
 | `ClassroomMembership` | Único (`classroomId`, `userId`); baja lógica al expulsar o salir, sin borrar contenido | RN-18, RF-AUL-003 |
 | `ParentLink` | Máximo 2 vínculos activos por alumno; único (padre, hijo, aula); se rechaza en aula con `adultMode` | RN-16, RF-AUT-004 |
-| `Invitation` | Solo el hash del secreto, único; vigente, no revocada; validación y alta de membresía atómicas e idempotentes | RN-02, RF-AUL-002 |
+| `Invitation` | Solo el hash del secreto, único; vigente, no revocada; validación y alta de membresía atómicas e idempotentes. D7 (propuesto): además existe el código de unión por aula, solo rol `student`, con vencimiento, máximo de usos opcional, contador de usos y registro de cada ingreso; su forma (discriminador en `Invitation` o entidad aparte) queda para el esquema base | RN-02, RF-AUL-002, D7 |
 | `Activity` / `Question` / `Option` | Pertenecen a un aula; no se borra una actividad con entregas o calificaciones | RN-05, [Data](../../../rules/data.md#deletion-and-lifecycle) |
 | `Submission` | Único (`activityId`, `studentId`) salvo que la actividad permita reentrega (historial abierto); el alumno debe estar matriculado en el aula de la actividad (regla de servicio en transacción) | RN-05, [Data](../../../rules/data.md#constraints-and-uniqueness) |
 | `Grade` | Único por entrega; solo personal con autoridad docente califica o recalifica | RN-06 |
@@ -426,7 +426,7 @@ erDiagram
 | Tema | Estado | Referencia |
 |---|---|---|
 | Nombres finales de tablas y columnas, valores de enums, límites de campos | Abierto | [Data](../../../rules/data.md#open-decisions) |
-| `Session` y almacenamiento del refresh token (D1) | Propuesto, pendiente de aprobación del equipo | [Authentication](../../../rules/authentication-and-session.md#session-lifecycle) |
+| `Session` y almacenamiento del refresh token (D1) | Decidido (D1, aprobada por Agustín el 2026-11-02); entidad propuesta | [Authentication](../../../rules/authentication-and-session.md#session-lifecycle) |
 | Registro del profesor en el aula (`ClassroomMembership.role`) y `Desk` | Propuesto | ERS §7 |
 | Catálogo de `Badge`, historial de reentregas y de calificaciones | Abierto | [Data](../../../rules/data.md#open-decisions) |
 | Persistencia y retención de `BotConversation` y del texto del repaso | Abierto | [AI bot](../../../rules/ai-bot-and-daily-briefing.md) |

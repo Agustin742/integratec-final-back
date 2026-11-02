@@ -64,12 +64,18 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 
 ## Invitations and membership
 
-- Onboarding is by **email invitation**: Owner or Admin invite teachers; teachers (and Owner or Admin) invite students and parents to a classroom. An invitation is bound to one target (school or classroom), one role, and one email address.
+- Onboarding uses two mechanisms (decision D7, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d7-invitation-model)): **email invitations** and the **classroom join code**.
+- **Email invitation:** Owner or Admin invite teachers; teachers (and Owner or Admin) invite students and parents to a classroom. An invitation is bound to one target (school or classroom), one role, and one email address. Teachers invited by Owner or Admin and parents are **always** invited by email, single use; a join code **MUST NOT** grant either role.
 - The raw invitation secret **MUST NOT** be stored; only a hash **MUST** be persisted. The invitation **MUST** carry an expiry, be revocable, and be single use. Lifetime defaults are configuration, not fixed in code.
 - Lookup, expiry, revocation, use, and membership creation **MUST** be validated and applied atomically so concurrent acceptances cannot create duplicate memberships.
 - Acceptance **MUST** require authentication as the invited account. The invited email **MAY** differ from the account email; possession of the valid, unexpired invitation secret plus authentication is what binds the account.
+- **Classroom join code:** a classroom has a join code that its teacher can share (Owner or Admin **MAY** also manage it). It grants **only** the `Student` role in that classroom and **MUST NOT** grant Teacher, Parent, or any school role.
+  - Only a hash of the code **MUST** be persisted; the code is shown once on creation or regeneration. Regenerating issues a new code and invalidates the previous one.
+  - The code **MUST** carry an expiry and be revocable; it **MAY** carry a maximum number of uses, in which case a use counter **MUST** be kept. Defaults are configuration, not fixed in code.
+  - Acceptance **MUST** require an authenticated account. Membership creation **MUST** be atomic and idempotent: a student already enrolled is not enrolled twice and does not consume a use.
+  - Attempts **MUST** be rate-limited against brute force, and the code **MUST** have enough entropy for that limit to hold. Every join **MUST** be recorded (who and when) for audit.
 - Invitation delivery goes through the email service described in [Communication and notifications](./communication-and-notifications.md). An invitation request **MUST NOT** reveal whether the address already has an account.
-- Invitations **MUST NOT** be accepted for a deleted school or classroom, and accepting twice **MUST NOT** duplicate the membership.
+- Invitations and join codes **MUST NOT** be accepted for a deleted school or classroom, and accepting twice **MUST NOT** duplicate the membership.
 - Expelling or removing a member is a logical deactivation: created content (messages, submissions, grades) is preserved and attributed. Loss of access **MUST** apply immediately, including to live connections.
 
 ## Parents and adult mode
@@ -81,7 +87,7 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 
 ## Verification
 
-Tests **MUST** cover each matrix row for allowed and denied roles; Owner or Admin acting on any classroom of their school and denied on another school; a Teacher denied on another teacher's classroom; a Parent denied on unlinked children; cross-school identifiers; independent-teacher isolation; adult mode rejecting parent links; and expired, revoked, reused, and concurrent invitations. Follow [Quality and testing](./quality-and-testing.md).
+Tests **MUST** cover each matrix row for allowed and denied roles; Owner or Admin acting on any classroom of their school and denied on another school; a Teacher denied on another teacher's classroom; a Parent denied on unlinked children; cross-school identifiers; independent-teacher isolation; adult mode rejecting parent links; and expired, revoked, reused, and concurrent invitations, plus join codes (Student-only role, expiry, revocation, regeneration, maximum uses, idempotent re-join, rate limiting, and audit record). Follow [Quality and testing](./quality-and-testing.md).
 
 ## Account paths
 

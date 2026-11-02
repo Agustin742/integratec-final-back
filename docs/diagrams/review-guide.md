@@ -1,6 +1,6 @@
 # Cómo revisar la alineación de diagramas
 
-Los diagramas de esta carpeta se alinearon al modelo de escuelas y aulas y a las decisiones D1 a D6 del 2026-11-02 (pendientes de aprobación del equipo). La revisión se hace sobre la rama de trabajo y se entrega con commits por tema; ningún merge ocurre sin aprobación humana.
+Los diagramas de esta carpeta se alinearon al modelo de escuelas y aulas y a las decisiones D1 a D6 del 2026-11-02 (aprobadas por Agustín el 2026-11-02) y a la decisión D7 (modelo de invitaciones). La revisión se hace sobre la rama de trabajo y se entrega con commits por tema; ningún merge ocurre sin aprobación humana.
 
 ## Orden de revisión
 
@@ -28,4 +28,4 @@ Los diagramas de esta carpeta se alinearon al modelo de escuelas y aulas y a las
 
 ## Próximo paso del equipo
 
-Revisar el PR, comprobar CI y la representación Mermaid, aprobar o ajustar D1 a D6 y obtener aprobación de otro integrante antes de cualquier merge.
+Revisar el PR, comprobar CI y la representación Mermaid, ajustar D1 a D7 si hace falta y obtener aprobación de otro integrante antes de cualquier merge.

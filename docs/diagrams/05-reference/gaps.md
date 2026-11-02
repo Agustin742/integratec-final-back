@@ -1,12 +1,12 @@
 # Huecos declarados
 
-> Registro de decisiones pendientes de aprobación y de puntos abiertos que afectan los diagramas del aula virtual escolar. El estado del trabajo vive en Projects, no en esta tabla.
+> Registro de decisiones aprobadas y de puntos abiertos que afectan los diagramas del aula virtual escolar. El estado del trabajo vive en Projects, no en esta tabla.
 
 ← [Convenciones](./conventions.md) · [Índice](../README.md)
 
-## 1. Decisiones pendientes de aprobación del equipo
+## 1. Decisiones aprobadas
 
-Las decisiones D1 a D6 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas por Agustín el 2026-11-02 y **no son acuerdos del equipo hasta que este las apruebe**. Los diagramas las reflejan como diseño propuesto, no implementado.
+Las decisiones D1 a D7 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín (responsable de las decisiones) el 2026-11-02; no se afirma aprobación de todo el equipo. Los diagramas las reflejan como diseño propuesto, no implementado. El conflicto previo entre RN-02 / RF-AUL-002 / HU-AUL-002 (correo o código/enlace) y las reglas (solo correo de un solo uso) queda resuelto por D7.
 
 | ID | Decisión | Vistas afectadas |
 |---|---|---|
@@ -16,6 +16,7 @@ Las decisiones D1 a D6 de la [justificación técnica, sección 7](../../technic
 | D4 | OpenAPI generado por NestJS y servido con Scalar; el frontend genera sus tipos. Distribución de tipos realtime: abierta | Arquitectura, realtime, clases |
 | D5 | Región AWS `sa-east-1`; disponibilidad de Bedrock en esa región por verificar | Arquitectura |
 | D6 | GitHub Actions con OIDC hacia un rol IAM, sin claves de larga duración | Arquitectura |
+| D7 | Dos mecanismos de ingreso: invitación por correo (un solo uso; obligatoria para profesores invitados y para padres) y código de unión por aula (solo rol `Student`, hash, vencimiento, revocable, máximo de usos opcional, límite de intentos, auditoría). La forma de la entidad queda para el esquema Prisma base | Datos, aulas, casos de uso |
 
 ## 2. Huecos abiertos vigentes
 
