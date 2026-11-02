@@ -1,51 +1,57 @@
 # Huecos declarados
 
-> Registro de decisiones funcionales y propuestas técnicas que afectan los diagramas. El estado del trabajo vive en Projects, no en esta tabla.
+> Registro de decisiones pendientes de aprobación y de puntos abiertos que afectan los diagramas del aula virtual escolar. El estado del trabajo vive en Projects, no en esta tabla.
 
 ← [Convenciones](./conventions.md) · [Índice](../README.md)
 
-> **Pendiente de realineación:** este registro describe el modelo anterior de oficinas y habitaciones. Sus referencias a oficina, habitación y RN/RF-OFI no corresponden a la ERS v0.2 (modelo de escuelas y aulas); ante diferencias prevalecen la ERS v0.2 y las [reglas de dominio](../../../rules/README.md).
+## 1. Decisiones pendientes de aprobación del equipo
 
-## 1. Huecos declarados
+Las decisiones D1 a D6 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas por Agustín el 2026-11-02 y **no son acuerdos del equipo hasta que este las apruebe**. Los diagramas las reflejan como diseño propuesto, no implementado.
 
-La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirements-decision.md#confirmaciones-para-la-alineación-documental) ya resuelven parte de los 27 puntos originales. Se conserva su numeración para trazabilidad: **definido funcionalmente** no significa esquema/API aprobados ni implementación. Los supuestos P-01 a P-15 de la ERS siguen identificados allí; esta revisión no los aprueba en bloque.
+| ID | Decisión | Vistas afectadas |
+|---|---|---|
+| D1 | JWT de acceso de vida corta más refresh token opaco hasheado y rotado; el identificador de sesión se verifica en cada petición protegida. Almacenamiento de tokens en el cliente: abierto | Arquitectura, realtime, convenciones |
+| D2 | `onAuth` de Colyseus consulta un endpoint interno de NestJS autenticado con un secreto de servicio en Secrets Manager; el ingreso se rechaza si NestJS no puede verificar | Arquitectura, realtime |
+| D3 | Monorepo pnpm: `apps/api` (NestJS), `apps/realtime` (Colyseus) y `packages/contracts` | Arquitectura |
+| D4 | OpenAPI generado por NestJS y servido con Scalar; el frontend genera sus tipos. Distribución de tipos realtime: abierta | Arquitectura, realtime, clases |
+| D5 | Región AWS `sa-east-1`; disponibilidad de Bedrock en esa región por verificar | Arquitectura |
+| D6 | GitHub Actions con OIDC hacia un rol IAM, sin claves de larga duración | Arquitectura |
 
-| # | Tema | Estado actual y fuente | Vista afectada |
+## 2. Huecos abiertos vigentes
+
+Cada fila remite a la regla que la mantiene abierta. **Abierto** significa que no se decidió: no se elige aquí ni se resuelve por dibujarlo. Los requisitos funcionales y las reglas de negocio están en la [ERS](../../functional-requirements.md); las historias, en [user-stories.md](../../user-stories.md).
+
+| # | Tema | Estado y fuente | Vista afectada |
 |---|---|---|---|
-| 1 | Nombres de eventos realtime | Propuesta; requiere contrato de productor/consumidor | Realtime, S2–S13 |
-| 2 | Payloads, direcciones, suscripciones y acknowledgements | Propuesta; distinguir comandos, confirmaciones y notificaciones según rules/api-contracts.md | Realtime, clases |
-| 3 | Tick rate y movimiento | Sin frecuencia aprobada; validar límites/colisiones es funcional (RF-MUN-005/007) | Realtime, S3 |
-| 4 | Endpoints, verbos y DTOs | Propuestos, no catálogo implementado | Casos de uso, secuencias |
-| 5 | Errores fuera de 401/403 | Propuestos; RN-16 fija autenticación y autorización HTTP | Convenciones |
-| 6 | Campos, claves, índices y tipos SQL | [Data](../../../rules/data.md) ya fija entidades, claves foráneas y unicidades obligatorias; nombres, tipos e índices concretos permanecen abiertos donde la regla lo indica | Modelo ER |
-| 7 | Cardinalidades | ERS define oficina/habitaciones, avatar, membresía, acceso y liderazgo; sesiones e historial del bot son diseño técnico | Modelo ER |
-| 8 | Matriz de permisos | Definida en ERS §3 y RN-07 a RN-11; conservar supuestos P-07/P-08/P-13 explícitos | Casos de uso, clases |
-| 9 | Visibilidad de habitación | Acceso por oficina y habitación, no enum público/global propuesto; principal accesible a miembros (RN-03/04) | Arquitectura, ER |
-| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Classrooms, roles, and permissions](../../../rules/classrooms-and-roles.md#invitations-and-membership) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
-| 11 | Solicitud de ingreso | Could · Evolución, RF-OFI-018; no aprobación adicional en canje de enlace MVP | S9 |
-| 12 | Expulsión y revocación | RN-12/13 y RF-OFI-012: baja lógica, conservar contenido, acceso revocado y tareas huérfanas; no se añade ban | S10, clases |
-| 13 | Estados de tarea | RF-TAR-004/006/007: columnas configurables, no enum fijo. Nombres iniciales en P-14; migración pendiente | ER, S4 |
-| 14 | Mensajería privada | Could · Evolución (RF-CHA-009); no se incorpora al MVP | Casos de uso, ER |
-| 15 | Asistencia | Must · MVP (RF-CAR-007), por usuario/reunión; entidad conceptual definida, esquema técnico propuesto | ER, S11 |
-| 16 | Conversaciones y herramientas del bot | RN-18 y RF-BOT-004 fijan solo lectura en MVP; almacenamiento del diálogo y catálogo concreto pendientes | Clases, S6 |
-| 17 | Límites numéricos IA | Pendientes; timeout/rate limit sin cifras inventadas | Convenciones, S6 |
-| 18 | Sesión | Expiración, renovación y revocación funcionales (AUT); JWT/cookie y parámetros pendientes (P-03) | S1, S7 |
-| 19 | Sala general | Resuelto: no existe sala global; cada oficina tiene principal no eliminable, hasta 5 adicionales (RN-04/05) | Arquitectura, ER |
-| 20 | Historial de chat | Persistencia y control definidos (RF-CHA-006/007); recuperación de acceso está señalada P-11; retención técnica pendiente | S5, canales |
-| 21 | Uploads S3 | Endpoints, tipos, autorización y entrega de objetos pendientes; no se aprueban por topología | Arquitectura |
-| 22 | Socket.IO | Excluido del MVP según [Realtime](../../../rules/realtime-and-presence.md#scaling-and-deployment); cualquier uso requiere justificación independiente | Arquitectura, realtime |
-| 23 | Entrega de repaso diario | Unicidad usuario/fecha y decisión atómica obligatorias en [Data](../../../rules/data.md#constraints-and-uniqueness); reservas, recuperación y confirmación concretas abiertas en [Bot](../../../rules/ai-bot-and-daily-briefing.md#open-decisions) | ER, S6 |
-| 24 | Camino de chat | REST para envío + WSS para difusión es propuesta; contrato debe servir oficina y habitación, aunque usuario cambie de habitación | S5, realtime |
-| 25 | Tareas ajenas y administración | ERS §3: tareas colaborativas con acceso; solo Dueño nombra Admin; Líder solo gestiona su habitación y contenido propio | Casos de uso, S12 |
-| 26 | Rechazo de recurso ajeno | [Authentication](../../../rules/authentication-and-session.md#authorization-responses) mantiene abierta la elección uniforme 403/404 para recursos de otra oficina, sin revelar existencia; no se elige aquí | Convenciones, autorización |
-| 27 | Moderador | Retirado del diseño: roles de oficina Dueño/Admin/Miembro y liderazgo de habitación separado | Casos de uso, clases |
+| 1 | Nombres, payloads, direcciones y acknowledgements de eventos realtime | Ilustrativos hasta especificarse en [API contracts](../../../rules/api-contracts.md); requieren contrato productor/consumidor | Realtime, clases |
+| 2 | Catálogo de endpoints, verbos y DTOs | Propuestos; el contrato REST saldrá de OpenAPI (D4) | Casos de uso, secuencias |
+| 3 | Tick rate, reconciliación de movimiento y límites por conexión | Abiertos ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |
+| 4 | Política de conexiones duplicadas y propagación de cambios de acceso a las `Room` vivas | Abiertas ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |
+| 5 | Ventana de reconexión y backoff | Abiertos ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |
+| 6 | Camino de envío del chat: REST más difusión o mensaje realtime validado | Abierto ([Communication and notifications](../../../rules/communication-and-notifications.md#open-decisions)) | Secuencias, realtime |
+| 7 | Retención del historial de mensajes y conversaciones con padres; silencio por alumno, filtrado, lectura de conversaciones de padres por Dueño o Admin; visibilidad de avisos para el Padre; servicio de correo | Abiertos ([Communication and notifications](../../../rules/communication-and-notifications.md#open-decisions)) | Casos de uso, modelo de datos |
+| 8 | Transporte de anuncios de NestJS a Colyseus y protocolo de recuperación de notificaciones perdidas | Abiertos ([Architecture](../../../rules/architecture.md#open-decisions)) | Arquitectura, realtime |
+| 9 | Mecanismo de sincronización colaborativa (estado de Colyseus o Yjs) y persistencia de pizarrones | Abiertos ([Live classroom tools](../../../rules/live-classroom-tools.md#open-decisions)) | Realtime |
+| 10 | Servicio de medios para video y voz (LiveKit o Amazon Chime SDK) y formato de credencial; acciones del alumno durante el congelamiento; mano alzada | Abiertos ([Live classroom tools](../../../rules/live-classroom-tools.md#open-decisions)) | Arquitectura, realtime |
+| 11 | Nombres finales de tablas y columnas, valores de enum y límites de campo | Abiertos ([Data](../../../rules/data.md#open-decisions)) | Modelo de datos |
+| 12 | Retención de mensajes, archivos y conversaciones del bot; si estas se persisten | Abiertas ([Data](../../../rules/data.md#open-decisions), [Bot](../../../rules/ai-bot-and-daily-briefing.md#open-decisions)) | Modelo de datos, secuencias |
+| 13 | Efectos de eliminar cuenta, escuela o aula sobre registros retenidos | Abiertos ([Data](../../../rules/data.md#open-decisions), [Classrooms and roles](../../../rules/classrooms-and-roles.md#open-decisions)) | Modelo de datos, casos de uso |
+| 14 | Alcance de la delegación del Admin frente al Dueño (transferir o eliminar la escuela) | Diferido a la implementación de roles ([Classrooms and roles](../../../rules/classrooms-and-roles.md#open-decisions)) | Casos de uso, clases |
+| 15 | Si una cuenta puede tener a la vez camino de escuela y de profesor independiente | Abierto ([Data](../../../rules/data.md#open-decisions)) | Casos de uso, modelo de datos |
+| 16 | Representación del almacenamiento de instantes y de la zona horaria de Buenos Aires | Abierto; el proyecto interpreta instantes con zona horaria presentados en esa zona, por confirmar ([Data](../../../rules/data.md#open-decisions)) | Modelo de datos, convenciones |
+| 17 | Historial de reentregas y de calificaciones; intentos, entrega tardía y crédito parcial; edición o baja de actividades con entregas; fórmula y agregación de `ActivityMetric`; límites y análisis de archivos | Abiertos ([Activities and grading](../../../rules/activities-and-grading.md#open-decisions)) | Modelo de datos, secuencias |
+| 18 | Catálogo de medallas, otras fuentes de puntos, reembolsos y períodos de gracia de la racha; estado inicial de minijuegos; visibilidad de saldos ajenos | Abiertos ([Points and shop](../../../rules/points-and-shop.md#open-decisions)) | Modelo de datos, casos de uso |
+| 19 | Modelo de IA, tecnología de recuperación y límites numéricos de uso; persistencia del texto del repaso; recuperación tras fallo de entrega y repaso en día de examen; alcance de los controles de salida | Abiertos ([Bot](../../../rules/ai-bot-and-daily-briefing.md#open-decisions)) | Secuencias, convenciones |
+| 20 | Ruteo del ALB hacia Colyseus (ruta o host), dominio y certificado, dimensionamiento y uso de S3 | Abiertos ([AWS infrastructure](../../../rules/aws-infrastructure.md#open-decisions)) | Arquitectura |
+| 21 | Disponibilidad de modelos de Bedrock en `sa-east-1`; posible inferencia entre regiones | Abierto, por verificar (D5; [AWS infrastructure](../../../rules/aws-infrastructure.md#open-decisions)) | Arquitectura |
+| 22 | Escalado de Colyseus más allá de una instancia | Abierto ([AWS infrastructure](../../../rules/aws-infrastructure.md#open-decisions), [Realtime and presence](../../../rules/realtime-and-presence.md#scaling-and-deployment)) | Arquitectura |
+| 23 | Propiedad compartida de la task definition entre Terraform y el pipeline; si Terraform gestiona Amplify; entornos además de producción | Abiertos ([Infrastructure as code](../../../rules/infrastructure-as-code.md#open-decisions)) | Arquitectura |
+| 24 | Socket.IO | Excluido del MVP; cualquier uso requiere justificación independiente ([Realtime and presence](../../../rules/realtime-and-presence.md#scaling-and-deployment)) | Arquitectura, realtime |
 
-### Decisiones confirmadas y pendientes que no deben confundirse
+### Notas
 
-- **Confirmadas:** Three.js + R3F elegidos y propiedad no transferible. La [conciliación](../../requirements-decision.md#confirmaciones-para-la-alineación-documental) sigue las reglas integradas del PR #5 para zona horaria, respuestas y restricciones de persistencia; sustituye la anterior generalización de zona horaria.
+- **Resueltos por regla:** los recursos de otra escuela o aula responden `404` sin revelar su existencia (RN-04); el Padre no ingresa al aula 3D; la unicidad, la aceptación atómica de invitaciones y la entrega única del repaso diario son restricciones obligatorias de [Data](../../../rules/data.md#constraints-and-uniqueness), no propuestas.
 - **Normas y motivos:** [reglas de dominio](../../../rules/README.md) y [justificación técnica](../../technical-justification.md), sin duplicar sus explicaciones ni reabrir lo ya obligatorio.
-- **Ciclo de oficina:** baja lógica, recuperación durante 15 días y eliminación definitiva están descritas en RN-14 y RF-OFI-014 a 016. P-05 (crear otra oficina después) sigue abierto.
-- **Supuestos ERS:** recuperación por email, eliminación de habitación, permisos propuestos y prioridades conservan sus P#; no se decide aquí la implementación ni se dan por cerrados por reproducirlos en un diagrama.
-- **Integración:** dueño y distribución de contratos entre frontend/backend, routing de canales de oficina/habitación/usuario y mecanismos de entrega requieren diseño técnico coordinado.
+- **Supuestos de la ERS:** los supuestos marcados en la ERS siguen identificados allí; reproducirlos en un diagrama no los da por cerrados.
 
 ← [Convenciones](./conventions.md) · [Índice](../README.md)

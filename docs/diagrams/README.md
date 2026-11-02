@@ -1,8 +1,8 @@
 # Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
-> **Directorio de arquitectura de diseño** · Plataforma de salas de convivencia y organización
-> **Estado:** pendiente de realineación al modelo de escuelas y aulas (`master-document.md` v0.3); describe el modelo anterior de oficinas y habitaciones. Ante diferencias prevalecen las reglas de dominio y la ERS v0.2; contratos técnicos propuestos, no implementación
-> **Última actualización:** 28 de octubre de 2026
+> **Directorio de arquitectura de diseño** · Plataforma de aulas virtuales 3D para escuelas
+> **Estado:** diseño propuesto alineado al modelo de escuelas y aulas (`master-document.md` v0.3); ante diferencias prevalecen las reglas de dominio y la ERS v0.2. Las decisiones D1 a D6 (2026-11-02) están pendientes de aprobación del equipo. Contratos técnicos propuestos, no implementación
+> **Última actualización:** 2 de noviembre de 2026
 
 ---
 
@@ -34,7 +34,7 @@ flowchart TD
   subgraph R["05-reference (Referencia)"]
     direction LR
     CV["conventions.md<br/>Códigos y Reglas"]
-    GP["gaps.md<br/>27 decisiones: definidas y pendientes"]
+    GP["gaps.md<br/>decisiones D1 a D6 y huecos abiertos"]
   end
 
   F --> S
@@ -47,11 +47,11 @@ flowchart TD
 
 | Módulo / Vista | Contenido | Archivos |
 |---|---|---|
-| [**01. Funcional**](./01-functional/README.md) | Actores (Dueño, Admin, Miembro y Líder de habitación), diagrama general de casos de uso y matriz de permisos por rol | [use-cases.md](./01-functional/use-cases.md) |
-| [**02. Sistemas y Red**](./02-system-architecture/README.md) | Topología AWS (Amplify, ALB, ECS, RDS, S3, Bedrock), canales REST/WSS y ciclo Colyseus | [deployment-and-network.md](./02-system-architecture/deployment-and-network.md) · [realtime-colyseus.md](./02-system-architecture/realtime-colyseus.md) |
+| [**01. Funcional**](./01-functional/README.md) | Actores (Dueño / Admin de Escuela, Profesor, Alumno, Padre / Tutor, Bot y Sistema), diagrama general de casos de uso y matriz de permisos por rol | [use-cases.md](./01-functional/use-cases.md) |
+| [**02. Sistemas y Red**](./02-system-architecture/README.md) | Topología AWS en `sa-east-1` (Amplify, ALB, ECR, ECS, RDS, S3, Secrets Manager, Bedrock), canales REST/WSS y ciclo Colyseus con `onAuth` | [deployment-and-network.md](./02-system-architecture/deployment-and-network.md) · [realtime-colyseus.md](./02-system-architecture/realtime-colyseus.md) |
 | [**03. Estructural**](./03-structural/README.md) | Diagrama entidad-relación de PostgreSQL (Prisma) y arquitectura de clases/guards en NestJS y React | [data-model.md](./03-structural/data-model.md) · [class-design.md](./03-structural/class-design.md) |
-| [**04. Dinámica**](./04-behavioral/README.md) | Interacciones temporales: flujos principales (S1-S7) y flujos de administración y ciclo de oficina (S8-S13) | [core-flows.md](./04-behavioral/core-flows.md) · [admin-flows.md](./04-behavioral/admin-flows.md) |
-| [**05. Referencia**](./05-reference/README.md) | Convenciones de errores, orden obligatorio de validación y matriz de seguimiento de huecos | [conventions.md](./05-reference/conventions.md) · [gaps.md](./05-reference/gaps.md) |
+| [**04. Dinámica**](./04-behavioral/README.md) | Interacciones temporales: flujos principales (S1-S7) y flujos de administración y servicios (S8-S13) | [core-flows.md](./04-behavioral/core-flows.md) · [admin-flows.md](./04-behavioral/admin-flows.md) |
+| [**05. Referencia**](./05-reference/README.md) | Convenciones de errores, orden obligatorio de validación y registro de decisiones pendientes y huecos abiertos | [conventions.md](./05-reference/conventions.md) · [gaps.md](./05-reference/gaps.md) |
 
 ---
 
@@ -59,10 +59,10 @@ flowchart TD
 
 | Si tu objetivo es... | Rutas y diagramas recomendados | Qué obtendrás |
 |---|---|---|
-| **Definir alcance y roles** | [01-functional/use-cases.md](./01-functional/use-cases.md) | Cuáles son las capacidades exactas de Dueño, Admin, Miembro y Líder. |
+| **Definir alcance y roles** | [01-functional/use-cases.md](./01-functional/use-cases.md) | Cuáles son las capacidades exactas de Dueño / Admin de Escuela, Profesor, Alumno y Padre. |
 | **Diseñar base de datos** | [03-structural/data-model.md](./03-structural/data-model.md) | Modelo conceptual/lógico e invariantes funcionales; no esquema Prisma aprobado. |
 | **Implementar endpoints / WebSocket** | [02-system-architecture](./02-system-architecture/README.md) y [04-behavioral](./04-behavioral/README.md) | Qué llamadas son REST, qué eventos viajan por WSS y el orden de ejecución. |
-| **Escribir pruebas de seguridad (R2)** | [01-functional/use-cases.md](./01-functional/use-cases.md) y [05-reference/conventions.md](./05-reference/conventions.md) | Escenarios que deben devolver 401 (sin sesión) y 403 (rol insuficiente). |
+| **Escribir pruebas de seguridad (R2)** | [01-functional/use-cases.md](./01-functional/use-cases.md) y [05-reference/conventions.md](./05-reference/conventions.md) | escenarios que deben devolver 401 (sin sesión), 403 (rol insuficiente) y 404 (recurso ajeno). |
 | **Preparar la defensa técnica (R8)** | [02-system-architecture/deployment-and-network.md](./02-system-architecture/deployment-and-network.md) y [04-behavioral/core-flows.md](./04-behavioral/core-flows.md) | Explicación clara de la separación de responsabilidades y flujo integral. |
 
 ---
@@ -70,8 +70,8 @@ flowchart TD
 ## 3. Principios de Consistencia de los Diagramas
 
 1. **Mermaid como formato editable:** Los diagramas son código Mermaid en Markdown. Son vistas derivadas de la ERS, las decisiones y las reglas; no una fuente de requisitos nuevos ni evidencia de implementación. La representación visual debe verificarse con un renderer compatible, no asumirse por usar Mermaid.
-2. **Autoridad Única:** NestJS y PostgreSQL son la autoridad exclusiva de los datos persistentes (usuarios, salas, tareas, chat). Colyseus gestiona únicamente estado efímero en memoria (presencia y movimiento).
-3. **Persistencia antes de difusión:** NestJS valida y confirma en RDS antes de notificar a destinatarios autorizados. Las secuencias REST son ejemplos; el camino de envío del chat permanece abierto según [Communication and meetings](../../rules/communication-and-notifications.md#classroom-chat).
+2. **Autoridad Única:** NestJS y PostgreSQL son la autoridad exclusiva de los datos persistentes (usuarios, escuelas, aulas, actividades, calificaciones, chat). Colyseus gestiona únicamente estado efímero en memoria (presencia, movimiento y congelamiento).
+3. **Persistencia antes de difusión:** NestJS valida y confirma en RDS antes de notificar a destinatarios autorizados. Las secuencias REST son ejemplos; el camino de envío del chat permanece abierto según [Communication and notifications](../../rules/communication-and-notifications.md#classroom-chat).
 
 ---
 
@@ -87,4 +87,4 @@ La [guía de revisión](./review-guide.md) describe la entrega en un único PR h
 
 ## 5. Alcance de esta alineación
 
-Oficinas con principal y habitaciones adicionales; membresía de oficina separada de acceso y liderazgo; columnas configurables, tareas colaborativas, chat por oficina/habitación, asistencia MVP y bot de solo lectura. Se conserva la organización original de vistas, actualizando su contenido según la ERS de Luis. La propiedad no se transfiere; el Dueño puede dar de baja y recuperar durante 15 días. Three.js + R3F están elegidos; zona horaria y respuestas siguen sus reglas específicas, sin resolver decisiones abiertas. No se implementa backend, migración ni infraestructura con estos documentos.
+Escuelas con aulas; profesor independiente con aulas propias; roles Dueño / Admin de Escuela, Profesor, Alumno y Padre; actividades, entregas y calificaciones; puntos, tienda y racha; chat y avisos; controles de aula en vivo; bot de estudio de solo lectura con repaso diario. Las decisiones D1 a D6 del 2026-11-02 (sesión, `onAuth`, monorepo, OpenAPI, región `sa-east-1`, OIDC) están reflejadas como diseño propuesto y pendientes de aprobación del equipo; los puntos que las reglas dejan abiertos figuran en [gaps.md](./05-reference/gaps.md). No se implementa backend, migración ni infraestructura con estos documentos.
