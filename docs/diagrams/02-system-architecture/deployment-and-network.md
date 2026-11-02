@@ -100,7 +100,7 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 > | Uso de S3 (las cargas de archivos no están definidas) | abierto |
 > | Transporte de anuncios de NestJS a Colyseus | abierto ([Architecture](../../../rules/architecture.md#open-decisions)) |
 > | Si Terraform gestiona Amplify, entornos además de producción, propiedad de la task definition | abierto ([Infrastructure as code](../../../rules/infrastructure-as-code.md#open-decisions)) |
-> | Almacenamiento de tokens en el cliente (D1) | abierto |
+> | Almacenamiento de tokens en el cliente (D1) | decidido: `sessionStorage` (FD1 del frontend) |
 
 ### 1.2 Matriz de canales
 

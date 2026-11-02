@@ -10,7 +10,7 @@ Las decisiones D1 a D7 de la [justificación técnica, sección 7](../../technic
 
 | ID | Decisión | Vistas afectadas |
 |---|---|---|
-| D1 | JWT de acceso de vida corta más refresh token opaco hasheado y rotado; el identificador de sesión se verifica en cada petición protegida. Almacenamiento de tokens en el cliente: abierto | Arquitectura, realtime, convenciones |
+| D1 | JWT de acceso de vida corta más refresh token opaco hasheado y rotado; el identificador de sesión se verifica en cada petición protegida. Almacenamiento de tokens en el cliente: `sessionStorage` con header `Authorization: Bearer` (acordado con el frontend, FD1) | Arquitectura, realtime, convenciones |
 | D2 | `onAuth` de Colyseus consulta un endpoint interno de NestJS autenticado con un secreto de servicio en Secrets Manager; el ingreso se rechaza si NestJS no puede verificar | Arquitectura, realtime |
 | D3 | Monorepo pnpm: `apps/api` (NestJS), `apps/realtime` (Colyseus) y `packages/contracts` | Arquitectura |
 | D4 | OpenAPI generado por NestJS y servido con Scalar; el frontend genera sus tipos. Distribución de tipos realtime: abierta | Arquitectura, realtime, clases |
