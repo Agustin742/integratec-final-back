@@ -16,7 +16,7 @@
 
 ## 1. Conexiones frontend y backend
 
-Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D7 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02; los puntos que las reglas dejan sin resolver se marcan **abierto**.
+Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D8 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02; los puntos que las reglas dejan sin resolver se marcan **abierto**.
 
 ### 1.1 Arquitectura de despliegue y comunicación
 
@@ -118,7 +118,7 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 | Mensajería en vivo | Cliente | NestJS y Colyseus | REST para envío y WSS para difusión (propuesto); mensaje realtime validado (abierto) | Acceso vigente al aula; mensaje persistido antes de difundir | RDS PostgreSQL (`Message`) |
 | Video y voz | Cliente | Servicio de medios (abierto) | WebRTC | NestJS emite credenciales de acceso | No |
 
-> **Huecos declarados.** No hay catálogo de endpoints, verbos ni DTOs; los eventos (`avatar:input`, `avatar:state`, `presence:changed`, `classroom:joined`, `classroom:frozen`, `chat:message`, `chat:muted`, `activity:published`, `grade:published`, `bot:summary-ready`) son ilustrativos y no definitivos ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Los contratos REST salen de un documento OpenAPI generado por NestJS y servido con Scalar, del que el frontend genera sus tipos (D4); la distribución de tipos realtime sigue abierta. Tampoco están especificados el orden ni la deduplicación de mensajes, los payloads, los acknowledgements ni los namespaces.
+> **Huecos declarados.** No hay catálogo de endpoints, verbos ni DTOs; los eventos (`avatar:input`, `avatar:state`, `presence:changed`, `classroom:joined`, `classroom:frozen`, `chat:message`, `chat:muted`, `activity:published`, `grade:published`, `bot:summary-ready`) son ilustrativos y no definitivos ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Los contratos REST salen de un documento OpenAPI generado por NestJS y servido con Scalar, que se commitea y del que el frontend genera sus tipos (D4, D8); los tipos realtime se generan con `@colyseus/schema` codegen y `packages/contracts` y también se commitean (D8). Tampoco están especificados el orden ni la deduplicación de mensajes, los payloads, los acknowledgements ni los namespaces.
 
 ### 1.3 Flujo de usuarios y aulas
 

@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record committed REST and realtime contract artifacts (D8)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/` (api-contracts, architecture, realtime-and-presence), `README.md`, `docs/architecture.md`, `docs/diagrams/` (gaps, realtime-colyseus, deployment-and-network, class-design, README files)
+- **Change:** Recorded D8: the backend commits `openapi.json` (CI fails if stale), generates Colyseus room state types with `schema-codegen` and exports message payload types from `packages/contracts`, all committed; the frontend pulls them with `pnpm api:sync`. Closed the open item on realtime type distribution. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The frontend needs contract changes visible in pull requests and a build that does not depend on a running backend.
+- **Next step:** Fix the exact artifact paths and the CI staleness check in the monorepo bootstrap.
+
 ## 2026-11-02 — Record client-side token storage
 
 - **Status:** completed

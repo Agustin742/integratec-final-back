@@ -6,17 +6,18 @@
 
 ## 1. Decisiones aprobadas
 
-Las decisiones D1 a D7 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín (responsable de las decisiones) el 2026-11-02; no se afirma aprobación de todo el equipo. Los diagramas las reflejan como diseño propuesto, no implementado. El conflicto previo entre RN-02 / RF-AUL-002 / HU-AUL-002 (correo o código/enlace) y las reglas (solo correo de un solo uso) queda resuelto por D7.
+Las decisiones D1 a D8 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín (responsable de las decisiones) el 2026-11-02; no se afirma aprobación de todo el equipo. Los diagramas las reflejan como diseño propuesto, no implementado. El conflicto previo entre RN-02 / RF-AUL-002 / HU-AUL-002 (correo o código/enlace) y las reglas (solo correo de un solo uso) queda resuelto por D7.
 
 | ID | Decisión | Vistas afectadas |
 |---|---|---|
 | D1 | JWT de acceso de vida corta más refresh token opaco hasheado y rotado; el identificador de sesión se verifica en cada petición protegida. Almacenamiento de tokens en el cliente: `sessionStorage` con header `Authorization: Bearer` (acordado con el frontend, FD1) | Arquitectura, realtime, convenciones |
 | D2 | `onAuth` de Colyseus consulta un endpoint interno de NestJS autenticado con un secreto de servicio en Secrets Manager; el ingreso se rechaza si NestJS no puede verificar | Arquitectura, realtime |
 | D3 | Monorepo pnpm: `apps/api` (NestJS), `apps/realtime` (Colyseus) y `packages/contracts` | Arquitectura |
-| D4 | OpenAPI generado por NestJS y servido con Scalar; el frontend genera sus tipos. Distribución de tipos realtime: abierta | Arquitectura, realtime, clases |
+| D4 | OpenAPI generado por NestJS y servido con Scalar; el frontend genera sus tipos. Detalle de distribución en D8 | Arquitectura, realtime, clases |
 | D5 | Región AWS `sa-east-1`; disponibilidad de Bedrock en esa región por verificar | Arquitectura |
 | D6 | GitHub Actions con OIDC hacia un rol IAM, sin claves de larga duración | Arquitectura |
 | D7 | Dos mecanismos de ingreso: invitación por correo (un solo uso; obligatoria para profesores invitados y para padres) y código de unión por aula (solo rol `Student`, hash, vencimiento, revocable, máximo de usos opcional, límite de intentos, auditoría). La forma de la entidad queda para el esquema Prisma base | Datos, aulas, casos de uso |
+| D8 | Artefactos de contrato versionados: el backend genera y **commitea** `openapi.json` (ruta prevista, p. ej. `apps/api/openapi.json`; la fija el bootstrap del monorepo) y su CI falla si está desactualizado; los tipos de estado de sala (`@colyseus/schema` codegen) y de mensajes (`packages/contracts`) se generan o exportan y se commitean; el frontend los trae con `pnpm api:sync` y commitea los tipos generados | Arquitectura, realtime, clases |
 
 ## 2. Huecos abiertos vigentes
 
@@ -25,7 +26,7 @@ Cada fila remite a la regla que la mantiene abierta. **Abierto** significa que n
 | # | Tema | Estado y fuente | Vista afectada |
 |---|---|---|---|
 | 1 | Nombres, payloads, direcciones y acknowledgements de eventos realtime | Ilustrativos hasta especificarse en [API contracts](../../../rules/api-contracts.md); requieren contrato productor/consumidor | Realtime, clases |
-| 2 | Catálogo de endpoints, verbos y DTOs | Propuestos; el contrato REST saldrá de OpenAPI (D4) | Casos de uso, secuencias |
+| 2 | Catálogo de endpoints, verbos y DTOs | Propuestos; el contrato REST saldrá del `openapi.json` commiteado (D4, D8) | Casos de uso, secuencias |
 | 3 | Tick rate, reconciliación de movimiento y límites por conexión | Abiertos ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |
 | 4 | Política de conexiones duplicadas y propagación de cambios de acceso a las `Room` vivas | Abiertas ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |
 | 5 | Ventana de reconexión y backoff | Abiertos ([Realtime and presence](../../../rules/realtime-and-presence.md#open-decisions)) | Realtime |

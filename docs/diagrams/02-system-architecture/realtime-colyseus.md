@@ -140,7 +140,7 @@ Según [Realtime and presence](../../../rules/realtime-and-presence.md#open-deci
 | Envío del chat por REST o por mensaje realtime | abierto |
 | Mecanismo de sincronización colaborativa (estado de Colyseus o Yjs) | abierto |
 | Transporte de anuncios de NestJS a Colyseus | abierto |
-| Distribución de tipos de mensajes y estado realtime | abierto |
+| Distribución de tipos de mensajes y estado realtime | resuelto en D8 (generados con `@colyseus/schema` codegen y `packages/contracts`, commiteados); rutas exactas por fijar en el bootstrap |
 | Escalado de Colyseus más allá de una instancia | abierto |
 
 ---

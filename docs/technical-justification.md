@@ -95,7 +95,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** A shared `contracts` npm package with zod schemas published to GitHub Packages (rejected: adds publishing, versioning, and registry authentication); manually copied types (rejected: drifts out of sync).
 - **Affected contracts:** [API contracts](../rules/api-contracts.md) and the README "Shared contracts" section.
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
-- **Open:** Distribution of realtime message and state types.
+- **Update:** The distribution mechanism is detailed in [D8](#d8-committed-rest-and-realtime-contract-artifacts), which closes the earlier open item on realtime message and state types.
 
 ### D5. AWS region
 
@@ -128,6 +128,19 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** The invitation data model (target email is required for email invitations; the join code has no target email), membership endpoints, HU-AUL-002, RN-02, RF-AUL-002, [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), and [Data](../rules/data.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** Whether the join code is a single `Invitation` entity with a kind discriminator or a separate `ClassroomJoinCode` entity is left to the Prisma baseline schema work item.
+
+### D8. Committed REST and realtime contract artifacts
+
+- **Question:** In what form does this repository publish its contracts so the frontend can consume them without a running backend, and how are realtime message and state types distributed?
+- **Outcome:**
+  1. **REST:** NestJS generates `openapi.json` and this repository **COMMITS** it (planned path, for example `apps/api/openapi.json`; the exact path is set by the monorepo bootstrap). Backend CI **MUST** fail if the committed file is stale versus the code. The frontend sync script (`pnpm api:sync`) fetches the committed file from this repository (`develop` branch, through the raw GitHub URL or a local checkout path) and regenerates its types with `openapi-typescript`; the generated types are committed in the frontend repository.
+  2. **Realtime:** this repository generates client-side TypeScript for Colyseus room state with `@colyseus/schema` codegen (`schema-codegen`) and exports realtime message payload types from `packages/contracts`. The generated artifacts are committed here (path set by the monorepo bootstrap), and the same frontend sync script pulls them into the frontend repository.
+- **Rationale:** One committed artifact is the authoritative contract; a stale check keeps it faithful to the code; the frontend build and its pull request diffs show contract changes without depending on a deployed backend.
+- **Alternatives:** Generating types in frontend CI from the deployed backend (rejected: the build depends on backend availability and contract changes are not visible in pull requests); publishing `packages/contracts` to GitHub Packages (rejected: publishing, versioning, and registry authentication overhead); hand-written realtime types in the frontend (rejected: drift and runtime errors).
+- **Trade-off:** Someone must run the frontend sync; types are stale until then.
+- **Affected contracts:** [API contracts](../rules/api-contracts.md), [Architecture](../rules/architecture.md), [Realtime and presence](../rules/realtime-and-presence.md), CI (staleness check), and the README "Shared contracts" section. The frontend side is decision FD7 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Open:** The exact paths of the committed artifacts, set by the monorepo bootstrap.
 
 ## 8. Known conflicts and notes
 
