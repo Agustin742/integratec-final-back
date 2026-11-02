@@ -22,4 +22,3 @@ export function createExpressApp(): Application {
   const app = express();
   return configureExpress(app);
 }
-
