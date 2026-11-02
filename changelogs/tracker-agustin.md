@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Add rule routing index for agents
+
+- **Status:** completed
+- **Area / files:** `rules/index.md`, `rules/README.md`, `AGENTS.md`
+- **Change:** Added a routing index that maps task types and touched areas to the rules to read and when to skip each one; pointed agent instructions and the rules README to it. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** Agents were reading every rule for every task, wasting context; the existing README list describes rules but not when they apply.
+- **Next step:** Keep the index in sync when rules are added or renamed.
+
 ## 2026-11-02 — Record architecture decisions
 
 - **Status:** completed

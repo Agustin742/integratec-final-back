@@ -70,7 +70,7 @@ Rules describe **how the project must be designed and built**. They are not impl
 
 ## How to use the rules
 
-Read the relevant rules before designing, implementing, modifying, or reviewing a part of the project. Apply them consistently regardless of whether the work is performed manually or with an AI coding assistant.
+Read the relevant rules before designing, implementing, modifying, or reviewing a part of the project. The [rule routing index](./index.md) maps each task type and touched area to the rules to read and the ones to skip. Apply them consistently regardless of whether the work is performed manually or with an AI coding assistant.
 
 When a rule needs to change, update its source document explicitly rather than silently deviating in code.
 
