@@ -1,16 +1,6 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { bootstrap } from './bootstrap';
 
-export async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors();
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-  return app;
-}
-
-if (process.env.NODE_ENV !== 'test') {
-  bootstrap().then(() => {
-    console.log('NestJS API is running');
-  });
-}
+bootstrap().catch((err: unknown) => {
+  console.error('Failed to start NestJS API:', err);
+  process.exit(1);
+});
