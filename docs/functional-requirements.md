@@ -1,1455 +1,657 @@
-# Especificación de Requisitos Funcionales (ERS)
+# Especificación de Requerimientos Funcionales (ERS)
 
-## Plataforma de Oficinas Virtuales 3D — Proyecto Integrador Final
+## Plataforma de Aulas Virtuales 3D para Escuelas — Proyecto Integrador Final
 
 | Campo | Valor |
-|---|---|
-| Proyecto | Proyecto integrador final · Fundación Integrar (IntegrarTEC 2026) |
-| Documento | Especificación de Requisitos Funcionales (ERS) |
-| Versión | 0.1 (borrador para revisión del equipo) |
-| Fecha | 2026-10-26 |
-| Equipo | 4 integrantes: Alejo Martínez, Agustín Tabarcache, Matías Sousa, Luis Calegari   |
-| Documento de origen | `master-document.md` (documento maestro del proyecto) |
-| Estado | Borrador. Los puntos marcados con ⚠️ son supuestos a validar |
+| --- | --- |
+| **Proyecto** | Proyecto integrador final · Fundación Integrar (IntegrarTEC 2026) |
+| **Documento** | Especificación de Requerimientos Funcionales (ERS) |
+| **Versión** | 0.2 (Alineada con `master-document.md` v0.3 y reglas de dominio en `rules/`) |
+| **Fecha** | 2026-11-02 |
+| **Equipo** | Alejo Martínez, Agustín Tabarcache, Matías Sousa, Luis Calegari |
+| **Documentos de referencia** | [`master-document.md`](../master-document.md), [`docs/requirements-decision.md`](./requirements-decision.md), [`rules/README.md`](../rules/README.md) |
+| **Estado** | Vigente — Base funcional y de trazabilidad para el dominio escolar |
 
 ### Control de cambios
 
-| Versión | Fecha | Cambios | Autor |
-|---|---|---|---|
-| 0.1 | 2026-10-26 | Primera redacción completa a partir del documento maestro y de las decisiones de alcance acordadas | Luis Calegari |
+| Versión | Fecha | Cambios principales | Autor |
+| --- | --- | --- | --- |
+| 0.1 | 2026-10-26 | Primera redacción completa bajo el modelo inicial de oficinas y habitaciones virtuales. | Luis Calegari |
+| 0.2 | 2026-11-02 | Realineación integral al modelo de **Aula Virtual 3D para Escuelas** (`master-document.md` v0.3 y `rules/`). Se reemplazan oficinas, habitaciones y tableros Kanban por escuelas, aulas, actividades académicas (TPs y exámenes), entregas, calificaciones, puntos ponderados, tienda, mascota del aula, racha, medallas, controles de clase en vivo, vista para padres/tutores, Modo 2D Clásico y Bot Guía de Estudio con RAG sobre material docente. | Equipo |
 
 ---
 
-## 1. Introducción
+## 1. Introducción y Alcance
 
 ### 1.1 Propósito
 
-Este documento especifica **qué debe hacer el sistema** desde el punto de vista del usuario. Está pensado para dos usos:
+Este documento especifica el comportamiento funcional y las reglas de negocio de la **Plataforma de Aulas Virtuales 3D para Escuelas**. Cumple tres objetivos dentro del proyecto:
 
-1. Servir de acuerdo del equipo sobre el alcance funcional del MVP y de su evolución.
-2. Ser la fuente de las **historias de usuario** del tablero Kanban del proyecto: cada historia debe referenciar el requisito `RF-MÓDULO-NNN` del que proviene.
+1. Consolidar en un contrato funcional verificable el alcance del **MVP Core**, el **MVP Extendido** y la **Evolución / Futuro** definidos en el [documento maestro](../master-document.md).
+2. Servir como fuente de verdad para el catálogo de [historias de usuario (`docs/user-stories.md`)](./user-stories.md) y las tarjetas de trabajo del tablero del proyecto.
+3. Establecer la trazabilidad entre reglas de negocio (`RN-NN`), requerimientos funcionales (`RF-XXX-NNN`), requerimientos no funcionales (`RNF-NNN`), historias de usuario (`HU-XXX-NNN`) y los requisitos obligatorios `R1`–`R8` de IntegrarTEC 2026.
 
-### 1.2 Alcance
+### 1.2 Visión del producto
 
-La ERS cubre **únicamente requisitos funcionales**. Quedan fuera, y se tratan en otros documentos:
+La plataforma es una aplicación web de **aulas virtuales tridimensionales con cámara isométrica** (implementada con **Three.js + React Three Fiber** sobre **React**) complementada por un **Modo 2D Clásico** totalmente equivalente.
 
-- Requisitos no funcionales (rendimiento, seguridad detallada, accesibilidad, compatibilidad).
-- Decisiones de tecnología, arquitectura, infraestructura y despliegue.
-- Dirección artística y diseño visual.
-- Contratos técnicos entre frontend y backend.
+- En cada **Aula**, el **Profesor** dicta clases, publica bibliografía y avisos, asigna actividades (**Trabajos Prácticos y Exámenes**), corrige entregas, modera la convivencia y coordina dinámicas en vivo.
+- El **Alumno** navega por el aula con su avatar personalizable (o utiliza el Modo 2D Clásico), interactúa con su pupitre, la pizarra, la cartelera, la tienda y el **Bot Guía de Estudio (RAG)**, realiza entregas y recibe **Puntos Ponderados** en función de sus calificaciones para personalizar su experiencia, sostener su **Racha** de estudio y colaborar con la **Mascota del Aula**.
+- El **Padre / Tutor** accede a una interfaz simplificada de solo lectura y comunicación acotada para acompañar las calificaciones, entregas pendientes y novedades de sus hijos vinculados.
+- El **Dueño / Admin de Escuela** gestiona la estructura institucional cuando las aulas se organizan bajo una escuela.
 
-Cuando un requisito funcional depende de un aspecto técnico (por ejemplo, "en tiempo real"), se expresa como comportamiento observable por el usuario, sin fijar cómo se implementa.
+El producto **no es un videojuego competitivo ni un MMO**: la gamificación está subordinada al progreso pedagógico, la convivencia escolar y la motivación de los estudiantes.
 
-### 1.3 Relación con el documento maestro
+### 1.3 Fases de entrega
 
-Esta ERS **precede** a los documentos técnicos `rules/` del documento maestro: define el comportamiento esperado, y los `rules/` bajarán a detalle técnico sin contradecirla.
+La planificación funcional se divide en tres horizontes incrementales:
 
-Durante la definición de requisitos se tomaron decisiones que **cambian partes del documento maestro**. Hasta que éste se actualice, esta ERS prevalece en los siguientes puntos:
-
-| Tema | Documento maestro | Esta ERS |
-|---|---|---|
-| Unidad de organización | Salas personales, compartidas y una general | **Oficina** (contenedor) con **habitaciones** dentro |
-| Sala personal | Sala privada por usuario, aparte | La oficina propia del usuario, creada al registrarse |
-| Sala general global | Una sala general para todos los usuarios | No existe. Cada oficina tiene su **habitación principal** |
-| Rol de plataforma | Se mencionan administradores de plataforma | **No hay Superadmin**: los roles son por oficina |
-| Invitaciones | Enlace o código | **Enlace único** con vencimiento y revocable |
-| Mensajería | Chat de sala y mensajería privada | MVP: solo chat de oficina y de habitación. La mensajería privada pasa a evolución |
-| Bot de IA | Informa y ejecuta acciones | MVP: **solo consulta y resume**; no ejecuta acciones |
+| Fase | Objetivo operativo | Módulos y capacidades centrales |
+| --- | --- | --- |
+| **MVP Core** | Recorrido académico completo en producción (1–2 meses) | Autenticación y perfiles (`RF-AUT`), creación y membresía de aulas (`RF-AUL`), escena de Aula 3D + conmutación en un clic a Modo 2D Clásico (`RF-ESP`), ciclo completo de Actividades/TPs/Exámenes con entregas, corrección y puntos ponderados (`RF-ACT`), billetera de puntos, racha diaria, medallas, tienda y mascota del aula (`RF-GAM`), avisos con notificación por email, chat en tiempo real con moderación y foro de consultas (`RF-COM`), y Bot Guía de Estudio con RAG sobre material docente y repaso diario (`RF-BOT`). |
+| **MVP Extendido** | Herramientas sincrónicas avanzadas, familia y gestión multi-aula | Controles de clase en vivo (`RF-VIV`: congelar alumnos en sus pupitres, silenciar sala/chat, llamadas de audio/video WebRTC y pizarrón interactivo con gráficos matemáticos y LaTeX), vinculación y panel de seguimiento para `Padre / Tutor` (`RF-AUT-004`, `RF-ACT-006`), vista institucional multi-aula para `Dueño / Admin de Escuela` (`RF-AUL-004`), cuestionarios autoevaluables, minijuegos deshabilitables por el docente y auditoría pedagógica de consultas al Bot (`RF-BOT-004`). |
+| **Evolución / Futuro** | Expansión post-defensa | Ejecución de acciones asistidas por el Bot con confirmación explícita, analíticas históricas avanzadas por cohorte, plantillas adicionales de aulas 3D y escalamiento horizontal multi-instancia de sesiones en tiempo real. |
 
 ### 1.4 Convenciones del documento
 
-**Identificadores.** Cada requisito tiene un ID con formato `RF-MÓDULO-NNN`. Las reglas de negocio transversales usan `RN-NN`. Los IDs no se reutilizan: si un requisito se elimina, su número queda vacío.
+- **Identificadores de requerimientos:** `RF-MÓDULO-NNN` para requerimientos funcionales y `RNF-NNN` para requerimientos no funcionales.
+- **Reglas de negocio:** `RN-01` a `RN-20`, referenciadas desde los requerimientos e historias de usuario.
+- **Priorización MoSCoW:**
+  - `Must`: indispensable para la entrega obligatoria y la integridad funcional/seguridad del sistema.
+  - `Should`: importante y previsto dentro del alcance objetivo de los MVP.
+  - `Could`: deseable, sujeto a disponibilidad de tiempo luego de cubrir `Must` y `Should`.
+  - `Won't`: excluido explícitamente del alcance actual.
+- **Criterios de aceptación:** expresados en formato verificable *Dado / Cuando / Entonces*.
 
-**Prioridad (MoSCoW).**
+### 1.5 Glosario de dominio escolar
 
-| Valor | Significado |
-|---|---|
-| Must | Imprescindible para que el MVP sea utilizable y cumpla los requisitos obligatorios del curso |
-| Should | Importante; entra en el MVP salvo que el tiempo no alcance |
-| Could | Deseable; se hace si sobra tiempo |
-| Won't | Descartado explícitamente en esta versión |
-
-**Fase.** `MVP` (objetivo de entrega) o `Evolución` (después de la entrega).
-
-**Criterios de aceptación.** Se redactan en formato *Dado / Cuando / Entonces*, de modo que cada uno pueda convertirse en un caso de prueba y en un criterio de la historia de usuario.
-
-### 1.5 Glosario
-
-| Término | Definición |
-|---|---|
-| **Instancia** | La plataforma completa: una sola aplicación y una sola base de usuarios. |
-| **Usuario** | Persona con cuenta registrada. Los usuarios son globales a la instancia. |
-| **Visitante** | Persona sin sesión iniciada. |
-| **Oficina** | Espacio de trabajo que agrupa habitaciones, miembros y recursos. Cada usuario tiene una propia, creada al registrarse, y puede ser invitado a muchas otras. Es la unidad de aislamiento de datos y permisos. |
-| **Dueño** | Usuario que creó la oficina. Uno por oficina, no transferible. |
-| **Administrador** | Miembro al que el Dueño delegó la gestión de la oficina. |
-| **Miembro** | Usuario que pertenece a una oficina. |
-| **Líder** | Rol asignado dentro de una habitación concreta. Puede haber varios por habitación. |
-| **Habitación** | Espacio navegable 3D dentro de una oficina. Tiene tablero, cartelera, reuniones y chat propios. |
-| **Habitación principal** | Habitación creada por defecto con la oficina. Accesible para todos sus miembros. No se puede eliminar y no cuenta para el límite de habitaciones adicionales. |
-| **Acceso a habitación** | Permiso binario: un miembro puede entrar a una habitación o no. |
-| **Invitación** | Enlace único, con vencimiento y revocable, que permite unirse a una oficina como Miembro. |
-| **Canal de chat** | Ámbito de un mensaje: el de la oficina (lo leen todos sus miembros) o el de una habitación (solo quienes tienen acceso). |
-| **Tablero** | Vista Kanban de las tareas de una habitación, con columnas configurables. |
-| **Tarea** | Unidad de trabajo de un tablero. Queda "huérfana" si su responsable pierde acceso a la habitación. |
-| **Cartelera** | Lista de anuncios persistentes de una habitación. |
-| **Anuncio** | Aviso publicado en una cartelera. |
-| **Reunión** | Evento con fecha y hora, asociado a una habitación, con confirmación de asistencia. |
-| **Presencia** | Estado de conexión del usuario y habitación donde se encuentra. |
-| **Objeto interactuable** | Elemento modelado en la habitación que abre una herramienta o ejecuta una acción. Es extensible. |
-| **Bot** | Asistente de IA de consulta y resumen, que ve solo lo que el usuario tiene permiso de ver. |
-| **Repaso diario** | Resumen que el bot presenta en la primera conexión del día. |
-| **Baja lógica** | Estado de una oficina eliminada pero recuperable por el Dueño durante 15 días. |
+| Término | Definición funcional |
+| --- | --- |
+| **Escuela (`School`)** | Unidad institucional opcional que agrupa a un `Dueño / Admin de Escuela`, un plantel de `Profesores` y múltiples `Aulas`. Constituye una frontera estricta de aislamiento de datos. |
+| **Aula (`Classroom`)** | Espacio educativo persistente (independiente de si hay usuarios conectados en ese instante) que agrupa a su profesor, alumnos matriculados, pupitres, bibliografía, actividades, entregas, calificaciones, chat, tablón de anuncios, tienda y mascota. |
+| **Profesor (`Teacher`)** | Docente responsable de crear o administrar el aula, publicar material y actividades, calificar entregas, moderar el chat, configurar el Bot IA y operar las herramientas de clase en vivo. |
+| **Alumno (`Student`)** | Estudiante matriculado en una o más aulas. Realiza entregas, consulta bibliografía y al Bot Guía, participa en el chat, mantiene su racha y utiliza sus puntos ponderados en la tienda y mascota del aula. |
+| **Padre / Tutor (`Parent`)** | Adulto responsable vinculado explícitamente a uno o más hijos (`ParentStudentLink` / `ParentLink`). Dispone de una vista simple de seguimiento de calificaciones, entregas y avisos, y canal de mensajes con el profesor. |
+| **Actividad (`Activity`)** | Propuesta evaluable o formativa publicada en un aula: **Trabajo Práctico (`TP`)** o **Examen (`Exam`)**, en formato de entrega de archivos o cuestionario de opción múltiple, con fecha límite (`due_date`), puntaje máximo (`max_score`) y ponderación de puntos. |
+| **Entrega (`Submission`)** | Resolución enviada por un alumno para una actividad publicada (archivos adjuntos en almacenamiento seguro o respuestas seleccionadas), con registro de fecha/hora del servidor y estado derivado (`Pendiente`, `Entregada`, `Corregida`, `Vencida`). |
+| **Calificación (`Grade`)** | Nota numérica en escala `0–100` y devolución cualitativa (`feedback`) registradas por el profesor (o calculadas por el servidor en cuestionarios autoevaluables) sobre una entrega. |
+| **Puntos Ponderados** | Moneda única de gamificación del alumno. Se acreditan automáticamente en el libro mayor (`PointTransaction`) al confirmarse una calificación, aplicando la fórmula `nota * peso_actividad` según el tipo de actividad. |
+| **Tienda (`Shop`)** | Catálogo de ítems adquiribles con puntos ganados: mejoras del aula, personalización de avatar/pupitre, minijuegos habilitables y accesorios para la mascota del aula. |
+| **Mascota del Aula (`ClassroomPet`)** | Personaje motivacional único por aula (independiente del Bot IA) cuyo nivel, estado o accesorios progresan mediante compras y aportes de puntos de los alumnos del curso. |
+| **Racha (`Streak`)** | Contador de días consecutivos en los que el alumno completa al menos una acción académica válida (entrega en término, examen aprobado o pregunta diaria de repaso), a razón de máximo 1 hito computable por día calendario en `America/Argentina/Buenos_Aires`. |
+| **Medalla (`Badge` / `Medal`)** | Reconocimiento persistente otorgado automáticamente al alumno al alcanzar hitos académicos, de constancia o de colaboración en el aula. |
+| **Modo 2D Clásico** | Interfaz web accesible y responsiva en React que expone todas las funciones académicas esenciales (actividades, entregas, notas, material, chat, avisos, tienda y bot) sin requerir navegación ni interacción sobre el lienzo 3D. |
+| **Bot Guía de Estudio RAG** | Asistente pedagógico basado en IA (**Amazon Bedrock**) que responde consultas de los alumnos únicamente sobre la bibliografía habilitada por el profesor del aula, aplicando regla anticopia, bloqueo durante exámenes y repaso diario. |
 
 ---
 
-## 2. Descripción general
+## 2. Actores y Perfiles de Usuario
 
-### 2.1 Visión del producto
+El sistema prescinde de un Superadministrador global; toda autoridad emana de la membresía persistida en una escuela, en un aula o de un vínculo parental verificado en el servidor:
 
-Aplicación web de **convivencia, comunicación y organización** presentada como una oficina virtual 3D con cámara isométrica. Cada usuario tiene su **oficina**, que se compone de **habitaciones** que simulan espacios de trabajo (por ejemplo "Frontend", "Backend", "Diseño"). Los usuarios se representan con avatares, se desplazan por las habitaciones y usan herramientas de productividad (tareas, cartelera, reuniones, chat) a través de objetos del entorno o de un acceso alternativo.
-
-No es un videojuego ni busca ser un entorno competitivo: el valor central es organizarse y colaborar con presencia social.
-
-### 2.2 Modelo de espacios
-
-Se trabaja con una **sola instancia** y una base de usuarios global. El aislamiento de datos se hace por oficina y por habitación.
-
-- Al registrarse, cada usuario obtiene una **oficina propia** con una **habitación principal**. Es su Dueño.
-- El Dueño puede agregar hasta **5 habitaciones adicionales** (la principal no cuenta).
-- Cada usuario puede ser invitado a **muchas oficinas ajenas**, donde actúa como Miembro (o Administrador, si el Dueño lo nombró).
-- Todos los miembros de una oficina acceden a su habitación principal. Al resto se entra solo con acceso explícito.
-- No existe un espacio común a todos los usuarios de la plataforma.
-
-### 2.3 Actores
-
-| Actor | Tipo | Descripción |
-|---|---|---|
-| **Visitante** | Humano | Persona sin sesión. Puede registrarse, iniciar sesión, recuperar su contraseña y abrir un enlace de invitación. |
-| **Usuario** | Humano | Persona con sesión iniciada. Gestiona su perfil y avatar, y ve las oficinas propia e invitadas. |
-| **Dueño** | Rol de oficina | Creó la oficina. Uno por oficina, no transferible. Tiene todos los permisos. |
-| **Administrador** | Rol de oficina | Miembro con gestión delegada por el Dueño. |
-| **Miembro** | Rol de oficina | Usuario que pertenece a una oficina, sin permisos de gestión. |
-| **Líder** | Rol de habitación | Miembro con gestión sobre una habitación concreta. Es independiente del rol de oficina. |
-| **Bot** | Sistema | Asistente de consulta y resumen. Actúa con los permisos del usuario que lo consulta. |
-| **Sistema** | Sistema | Ejecuta tareas automáticas: vencimiento de invitaciones, eliminación definitiva de oficinas dadas de baja y disparo del repaso diario. |
-
-**Combinación de roles.**
-
-- El rol de oficina es uno solo por usuario en cada oficina: Dueño, Administrador o Miembro. Una persona puede tener roles distintos en oficinas distintas.
-- El rol de Líder se suma por habitación.
-- El Dueño y el Administrador tienen acceso a todas las habitaciones y los mismos permisos que un Líder en cada una. ⚠️ Supuesto: evita que el Dueño deba otorgarse acceso a sus propias habitaciones.
-
-### 2.4 Supuestos y dependencias
-
-- ⚠️ El identificador de login es el **email**; el nombre visible es aparte y puede repetirse.
-- ⚠️ La contraseña exige un mínimo de 8 caracteres, sin reglas de composición.
-- ⚠️ El email se usa en el MVP al menos para recuperar la contraseña. Las notificaciones por email son evolución.
-- ⚠️ La duración de la sesión y de las invitaciones son parámetros configurables, sin valor fijo en esta ERS.
-- Todas las fechas y horas se muestran y almacenan en la zona horaria **America/Argentina/Buenos_Aires**.
-- El sistema es utilizable desde navegadores de escritorio y de dispositivos táctiles.
+| Actor | Alcance y fase principal | Responsabilidades y capacidades dentro del sistema |
+| --- | --- | --- |
+| **Profesor (`Teacher`)** | Aula propia o asignada · **MVP Core** | Crea y configura sus aulas (como profesor independiente o dentro de una escuela); genera invitaciones/códigos de acceso; sube bibliografía (`StudyMaterial`) y define qué documentos puede usar el Bot IA; publica anuncios, Trabajos Prácticos y Exámenes; revisa entregas, asigna calificaciones y devoluciones; modera el chat; configura el catálogo de premios y utiliza las herramientas de control de clase en vivo. |
+| **Alumno (`Student`)** | Aulas donde está matriculado · **MVP Core** | Se une a sus aulas por invitación o código; recorre el Aula 3D con su avatar o alterna en un clic al Modo 2D Clásico; consulta actividades pendientes y material de estudio; realiza entregas de TPs y rinde exámenes; recibe calificaciones, puntos ponderados, racha y medallas; canjea puntos en la tienda y aporta a la mascota del aula; participa en el chat/foro y consulta al Bot Guía de Estudio. |
+| **Padre / Tutor (`Parent`)** | Hijos vinculados explícitamente · **MVP Extendido** (base en modelo de datos desde Core) | Accede mediante invitación vinculada a su hijo (`ParentStudentLink`, hasta 2 tutores por alumno); visualiza en modo de solo lectura las calificaciones, el estado de entregas y los avisos relevantes de su hijo; recibe notificaciones in-app y por correo electrónico; intercambia mensajes con el profesor sin acceder al chat grupal de los alumnos ni a datos de terceros. Queda deshabilitado en aulas con `adult_mode`. |
+| **Dueño / Admin de Escuela (`School Owner / Admin`)** | Institución (`School`) y todas sus aulas · **MVP Extendido** (estructura base en Core) | Crea y administra la escuela en el camino institucional; invita y gestiona profesores; supervisa las aulas y métricas de actividad de la institución; posee autoridad equivalente a profesor sobre las aulas de su escuela sin requerir inscripción individual en cada una. |
+| **Sistema / Bot Guía IA** | Transversal en servidor (`NestJS` + `Colyseus` + `Bedrock`) · **MVP Core** | Verifica permisos en cada operación; calcula y acredita puntos ponderados de forma atómica; evalúa el corte diario de racha y del Repaso Diario en `America/Argentina/Buenos_Aires`; indexa la bibliografía docente; responde consultas pedagógicas mediante RAG citando las fuentes permitidas sin resolver evaluaciones; y bloquea automáticamente su asistencia durante exámenes en curso. |
 
 ---
 
 ## 3. Permisos
 
-### 3.1 Cuenta y acceso (independiente de la oficina)
+Toda validación de permisos se ejecuta obligatoriamente en el servidor ([`rules/classrooms-and-roles.md`](../rules/classrooms-and-roles.md)) a partir del estado persistido en PostgreSQL. En esta matriz, *"En sus aulas"* incluye tanto al `Profesor` titular del aula como al `Dueño / Admin de Escuela` respecto de todas las aulas pertenecientes a su institución.
 
-| Acción | Visitante | Usuario |
-|---|---|---|
-| Registrarse (crea su oficina con la habitación principal) | ✅ | ❌ |
-| Iniciar sesión / recuperar contraseña | ✅ | ❌ |
-| Cerrar sesión | ❌ | ✅ |
-| Editar su perfil y avatar | ❌ | ✅ |
-| Ver su lista de oficinas (propia e invitadas) | ❌ | ✅ |
-| Abrir un enlace de invitación | ✅ (debe registrarse o iniciar sesión) | ✅ |
+### 3.1 Cuenta, autenticación y organización
 
-### 3.2 Gestión de la oficina
+| Acción | Visitante (sin sesión) | Profesor | Alumno | Padre / Tutor | Dueño / Admin de Escuela |
+| --- | --- | --- | --- | --- | --- |
+| Registrarse e iniciar sesión | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Recuperar contraseña por email | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Cerrar sesión y renovar sesión activa | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Editar perfil propio y configuración de avatar base | ❌ | ✅ | ✅ | ✅ (perfil básico) | ✅ |
+| Crear y administrar una Escuela e invitar Profesores | ❌ | ❌ | ❌ | ❌ | ✅ (Dueño; Admin según delegación) |
+| Crear y configurar Aulas | ❌ | ✅ (propias) | ❌ | ❌ | ✅ (en su escuela) |
+| Generar o revocar invitaciones / códigos de acceso al aula | ❌ | ✅ (en sus aulas) | ❌ | ❌ | ✅ (en su escuela) |
+| Vincular cuenta de Padre / Tutor con un Alumno (`ParentStudentLink`) | ❌ | ✅ (emite invitación) | ❌ | ✅ (acepta invitación) | ✅ (emite invitación) |
 
-| Acción | Dueño | Admin | Líder | Miembro |
-|---|---|---|---|---|
-| Dar de baja la oficina | ✅ | ❌ | ❌ | ❌ |
-| Recuperar la oficina (dentro de 15 días) | ✅ | ❌ | ❌ | ❌ |
-| Nombrar o quitar Administradores | ✅ | ❌ | ❌ | ❌ |
-| Editar nombre y datos de la oficina | ✅ | ✅ | ❌ | ❌ |
-| Generar y revocar enlaces de invitación | ✅ | ✅ | ❌ | ❌ |
-| Expulsar a un miembro (baja lógica de su membresía) | ✅ | ✅ (salvo al Dueño) | ❌ | ❌ |
-| Abandonar la oficina | ❌ | ✅ | ✅ | ✅ |
-| Crear, editar y eliminar habitaciones adicionales | ✅ | ✅ | ❌ | ❌ |
-| Asignar o quitar Líderes | ✅ | ✅ | ❌ | ❌ |
-| Dar o quitar acceso a una habitación | ✅ | ✅ | ✅ (solo a su habitación y solo a miembros de la oficina) | ❌ |
+### 3.2 Espacio 3D, Modo 2D Clásico, Actividades y Calificaciones
 
-El Dueño no puede abandonar su oficina: debe darla de baja, porque la propiedad no se transfiere.
+| Acción | Dueño / Admin de Escuela | Profesor (en sus aulas) | Alumno (matriculado) | Padre / Tutor (hijo vinculado) |
+| --- | --- | --- | --- | --- |
+| Ingresar al Aula 3D o alternar al Modo 2D Clásico | ✅ | ✅ | ✅ | ❌ (usa vista de padres) |
+| Desplazar avatar, interactuar con pupitres y ver presencia en vivo | ✅ | ✅ | ✅ | ❌ |
+| Subir, editar o dar de baja bibliografía y material de estudio | ✅ | ✅ | ❌ (solo lectura/descarga) | ❌ |
+| Crear, publicar, editar o dar de baja Actividades (TPs y Exámenes) | ✅ | ✅ | ❌ | ❌ |
+| Ver bandeja de actividades publicadas y fechas de vencimiento | ✅ | ✅ | ✅ | ✅ (solo las de su hijo) |
+| Realizar entregas de TPs o responder Exámenes | ❌ | ❌ | ✅ (propias) | ❌ |
+| Ver entregas de alumnos y descargar archivos adjuntos | ✅ | ✅ | ✅ (solo las propias) | ❌ (ve estado y nota de su hijo) |
+| Calificar entregas, registrar devolución y recalificar | ✅ | ✅ | ❌ | ❌ |
+| Consultar calificaciones e historial académico | ✅ (toda la escuela) | ✅ (su aula) | ✅ (solo propio) | ✅ (solo de su hijo vinculado) |
+| Consultar métricas de nivel de actividad (`ActivityMetric`) | ✅ (toda la escuela) | ✅ (su aula) | ✅ (solo propias) | ✅ (solo de su hijo vinculado) |
 
-### 3.3 Dentro de una habitación (requiere acceso a ella)
+### 3.3 Gamificación, Comunicación, Clase en Vivo y Bot IA
 
-| Acción | Dueño | Admin | Líder | Miembro |
-|---|---|---|---|---|
-| Entrar y ver la presencia de la habitación | ✅ | ✅ | ✅ | ✅ |
-| Crear, editar, mover y eliminar tareas | ✅ | ✅ | ✅ | ✅ |
-| Configurar las columnas del tablero | ✅ | ✅ | ✅ | ❌ |
-| Ver la cartelera | ✅ | ✅ | ✅ | ✅ |
-| Publicar anuncios | ✅ | ✅ | ✅ | ❌ |
-| Editar o eliminar anuncios propios | ✅ | ✅ | ✅ | ❌ |
-| Editar o eliminar anuncios ajenos | ✅ | ✅ | ❌ | ❌ |
-| Ver reuniones (lista y calendario) | ✅ | ✅ | ✅ | ✅ |
-| Crear reuniones | ✅ | ✅ | ✅ | ❌ |
-| Editar o cancelar reuniones propias | ✅ | ✅ | ✅ | ❌ |
-| Editar o cancelar reuniones ajenas | ✅ | ✅ | ❌ | ❌ |
-| Confirmar asistencia a una reunión | ✅ | ✅ | ✅ | ✅ |
-| Leer y escribir en el chat de la habitación | ✅ | ✅ | ✅ | ✅ |
-
-### 3.4 Transversales a la oficina
-
-| Acción | Dueño | Admin | Líder | Miembro |
-|---|---|---|---|---|
-| Leer y escribir en el chat de la oficina | ✅ | ✅ | ✅ | ✅ |
-| Ver la lista de presencia (quién está en qué habitación, aunque no tenga acceso a ella) | ✅ | ✅ | ✅ | ✅ |
-| Consultar al bot y recibir el repaso diario | ✅ | ✅ | ✅ | ✅ |
+| Acción | Dueño / Admin de Escuela | Profesor (en sus aulas) | Alumno (matriculado) | Padre / Tutor (hijo vinculado) |
+| --- | --- | --- | --- | --- |
+| Configurar catálogo de premios/ítems de tienda del aula | ✅ | ✅ | ❌ | ❌ |
+| Consultar billetera de puntos, racha diaria y medallas | ✅ (consulta docente) | ✅ (consulta docente) | ✅ (propia) | ✅ (solo lectura de su hijo) |
+| Comprar ítems en la tienda y aportar/equipar a la Mascota del Aula | ❌ | ❌ | ✅ (con saldo propio) | ❌ |
+| Publicar, editar o eliminar avisos en el tablón del aula | ✅ | ✅ | ❌ (solo lectura) | ❌ (solo lectura de avisos) |
+| Leer y escribir en el chat grupal del aula y usar `@menciones` | ✅ (moderación) | ✅ | ✅ (si no está silenciado) | ❌ |
+| Moderar/ocultar mensajes del chat del aula y ver historial moderado | ✅ | ✅ | ❌ | ❌ |
+| Participar en el foro de consultas de una actividad | ✅ | ✅ | ✅ | ❌ |
+| Enviar y recibir mensajes directos Padre ↔ Profesor | ✅ (auditoría institucional) | ✅ | ❌ | ✅ (sobre su hijo vinculado) |
+| Ejecutar controles en vivo (congelar asientos, silenciar sala/chat, bloquear pizarra, desactivar minijuegos) | ✅ | ✅ | ❌ | ❌ |
+| Iniciar videollamada/voz y escribir en pizarrón colaborativo (gráficos y LaTeX) | ✅ | ✅ | ✅ (colabora si no está bloqueado) | ❌ |
+| Configurar bibliografía permitida para el Bot Guía de Estudio y ver auditoría | ✅ | ✅ | ❌ | ❌ |
+| Consultar al Bot Guía de Estudio (RAG) y recibir el Repaso Diario | ✅ | ✅ | ✅ (salvo examen en curso) | ❌ |
 
 ---
 
-## 4. Reglas de negocio transversales
+## 4. Reglas de Negocio (`RN-01` a `RN-20`)
 
-Las siguientes reglas se aplican a todos los módulos. Los requisitos las referencian por su ID.
+Las siguientes reglas de negocio son invariantes transversales del dominio escolar y deben cumplirse en todas las capas del backend (`NestJS`, `Colyseus`, `Prisma/PostgreSQL` e integración con `Bedrock`):
 
-| ID | Regla |
-|---|---|
-| RN-01 | Cada usuario tiene exactamente **una oficina propia**, creada al registrarse. Puede ser miembro de muchas oficinas ajenas. |
-| RN-02 | Cada oficina tiene un único Dueño. La propiedad no se transfiere. |
-| RN-03 | Los datos se aíslan por oficina y por habitación. Un usuario nunca accede a recursos de oficinas de las que no es miembro ni de habitaciones a las que no tiene acceso. |
-| RN-04 | Toda oficina tiene una habitación principal, accesible para todos sus miembros, que no se puede eliminar ni cuenta para el límite de habitaciones adicionales. |
-| RN-05 | Una oficina puede tener como máximo **5 habitaciones adicionales** además de la principal. |
-| RN-06 | Quien se une por invitación queda como Miembro con acceso únicamente a la habitación principal. |
-| RN-07 | El Dueño y el Administrador tienen acceso a todas las habitaciones y los mismos permisos que un Líder en cada una. |
-| RN-08 | Un Administrador no puede actuar sobre el Dueño (expulsarlo, quitarle permisos ni modificar su rol). |
-| RN-09 | Solo el Dueño nombra y quita Administradores. |
-| RN-10 | Un Líder debe tener acceso a su habitación. Puede haber varios Líderes por habitación. El alcance del Líder se limita a su habitación. |
-| RN-11 | Un Líder solo otorga acceso a su habitación a usuarios que ya son miembros de la oficina. No invita gente nueva. |
-| RN-12 | Si un usuario pierde acceso a una habitación: deja de verla, no puede leer su historial de chat y sus tareas asignadas quedan marcadas como huérfanas hasta que alguien las reasigne. |
-| RN-13 | Expulsar a un miembro es una baja lógica de su membresía: pierde acceso a toda la oficina, pero lo que generó (mensajes, tareas, anuncios) se conserva. Puede ser reinvitado. |
-| RN-14 | Dar de baja una oficina es una baja lógica recuperable por el Dueño durante **15 días**. Pasado ese plazo se elimina definitivamente. Durante la baja la oficina desaparece de la lista de sus miembros y nadie puede entrar. |
-| RN-15 | El Dueño no puede abandonar su oficina; solo puede darla de baja. |
-| RN-16 | Toda operación se autoriza en el servidor. Sin sesión válida el sistema responde 401; con sesión pero sin permiso, 403. Ocultar un botón en la interfaz no reemplaza esta validación. |
-| RN-17 | Los datos se validan en el cliente para dar feedback inmediato y se vuelven a validar en el servidor. |
-| RN-18 | El bot actúa siempre con los permisos del usuario que lo consulta y nunca modifica datos. |
-| RN-19 | Las fechas y horas usan la zona horaria America/Argentina/Buenos_Aires. |
-| RN-20 | Interactuar con un objeto del entorno no otorga permisos sobre el recurso asociado. |
-
----
-
-## 5. Requisitos funcionales
-
-Cada módulo lista sus requisitos con el formato definido en la sección 1.4. Las reglas de negocio `RN-NN` se encuentran en la sección 4 y aplican a todos los módulos aunque no se repitan en cada criterio.
-
-### 5.1 Cuenta y autenticación (AUT)
-
-#### RF-AUT-001 · Registro de usuario
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Visitante
-**Descripción:** El sistema debe permitir crear una cuenta con email, nombre visible y contraseña.
-**Criterios de aceptación:**
-1. Dado un Visitante con datos válidos, cuando se registra, entonces se crea su cuenta y, automáticamente, su oficina propia con la habitación principal (RF-OFI-001).
-2. Dado un email ya registrado, cuando intenta registrarse, entonces el sistema muestra un error claro y no crea ninguna cuenta.
-3. Dados datos inválidos (email mal formado, contraseña corta, campos vacíos), cuando envía el formulario, entonces ve el error junto a cada campo y el servidor también rechaza los datos.
-4. Dada una contraseña, entonces nunca se almacena ni se devuelve en texto plano.
-
-#### RF-AUT-002 · Inicio de sesión
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Visitante
-**Descripción:** El sistema debe permitir iniciar sesión con email y contraseña.
-**Criterios de aceptación:**
-1. Dadas credenciales válidas, cuando inicia sesión, entonces accede a su lista de oficinas.
-2. Dadas credenciales inválidas, cuando intenta iniciar sesión, entonces el mensaje no revela si falló el email o la contraseña.
-3. Dado un error del servidor durante el inicio de sesión, entonces el usuario ve un mensaje comprensible y no un detalle interno.
-
-#### RF-AUT-003 · Sesión con vencimiento y renovación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** La sesión debe expirar y renovarse mientras la persona está activa.
-**Criterios de aceptación:**
-1. Dada una sesión vencida, cuando el usuario realiza una acción protegida, entonces el sistema le pide iniciar sesión de nuevo.
-2. Dado un usuario activo, cuando se acerca el vencimiento de su sesión, entonces esta se renueva sin interrumpirlo.
-3. Dada una sesión vencida, entonces el servidor responde 401 a cualquier operación protegida.
-
-#### RF-AUT-004 · Cierre de sesión
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder cerrar su sesión.
-**Criterios de aceptación:**
-1. Dado un usuario que cierra sesión, cuando intenta acceder a una ruta o dato protegido, entonces el sistema lo rechaza.
-2. Dado el cierre de sesión, entonces el avatar desaparece de la presencia de la habitación donde estaba.
-
-#### RF-AUT-005 · Protección de rutas y operaciones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Toda ruta y operación privada debe exigir sesión válida y permisos suficientes (RN-16).
-**Criterios de aceptación:**
-1. Dada una petición sin sesión válida, entonces el sistema responde 401.
-2. Dada una petición con sesión pero sin permiso sobre el recurso, entonces responde 403.
-3. Dado un identificador de recurso ajeno manipulado, entonces el sistema no expone ningún dato de ese recurso.
-4. Dada cualquier respuesta, entonces no contiene hashes de contraseña, claves ni detalles internos del servidor.
-
-#### RF-AUT-006 · Recuperación de contraseña
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Visitante
-**Descripción:** El sistema debe permitir restablecer la contraseña mediante un enlace enviado por email.
-**Criterios de aceptación:**
-1. Dado un email registrado, cuando solicita recuperar la contraseña, entonces recibe un enlace de un solo uso con vencimiento.
-2. Dado un email no registrado, cuando lo solicita, entonces la respuesta en pantalla es idéntica, para no revelar qué cuentas existen.
-3. Dado un enlace vencido o ya usado, cuando intenta usarlo, entonces el sistema lo rechaza con un mensaje claro.
-4. Dado un restablecimiento exitoso, entonces las sesiones anteriores de esa cuenta dejan de ser válidas.
-
-#### RF-AUT-007 · Gestión del perfil
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder ver y editar su nombre visible y sus datos básicos de perfil.
-**Criterios de aceptación:**
-1. Dado un usuario que edita su perfil con datos válidos, cuando guarda, entonces el cambio persiste tras recargar.
-2. Dado un cambio de nombre visible, entonces se refleja en todas las oficinas donde participa.
-3. Dados datos inválidos, cuando guarda, entonces ve los errores por campo.
-
-#### RF-AUT-008 · Cambio de contraseña con sesión iniciada
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario
-**Descripción:** El usuario debe poder cambiar su contraseña desde su perfil, indicando la actual.
-**Criterios de aceptación:**
-1. Dada la contraseña actual correcta y una nueva válida, cuando confirma, entonces la contraseña cambia y las demás sesiones se cierran.
-
-#### RF-AUT-009 · Límite de intentos fallidos de inicio de sesión
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Sistema
-**Descripción:** El sistema debe limitar los intentos fallidos consecutivos de inicio de sesión.
-**Criterios de aceptación:**
-1. Dados varios intentos fallidos seguidos sobre una misma cuenta, cuando se supera el límite, entonces el sistema bloquea temporalmente nuevos intentos e informa cuánto esperar.
-
-#### RF-AUT-010 · Verificación de email al registrarse
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Visitante
-**Descripción:** El sistema debe verificar que el email pertenece a quien se registra.
-**Criterios de aceptación:**
-1. Dado un registro nuevo, cuando se envía el enlace de verificación y la persona lo abre, entonces la cuenta queda marcada como verificada.
+| ID | Nombre de la regla | Especificación obligatoria |
+| --- | --- | --- |
+| **RN-01** | **Aislamiento multi-aula y multi-escuela** | Todo recurso académico (aula, material, actividad, entrega, calificación, mensaje, transacción de puntos o conversación con el bot) pertenece a un contexto organizacional explícito. Ningún usuario puede listar, leer ni modificar recursos de escuelas o aulas con las que no posea membresía o vínculo parental activo. |
+| **RN-02** | **Membresía e invitaciones de ingreso** | El ingreso a una escuela o aula requiere una invitación válida (por correo electrónico con secreto hasheado de un solo uso y expiración, o código/enlace de invitación vigente y no revocado). La validación y el alta de membresía (`ClassroomMembership` / `Enrollment` o `SchoolMember`) se ejecutan en una única transacción atómica e idempotente. |
+| **RN-03** | **Autoridad institucional sobre aulas** | El `Dueño` y el `Admin de Escuela` poseen autoridad equivalente a `Profesor` sobre todas las aulas pertenecientes a su escuela, derivada directamente de su membresía institucional (`SchoolMember`), sin requerir inscripción duplicada aula por aula. Un `Profesor` solo tiene autoridad sobre las aulas que dicta. |
+| **RN-04** | **Respuestas uniformes de seguridad (`401` / `403` / `404`)** | Toda operación se autoriza en el servidor: sin sesión válida o con sesión expirada responde `401 Unauthorized`; con sesión válida pero rol insuficiente dentro de un aula accesible responde `403 Forbidden`; ante identificadores de escuelas, aulas, actividades o alumnos fuera del alcance del actor responde `404 Not Found` para no revelar su existencia. |
+| **RN-05** | **Ciclo de vida y vencimientos de actividades** | Toda actividad publicada pertenece a un aula, define un tipo (`TP` o `Examen`), un formato (`Archivo` u `Opción Múltiple`), un puntaje máximo (`max_score`, escala `0–100`), una fecha/ventana límite (`due_date`) y una política de entregas tardías (`allow_late`). El estado del trabajo de cada alumno (`Pendiente`, `Entregada`, `Corregida`, `Vencida`) se deriva de los registros de `Submission`, `Grade` y de la hora oficial del servidor: si vence el plazo sin entrega y `allow_late = false`, el servidor rechaza envíos posteriores y expone el estado `Vencida`; si `allow_late = true`, admite la entrega marcándola explícitamente como tardía (`is_late = true`). |
+| **RN-06** | **Reglas de corrección, devolución y privacidad de respuestas** | Solo el personal con autoridad de `Profesor` sobre el aula puede calificar o recalificar entregas manuales y registrar devoluciones (`feedback`). En actividades de opción múltiple, las opciones correctas nunca se envían al cliente antes de que la evaluación esté cerrada y corregida, y el puntaje se calcula exclusivamente en el servidor. |
+| **RN-07** | **Fórmula de Puntos Ponderados e inmutabilidad del libro mayor** | Al confirmarse una calificación sobre una entrega, el servidor calcula y acredita en la misma transacción de base de datos los puntos ganados mediante la fórmula `puntos = redondear(nota * peso_actividad)` (`weight_multiplier`), donde un `Examen` posee una ponderación mayor que un `TP`. Todo movimiento se registra como un asiento inmutable en `PointTransaction` con restricción única por origen `(source_type, source_id)`. Si un docente recalifica una entrega, el sistema genera un asiento compensatorio por la diferencia, sin editar ni borrar asientos previos. |
+| **RN-08** | **Regla de Racha Diaria (máximo 1 hito por día)** | La racha del alumno (`Streak`) se incrementa únicamente cuando completa una acción académica real verificada por el servidor: **(a)** entregar una actividad en término, **(b)** aprobar un examen o **(c)** responder correctamente la pregunta diaria de repaso del Bot. El simple inicio de sesión o conexión al mundo 3D no extiende la racha. Se computa como máximo **1 hito por alumno y día calendario** en la zona horaria `America/Argentina/Buenos_Aires`. |
+| **RN-09** | **Economía de Tienda y Mascota del Aula** | El saldo de puntos de un alumno nunca puede ser negativo. Toda compra en la tienda (`points_cost`) o aporte colaborativo a la **Mascota del Aula** (`pet_contribution`) valida autorización, disponibilidad del ítem y saldo suficiente bajo bloqueo transaccional e idempotencia. Cada aula posee exactamente una `ClassroomPet` motivacional e independiente del Bot IA; los ítems comprables deben corresponder a efectos o accesorios implementados. |
+| **RN-10** | **Controles de Clase en Vivo autoritativos en servidor** | Las herramientas de control sincrónico (`Congelar / Freeze`, `Silenciar a todos / Mute`, `Silenciar chat`, `Bloquear colaboración en pizarrón` y `Deshabilitar minijuegos`) solo pueden ser accionadas por un usuario con autoridad de `Profesor` en el aula activa. `Freeze` asigna y bloquea a cada alumno en su pupitre (`Desk`) rechazando entradas de movimiento en el servidor; los bloqueos de chat, pizarrón y minijuegos persisten en el estado del aula y se re-aplican ante reconexiones. |
+| **RN-11** | **Pizarrón colaborativo, gráficos y LaTeX seguros** | Las ediciones sobre el pizarrón interactivo, el graficador de funciones matemáticas y las expresiones **LaTeX** se validan en tamaño, frecuencia y permisos de colaboración en el servidor. El contenido LaTeX y textual se interpreta únicamente como datos estructurados (por ejemplo, mediante KaTeX) y jamás se ejecuta ni inyecta como HTML arbitrario. |
+| **RN-12** | **Restricción RAG del Bot a bibliografía docente aprobada** | El **Bot Guía de Estudio** responde consultas exclusivamente mediante generación aumentada por recuperación (RAG) sobre los documentos (`StudyMaterial`) subidos al aula y explícitamente habilitados por el profesor (`is_bot_enabled = true` / `AllowedMaterial`). El filtro de recuperación por aula y material habilitado se aplica en el servidor antes de invocar a Amazon Bedrock; si la respuesta no consta en el material aprobado, el bot informa dicha limitación sin inventar contenido curricular. |
+| **RN-13** | **Regla anticopia y bloqueo del Bot durante exámenes** | El Bot actúa estrictamente como guía socrática y de estudio: explica conceptos, cita el material docente y orienta el razonamiento, pero **tiene prohibido resolver tareas, redactar entregas o revelar respuestas de exámenes**. Además, mientras un alumno tiene un examen en curso según el reloj del servidor, el Bot y el Repaso Diario quedan bloqueados para ese alumno (incluyendo respuestas en vuelo). |
+| **RN-14** | **Trazabilidad académica y solo lectura del Bot** | Toda interacción con el Bot se ejecuta bajo los permisos del usuario autenticado, registra metadatos de auditoría pedagógica (`BotConversationLog` / `BotConversation`) para que el docente identifique qué temas generan más dudas en el curso, y **no realiza ninguna modificación directa (creación, edición ni borrado) en la base de datos** durante el MVP. |
+| **RN-15** | **Repaso Diario único por día en hora de Argentina** | En la primera conexión autenticada de cada día calendario (calculado en el servidor bajo la zona horaria `America/Argentina/Buenos_Aires`), el sistema presenta por única vez el **Repaso Diario** (`DailyReviewDelivery`) a todos los roles excepto `Padre / Tutor`, resumiendo actividades próximas a vencer, calificaciones recientes y preguntas de repaso. Si el proveedor de IA no está disponible, entrega automáticamente un resumen estructurado sin texto generativo. |
+| **RN-16** | **Aislamiento de solo lectura para Padre / Tutor y Modo Adultos** | Un `Padre / Tutor` accede únicamente a la información académica y notificaciones de los hijos a los que esté vinculado mediante un `ParentStudentLink` activo (máximo **2** tutores por alumno), sin acceso al mundo 3D, al chat grupal de alumnos ni al Bot. Si el aula tiene activo el **Modo Educación de Adultos (`adult_mode = true`)**, el servidor rechaza la creación de vínculos parentales, invitaciones a padres, mensajería parental y envíos de alertas familiares en esa aula. |
+| **RN-17** | **Equivalencia funcional del Modo 2D Clásico** | Toda funcionalidad académica esencial disponible mediante objetos del entorno 3D (actividades, entregas, calificaciones, bibliografía, avisos, chat, tienda, mascota y consulta al Bot) debe poder ejecutarse íntegramente desde el **Modo 2D Clásico** y no otorga permisos por la mera proximidad o clic sobre un objeto 3D. |
+| **RN-18** | **Moderación preservando historial y baja lógica (`deleted_at`)** | La expulsión de un miembro, la baja de un recurso o la moderación de un mensaje en el chat se implementan como cambios de estado o bajas lógicas (`deleted_at` / estado de moderación con autor y marca temporal). Las entregas, calificaciones, transacciones de puntos y el historial de moderación para el profesor se conservan íntegros para trazabilidad académica. |
+| **RN-19** | **Separación entre persistencia transaccional y estado efímero 3D** | Las posiciones por fotograma, vectores de movimiento e interpolaciones de avatares residen en memoria de la sesión en tiempo real (`Colyseus`) y nunca se persisten fila por fila en PostgreSQL. El tiempo de conexión se consolida únicamente de forma agregada en `ActivityMetric`. |
+| **RN-20** | **Privacidad de archivos y datos de menores** | Los archivos de bibliografía y los adjuntos de entregas se almacenan en buckets privados (`Amazon S3`), validando tipo real, tamaño y cantidad en el servidor, y se sirven únicamente mediante URLs firmadas de corta duración tras verificar autorización sobre el aula o la entrega. Los registros de aplicación y correos electrónicos nunca exponen contraseñas, tokens, claves ni datos sensibles de menores. |
 
 ---
 
-### 5.2 Oficinas e invitaciones (OFI)
+## 5. Especificación de Requerimientos Funcionales (`RF-XXX-NNN`)
 
-#### RF-OFI-001 · Creación automática de la oficina propia
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Al registrarse un usuario, el sistema debe crear su oficina propia con una habitación principal, y asignarle el rol de Dueño (RN-01).
-**Criterios de aceptación:**
-1. Dado un registro exitoso, entonces el usuario aparece como Dueño de una oficina nueva que contiene una habitación principal.
-2. Dado un usuario existente, entonces no puede crear una segunda oficina propia.
-3. Dada la oficina recién creada, entonces el tablero tiene sus columnas por defecto (RF-TAR-006) y los canales de chat existen.
+### 5.1 Módulo `RF-AUT` · Autenticación, Perfiles y Cuentas
 
-#### RF-OFI-002 · Lista de oficinas del usuario
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe ver una lista con su oficina propia y las oficinas a las que fue invitado, indicando su rol en cada una.
-**Criterios de aceptación:**
-1. Dado un usuario con sesión, cuando abre su inicio, entonces ve su oficina propia y las invitadas, cada una con su rol.
-2. Dada una oficina dada de baja, entonces no aparece en la lista de sus miembros (RN-14); el Dueño la ve marcada como dada de baja (RF-OFI-015).
-3. Dado un usuario que fue expulsado de una oficina, entonces esa oficina no aparece en su lista.
-4. Dada una lista vacía de oficinas invitadas, entonces el usuario ve un mensaje que lo indica.
+#### RF-AUT-001 · Registro de cuenta y elección de camino organizacional
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** Visitante
+- **Precondiciones:** El visitante no posee una sesión activa y proporciona un correo electrónico no registrado.
+- **Postcondiciones:** Se crea el usuario con contraseña hasheada, su configuración inicial de avatar (`AvatarConfiguration`) y, de forma atómica, su espacio de profesor independiente o su escuela inicial (o bien queda listo para aceptar una invitación recibida).
+- **Descripción:** El sistema debe permitir el registro de usuarios mediante correo electrónico normalizado, nombre visible, contraseña segura (mínimo 8 caracteres) y selección del camino de organización (`Profesor independiente` o `Escuela`), o el alta guiada desde una invitación escolar.
+- **Criterios de aceptación:**
+  1. **Dado** un visitante que envía datos válidos eligiendo el camino de Profesor independiente o de Escuela, **cuando** confirma el registro, **entonces** el servidor crea en una sola transacción la cuenta (`User`), su configuración base de avatar y la estructura organizacional correspondiente, sin almacenar ni devolver jamás la contraseña en texto plano (`RN-02`, `RN-20`).
+  2. **Dado** un correo electrónico ya registrado (tras normalizar mayúsculas y espacios), **cuando** un visitante intenta registrarse con él, **entonces** el servidor rechaza la operación con un mensaje claro sin duplicar la cuenta.
+  3. **Dados** campos vacíos, correo con formato inválido o contraseña menor a 8 caracteres, **cuando** se envía el formulario, **entonces** el cliente informa los errores por campo y el servidor vuelve a validar y rechaza la petición con `400 Bad Request`.
 
-#### RF-OFI-003 · Ingreso a una oficina
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder entrar a cualquier oficina de su lista y comenzar en su habitación principal.
-**Criterios de aceptación:**
-1. Dado un miembro de la oficina, cuando la selecciona, entonces ingresa a la habitación principal.
-2. Dado un usuario que no es miembro, cuando intenta entrar a la oficina por cualquier medio, entonces el sistema responde 403.
-3. Dado un usuario sin sesión, cuando intenta entrar, entonces el sistema responde 401.
+#### RF-AUT-002 · Inicio de sesión, renovación y cierre de sesión
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** Visitante, Usuario autenticado (`Profesor`, `Alumno`, `Padre / Tutor`, `Dueño / Admin`)
+- **Precondiciones:** El usuario posee una cuenta registrada.
+- **Postcondiciones:** Se emite una sesión/credencial con expiración verificable en el servidor; al cerrar sesión se invalida la credencial y se desconecta cualquier sesión en vivo activa en Colyseus.
+- **Descripción:** El sistema debe autenticar credenciales de acceso, renovar sesiones activas dentro de su ventana de validez, invalidar sesiones al ejecutar logout o restablecimiento de contraseña y proteger todos los endpoints privados y conexiones en tiempo real.
+- **Criterios de aceptación:**
+  1. **Dadas** credenciales válidas, **cuando** el usuario inicia sesión, **entonces** accede al panel correspondiente a sus membresías y roles vigentes.
+  2. **Dadas** credenciales inválidas, **cuando** un visitante intenta iniciar sesión, **entonces** el servidor responde `401 Unauthorized` con un mensaje genérico que no revela si falló el correo o la contraseña.
+  3. **Dado** un usuario autenticado que ejecuta el cierre de sesión (`logout`), **cuando** la operación se confirma, **entonces** el servidor invalida la sesión de forma inmediata, retira su avatar de cualquier aula activa en Colyseus y responde `401` ante cualquier petición posterior con la credencial anterior (`RN-04`).
+  4. **Dado** un usuario que solicita recuperar su contraseña por email, **cuando** ingresa un correo registrado o no registrado, **entonces** el sistema devuelve una respuesta idéntica en pantalla y, si la cuenta existe, envía un enlace de un solo uso con expiración que al utilizarse invalida las sesiones previas.
 
-#### RF-OFI-004 · Edición de datos de la oficina
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El Dueño y el Administrador deben poder editar el nombre y la descripción de la oficina.
-**Criterios de aceptación:**
-1. Dado un Dueño o Administrador con datos válidos, cuando guarda, entonces los miembros ven el nombre nuevo.
-2. Dado un Miembro o Líder, cuando intenta editar los datos de la oficina, entonces el sistema responde 403.
+#### RF-AUT-003 · Gestión de perfil y configuración de avatar base
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`, `Padre / Tutor`, `Dueño / Admin`
+- **Precondiciones:** El usuario tiene una sesión válida activa.
+- **Postcondiciones:** Se actualizan los datos del perfil (`display_name`) y la apariencia persistente del avatar (`AvatarConfiguration`), reflejándose en las aulas donde participa.
+- **Descripción:** El sistema debe permitir a cada usuario consultar y actualizar su nombre visible y la configuración visual base de su avatar 3D (aspecto inicial e ítems desbloqueados), persistiendo los cambios entre sesiones y dispositivos.
+- **Criterios de aceptación:**
+  1. **Dado** un usuario autenticado, **cuando** actualiza su nombre visible o los parámetros base permitidos de su avatar y guarda los cambios, **entonces** la configuración se persiste en base de datos y se mantiene tras recargar la página o volver a iniciar sesión.
+  2. **Dado** un alumno o profesor dentro de un aula activa, **cuando** actualiza su apariencia con opciones válidas o ítems adquiridos en la tienda, **entonces** los demás integrantes conectados al aula ven el avatar actualizado (`RN-09`).
+  3. **Dado** un usuario que intenta equipar un accesorio o ítem bloqueado que no posee, **entonces** el servidor rechaza la actualización con `403` o `400` sin modificar la configuración persistida.
 
-#### RF-OFI-005 · Generación de enlace de invitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El sistema debe permitir generar un enlace único de invitación a la oficina, con vencimiento y, opcionalmente, un límite de usos.
-**Criterios de aceptación:**
-1. Dado un Dueño o Administrador, cuando genera una invitación, entonces obtiene un enlace único y copiable.
-2. Dado el formulario de invitación, cuando define un vencimiento y opcionalmente un máximo de usos, entonces el enlace respeta esos valores.
-3. Dado un Miembro o Líder, cuando intenta generar un enlace, entonces el sistema responde 403.
-4. Dado un enlace de invitación, entonces da acceso únicamente a la oficina para la que fue generado y nunca a otras.
-
-#### RF-OFI-006 · Revocación de invitaciones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El sistema debe permitir revocar un enlace de invitación vigente.
-**Criterios de aceptación:**
-1. Dada una invitación vigente, cuando el Dueño o Administrador la revoca, entonces el enlace deja de funcionar de inmediato.
-2. Dado un usuario que ya se había unido con ese enlace, cuando se revoca, entonces su membresía no cambia.
-
-#### RF-OFI-007 · Lista de invitaciones vigentes
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El sistema debe mostrar las invitaciones de la oficina con su estado (vigente, vencida, revocada, agotada), vencimiento y usos.
-**Criterios de aceptación:**
-1. Dada una oficina con invitaciones, cuando el Dueño o Administrador abre el panel, entonces las ve con su estado.
-2. Dado un enlace vencido, entonces aparece como vencido sin intervención manual.
-
-#### RF-OFI-008 · Aceptación de una invitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Visitante, Usuario
-**Descripción:** Quien abre un enlace de invitación válido debe unirse a la oficina como Miembro (RN-06).
-**Criterios de aceptación:**
-1. Dado un Usuario con sesión, cuando abre un enlace vigente, entonces pasa a ser Miembro con acceso solo a la habitación principal.
-2. Dado un Visitante sin cuenta, cuando abre un enlace vigente, entonces puede registrarse o iniciar sesión y, al terminar, se une automáticamente a la oficina.
-3. Dado un enlace vencido, revocado o agotado, cuando lo abre, entonces el sistema lo rechaza con un mensaje que indica el motivo.
-4. Dado un usuario que ya es miembro, cuando abre el enlace, entonces no se duplica su membresía y se lo lleva a la oficina.
-5. Dada una oficina dada de baja, cuando se abre un enlace de invitación, entonces el sistema lo rechaza.
-6. Dado un usuario expulsado, cuando abre un enlace vigente, entonces se une de nuevo como Miembro sin acceso a lo que tenía antes.
-
-#### RF-OFI-009 · Vencimiento automático de invitaciones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Las invitaciones deben dejar de ser válidas al llegar a su vencimiento o a su máximo de usos.
-**Criterios de aceptación:**
-1. Dada una invitación vencida, cuando alguien la abre, entonces no se une a la oficina.
-2. Dada una invitación con límite de usos alcanzado, cuando alguien la abre, entonces no se une a la oficina.
-
-#### RF-OFI-010 · Lista de miembros
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Cada miembro debe poder ver quiénes pertenecen a la oficina y su rol.
-**Criterios de aceptación:**
-1. Dado un miembro, cuando abre la lista, entonces ve nombre visible y rol de cada miembro activo.
-2. Dado un Dueño o Administrador, cuando abre la lista, entonces además ve las acciones de gestión que le corresponden.
-3. Dado un usuario no miembro, cuando intenta ver la lista, entonces el sistema responde 403.
-
-#### RF-OFI-011 · Nombrar y quitar Administradores
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño
-**Descripción:** El Dueño debe poder asignar el rol de Administrador a un miembro y quitárselo (RN-09).
-**Criterios de aceptación:**
-1. Dado el Dueño, cuando asigna el rol a un miembro, entonces este puede ejecutar las acciones de Administrador de la matriz de permisos.
-2. Dado el Dueño, cuando quita el rol, entonces el miembro vuelve a Miembro y pierde esas acciones de inmediato.
-3. Dado un Administrador, cuando intenta nombrar o quitar Administradores, entonces el sistema responde 403.
-4. Dado el Dueño, entonces no puede asignarse ni quitarse un rol a sí mismo.
-
-#### RF-OFI-012 · Expulsión de un miembro
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El Dueño y el Administrador deben poder expulsar a un miembro de la oficina mediante baja lógica de su membresía (RN-13).
-**Criterios de aceptación:**
-1. Dado un miembro expulsado, entonces pierde acceso a todas las habitaciones y a los chats de la oficina, y la oficina desaparece de su lista.
-2. Dado un miembro expulsado que estaba conectado, entonces su avatar sale de la habitación y es desconectado de la oficina.
-3. Dado un miembro expulsado, entonces sus mensajes, tareas y anuncios se conservan y sus tareas asignadas quedan huérfanas.
-4. Dado un Administrador, cuando intenta expulsar al Dueño, entonces el sistema responde 403 (RN-08).
-5. Dado un Miembro o Líder, cuando intenta expulsar a alguien, entonces el sistema responde 403.
-6. Dado un Administrador, cuando intenta expulsar a otro Administrador, entonces el sistema responde 403. ⚠️ Supuesto: solo el Dueño gestiona Administradores.
-
-#### RF-OFI-013 · Abandono de la oficina
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Administrador, Líder, Miembro
-**Descripción:** Un miembro debe poder abandonar por su cuenta una oficina ajena.
-**Criterios de aceptación:**
-1. Dado un miembro que confirma que abandona, entonces pierde acceso y la oficina desaparece de su lista.
-2. Dado el abandono, entonces lo que generó se conserva y sus tareas asignadas quedan huérfanas.
-3. Dado el Dueño, cuando intenta abandonar su oficina, entonces el sistema se lo impide y le indica que puede darla de baja (RN-15).
-
-#### RF-OFI-014 · Baja lógica de la oficina
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño
-**Descripción:** El Dueño debe poder dar de baja su oficina; queda recuperable por 15 días (RN-14).
-**Criterios de aceptación:**
-1. Dado el Dueño, cuando confirma la baja (con una confirmación explícita), entonces la oficina deja de estar disponible para todos sus miembros.
-2. Dados los miembros conectados, cuando se da de baja la oficina, entonces son sacados de ella.
-3. Dado un Administrador, Líder o Miembro, cuando intenta dar de baja la oficina, entonces el sistema responde 403.
-4. Dada la baja, entonces ningún dato se elimina todavía.
-
-#### RF-OFI-015 · Recuperación de la oficina
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño
-**Descripción:** El Dueño debe poder recuperar su oficina dentro de los 15 días posteriores a la baja.
-**Criterios de aceptación:**
-1. Dado el Dueño con una oficina dada de baja, cuando abre su lista, entonces la ve marcada como dada de baja con los días que le quedan.
-2. Dado el Dueño, cuando la recupera dentro del plazo, entonces la oficina vuelve exactamente como estaba, con sus miembros, accesos y datos.
-3. Dado el plazo vencido, entonces la recuperación ya no es posible.
-
-#### RF-OFI-016 · Eliminación definitiva tras el plazo
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Pasados 15 días desde la baja, el sistema debe eliminar definitivamente la oficina y sus datos.
-**Criterios de aceptación:**
-1. Dada una oficina con más de 15 días de baja, entonces se elimina junto con habitaciones, tareas, anuncios, reuniones y mensajes.
-2. Dada la eliminación definitiva, entonces la oficina propia no se vuelve a crear automáticamente; el usuario queda sin oficina propia. ⚠️ A decidir: si debe poder crear una nueva.
-
-#### RF-OFI-017 · Invitación por email
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Dueño, Administrador
-**Descripción:** El sistema debe permitir enviar la invitación directamente al email de una persona.
-**Criterios de aceptación:**
-1. Dado un email válido, cuando el Dueño o Administrador envía la invitación, entonces la persona recibe un enlace de invitación.
-
-#### RF-OFI-018 · Solicitud de ingreso a una oficina
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario, Dueño, Administrador
-**Descripción:** Un usuario debe poder pedir ingreso a una oficina que lo permita, y el Dueño o Administrador aprobarlo o rechazarlo.
-**Criterios de aceptación:**
-1. Dada una solicitud pendiente, cuando el Dueño o Administrador la aprueba, entonces el usuario pasa a ser Miembro.
+#### RF-AUT-004 · Vinculación Padre-Alumno (`ParentStudentLink`)
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Profesor`, `Dueño / Admin`, `Padre / Tutor`
+- **Precondiciones:** El aula no se encuentra en modo educación de adultos (`adult_mode = false`) y el alumno tiene menos de 2 tutores activos vinculados.
+- **Postcondiciones:** Se crea un registro `ParentStudentLink` (`ParentLink`) activo que habilita al `Padre / Tutor` la vista de seguimiento y las notificaciones de ese hijo.
+- **Descripción:** El sistema debe permitir que el profesor o administrador de la escuela emita una invitación de vinculación familiar asociada a un alumno específico, y que el padre o tutor la acepte desde su cuenta autenticada.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor o administrador de un aula con `adult_mode = false`, **cuando** envía una invitación de padre/tutor asociada a un alumno matriculado y el adulto la acepta autenticado, **entonces** se registra el vínculo `ParentStudentLink` de forma atómica (`RN-02`, `RN-16`).
+  2. **Dado** un alumno que ya posee **2** tutores activos vinculados, **cuando** se intenta registrar un tercer vínculo parental, **entonces** el servidor rechaza la operación informando el límite máximo permitido (`RN-16`).
+  3. **Dada** un aula configurada con `adult_mode = true`, **cuando** se intenta emitir o aceptar una invitación de `Padre / Tutor` o consultar datos mediante un vínculo parental en esa aula, **entonces** el servidor rechaza la operación (`RN-16`).
 
 ---
 
-### 5.3 Habitaciones y accesos (HAB)
+### 5.2 Módulo `RF-AUL` · Aulas, Escuelas, Membresías y Roles
 
-#### RF-HAB-001 · Habitación principal
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Toda oficina debe tener una habitación principal accesible para todos sus miembros (RN-04).
-**Criterios de aceptación:**
-1. Dada una oficina nueva, entonces tiene exactamente una habitación principal.
-2. Dado un miembro nuevo, entonces puede entrar a la habitación principal sin que se le otorgue acceso explícito.
-3. Dada la habitación principal, entonces nadie puede eliminarla ni quitarle acceso a un miembro.
-4. Dado un miembro que ingresa a la oficina, entonces comienza en la habitación principal.
+#### RF-AUL-001 · Creación y configuración de aula
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El usuario posee sesión activa con rol de `Profesor` (independiente o de escuela) o `Dueño / Admin de Escuela`.
+- **Postcondiciones:** Se crea el registro persistente `Classroom` asociado exactamente a una escuela o a un profesor independiente, junto con su mascota inicial (`ClassroomPet`), sus pupitres base y sus estados de control por defecto.
+- **Descripción:** El sistema debe permitir crear, configurar y listar aulas virtuales indicando nombre, materia/descripción, modalidad (`adult_mode`) y pertenencia organizacional, inicializando automáticamente sus recursos base.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor o administrador autorizado, **cuando** crea un aula con datos válidos, **entonces** el servidor persiste en una transacción el `Classroom`, la asignación docente, la `ClassroomPet` inicial y el estado por defecto de los controles del aula (`chat_muted = false`, `collaboration_locked = false`, `games_disabled = false`).
+  2. **Dado** un usuario con rol `Alumno` o `Padre / Tutor`, **cuando** intenta crear o editar la configuración de un aula, **entonces** el servidor rechaza la petición con `403 Forbidden` (`RN-04`).
+  3. **Dada** la creación de un aula, **entonces** la base de datos garantiza que pertenezca exactamente a una `School` o a un `Profesor independiente`, nunca a ambos ni a ninguno (`RN-01`).
 
-#### RF-HAB-002 · Creación de habitaciones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El Dueño y el Administrador deben poder crear habitaciones adicionales con un nombre.
-**Criterios de aceptación:**
-1. Dado un Dueño o Administrador con un nombre válido, cuando crea la habitación, entonces aparece en la oficina y aún nadie más que el Dueño y los Administradores puede entrar.
-2. Dado un Líder o Miembro, cuando intenta crear una habitación, entonces el sistema responde 403.
-3. Dado un nombre vacío o repetido dentro de la misma oficina, entonces el sistema muestra un error claro.
-4. Dada una habitación nueva, entonces tiene su tablero con las columnas por defecto, cartelera, reuniones y chat propios.
+#### RF-AUL-002 · Incorporación al aula por invitación o código/enlace de acceso
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin`, `Alumno`, `Padre / Tutor`
+- **Precondiciones:** El aula se encuentra activa (`deleted_at IS NULL`) y el emisor tiene autoridad docente sobre ella.
+- **Postcondiciones:** Se genera una invitación con vencimiento y secreto hasheado (o código/enlace revocable), y al ser aceptada por el destinatario autenticado se crea su membresía (`ClassroomMembership` / `Enrollment`) con el rol fijado por la invitación.
+- **Descripción:** El sistema debe permitir a profesores y administradores invitar alumnos y padres por correo electrónico o enlace/código de invitación con fecha de expiración y revocación, e inscribir al usuario de forma atómica al aceptar.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor del aula, **cuando** emite una invitación para un alumno (o padre) o genera un código/enlace de acceso con vencimiento, **entonces** el servidor almacena únicamente el hash del secreto junto con el aula destino, el rol asignado y la fecha de expiración (`RN-02`).
+  2. **Dada** una invitación vigente y no utilizada/revocada, **cuando** el usuario autenticado la acepta, **entonces** el servidor registra su membresía en el aula de manera atómica e idempotente sin permitir que el invitado modifique el rol estipulado (`RN-02`).
+  3. **Dada** una invitación expirada, revocada o perteneciente a un aula dada de baja, **cuando** un usuario intenta utilizarla, **entonces** el servidor rechaza la solicitud con un mensaje claro y no crea ninguna membresía.
+  4. **Dado** un usuario que ya es miembro activo del aula, **cuando** intenta aceptar nuevamente una invitación para la misma aula, **entonces** el sistema no duplica la inscripción.
 
-#### RF-HAB-003 · Límite de habitaciones adicionales
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El sistema debe impedir superar las 5 habitaciones adicionales por oficina (RN-05).
-**Criterios de aceptación:**
-1. Dada una oficina con 5 habitaciones adicionales, cuando se intenta crear otra, entonces el sistema la rechaza con un mensaje que indica el límite.
-2. Dada una habitación eliminada, entonces el cupo se libera.
-3. Dada la habitación principal, entonces no cuenta para el límite.
+#### RF-AUL-003 · Gestión de miembros, roles y bajas lógicas en el aula
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor tiene autoridad docente o institucional sobre el aula.
+- **Postcondiciones:** Se consulta el padrón del aula o se desactiva lógicamente (`deleted_at`) la membresía de un integrante, cortando de inmediato su acceso HTTP y su conexión en tiempo real.
+- **Descripción:** El sistema debe permitir visualizar la nómina de miembros del aula (profesores, alumnos matriculados y vínculos parentales activos) y desactivar lógicamente la membresía de un alumno o revocar accesos cuando corresponda, conservando sus registros académicos históricos.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor del aula, **cuando** consulta el listado de integrantes, **entonces** obtiene la nómina paginada de alumnos matriculados y su estado de actividad dentro de esa aula (`RN-01`).
+  2. **Dado** un profesor o administrador que da de baja a un alumno del aula, **cuando** confirma la acción, **entonces** la membresía pasa a baja lógica (`deleted_at`), el alumno es desconectado de inmediato de la sesión Colyseus del aula y ya no puede acceder a ella, pero sus entregas, calificaciones y mensajes previos se conservan atribuidos (`RN-18`).
+  3. **Dado** un profesor de un aula `A`, **cuando** intenta listar miembros o modificar roles en un aula `B` de otro docente donde no tiene autoridad, **entonces** el servidor responde `404 Not Found` (`RN-03`, `RN-04`).
 
-#### RF-HAB-004 · Edición de habitaciones
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** Se debe poder renombrar una habitación.
-**Criterios de aceptación:**
-1. Dado un nombre válido, cuando se guarda, entonces los usuarios con acceso ven el nombre nuevo.
-2. Dado un Líder o Miembro, cuando intenta renombrarla, entonces el sistema responde 403.
+#### RF-AUL-004 · Gestión institucional multi-aula para Dueño / Admin de Escuela
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Dueño / Admin de Escuela`
+- **Precondiciones:** La organización fue creada bajo el camino `Escuela` y el usuario posee membresía `SchoolMember` con rol `Owner` o `Admin`.
+- **Postcondiciones:** Se gestiona el plantel docente, las aulas de la institución y la supervisión consolidada de la escuela.
+- **Descripción:** El sistema debe permitir al `Dueño / Admin de Escuela` invitar profesores a la institución, asignarles o supervisar aulas, delegar funciones administrativas y acceder con autoridad docente a cualquier aula de su escuela.
+- **Criterios de aceptación:**
+  1. **Dado** el `Dueño` o `Admin` de una escuela, **cuando** invita a un docente por correo electrónico y este acepta, **entonces** el docente queda incorporado como `SchoolMember` con rol `Teacher` dentro de esa escuela (`RN-02`).
+  2. **Dado** el `Dueño` o `Admin` de una escuela, **cuando** accede a cualquier aula perteneciente a su institución, **entonces** el servidor le reconoce autoridad de nivel `Profesor` a partir de su rol en `SchoolMember` sin exigir una fila de inscripción por aula (`RN-03`).
+  3. **Dado** el `Dueño` o `Admin` de la Escuela `X`, **cuando** intenta acceder a un aula o recurso de la Escuela `Y`, **entonces** el servidor rechaza la petición con `404 Not Found` (`RN-01`, `RN-04`).
 
-#### RF-HAB-005 · Eliminación de habitaciones
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** Se debe poder eliminar una habitación adicional, con todo su contenido.
-**Criterios de aceptación:**
-1. Dada una habitación con contenido, cuando se intenta eliminar, entonces el sistema advierte qué se perderá (tareas, anuncios, reuniones y mensajes) y pide confirmación.
-2. Dada la confirmación, entonces la habitación y su contenido se eliminan y los usuarios conectados en ella son llevados a la habitación principal.
-3. Dada la habitación principal, entonces no se puede eliminar.
-4. ⚠️ Supuesto: eliminar una habitación borra su contenido; no hay recuperación.
-
-#### RF-HAB-006 · Otorgar y quitar acceso a una habitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador, Líder
-**Descripción:** Se debe poder dar o quitar acceso a una habitación a miembros de la oficina (RN-10, RN-11).
-**Criterios de aceptación:**
-1. Dado un Dueño o Administrador, cuando otorga acceso a un miembro, entonces este puede entrar a la habitación.
-2. Dado un Líder, cuando otorga acceso a su habitación a un miembro de la oficina, entonces este puede entrar.
-3. Dado un Líder, cuando intenta dar acceso a una habitación que no lidera, entonces el sistema responde 403.
-4. Dado un Líder, cuando intenta dar acceso a alguien que no es miembro de la oficina, entonces el sistema lo rechaza.
-5. Dado un Miembro sin rol de Líder, cuando intenta otorgar acceso, entonces el sistema responde 403.
-6. Dado un acceso quitado, entonces se aplica RN-12 de inmediato, incluso si el usuario está conectado en la habitación.
-
-#### RF-HAB-007 · Panel de accesos
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** El sistema debe ofrecer un panel que muestre, para cada miembro, a qué habitaciones tiene acceso y su rol en ellas, y permita modificarlos.
-**Criterios de aceptación:**
-1. Dado un Dueño o Administrador, cuando abre el panel, entonces ve a todos los miembros y todas las habitaciones con su acceso y liderazgo.
-2. Dado un cambio en el panel, cuando se guarda, entonces se aplica de inmediato y persiste.
-3. Dado un Líder, cuando abre el panel, entonces solo puede gestionar el acceso de su propia habitación.
-4. Dado un Miembro sin rol de Líder, cuando intenta abrir el panel, entonces el sistema responde 403.
-
-#### RF-HAB-008 · Asignación de Líderes
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Dueño, Administrador
-**Descripción:** Se debe poder asignar y quitar el rol de Líder de una habitación; puede haber varios.
-**Criterios de aceptación:**
-1. Dado un miembro con acceso a una habitación, cuando se lo asigna como Líder, entonces puede ejecutar las acciones de Líder de la matriz de permisos en esa habitación.
-2. Dada una habitación con dos Líderes, entonces ambos tienen los mismos permisos.
-3. Dado un miembro sin acceso a la habitación, cuando se intenta asignarlo como Líder, entonces el sistema lo rechaza.
-4. Dado un Líder al que se le quita el acceso, entonces deja de ser Líder de esa habitación.
-5. Dado un Líder o Miembro, cuando intenta asignar Líderes, entonces el sistema responde 403.
-
-#### RF-HAB-009 · Cambio de habitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder pasar de una habitación a otra de su oficina con un control visible (botón o selector), además de los accesos espaciales (RF-OBJ).
-**Criterios de aceptación:**
-1. Dado un usuario con acceso a varias habitaciones, cuando elige una, entonces su avatar pasa a ella y su presencia se actualiza para los demás.
-2. Dado el selector, entonces solo habilita las habitaciones a las que el usuario tiene acceso.
-3. Dado un usuario que intenta entrar a una habitación sin acceso, por cualquier medio, entonces el sistema responde 403.
-4. Dado un cambio de habitación, entonces el canal de chat por defecto pasa a ser el de la nueva habitación.
-
-#### RF-HAB-010 · Efecto de la pérdida de acceso
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Cuando un usuario pierde acceso a una habitación, el sistema debe aplicar RN-12.
-**Criterios de aceptación:**
-1. Dado un usuario conectado en una habitación, cuando pierde el acceso, entonces es llevado a la habitación principal.
-2. Dada la pérdida de acceso, entonces el usuario ya no ve tablero, cartelera, reuniones ni historial de chat de esa habitación.
-3. Dadas las tareas asignadas a ese usuario, entonces quedan marcadas como huérfanas (RF-TAR-009).
-4. Dado un anuncio o reunión creados por ese usuario, entonces se conservan.
-
-#### RF-HAB-011 · Verificación de acceso en el servidor
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Toda operación sobre una habitación y su contenido debe verificar en el servidor la membresía y el acceso (RN-03, RN-16).
-**Criterios de aceptación:**
-1. Dada una petición directa a un recurso de una habitación sin acceso, entonces el sistema responde 403.
-2. Dada una petición con un identificador de otra oficina, entonces el sistema no revela si el recurso existe.
-3. Dada la conexión a la presencia de una habitación, entonces el sistema también verifica el acceso antes de permitirla.
-
-#### RF-HAB-012 · Acceso de solo lectura a una habitación
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Dueño, Administrador, Líder
-**Descripción:** Se debe poder dar acceso a una habitación con permiso de solo lectura.
-**Criterios de aceptación:**
-1. Dado un miembro con acceso de solo lectura, cuando intenta crear o editar contenido, entonces el sistema responde 403.
-
-#### RF-HAB-013 · Límite configurable de habitaciones
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Dueño
-**Descripción:** El límite de habitaciones adicionales debe poder ampliarse más allá de 5.
-**Criterios de aceptación:**
-1. Dado un nuevo límite configurado, cuando el Dueño crea habitaciones, entonces se respeta ese límite.
-
+#### RF-AUL-005 · Aislamiento de recursos y verificación de acceso en servidor
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Sistema`
+- **Precondiciones:** Cualquier petición HTTP a `NestJS` o mensaje/unión WebSocket a `Colyseus`.
+- **Postcondiciones:** Se autoriza o rechaza la operación evaluando autenticación → membresía/vínculo → rol a partir del estado persistido actual.
+- **Descripción:** El sistema debe resolver el aula y la escuela de cada recurso en el servidor a partir de su identificador persistido, ignorando ámbitos enviados por el cliente y previniendo cualquier acceso cruzado por manipulación de IDs (*ID tampering*).
+- **Criterios de aceptación:**
+  1. **Dada** una petición sobre una actividad, entrega, mensaje o archivo cuyo ID pertenece a un aula con la que el usuario no tiene relación, **cuando** el servidor la procesa, **entonces** responde `404 Not Found` sin filtrar ningún dato del recurso (`RN-01`, `RN-04`).
+  2. **Dado** un alumno matriculado en el aula que invoca un endpoint exclusivo de `Profesor` dentro de su propia aula (por ejemplo, publicar una actividad o congelar el aula), **cuando** el servidor verifica su rol, **entonces** responde `403 Forbidden` (`RN-04`).
 
 ---
 
-### 5.4 Mundo 3D, avatar y presencia (MUN)
+### 5.3 Módulo `RF-ESP` · Espacio 3D, Avatar, Pupitres y Modo 2D Clásico
 
-#### RF-MUN-001 · Escena isométrica de la habitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Cada habitación debe mostrarse como una escena tridimensional vista desde una cámara isométrica, con superficies transitables y objetos.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando entra a una habitación, entonces ve su escena y su propio avatar.
-2. Dada la cámara, entonces mantiene la perspectiva isométrica y no requiere control libre por parte del usuario.
-3. Dada una escena en carga, entonces el usuario ve un indicador de carga y, si falla, un mensaje de error con opción de reintentar.
+#### RF-ESP-001 · Navegación en Aula 3D isométrica y sincronización de presencia
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`, `Dueño / Admin`
+- **Precondiciones:** El usuario posee acceso vigente al aula seleccionada.
+- **Postcondiciones:** El cliente renderiza el aula 3D con cámara isométrica en Three.js + React Three Fiber, conecta a la `Room` correspondiente de Colyseus y sincroniza en tiempo real la posición y presencia de los avatares conectados.
+- **Descripción:** El sistema debe permitir a profesores y alumnos desplazarse por el aula tridimensional mediante teclado (`WASD`), clic de mouse a destino o entrada táctil equivalente, respetando límites y colisiones del escenario y visualizando en tiempo real a los demás miembros presentes sin persistir cada paso en PostgreSQL.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor o alumno con acceso al aula, **cuando** ingresa al entorno 3D, **entonces** Colyseus verifica su identidad y membresía contra el backend de negocio y sincroniza su avatar y la lista de presencia con los demás usuarios conectados a esa misma aula (`RN-01`, `RN-19`).
+  2. **Dado** un usuario desplazándose con `WASD`, clic o gesto táctil sobre superficies transitables, **cuando** encuentra paredes, pupitres u obstáculos, **entonces** el sistema aplica las colisiones del escenario y mantiene una cámara isométrica estable.
+  3. **Dado** un usuario que se desconecta o pierde conexión temporalmente, **cuando** ocurre el corte o se reconecta, **entonces** los demás integrantes ven actualizarse su estado de presencia y el servidor limpia o restaura su asiento/avatar sin generar filas por fotograma en la base de datos (`RN-19`).
 
-#### RF-MUN-002 · Movimiento con teclado
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder desplazar su avatar con las teclas W, A, S y D.
-**Criterios de aceptación:**
-1. Dado un usuario en una habitación, cuando presiona una tecla de movimiento, entonces su avatar se desplaza en esa dirección de forma fluida.
-2. Dado un usuario escribiendo en un campo de texto (por ejemplo el chat), cuando presiona esas teclas, entonces el avatar no se mueve.
+#### RF-ESP-002 · Interacción con pupitres (`Desk`) y objetos educativos del aula
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`
+- **Precondiciones:** El usuario se encuentra dentro del Aula 3D con membresía activa.
+- **Postcondiciones:** Al interactuar con un objeto del aula se abre el panel React correspondiente o se ejecuta su transición autorizada.
+- **Descripción:** El sistema debe proveer en el aula pupitres asignables para los alumnos (`Desk`), escritorio del profesor, pizarra, estantería de bibliografía, cartelera de avisos, boletín de notas, tienda, mascota y el personaje del Bot Guía de Estudio, abriendo sus interfaces React al seleccionarlos y validando cada acción de negocio en el backend.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno en el Aula 3D, **cuando** interactúa con su pupitre (`Desk`), la estantería de material, la tienda o el Bot Guía, **entonces** la aplicación resalta el objeto interactuable y abre el panel React de actividades/entregas, bibliografía, tienda o tutor IA respectivamente (`RN-17`).
+  2. **Dado** un alumno que interactúa con el escritorio del profesor o con un objeto de gestión docente, **cuando** intenta ejecutar una acción administrativa, **entonces** la interfaz no habilita acciones de edición docente y el servidor rechaza cualquier petición directa con `403 Forbidden` (`RN-04`, `RN-17`).
+  3. **Dado** el crecimiento de alumnos matriculados en el aula, **entonces** el sistema garantiza que exista siempre al menos un pupitre/asiento (`Desk`) asignable por cada alumno inscrito (`RN-10`).
 
-#### RF-MUN-003 · Movimiento por clic a destino
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder hacer clic en una superficie transitable para que su avatar se desplace hasta allí.
-**Criterios de aceptación:**
-1. Dado un clic sobre una superficie transitable, entonces el avatar se desplaza hasta ese punto.
-2. Dado un clic sobre una superficie no transitable u obstáculo, entonces el avatar no atraviesa el obstáculo.
+#### RF-ESP-003 · Conmutación en un clic al Modo 2D Clásico accesible
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`, `Dueño / Admin`
+- **Precondiciones:** El usuario tiene acceso al aula.
+- **Postcondiciones:** La interfaz alterna de forma inmediata entre la vista de Aula 3D y el Modo 2D Clásico sin perder la sesión ni el contexto del aula actual.
+- **Descripción:** El sistema debe ofrecer un conmutador directo (en un solo clic o atajo de teclado) entre la escena 3D y el **Modo 2D Clásico**, brindando desde la interfaz 2D acceso completo a actividades, entregas, calificaciones, bibliografía, anuncios, chat, tienda, mascota y Bot Guía de Estudio.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor o alumno ubicado en el Aula 3D (o que ingresa desde un dispositivo móvil o sin soporte WebGL fluido), **cuando** activa el cambio a **Modo 2D Clásico**, **entonces** accede mediante paneles convencionales navegables por teclado y lector de pantalla a todas las funciones esenciales del aula sin recargar ni perder su sesión (`RN-17`).
+  2. **Dado** un usuario operando desde el Modo 2D Clásico, **cuando** publica o entrega una actividad, envía un mensaje en el chat, compra en la tienda o consulta al Bot IA, **entonces** el sistema ejecuta exactamente las mismas validaciones, persistencia y notificaciones que desde el entorno 3D (`RN-17`).
 
-#### RF-MUN-004 · Controles táctiles
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Las acciones de mouse deben tener un equivalente táctil.
-**Criterios de aceptación:**
-1. Dado un dispositivo táctil, cuando el usuario toca una superficie transitable, entonces el avatar se desplaza hasta allí.
-2. Dado un dispositivo táctil, cuando toca un objeto interactuable, entonces se ejecuta la misma acción que con el mouse.
-3. Dado un dispositivo táctil sin teclado, entonces el usuario puede moverse sin usar WASD.
-
-#### RF-MUN-005 · Colisiones y límites del espacio
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Los avatares no deben atravesar paredes ni objetos sólidos ni salir de los límites de la habitación.
-**Criterios de aceptación:**
-1. Dado un avatar que avanza contra una pared u objeto sólido, entonces se detiene o lo bordea.
-2. Dado un avatar, entonces no puede quedar fuera del área navegable.
-
-#### RF-MUN-006 · Avatar propio y de otros
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Cada usuario debe tener un avatar visible para los demás usuarios que estén en la misma habitación.
-**Criterios de aceptación:**
-1. Dados dos usuarios con acceso en la misma habitación, entonces cada uno ve el avatar del otro.
-2. Dado un avatar, entonces muestra el nombre visible de su usuario.
-3. Dado un usuario en otra habitación, entonces su avatar no se muestra, pero sí figura en la lista de presencia (RF-MUN-010).
-
-#### RF-MUN-007 · Sincronización de movimiento en tiempo real
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Los movimientos de un avatar deben verse en tiempo real y con fluidez para los demás usuarios de la habitación.
-**Criterios de aceptación:**
-1. Dado un usuario que se mueve, entonces los demás en la habitación ven el movimiento sin necesidad de recargar.
-2. Dado el movimiento de otro usuario, entonces se ve continuo y no a saltos bruscos.
-3. Dado un movimiento imposible (atravesar paredes o saltar de lugar), entonces no es aceptado por el servidor.
-
-#### RF-MUN-008 · Entrada, salida y desconexión de avatares
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El sistema debe mostrar la aparición y desaparición de avatares cuando los usuarios entran, salen o se desconectan.
-**Criterios de aceptación:**
-1. Dado un usuario que entra a la habitación, entonces su avatar aparece para los demás.
-2. Dado un usuario que sale, cambia de habitación o cierra sesión, entonces su avatar desaparece de la habitación anterior.
-3. Dado un usuario que pierde la conexión, entonces su avatar desaparece pasado un tiempo breve.
-
-#### RF-MUN-009 · Reconexión
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Si se interrumpe la conexión, el sistema debe intentar reconectar al usuario a su habitación.
-**Criterios de aceptación:**
-1. Dada una desconexión breve, cuando se recupera la red, entonces el usuario vuelve a su habitación sin acción manual.
-2. Dada una reconexión fallida, entonces el usuario ve un aviso y una opción para reintentar.
-3. Dada una reconexión luego de perder acceso, entonces no se le permite volver a la habitación.
-
-#### RF-MUN-010 · Lista de presencia
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe ver una lista de los miembros de la oficina conectados y en qué habitación está cada uno, incluso en habitaciones a las que no tiene acceso.
-**Criterios de aceptación:**
-1. Dado un miembro de la oficina, cuando abre la lista, entonces ve quién está conectado y en qué habitación.
-2. Dado un usuario que cambia de habitación, entonces la lista se actualiza sin recargar.
-3. Dado un usuario que se desconecta, entonces deja de figurar como conectado.
-4. Dada una habitación sin acceso, entonces la lista muestra quién está allí pero no su contenido.
-5. Dado un usuario de otra oficina, entonces nunca aparece en la lista.
-
-#### RF-MUN-011 · Personalización y persistencia del avatar
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder personalizar la apariencia de su avatar y que esta se conserve.
-**Criterios de aceptación:**
-1. Dado un usuario que modifica su avatar, cuando guarda, entonces su nuevo aspecto persiste tras recargar y cerrar sesión.
-2. Dado un avatar modificado, entonces los demás usuarios lo ven actualizado.
-3. Dado un usuario nuevo, entonces tiene un avatar por defecto.
-
-#### RF-MUN-012 · Acceso a las funciones sin apuntar a objetos 3D
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Las funciones esenciales (tareas, cartelera, reuniones, chat, cambio de habitación, bot) deben poder usarse desde un menú o interfaz alternativa, sin depender de apuntar a un objeto en la escena.
-**Criterios de aceptación:**
-1. Dado un usuario con teclado, cuando usa el menú, entonces puede abrir cada herramienta sin usar el mouse sobre la escena.
-2. Dado un usuario que abre una herramienta desde el menú, entonces ve la misma interfaz que desde el objeto.
-3. Dado un usuario sin acceso a una herramienta, entonces el menú no la muestra habilitada.
-
-#### RF-MUN-013 · Uso en pantallas pequeñas
-**Prioridad:** Could · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El sistema debe poder usarse en celulares, con una disposición adaptada.
-**Criterios de aceptación:**
-1. Dado un celular, cuando el usuario ingresa a una habitación, entonces puede ver la escena, moverse y abrir los paneles de herramientas.
-
-#### RF-MUN-014 · Estados de actividad
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro
-**Descripción:** El usuario debe poder indicar su disponibilidad (por ejemplo disponible, ocupado, ausente).
-**Criterios de aceptación:**
-1. Dado un cambio de estado, entonces los demás miembros lo ven junto al avatar y en la lista de presencia.
-
-#### RF-MUN-015 · Emotes y acciones sociales
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro
-**Descripción:** El usuario debe poder realizar gestos o animaciones visibles para los demás.
-**Criterios de aceptación:**
-1. Dado un emote elegido, entonces los demás usuarios en la habitación ven la animación en su avatar.
-
-#### RF-MUN-016 · Sonido ambiente y efectos
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario
-**Descripción:** El entorno debe poder reproducir sonidos y permitir silenciarlos.
-**Criterios de aceptación:**
-1. Dado un usuario que silencia el sonido, entonces la preferencia se conserva.
+#### RF-ESP-004 · Personalización visual de avatar y pupitre con ítems del aula
+- **Prioridad:** Should · **Fase:** MVP Core · **Actor:** `Alumno`, `Profesor`
+- **Precondiciones:** El usuario posee en su inventario (`StudentPurchase` / `ClassroomItem`) los accesorios o mejoras que desea aplicar.
+- **Postcondiciones:** Se persiste la selección visual y se representa tanto en la escena 3D como en el perfil del usuario.
+- **Descripción:** El sistema debe permitir a los usuarios aplicar sobre su avatar o pupitre los accesorios y mejoras adquiridos legítimamente en la tienda del aula, sincronizando su visualización con el resto de los miembros conectados.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno que adquirió un accesorio de avatar o decoración de pupitre en la tienda del aula, **cuando** lo equipa desde su inventario, **entonces** el servidor verifica la titularidad del ítem, persiste el cambio y los demás usuarios del aula visualizan la personalización en la escena 3D (`RN-09`).
 
 ---
 
-### 5.5 Tareas (TAR)
+### 5.4 Módulo `RF-ACT` · Actividades, TPs, Exámenes, Entregas y Calificaciones
 
-Las tareas pertenecen a una **habitación** y se organizan en un tablero Kanban. Cualquier persona con acceso a la habitación puede crear, editar, mover y eliminar tareas; la estructura del tablero (columnas) la gestionan el Líder, el Administrador y el Dueño.
+#### RF-ACT-001 · Publicación y gestión de Actividades (TPs, Exámenes y Material)
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor posee autoridad de `Profesor` sobre el aula.
+- **Postcondiciones:** Se persiste la actividad (`Activity`) o el material (`StudyMaterial` / `Material`) en PostgreSQL/S3 y, al publicarse, se notifica a los alumnos matriculados.
+- **Descripción:** El sistema debe permitir al profesor crear, editar, publicar y dar de baja lógica actividades de tipo **Trabajo Práctico (`TP`)** o **Examen (`Exam`)**, con formato de **entrega de archivo** o **opción múltiple**, definiendo título, consigna, fecha/ventana de vencimiento (`due_date`), puntaje máximo (`max_score = 100`), política de entrega tardía (`allow_late`) y ponderación de puntos (`weight_multiplier`), así como subir archivos de bibliografía a almacenamiento privado S3.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor en su aula, **cuando** crea y publica un `TP` o `Examen` con datos válidos, **entonces** el servidor persiste la actividad asociada al aula, emite el evento `activity:published` y genera notificaciones para los alumnos inscritos (`RN-05`).
+  2. **Dada** una actividad en estado borrador (no publicada), **cuando** un alumno o padre consulta las actividades del aula, **entonces** el servidor no incluye borradores ni claves de respuestas correctas de opción múltiple en ninguna respuesta (`RN-05`, `RN-06`).
+  3. **Dada** una actividad que ya registra entregas o calificaciones de alumnos, **cuando** el profesor intenta eliminarla físicamente, **entonces** el servidor rechaza el borrado físico y aplica únicamente desactivación/baja lógica (`deleted_at`) según la política de integridad académica (`RN-18`).
+  4. **Dado** un profesor que sube un archivo de material de estudio (PDF, imagen o documento permitido), **cuando** el servidor valida su tipo real y tamaño, **entonces** lo almacena de forma privada en S3 y permite descargarlo a los miembros autorizados del aula mediante URLs firmadas temporales (`RN-20`).
 
-#### RF-TAR-001 · Ver el tablero de una habitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe ver el tablero Kanban de la habitación, con sus columnas y tareas.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando abre el tablero, entonces ve las columnas en orden y las tareas de cada una.
-2. Dado un tablero sin tareas, entonces el usuario ve un estado vacío que invita a crear la primera.
-3. Dado un usuario sin acceso a la habitación, cuando intenta ver el tablero, entonces el sistema responde 403.
-4. Dada una carga lenta o fallida, entonces el usuario ve un indicador de carga o un mensaje de error.
+#### RF-ACT-002 · Bandeja de actividades del alumno y estados del ciclo de vida
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`
+- **Precondiciones:** El alumno se encuentra matriculado activamente en el aula.
+- **Postcondiciones:** Se presenta la lista paginada y filtrable de actividades publicadas con el estado derivado exacto para ese alumno.
+- **Descripción:** El sistema debe mostrar al alumno desde su pupitre 3D o desde el Modo 2D Clásico la bandeja de actividades del aula con su tipo (`TP` o `Examen`), fecha de vencimiento, ponderación de puntos y estado actual derivado (`Pendiente`, `Entregada`, `Corregida` o `Vencida`).
+- **Criterios de aceptación:**
+  1. **Dado** un alumno matriculado, **cuando** abre su bandeja de actividades, **entonces** visualiza las actividades publicadas de su aula clasificadas por estado (`Pendiente`, `Entregada`, `Corregida`, `Vencida`) calculado a partir de sus registros de `Submission`, `Grade` y la fecha/hora del servidor (`RN-05`).
+  2. **Dada** una actividad cuya fecha límite (`due_date`) ha expirado sin entrega del alumno y cuya configuración tiene `allow_late = false`, **cuando** el alumno consulta su bandeja, **entonces** la actividad figura como `Vencida` y no permite enviar nuevas entregas (`RN-05`).
 
-#### RF-TAR-002 · Crear tarea
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe poder crear una tarea con título (obligatorio), descripción, responsable, fecha límite y prioridad.
-**Criterios de aceptación:**
-1. Dado un título válido, cuando el usuario guarda, entonces la tarea aparece en la primera columna del tablero.
-2. Dado un título vacío, cuando intenta guardar, entonces ve un error y el servidor también rechaza la tarea.
-3. Dada una tarea creada, entonces persiste tras recargar y los demás usuarios de la habitación la ven.
-4. Dado un usuario sin acceso a la habitación, cuando intenta crear una tarea, entonces el sistema responde 403.
-5. Dado un título o descripción que superan el máximo permitido, entonces el sistema muestra un error claro.
+#### RF-ACT-003 · Realización de entregas con archivos adjuntos o respuestas de opción múltiple
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`
+- **Precondiciones:** El alumno está matriculado en el aula, la actividad está publicada y se encuentra dentro del plazo permitido (o `allow_late = true`).
+- **Postcondiciones:** Se registra o actualiza la `Submission` con marca temporal del servidor; en exámenes de opción múltiple autoevaluables puede dispararse la corrección automática en el servidor.
+- **Descripción:** El sistema debe permitir al alumno enviar su resolución de un `TP` o `Examen` subiendo archivos adjuntos validados (almacenados en S3 privado) o respondiendo las preguntas de opción múltiple, garantizando idempotencia ante reintentos de red.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno dentro del plazo de una actividad publicada, **cuando** envía su entrega con archivos válidos o respuestas seleccionadas, **entonces** el servidor asigna autor y timestamp oficial, persiste la `Submission` de forma idempotente y el estado pasa a `Entregada` (`RN-05`, `RN-20`).
+  2. **Dada** una actividad con `allow_late = true` cuya fecha de vencimiento ya pasó, **cuando** el alumno realiza la entrega, **entonces** el servidor la acepta dejándola marcada explícitamente como entrega tardía (`is_late = true`) para conocimiento del profesor (`RN-05`).
+  3. **Dado** un alumno `A`, **cuando** intenta leer, descargar o sobrescribir la entrega de otro alumno `B`, **entonces** el servidor rechaza la operación con `403` o `404` (`RN-04`, `RN-20`).
 
-#### RF-TAR-003 · Editar tarea
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Cualquier usuario con acceso debe poder editar los campos de una tarea de su habitación.
-**Criterios de aceptación:**
-1. Dada una tarea, cuando un usuario con acceso modifica sus campos con datos válidos, entonces los cambios persisten y los demás los ven.
-2. Dados datos inválidos, cuando intenta guardar, entonces ve el error por campo.
-3. Dado un usuario sin acceso, cuando intenta editar, entonces el sistema responde 403.
+#### RF-ACT-004 · Corrección docente, devolución (`feedback`) y acreditación automática de puntos
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`, `Sistema`
+- **Precondiciones:** Existe una `Submission` de un alumno en un aula donde el actor tiene autoridad de `Profesor`.
+- **Postcondiciones:** Se persiste la calificación (`Grade`, escala `0–100`) y la devolución docente en la misma transacción que el asiento `PointTransaction` de puntos ponderados, y se notifica al alumno y a sus padres vinculados.
+- **Descripción:** El sistema debe proveer al profesor una bandeja paginada y filtrable de entregas para revisar los archivos o respuestas del alumno, asignar una nota de `0` a `100` con comentarios de devolución (`feedback`) y acreditar automáticamente en el libro mayor los puntos ponderados (`nota * peso_actividad`).
+- **Criterios de aceptación:**
+  1. **Dado** un profesor revisando una entrega de su aula, **cuando** registra una calificación válida (`0–100`) y su devolución, **entonces** el servidor guarda en una única transacción atómica el registro `Grade` y el asiento inmutable `PointTransaction` calculado según el peso de la actividad (`RN-06`, `RN-07`).
+  2. **Dado** el commit exitoso de una calificación, **entonces** el estado de la actividad para el alumno pasa a `Corregida`, se emite el evento `grade:published` y se crean notificaciones in-app para el alumno y notificaciones in-app + email para sus padres vinculados (`RN-07`, `RN-16`).
+  3. **Dada** una entrega ya calificada que el profesor decide recalificar con una nueva nota, **cuando** confirma la modificación, **entonces** el servidor actualiza la nota conservando trazabilidad y registra un asiento compensatorio en `PointTransaction` por la diferencia exacta de puntos, sin editar ni eliminar el asiento original (`RN-07`, `RN-18`).
 
-#### RF-TAR-004 · Mover tarea entre columnas
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe poder mover una tarea a otra columna del tablero de su habitación, por ejemplo arrastrándola.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando arrastra la tarea a otra columna, entonces queda en la nueva columna y el cambio persiste al recargar.
-2. Dado un usuario sin acceso a la habitación, cuando intenta moverla, entonces el sistema responde 403.
-3. Dados otros usuarios conectados a esa habitación, cuando se mueve la tarea, entonces ven el cambio sin recargar.
-4. Dado un dispositivo táctil, entonces existe una forma de mover la tarea sin arrastrar (por ejemplo un menú).
+#### RF-ACT-005 · Historial académico y métricas de actividad del alumno (`ActivityMetric`)
+- **Prioridad:** Should · **Fase:** MVP Core · **Actor:** `Alumno`, `Profesor`, `Dueño / Admin`
+- **Precondiciones:** El usuario tiene acceso al aula (como profesor/admin para ver el curso, o como alumno para ver su propio boletín).
+- **Postcondiciones:** Se exponen las calificaciones, devoluciones, estado de entregas y métricas agregadas de participación.
+- **Descripción:** El sistema debe consolidar en el boletín/libro de notas las calificaciones obtenidas por el alumno, el promedio/progreso de entregas y la métrica agregada `ActivityMetric` (tiempo conectado reportado por Colyseus en intervalos agregados, cantidad de entregas y participación en el aula).
+- **Criterios de aceptación:**
+  1. **Dado** un profesor consultando el panel de seguimiento de su aula, **cuando** selecciona la vista de desempeño, **entonces** visualiza para cada alumno sus trabajos completados, pendientes, calificaciones y los indicadores agregados de `ActivityMetric` (tiempo conectado, entregas y participación) (`RN-19`).
+  2. **Dado** un alumno consultando su boletín de notas, **entonces** visualiza únicamente sus propias calificaciones, devoluciones y métricas, sin acceso a las notas ni métricas de sus compañeros (`RN-01`, `RN-04`).
 
-#### RF-TAR-005 · Eliminar tarea
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Cualquier usuario con acceso debe poder eliminar una tarea de su habitación.
-**Criterios de aceptación:**
-1. Dada una tarea, cuando el usuario confirma la eliminación, entonces desaparece del tablero y no vuelve al recargar.
-2. Dada la eliminación, entonces el sistema pide confirmación antes de ejecutarla.
-3. Dado un usuario sin acceso, cuando intenta eliminarla, entonces el sistema responde 403.
-
-#### RF-TAR-006 · Columnas por defecto
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Todo tablero nuevo debe crearse con las columnas "Pendiente", "En curso" y "Hecho".
-**Criterios de aceptación:**
-1. Dada una habitación nueva, entonces su tablero tiene esas tres columnas en ese orden.
-
-#### RF-TAR-007 · Configurar columnas del tablero
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Líder, Administrador, Dueño
-**Descripción:** Se debe poder crear, renombrar, reordenar y eliminar columnas del tablero.
-**Criterios de aceptación:**
-1. Dado un Líder, Administrador o Dueño, cuando agrega o renombra una columna con un nombre válido, entonces el cambio se refleja para todos los usuarios con acceso.
-2. Dada una columna con tareas, cuando se intenta eliminar, entonces el sistema exige elegir a qué columna se mueven las tareas.
-3. Dado un tablero, entonces no puede quedar sin columnas.
-4. Dado un Miembro sin rol de Líder, cuando intenta cambiar la estructura del tablero, entonces el sistema responde 403.
-5. Dados dos columnas con el mismo nombre en el mismo tablero, entonces el sistema lo rechaza.
-
-#### RF-TAR-008 · Asignar responsable
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Una tarea debe poder asignarse a un usuario que tenga acceso a la habitación.
-**Criterios de aceptación:**
-1. Dada una tarea, cuando se asigna a un usuario con acceso a la habitación, entonces el responsable queda visible en la tarea.
-2. Dado un usuario sin acceso a la habitación, cuando se intenta asignarlo, entonces el sistema lo rechaza.
-3. Dada una asignación, entonces el responsable recibe una notificación (RF-NOT-002).
-
-#### RF-TAR-009 · Tareas huérfanas
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Las tareas cuyo responsable perdió el acceso a la habitación o dejó la oficina deben quedar marcadas como huérfanas (RN-12).
-**Criterios de aceptación:**
-1. Dado un responsable que pierde acceso, entonces sus tareas siguen en el tablero pero con una marca visible de "sin responsable activo".
-2. Dado el responsable que ya no tiene acceso, entonces no puede ver ni editar la tarea.
-3. Dada una tarea huérfana que alguien reasigna, entonces la marca desaparece.
-
-#### RF-TAR-010 · Vista de lista y filtros
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Las tareas de la habitación deben poder verse también como listado y filtrarse por responsable, columna o prioridad.
-**Criterios de aceptación:**
-1. Dado el listado, cuando el usuario aplica un filtro, entonces solo ve las tareas que coinciden.
-2. Dado un filtro sin resultados, entonces el usuario ve un estado vacío que lo indica.
-
-#### RF-TAR-011 · Actualización del tablero en vivo
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Los cambios en el tablero hechos por otros usuarios deben verse sin recargar.
-**Criterios de aceptación:**
-1. Dados dos usuarios con el tablero abierto, cuando uno crea, edita, mueve o elimina una tarea, entonces el otro ve el cambio en pocos segundos.
-2. Dados cambios simultáneos sobre una misma tarea, entonces el sistema conserva un estado coherente y avisa al usuario si su cambio no se aplicó.
-
-#### RF-TAR-012 · Fecha límite y vencidas
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Las tareas con fecha límite deben mostrar cuándo vencen y destacarse al estar vencidas o próximas a vencer.
-**Criterios de aceptación:**
-1. Dada una tarea con fecha límite pasada y que no está en la última columna, entonces se muestra como vencida.
-2. Dada una tarea que vence en los próximos días, entonces se muestra como próxima a vencer.
-
-#### RF-TAR-013 · Mis tareas
-**Prioridad:** Could · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder ver todas las tareas que tiene asignadas, de todas sus oficinas, limitadas a las habitaciones a las que tiene acceso.
-**Criterios de aceptación:**
-1. Dado un usuario con tareas en varias oficinas, entonces las ve agrupadas por oficina y habitación.
-2. Dado un usuario sin acceso a una habitación, entonces sus tareas de esa habitación no se listan.
-
-#### RF-TAR-014 · Comentarios, etiquetas y adjuntos en tareas
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Las tareas deben poder tener comentarios, etiquetas y archivos adjuntos.
-**Criterios de aceptación:**
-1. Dada una tarea, cuando un usuario con acceso agrega un comentario, entonces los demás lo ven.
+#### RF-ACT-006 · Vista de seguimiento académico para Padre / Tutor
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Padre / Tutor`
+- **Precondiciones:** El usuario posee rol `Padre / Tutor` con un vínculo `ParentStudentLink` activo y el aula del hijo tiene `adult_mode = false`.
+- **Postcondiciones:** El padre visualiza el estado académico actualizado de su hijo y recibe alertas por correo e in-app.
+- **Descripción:** El sistema debe ofrecer al `Padre / Tutor` una interfaz simplificada de solo lectura donde pueda consultar las calificaciones publicadas, el estado de las actividades (`Pendiente`, `Entregada`, `Corregida`, `Vencida`) y las métricas de actividad de cada uno de sus hijos vinculados.
+- **Criterios de aceptación:**
+  1. **Dado** un padre con vínculo activo sobre uno o más hijos, **cuando** ingresa a su panel familiar, **entonces** visualiza las calificaciones, el estado de entregas y las notificaciones de cada hijo vinculado (`RN-16`).
+  2. **Dado** un padre autenticado, **cuando** intenta consultar calificaciones, entregas o métricas de un alumno con el que no posee un `ParentStudentLink` activo, **entonces** el servidor responde `404 Not Found` (`RN-04`, `RN-16`).
 
 ---
 
-### 5.6 Cartelera y reuniones (CAR)
+### 5.5 Módulo `RF-GAM` · Puntos Ponderados, Racha, Medallas, Tienda y Mascota del Aula
 
-La cartelera y las reuniones pertenecen a una **habitación**. Los permisos de creación y gestión están en la sección 3.3.
+#### RF-GAM-001 · Billetera de puntos ponderados e historial de movimientos (`PointTransaction`)
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`, `Profesor`, `Padre / Tutor` (solo lectura de su hijo)
+- **Precondiciones:** El alumno está matriculado en el aula.
+- **Postcondiciones:** Se calcula el saldo actual como suma de los asientos inmutables del libro mayor (`PointTransaction`) y se expone el historial auditable de movimientos.
+- **Descripción:** El sistema debe gestionar una billetera de puntos por alumno respaldada por un libro mayor inmutable (`PointTransaction`), donde cada acreditación por calificación, ajuste compensatorio o débito por compra en tienda/aporte a la mascota quede registrado con su motivo, fecha y referencia de origen.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno que consulta su billetera de puntos, **cuando** se abre el panel, **entonces** visualiza su saldo actual calculado en el servidor y el listado cronológico de transacciones (`acreditación por nota ponderada`, `compra en tienda`, `aporte a mascota`, `ajuste compensatorio`) (`RN-07`).
+  2. **Dada** una solicitud o reintento de acreditación sobre una misma entrega calificada `(source_type, source_id)`, **entonces** la restricción de unicidad del libro mayor impide cualquier duplicación de puntos (`RN-07`).
+  3. **Dado** un cliente que intenta enviar un saldo o modificar directamente sus puntos, **entonces** el servidor rechaza la operación; los alumnos tampoco pueden transferir puntos a otros alumnos (`RN-07`, `RN-09`).
 
-#### RF-CAR-001 · Ver la cartelera
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe poder ver los anuncios de la habitación, del más reciente al más antiguo.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando abre la cartelera, entonces ve los anuncios con título, contenido, autor y fecha.
-2. Dada una cartelera sin anuncios, entonces el usuario ve un estado vacío.
-3. Dado un usuario sin acceso a la habitación, cuando intenta verla, entonces el sistema responde 403.
+#### RF-GAM-002 · Racha diaria de estudio (`Streak`) y otorgamiento de Medallas (`Badge`)
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`, `Sistema`
+- **Precondiciones:** El alumno realiza una actividad académica calificable durante el día calendario en `America/Argentina/Buenos_Aires`.
+- **Postcondiciones:** Se actualiza de forma idempotente la racha del alumno (máximo 1 incremento por día local) y, si cumple las condiciones de un logro, se le adjudica la medalla correspondiente (`StudentBadge`).
+- **Descripción:** El sistema debe contabilizar la racha de días consecutivos en los que el alumno registra una acción académica real (entrega en término, examen aprobado o respuesta a la pregunta diaria de repaso del Bot) y otorgar medallas por hitos alcanzados.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno que inicia sesión y camina por el aula 3D sin realizar ninguna entrega ni completar el repaso diario, **cuando** finaliza su sesión, **entonces** su racha diaria **no** se incrementa (`RN-08`).
+  2. **Dado** un alumno que entrega un TP en término y el mismo día aprueba un examen y responde la pregunta diaria en horario `America/Argentina/Buenos_Aires`, **cuando** el servidor procesa los eventos, **entonces** contabiliza exactamente **1 hito diario** para esa fecha local sin duplicar el incremento (`RN-08`).
+  3. **Dado** un alumno que alcanza la condición de una medalla definida en el catálogo (`Badge`), **cuando** el servidor verifica el logro, **entonces** registra `StudentBadge` de forma idempotente `(student_id, badge_id)` y notifica al alumno (`RN-08`).
 
-#### RF-CAR-002 · Publicar un anuncio
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Líder, Administrador, Dueño
-**Descripción:** El Líder, el Administrador y el Dueño deben poder publicar anuncios en la cartelera de su habitación.
-**Criterios de aceptación:**
-1. Dado un título y contenido válidos, cuando se publica, entonces el anuncio aparece en la cartelera y persiste.
-2. Dado un Miembro sin rol de Líder, cuando intenta publicar, entonces el sistema responde 403.
-3. Dado un Líder, cuando intenta publicar en una habitación que no lidera, entonces el sistema responde 403.
-4. Dados datos inválidos, entonces ve el error por campo.
+#### RF-GAM-003 · Compra de ítems en la Tienda del Aula (`ShopItem` / `StudentPurchase`)
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`
+- **Precondiciones:** El ítem está habilitado en el catálogo (`ShopItem`), posee funcionalidad real implementada y el alumno cuenta con saldo suficiente en su billetera.
+- **Postcondiciones:** En una única transacción atómica se debita `points_cost` mediante un asiento negativo en `PointTransaction` y se registra la adquisición (`StudentPurchase` / `ClassroomItem`).
+- **Descripción:** El sistema debe permitir a los alumnos canjear sus puntos ponderados en la tienda del aula por ítems funcionales del aula (mejoras, minijuegos habilitables), accesorios para su avatar/pupitre o accesorios para la mascota del aula.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno con saldo mayor o igual al `points_cost` del ítem fijado en el servidor, **cuando** confirma la compra, **entonces** el servidor verifica disponibilidad y saldo bajo bloqueo transaccional, registra el débito en `PointTransaction` y otorga el ítem de forma idempotente (`RN-09`).
+  2. **Dado** un alumno con saldo insuficiente o dos peticiones concurrentes que excederían su saldo disponible, **cuando** el servidor las procesa, **entonces** rechaza la compra excedente garantizando que el saldo jamás quede negativo (`RN-09`).
 
-#### RF-CAR-003 · Editar y eliminar anuncios propios
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Líder, Administrador, Dueño
-**Descripción:** Quien publicó un anuncio debe poder editarlo o eliminarlo.
-**Criterios de aceptación:**
-1. Dado un autor, cuando edita su anuncio, entonces el cambio persiste y los demás lo ven.
-2. Dado un autor, cuando confirma la eliminación, entonces el anuncio desaparece de la cartelera.
-3. Dado un Líder, cuando intenta editar o eliminar un anuncio de otra persona, entonces el sistema responde 403.
+#### RF-GAM-004 · Mascota grupal del aula (`ClassroomPet`) y aportes colaborativos
+- **Prioridad:** Should · **Fase:** MVP Extendido (base de entidad en MVP Core) · **Actor:** `Alumno`, `Profesor`
+- **Precondiciones:** El aula cuenta con su instancia única `ClassroomPet`.
+- **Postcondiciones:** Se actualizan los puntos de contribución grupal (`pet_contribution`) o los accesorios equipados de la mascota del aula tras debitar los puntos del alumno comprador.
+- **Descripción:** El sistema debe mantener una única **Mascota del Aula** por cada aula como objetivo motivacional grupal (independiente del Bot IA), permitiendo que los alumnos utilicen sus puntos para desbloquearle accesorios o realizar aportes colaborativos que mejoren su estado visual en el aula.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno matriculado en el aula, **cuando** realiza un aporte de puntos o compra un accesorio para la `ClassroomPet`, **entonces** el servidor debita el costo de su billetera individual, registra el accesorio o incremento en la mascota del aula y sincroniza el nuevo estado visual para todos los miembros del curso (`RN-09`).
+  2. **Dada** la existencia de la mascota del aula y del Bot Guía de Estudio, **entonces** ambos operan como entidades y personajes completamente independientes en datos y funciones (`RN-09`, `RN-12`).
 
-#### RF-CAR-004 · Gestionar anuncios ajenos
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Administrador, Dueño
-**Descripción:** El Administrador y el Dueño deben poder editar o eliminar anuncios de cualquier autor en cualquier habitación de su oficina.
-**Criterios de aceptación:**
-1. Dado un Administrador o Dueño, cuando edita o elimina un anuncio ajeno, entonces el cambio persiste.
-2. Dado un Líder o Miembro, cuando intenta lo mismo, entonces el sistema responde 403.
-
-#### RF-CAR-005 · Crear una reunión
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Líder, Administrador, Dueño
-**Descripción:** Se debe poder crear una reunión en una habitación con título, descripción, fecha, hora de inicio y hora de fin.
-**Criterios de aceptación:**
-1. Dados datos válidos, cuando se crea, entonces la reunión aparece en la habitación para quienes tienen acceso.
-2. Dada una hora de fin anterior a la de inicio, entonces el sistema la rechaza con un error claro.
-3. Dado un Miembro sin rol de Líder, cuando intenta crear una reunión, entonces el sistema responde 403.
-4. Dada una reunión creada, entonces los miembros con acceso reciben una notificación (RF-NOT-002).
-
-#### RF-CAR-006 · Editar y cancelar reuniones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Líder, Administrador, Dueño
-**Descripción:** Quien creó una reunión debe poder editarla o cancelarla; el Administrador y el Dueño pueden hacerlo con las de cualquiera.
-**Criterios de aceptación:**
-1. Dado el creador, cuando edita fecha u hora, entonces los asistentes confirmados reciben una notificación del cambio.
-2. Dado el creador, cuando cancela la reunión, entonces queda marcada como cancelada y los confirmados son notificados.
-3. Dado un Líder, cuando intenta editar o cancelar una reunión de otra persona, entonces el sistema responde 403.
-4. Dado un Administrador o Dueño, cuando lo hace con una reunión ajena, entonces el cambio persiste.
-
-#### RF-CAR-007 · Confirmar asistencia
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Cada usuario con acceso debe poder indicar si asistirá o no a una reunión, y cambiar su respuesta.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando confirma o declina, entonces su respuesta persiste y puede cambiarla antes de la reunión.
-2. Dada una reunión cancelada o pasada, entonces no se puede cambiar la respuesta.
-3. Dado un usuario sin acceso a la habitación, cuando intenta responder, entonces el sistema responde 403.
-
-#### RF-CAR-008 · Ver asistentes
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe poder ver cuántas personas confirmaron y quiénes.
-**Criterios de aceptación:**
-1. Dada una reunión con respuestas, entonces el usuario ve las listas de confirmados y de quienes declinaron.
-2. Dada una reunión sin respuestas, entonces el usuario ve que aún nadie respondió.
-
-#### RF-CAR-009 · Lista de reuniones
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe ver las reuniones de la habitación en una lista ordenada por fecha, separando próximas y pasadas.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando abre la lista, entonces ve las próximas primero, con su estado de asistencia propio.
-2. Dada una lista sin reuniones, entonces ve un estado vacío.
-
-#### RF-CAR-010 · Vista de calendario
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** El usuario debe poder ver las reuniones en un calendario mensual o semanal.
-**Criterios de aceptación:**
-1. Dado el calendario, cuando el usuario elige un día con reuniones, entonces ve su detalle.
-2. Dado el calendario, entonces las fechas y horas se muestran en la zona horaria de Argentina (RN-19).
-
-#### RF-CAR-011 · Anuncio para toda la oficina
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Administrador, Dueño
-**Descripción:** El Dueño y el Administrador deben poder publicar un anuncio visible en todas las habitaciones de la oficina. ⚠️ A confirmar.
-**Criterios de aceptación:**
-1. Dado un anuncio de oficina, entonces los miembros lo ven al entrar a cualquiera de sus habitaciones.
-
-#### RF-CAR-012 · Recordatorios y reuniones recurrentes
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Líder, Administrador, Dueño
-**Descripción:** Las reuniones deben poder repetirse y generar recordatorios antes de su inicio.
-**Criterios de aceptación:**
-1. Dada una reunión con recordatorio, entonces los confirmados reciben una notificación antes del inicio.
-
+#### RF-GAM-005 · Configuración docente del catálogo de premios y control de minijuegos
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor tiene autoridad de `Profesor` sobre el aula.
+- **Postcondiciones:** Se actualiza la disponibilidad/precios futuros del catálogo del aula o el estado persistido `games_disabled` de los minijuegos.
+- **Descripción:** El sistema debe permitir al profesor habilitar o ajustar qué premios e ítems están disponibles en la tienda del aula (sin alterar el precio histórico de compras ya asentadas en `PointTransaction`) y habilitar o deshabilitar los minijuegos del aula en cualquier momento.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor que modifica el costo o disponibilidad de un `ShopItem`, **cuando** guarda el cambio, **entonces** el nuevo valor rige para compras futuras sin alterar los asientos históricos ya registrados en `PointTransaction` (`RN-09`).
+  2. **Dado** un profesor que activa la restricción `Deshabilitar minijuegos` (`games_disabled = true`) durante la clase, **cuando** un alumno intenta iniciar una partida o enviar puntaje (incluso tras reconectarse), **entonces** el servidor rechaza la acción y difunde el bloqueo en vivo a toda el aula (`RN-09`, `RN-10`).
 
 ---
 
-### 5.7 Chat (CHA)
+### 5.6 Módulo `RF-COM` · Comunicación del Aula, Avisos, Chat y Foro de Consultas
 
-Hay dos canales: el de la **oficina** (lo leen todos sus miembros) y el de cada **habitación** (solo quienes tienen acceso). El usuario elige en cuál escribe; por defecto, el de la habitación donde se encuentra. La mensajería privada queda fuera del MVP.
+#### RF-COM-001 · Tablón de avisos importantes con notificación in-app y por email
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`, `Alumno`, `Padre / Tutor`
+- **Precondiciones:** El autor posee autoridad de `Profesor` sobre el aula.
+- **Postcondiciones:** Se persiste el aviso (`Announcement`) en la cartelera del aula y se encolan notificaciones in-app para alumnos y notificaciones in-app + correo electrónico para los padres vinculados.
+- **Descripción:** El sistema debe permitir a los profesores publicar, editar y dar de baja avisos importantes en el tablón de anuncios del aula (con soporte para `@menciones`), disparando de forma asíncrona e idempotente avisos in-app y por correo electrónico.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor en su aula, **cuando** publica un anuncio en la cartelera, **entonces** el servidor lo persiste en PostgreSQL y, tras confirmar la transacción, genera notificaciones in-app para los alumnos del aula y notificaciones in-app y por correo electrónico para los padres vinculados (cuando `adult_mode = false`) (`RN-16`, `RN-20`).
+  2. **Dado** un fallo temporal en el proveedor externo de correo electrónico (`Amazon SES`), **entonces** la publicación del anuncio y su notificación in-app no se revierten, y el envío por correo se reintenta de forma asíncrona e idempotente sin duplicar mensajes.
 
-#### RF-CHA-001 · Canal de la oficina
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Cada oficina debe tener un canal de chat común a todos sus miembros.
-**Criterios de aceptación:**
-1. Dado un miembro de la oficina, cuando abre el canal de la oficina, entonces puede leer y escribir mensajes sin importar en qué habitación esté.
-2. Dado un usuario que no es miembro, cuando intenta leer o escribir, entonces el sistema responde 403.
-3. Dado un mensaje en el canal de la oficina, entonces nunca es visible en otra oficina.
+#### RF-COM-002 · Chat del aula en tiempo real con `@menciones` y moderación docente
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El usuario es alumno matriculado o personal docente del aula; para que un alumno escriba, el chat no debe estar silenciado (`chat_muted = false`).
+- **Postcondiciones:** El mensaje (`ChatMessage` / `Message`) y sus `@menciones` (`Mention`) se validan y persisten en PostgreSQL antes de difundirse en tiempo real por Colyseus.
+- **Descripción:** El sistema debe proveer un canal de chat grupal por aula donde alumnos y profesores conversen en tiempo real, resuelvan `@menciones` contra el padrón del aula y donde el profesor pueda ocultar/moderar mensajes o silenciar el chat conservando el historial completo para auditoría docente.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno o profesor en un aula con `chat_muted = false`, **cuando** envía un mensaje de texto válido con una `@mención` a un miembro del aula, **entonces** el servidor asigna autor y hora oficial, persiste el mensaje y la entidad `Mention`, difunde el mensaje en vivo y notifica al usuario mencionado (`RN-01`).
+  2. **Dado** un profesor que modera/oculta un mensaje inapropiado en el chat del aula, **cuando** se ejecuta la acción, **entonces** el servidor registra quién y cuándo lo moderó (`RN-18`): los alumnos dejan de ver el texto original, pero el cuerpo docente conserva el registro completo en el historial.
+  3. **Dado** un usuario con rol `Padre / Tutor`, **cuando** intenta leer o enviar mensajes en el canal de chat grupal del aula, **entonces** el servidor rechaza la petición con `403 Forbidden` (`RN-04`, `RN-16`).
 
-#### RF-CHA-002 · Canal de la habitación
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro con acceso a la habitación
-**Descripción:** Cada habitación debe tener su propio canal de chat, visible solo para quienes tienen acceso a ella.
-**Criterios de aceptación:**
-1. Dado un usuario con acceso, cuando abre el canal de la habitación, entonces lee y escribe mensajes.
-2. Dado un usuario sin acceso a la habitación, cuando intenta leer o escribir en su canal, entonces el sistema responde 403.
-3. Dado un usuario que pierde el acceso, entonces ya no puede leer el historial de ese canal (RN-12).
+#### RF-COM-003 · Foro de consultas por actividad y mensajería Padre ↔ Profesor
+- **Prioridad:** Should · **Fase:** MVP Core (foro de dudas) / MVP Extendido (mensajería parental) · **Actor:** `Alumno`, `Profesor`, `Padre / Tutor`
+- **Precondiciones:** El usuario tiene acceso al aula de la actividad (para el foro) o posee un `ParentStudentLink` activo en un aula con `adult_mode = false` (para mensajería parental).
+- **Postcondiciones:** Se persiste la consulta/respuesta o el mensaje directo en su contexto aislado y se notifica a los destinatarios autorizados.
+- **Descripción:** El sistema debe permitir a los alumnos plantear dudas vinculadas a una actividad para que el profesor (o el curso) responda de forma ordenada, y proveer un canal de mensajería privada entre el `Padre / Tutor`, el `Profesor` y el hijo vinculado.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno con dudas sobre una actividad publicada, **cuando** publica una consulta en el hilo/foro de la actividad y el profesor responde, **entonces** la respuesta queda visible para los miembros autorizados del aula y notifica al autor de la consulta.
+  2. **Dado** un padre con un `ParentStudentLink` activo en un aula con `adult_mode = false`, **cuando** envía un mensaje al profesor de su hijo, **entonces** el servidor verifica el vínculo en cada lectura y escritura e impide que otros padres o alumnos ajenos accedan a esa conversación (`RN-16`).
 
-#### RF-CHA-003 · Elegir el canal de envío
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder elegir si su mensaje se envía al canal de la oficina o al de la habitación donde está.
-**Criterios de aceptación:**
-1. Dada la caja de mensaje, entonces muestra de forma visible el canal de destino actual.
-2. Dado un usuario que cambia el canal, cuando envía, entonces el mensaje llega solo a ese canal.
-3. Dado un cambio de habitación, entonces el canal de habitación por defecto pasa a ser el de la nueva habitación.
-4. Dado un usuario que no está en ninguna habitación con acceso (por ejemplo, tras perderlo), entonces solo puede elegir el canal de la oficina.
-
-#### RF-CHA-004 · Enviar mensaje
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder enviar mensajes de texto.
-**Criterios de aceptación:**
-1. Dado un mensaje válido, cuando lo envía, entonces aparece en el canal con su nombre visible y la hora.
-2. Dado un mensaje vacío o solo con espacios, entonces no se envía.
-3. Dado un mensaje que supera el máximo de caracteres, entonces el sistema muestra un error claro.
-4. Dado un mensaje con texto con formato especial o código, entonces se muestra como texto y no se interpreta (no ejecuta contenido).
-
-#### RF-CHA-005 · Recepción en tiempo real
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Los mensajes nuevos deben aparecer a los demás usuarios del canal sin recargar.
-**Criterios de aceptación:**
-1. Dados dos usuarios con el canal abierto, cuando uno envía un mensaje, entonces el otro lo ve en pocos segundos.
-2. Dado un usuario que pierde conexión, cuando se reconecta, entonces recibe los mensajes que se perdió.
-
-#### RF-CHA-006 · Historial persistente
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Los mensajes deben conservarse y poder consultarse al volver a abrir el canal, con carga progresiva de los más antiguos.
-**Criterios de aceptación:**
-1. Dado un canal con mensajes previos, cuando el usuario lo abre, entonces ve los más recientes ordenados cronológicamente.
-2. Dado un historial largo, cuando el usuario se desplaza hacia arriba, entonces se cargan mensajes más antiguos.
-3. Dado un canal sin mensajes, entonces el usuario ve un estado vacío.
-4. Dado un reinicio del sistema, entonces el historial se conserva.
-
-#### RF-CHA-007 · Control de acceso del historial
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El historial de un canal solo debe ser legible por quienes tienen acceso vigente a él.
-**Criterios de aceptación:**
-1. Dado un usuario expulsado o que abandonó la oficina, entonces no puede leer ningún canal de esa oficina, aunque conserve los mensajes que ya generó (RN-13).
-2. Dado un usuario al que se le otorga acceso nuevamente, entonces puede volver a leer el historial de esa habitación. ⚠️ Supuesto.
-
-#### RF-CHA-008 · Indicador de mensajes no leídos
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe ver cuándo hay mensajes nuevos en un canal que no está mirando.
-**Criterios de aceptación:**
-1. Dado un canal con mensajes sin leer, entonces se muestra un indicador junto a su nombre.
-2. Dado el usuario que abre el canal, entonces el indicador desaparece.
-
-#### RF-CHA-009 · Mensajería privada
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro
-**Descripción:** Los miembros de una oficina deben poder enviarse mensajes privados, accesibles desde un objeto del entorno (por ejemplo, un teléfono).
-**Criterios de aceptación:**
-1. Dados dos miembros de la oficina, cuando uno escribe al otro, entonces solo ellos ven la conversación.
-
-#### RF-CHA-010 · Editar y eliminar mensajes
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro, Administrador, Dueño
-**Descripción:** El autor debe poder editar o eliminar sus mensajes; el Administrador y el Dueño pueden eliminar mensajes ajenos.
-**Criterios de aceptación:**
-1. Dado el autor, cuando elimina su mensaje, entonces deja de verse en el canal.
-2. Dado un Miembro, cuando intenta eliminar un mensaje ajeno, entonces el sistema responde 403.
+#### RF-COM-004 · Centro de notificaciones in-app y alertas por correo electrónico
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Alumno`, `Padre / Tutor`, `Dueño / Admin`
+- **Precondiciones:** Ocurre un evento de negocio confirmado en `NestJS` (nueva actividad, calificación publicada, anuncio, `@mención`, mensaje parental o invitación).
+- **Postcondiciones:** Se crea el registro `Notification` con estado de lectura (`is_read`) y estado de entrega por canal, respetando los permisos vigentes del destinatario.
+- **Descripción:** El sistema debe ofrecer un centro de notificaciones in-app donde el usuario consulte sus avisos pendientes, los marque como leídos y reciba actualizaciones en vivo, complementado con el envío por correo electrónico para invitaciones y alertas a padres.
+- **Criterios de aceptación:**
+  1. **Dado** un usuario autenticado, **cuando** abre su centro de notificaciones o marca avisos como leídos, **entonces** el servidor devuelve únicamente las notificaciones correspondientes a aulas o hijos sobre los cuales mantiene acceso vigente (`RN-01`, `RN-04`).
+  2. **Dado** un miembro cuya membresía en un aula fue dada de baja, **entonces** deja de inmediato de recibir nuevas notificaciones y de visualizar contenido histórico protegido de esa aula (`RN-18`).
 
 ---
 
-### 5.8 Notificaciones (NOT)
+### 5.7 Módulo `RF-VIV` · Herramientas de Clase en Vivo
 
-En el MVP las notificaciones se muestran **dentro de la aplicación**. El envío por email es evolución (salvo la recuperación de contraseña, RF-AUT-006).
+#### RF-VIV-001 · Congelar alumnos en sus pupitres (`Freeze`) y dirigir la atención
+- **Prioridad:** Must · **Fase:** MVP Extendido (control base previsto desde el núcleo de Colyseus) · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor tiene autoridad de `Profesor` en el aula y existe una sesión activa en Colyseus.
+- **Postcondiciones:** Todos los avatares de alumnos conectados (y los que se unan o reconecten mientras dure el estado) son ubicados en su pupitre asignado (`Desk`) y su movimiento queda bloqueado en el servidor hasta que el profesor desactive el control.
+- **Descripción:** El sistema debe permitir al profesor activar y desactivar el control **Congelar (`Freeze`)**, enviando a cada alumno a su pupitre asignado e impidiendo en el servidor cualquier desplazamiento de avatares de alumnos mientras el profesor conserva libre movimiento.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor en el aula que activa el control `Congelar`, **cuando** Colyseus valida su rol docente actual, **entonces** asigna y teletransporta a cada alumno a su pupitre, difunde el evento `classroom:frozen` y rechaza en el servidor cualquier input de movimiento enviado por clientes de alumnos (`RN-10`).
+  2. **Dado** un alumno que ingresa o se reconecta a un aula mientras se encuentra congelada, **cuando** se une a la `Room`, **entonces** el servidor lo ubica directamente en su pupitre con el bloqueo activo (`RN-10`).
+  3. **Dado** un alumno o padre que intenta enviar el comando de congelar o descongelar el aula, **entonces** el servidor ignora/rechaza el mensaje sin efectos secundarios y registra el intento en auditoría (`RN-04`, `RN-10`).
 
-#### RF-NOT-001 · Centro de notificaciones
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe tener un lugar donde ver sus notificaciones recientes, con un contador de las no leídas.
-**Criterios de aceptación:**
-1. Dado un usuario con notificaciones, cuando abre el centro, entonces las ve ordenadas de la más reciente a la más antigua.
-2. Dado un usuario con notificaciones sin leer, entonces ve el contador en un lugar visible.
-3. Dado un usuario sin notificaciones, entonces ve un estado vacío.
+#### RF-VIV-002 · Silenciar micrófonos de toda la sala y silenciar el chat del aula (`Mute`)
+- **Prioridad:** Should · **Fase:** MVP Extendido (silenciado de chat en MVP Core; silenciado de voz/video en MVP Extendido) · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor tiene autoridad de `Profesor` sobre el aula.
+- **Postcondiciones:** Se persiste el bloqueo de chat (`chat_muted`) en PostgreSQL y/o se revocan los permisos de publicación de audio de los alumnos en el servicio de medios WebRTC, difundiendo el cambio en vivo.
+- **Descripción:** El sistema debe permitir al profesor silenciar y reactivar de forma idempotente tanto el canal de chat del aula como los micrófonos de todos los alumnos en una llamada en vivo, haciendo cumplir la restricción en el servidor y en el servicio de medios.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor que activa `Silenciar chat` (`chat_muted = true`), **cuando** un alumno intenta enviar un mensaje por REST o WebSocket (incluso tras recargar la página), **entonces** el servidor rechaza el envío mientras que el profesor puede seguir escribiendo (`RN-10`).
+  2. **Dado** un profesor que activa `Silenciar a todos` durante una clase en vivo, **cuando** se ejecuta la orden, **entonces** el servidor revoca o retiene el permiso de publicación de audio de los alumnos en el servicio de medios e impide que un alumno se reactive el micrófono por su cuenta mientras dure el bloqueo (`RN-10`).
 
-#### RF-NOT-002 · Eventos que generan notificación
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El sistema debe notificar al usuario afectado cuando ocurre alguno de estos eventos:
-**Criterios de aceptación:**
-1. Dado que se le asigna una tarea, entonces recibe una notificación indicando la tarea y la habitación.
-2. Dado que se le otorga o quita acceso a una habitación, entonces recibe una notificación.
-3. Dado que se lo nombra o se le quita el rol de Administrador o de Líder, entonces recibe una notificación.
-4. Dado que se lo expulsa de una oficina, entonces recibe una notificación; la oficina ya no aparece en su lista.
-5. Dado que se crea, modifica o cancela una reunión en una habitación a la que tiene acceso, entonces recibe una notificación.
-6. Dado que se publica un anuncio en una habitación a la que tiene acceso, entonces recibe una notificación.
-7. Dado que se da de baja su oficina (siendo miembro o Dueño), entonces recibe una notificación. ⚠️ A confirmar si los miembros deben enterarse.
+#### RF-VIV-003 · Llamadas de audio/video y presentaciones en vivo (WebRTC)
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Profesor`, `Alumno`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El usuario posee membresía activa en el aula; la sesión de clase o presentación es iniciada por personal con autoridad de `Profesor`.
+- **Postcondiciones:** `NestJS` emite credenciales efímeras de corta duración con los permisos exactos del rol para conectarse a la sesión WebRTC del aula.
+- **Descripción:** El sistema debe permitir al profesor iniciar videollamadas, llamadas de voz y presentaciones en vivo dentro del aula, emitiendo desde el backend tokens de acceso de corta duración hacia el servicio de medios WebRTC y desconectando de inmediato a quien pierda acceso o cierre sesión.
+- **Criterios de aceptación:**
+  1. **Dado** un miembro autorizado del aula que se une a una llamada o presentación en vivo, **cuando** solicita acceso a `NestJS`, **entonces** el servidor verifica su membresía actual, resuelve internamente la sala de medios del aula (sin confiar en nombres de sala enviados por el cliente) y emite una credencial efímera acorde a su rol y al estado de `mute` (`RN-04`, `RN-10`).
+  2. **Dado** que el servicio externo de medios no se encuentre disponible temporalmente, **entonces** el aula 3D, el Modo 2D Clásico, el chat y las actividades continúan operando con normalidad y el cliente muestra un aviso comprensible sin errores técnicos internos.
 
-#### RF-NOT-003 · Marcar notificaciones como leídas
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder marcar una o todas sus notificaciones como leídas.
-**Criterios de aceptación:**
-1. Dada una notificación, cuando el usuario la abre o la marca, entonces deja de contar como no leída.
-2. Dadas varias no leídas, cuando elige marcar todas, entonces el contador vuelve a cero.
-
-#### RF-NOT-004 · Notificaciones respetan permisos
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Una notificación nunca debe exponer contenido de una habitación u oficina a la que el usuario no tiene acceso.
-**Criterios de aceptación:**
-1. Dado un usuario que perdió el acceso a una habitación, cuando abre una notificación antigua de ella, entonces el sistema responde 403 y no muestra el contenido.
-2. Dado un usuario, entonces solo ve sus propias notificaciones.
-
-#### RF-NOT-005 · Notificaciones en tiempo real
-**Prioridad:** Could · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** Las notificaciones nuevas deben aparecer mientras el usuario usa la aplicación, sin recargar.
-**Criterios de aceptación:**
-1. Dado un usuario conectado, cuando ocurre un evento que lo afecta, entonces ve la notificación y el contador actualizado en pocos segundos.
-
-#### RF-NOT-006 · Notificaciones por email
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario
-**Descripción:** Los eventos relevantes deben poder enviarse también por email.
-**Criterios de aceptación:**
-1. Dado un evento que genera notificación, cuando el usuario tiene habilitado el email, entonces recibe un mensaje con el resumen del evento.
-
-#### RF-NOT-007 · Preferencias de notificación
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario
-**Descripción:** El usuario debe poder elegir qué eventos le generan notificación y por qué canal.
-**Criterios de aceptación:**
-1. Dado un tipo de evento desactivado, entonces el usuario deja de recibir esa notificación.
+#### RF-VIV-004 · Pizarrón interactivo colaborativo con gráficos matemáticos y fórmulas LaTeX
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Profesor`, `Alumno`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El usuario se encuentra en el aula; si es alumno, la edición requiere que el bloqueo de colaboración esté desactivado (`collaboration_locked = false`).
+- **Postcondiciones:** Se sincronizan en tiempo real los trazos del pizarrón, las funciones en el graficador matemático y las expresiones **LaTeX**, con opción de bloquear la edición estudiantil desde el control docente.
+- **Descripción:** El sistema debe proveer en la pizarra del aula un espacio colaborativo en tiempo real que soporte trazos/anotaciones, representación de gráficos de funciones matemáticas y edición de fórmulas **LaTeX** (renderizadas de forma segura como datos), incluyendo un interruptor docente de **Bloquear colaboración (`collaboration_locked`)**.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor explicando un tema en la pizarra del aula con `collaboration_locked = false`, **cuando** él o los alumnos trazan en el pizarrón, ingresan una función matemática para graficar o escriben una expresión LaTeX válida, **entonces** el estado se sincroniza en vivo para los integrantes del aula y se renderiza sin ejecutar HTML ni scripts (`RN-11`).
+  2. **Dado** un profesor que activa `Bloquear colaboración` (`collaboration_locked = true`), **cuando** un alumno intenta enviar cualquier edición al pizarrón, al graficador o al editor LaTeX (incluso en una sesión ya abierta o tras reconectarse), **entonces** el servidor rechaza la edición en cada mensaje mientras el profesor conserva la edición habilitada (`RN-10`, `RN-11`).
 
 ---
 
-### 5.9 Bot y repaso diario (BOT)
+### 5.8 Módulo `RF-BOT` · Bot Guía de Estudio (RAG) y Repaso Diario
 
-El bot es un asistente de **solo consulta y resumen**: no crea, modifica ni elimina datos (RN-18). Siempre actúa con los permisos del usuario que lo consulta.
+#### RF-BOT-001 · Ingesta y habilitación docente de bibliografía para el Bot (`StudyMaterial` / `AllowedMaterial`)
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El profesor subió material de estudio validado a su aula.
+- **Postcondiciones:** Se indexa el documento particionado por aula y se actualiza la configuración `BotConfig` / `AllowedMaterial` (`is_bot_enabled`), entrando en vigor en la siguiente consulta al Bot.
+- **Descripción:** El sistema debe permitir al profesor seleccionar qué archivos del material de estudio de su aula están habilitados para ser utilizados como base de conocimiento (RAG) por el **Bot Guía de Estudio**, excluyendo de inmediato del índice cualquier documento deshabilitado o dado de baja.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor en su aula, **cuando** marca un archivo de `StudyMaterial` como habilitado para el Bot (`is_bot_enabled = true`), **entonces** el backend indexa el contenido asociado exclusivamente al identificador de esa aula (`RN-12`).
+  2. **Dado** un material que el profesor deshabilita o elimina lógicamente, **cuando** un alumno realiza una consulta posterior al Bot, **entonces** el servidor ya no recupera ni reutiliza fragmentos de ese documento (`RN-12`).
+  3. **Dado** un fallo en el proceso de indexación RAG de un archivo recién subido, **entonces** el archivo sigue estando disponible para descarga normal de los alumnos y el sistema informa el estado de indexación al profesor (`RN-12`).
 
-#### RF-BOT-001 · Conversar con el bot
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El usuario debe poder abrir una conversación con el bot desde un objeto del entorno o desde el menú.
-**Criterios de aceptación:**
-1. Dado un usuario con sesión, cuando abre el bot, entonces puede escribir una consulta y recibir una respuesta.
-2. Dada una respuesta en preparación, entonces el usuario ve un indicador de espera.
-3. Dado un error o indisponibilidad del servicio de IA, entonces el usuario ve un mensaje claro y puede reintentar.
-4. Dado un uso excesivo, entonces el sistema aplica un límite e informa al usuario.
+#### RF-BOT-002 · Consulta al Bot Guía de Estudio con RAG, citas al material, regla anticopia y bloqueo en exámenes
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`, `Profesor`
+- **Precondiciones:** El usuario tiene acceso al aula y, si es `Alumno`, no tiene ningún examen en curso en ese momento según el reloj del servidor.
+- **Postcondiciones:** `NestJS` recupera fragmentos únicamente del material aprobado del aula, invoca a `Amazon Bedrock` con guardarraíles pedagógicos, registra el log de auditoría y devuelve una orientación de estudio citando la fuente.
+- **Descripción:** El sistema debe permitir a los alumnos (tanto desde el personaje del tutor en el Aula 3D como desde el Modo 2D Clásico) realizar consultas de estudio al Bot IA, el cual responde únicamente sobre el material habilitado por el docente, cita los documentos utilizados, orienta sin resolver tareas ni entregar respuestas de actividades y se bloquea automáticamente mientras haya un examen en curso.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno sin examen en curso que realiza una pregunta conceptual, **cuando** el servidor procesa la consulta, **entonces** filtra la búsqueda RAG estrictamente por los documentos habilitados de su aula, invoca a Amazon Bedrock desde `NestJS` y devuelve una explicación orientadora citando el `StudyMaterial` de origen (`RN-12`).
+  2. **Dado** un alumno que pide al Bot que le resuelva un Trabajo Práctico, que elija la opción correcta de un cuestionario o que responda sobre un tema ausente en la bibliografía aprobada, **cuando** el Bot genera la respuesta, **entonces** se niega a entregar la solución resuelta (ofreciendo en su lugar pistas o preguntas guía) o informa que el tema no figura en el material habilitado por el profesor, sin que las claves de respuestas de las actividades entren jamás al contexto del modelo (`RN-12`, `RN-13`).
+  3. **Dado** un alumno cuya aula tiene un `Examen` en curso según la hora oficial del servidor, **cuando** intenta abrir o enviar una consulta al Bot (o cuando una respuesta iniciada antes termina después del comienzo del examen), **entonces** el servidor bloquea la entrega y devuelve un aviso claro indicando que el tutor IA no está disponible durante exámenes (`RN-13`).
+  4. **Dado** un usuario con rol `Padre / Tutor` o un alumno que solicita al Bot modificar una nota, entrega o tarea, **entonces** el servidor rechaza el uso del Bot para padres (`403`) y declina cualquier modificación de datos (`RN-14`, `RN-16`).
 
-#### RF-BOT-002 · Consultar tareas, reuniones y anuncios
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El bot debe poder responder sobre las tareas, reuniones y anuncios del usuario en todas sus oficinas.
-**Criterios de aceptación:**
-1. Dada la consulta "¿qué tareas tengo pendientes?", entonces el bot lista las tareas asignadas al usuario, indicando oficina y habitación.
-2. Dada la consulta sobre reuniones o anuncios, entonces responde con datos de las habitaciones a las que el usuario tiene acceso.
-3. Dada una consulta sobre una habitación sin acceso, entonces el bot no revela su contenido.
+#### RF-BOT-003 · Repaso Diario en la primera conexión y pregunta diaria de estudio para sumar racha
+- **Prioridad:** Must · **Fase:** MVP Core · **Actor:** `Alumno`, `Profesor`, `Dueño / Admin`, `Sistema`
+- **Precondiciones:** Primera conexión autenticada del usuario en la fecha calendario actual bajo la zona horaria `America/Argentina/Buenos_Aires`, rol distinto de `Padre / Tutor` y sin examen en curso.
+- **Postcondiciones:** Se inserta de forma atómica el registro `DailyReviewDelivery (user_id, local_date)`, se presenta el resumen diario (con fallback estructurado si falla la IA) y, cuando el alumno responde correctamente la pregunta diaria de repaso sobre el material del aula, se acredita su hito diario de racha (`RN-08`, `RN-15`).
+- **Descripción:** El sistema debe presentar proactivamente una sola vez por día (en hora de Argentina) un **Repaso Diario** personalizado con actividades próximas a vencer, calificaciones y avisos recientes, e incluir para el alumno una pregunta breve de repaso sobre el material habilitado cuya resolución válida contabiliza para su **Racha Diaria**.
+- **Criterios de aceptación:**
+  1. **Dado** un alumno o profesor en su primera conexión autenticada del día según `America/Argentina/Buenos_Aires`, **cuando** ingresa a la aplicación (incluso si abre múltiples pestañas concurrentes), **entonces** el servidor registra de manera atómica `DailyReviewDelivery` y muestra el Repaso Diario exactamente una vez en ese día calendario (`RN-15`).
+  2. **Dado** un alumno que responde correctamente la pregunta diaria de repaso propuesta sobre el material aprobado del aula, **cuando** el servidor valida la respuesta, **entonces** registra la actividad académica del día e incrementa su `Streak` si aún no había sumado su hito diario (`RN-08`, `RN-15`).
+  3. **Dado** que Amazon Bedrock no esté disponible o exceda el tiempo de espera durante la primera conexión del día, **entonces** el servidor entrega un resumen estructurado construido directamente desde los datos persistidos en PostgreSQL sin bloquear el ingreso del usuario (`RN-15`).
 
-#### RF-BOT-003 · Respeto de permisos
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El bot no debe acceder a información que el usuario no podría ver por sí mismo.
-**Criterios de aceptación:**
-1. Dado un usuario sin acceso a una habitación, entonces el bot nunca incluye su contenido en una respuesta ni en el repaso.
-2. Dado un usuario que perdió el acceso, entonces el bot deja de usar ese contenido de inmediato.
-3. Dado un usuario que le pide al bot ignorar los permisos, entonces el bot lo rechaza.
-
-#### RF-BOT-004 · Solo lectura
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El bot no debe poder modificar datos de la plataforma.
-**Criterios de aceptación:**
-1. Dado un pedido del tipo "creá una tarea" o "borrá este anuncio", entonces el bot responde que no puede hacerlo y, si corresponde, indica cómo hacerlo desde la aplicación.
-2. Dada cualquier conversación con el bot, entonces no se modifica ninguna tarea, anuncio, reunión, acceso ni mensaje.
-
-#### RF-BOT-005 · Resumen de actividad
-**Prioridad:** Could · **Fase:** MVP · **Actor:** Usuario
-**Descripción:** El bot debe poder resumir la actividad reciente de una habitación u oficina (mensajes, tareas y anuncios) a la que el usuario tiene acceso.
-**Criterios de aceptación:**
-1. Dado un pedido de resumen de una habitación con acceso, entonces el bot resume la actividad reciente.
-2. Dado un pedido sobre una habitación sin acceso, entonces el bot lo rechaza.
-
-#### RF-BOT-006 · Repaso diario en la primera conexión
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** En la primera conexión autenticada de cada día, el bot debe presentar un repaso del día con: tareas pendientes y próximas a vencer, reuniones del día y anuncios nuevos, de todas las oficinas del usuario y solo de las habitaciones a las que tiene acceso.
-**Criterios de aceptación:**
-1. Dado un usuario que inicia sesión por primera vez en el día, entonces ve el repaso sin pedirlo.
-2. Dado el repaso, entonces agrupa la información por oficina y habitación.
-3. Dado un usuario sin nada pendiente, entonces el repaso lo indica en lugar de quedar vacío.
-4. Dado el repaso, entonces solo informa y sugiere próximos pasos; no ejecuta ninguna acción.
-
-#### RF-BOT-007 · Una sola vez por día
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** El repaso debe mostrarse una sola vez por usuario y por día, según la zona horaria America/Argentina/Buenos_Aires.
-**Criterios de aceptación:**
-1. Dado un usuario que ya vio el repaso hoy, cuando recarga, cambia de habitación o se reconecta, entonces no se muestra de nuevo.
-2. Dado un cambio de día en Argentina, entonces el repaso vuelve a mostrarse en la siguiente primera conexión.
-3. Dadas dos conexiones simultáneas del mismo usuario, entonces el repaso se presenta una sola vez.
-4. Dado un usuario que cierra el repaso, entonces puede volver a consultarlo desde el bot durante el día.
-
-#### RF-BOT-008 · Repaso sin IA
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Si el servicio de IA no está disponible, el repaso debe mostrarse como un resumen estructurado armado con los datos del usuario, sin texto generado.
-**Criterios de aceptación:**
-1. Dado un servicio de IA no disponible, entonces el usuario ve igualmente sus tareas, reuniones y anuncios del día.
-2. Dado el repaso sin IA, entonces se cuenta como entregado ese día.
-
-#### RF-BOT-009 · Redacción del repaso con IA
-**Prioridad:** Could · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Cuando el servicio de IA está disponible, el repaso debe presentarse con un texto redactado en lenguaje natural a partir de los datos del usuario.
-**Criterios de aceptación:**
-1. Dado un servicio de IA disponible, entonces el repaso se muestra con texto generado que no incluye datos fuera de los permisos del usuario.
-2. Dada una respuesta de IA con error, entonces se aplica RF-BOT-008.
-
-#### RF-BOT-010 · Ejecución de acciones por el bot
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Usuario
-**Descripción:** El bot debe poder crear, actualizar o completar tareas a pedido del usuario, con confirmación explícita y sujeto a sus permisos.
-**Criterios de aceptación:**
-1. Dado un pedido de crear una tarea en una habitación con acceso, cuando el usuario confirma, entonces la tarea se crea.
-2. Dado un pedido en una habitación sin acceso, entonces el bot lo rechaza.
-
-#### RF-BOT-011 · Reacción del bot a eventos
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Sistema
-**Descripción:** El bot debe poder reaccionar a eventos del sistema (por ejemplo, avisar de una tarea próxima a vencer).
-**Criterios de aceptación:**
-1. Dado un evento relevante para el usuario, entonces el bot lo comunica sin que el usuario deba preguntar.
+#### RF-BOT-004 · Auditoría y métricas docentes de consultas frecuentes al Bot (`BotConversationLog`)
+- **Prioridad:** Should · **Fase:** MVP Extendido · **Actor:** `Profesor`, `Dueño / Admin de Escuela`
+- **Precondiciones:** El actor tiene autoridad de `Profesor` sobre el aula.
+- **Postcondiciones:** El docente visualiza un resumen de uso, temas consultados y trazabilidad pedagógica del Bot en su aula.
+- **Descripción:** El sistema debe registrar metadatos y registros auditables de las interacciones con el Bot por aula (`BotConversationLog` / `BotConversation`) para que el profesor pueda identificar qué materiales o temas generan mayor cantidad de dudas entre sus alumnos y ajustar su enseñanza.
+- **Criterios de aceptación:**
+  1. **Dado** un profesor en el panel de su aula, **cuando** consulta la sección de auditoría del Bot Guía de Estudio, **entonces** visualiza las métricas de uso y los temas/materiales más consultados dentro de su aula, sin poder acceder a registros de aulas ajenas (`RN-01`, `RN-14`).
 
 ---
 
-### 5.10 Objetos interactuables (OBJ)
+## 6. Requerimientos No Funcionales (`RNF-001` a `RNF-010`)
 
-Los objetos están modelados en la habitación y el usuario interactúa con ellos. La estructura debe permitir **sumar objetos nuevos con el tiempo** sin alterar los existentes.
-
-#### RF-OBJ-001 · Interacción con un objeto
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** El usuario debe poder interactuar con los objetos de la habitación (con el mouse, el toque o acercándose) para abrir su herramienta o ejecutar su acción.
-**Criterios de aceptación:**
-1. Dado un objeto interactuable, cuando el usuario lo selecciona o se acerca, entonces se abre su interfaz o se ejecuta su acción.
-2. Dado un objeto con el que el usuario puede interactuar, entonces el sistema lo indica visualmente (por ejemplo, resaltándolo).
-3. Dado un objeto cuya herramienta requiere un permiso que el usuario no tiene, entonces el sistema no abre la herramienta y muestra un mensaje.
-
-#### RF-OBJ-002 · Objetos del MVP
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Miembro
-**Descripción:** Cada habitación debe incluir como mínimo estos objetos:
-**Criterios de aceptación:**
-1. Dado el objeto de tablero (por ejemplo, un corcho), cuando el usuario interactúa, entonces se abre el tablero de tareas de esa habitación.
-2. Dado el objeto de cartelera, cuando el usuario interactúa, entonces se abre la cartelera y la lista de reuniones de esa habitación.
-3. Dado el objeto de puerta, cuando el usuario interactúa, entonces ve las habitaciones a las que puede pasar y puede cambiar de habitación (RF-HAB-009).
-4. Dado el objeto del bot (por ejemplo, un robot o mascota), cuando el usuario interactúa, entonces se abre la conversación con el bot (RF-BOT-001).
-5. ⚠️ Los objetos concretos del MVP están por confirmar; el chat y las notificaciones se acceden desde la interfaz fija.
-
-#### RF-OBJ-003 · Registro extensible de tipos de objeto
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Cada tipo de objeto debe definirse con su nombre, su interfaz y el permiso que exige, de modo que agregar un tipo nuevo no modifique el funcionamiento de los existentes.
-**Criterios de aceptación:**
-1. Dado un tipo de objeto nuevo registrado, entonces puede colocarse en una habitación y funcionar sin cambios en los objetos ya existentes.
-2. Dado un tipo de objeto, entonces declara qué permiso requiere para usarse.
-3. Dado un tipo de objeto sin interfaz (decorativo), entonces puede responder solo con una animación.
-
-#### RF-OBJ-004 · Permisos del objeto
-**Prioridad:** Must · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Interactuar con un objeto no otorga permisos sobre el recurso asociado (RN-20).
-**Criterios de aceptación:**
-1. Dado un usuario sin permiso de Líder, cuando interactúa con la cartelera, entonces puede leerla pero no ve la opción de publicar.
-2. Dado un usuario que intenta una acción protegida saltándose la interfaz del objeto, entonces el sistema responde 403.
-
-#### RF-OBJ-005 · Posición de los objetos
-**Prioridad:** Should · **Fase:** MVP · **Actor:** Sistema
-**Descripción:** Cada habitación debe tener una distribución de objetos definida y persistente.
-**Criterios de aceptación:**
-1. Dada una habitación, cuando un usuario entra, entonces ve los objetos en la misma posición que la última vez.
-2. Dada una habitación nueva, entonces se crea con la distribución inicial por defecto (con los objetos del MVP).
-
-#### RF-OBJ-006 · Objetos adicionales
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Miembro
-**Descripción:** Se deben poder incorporar nuevos objetos con sus herramientas: calendario, teléfono (mensajes privados), computadora o pizarra (notas compartidas) e indicador de estado.
-**Criterios de aceptación:**
-1. Dado un objeto nuevo registrado, entonces el usuario puede usar su herramienta como cualquier otro objeto.
-
-#### RF-OBJ-007 · Personalización de la habitación
-**Prioridad:** Could · **Fase:** Evolución · **Actor:** Dueño, Administrador
-**Descripción:** El Dueño y el Administrador deben poder elegir, mover y decorar los objetos de una habitación.
-**Criterios de aceptación:**
-1. Dado un cambio de distribución, cuando se guarda, entonces los usuarios que entran después ven la nueva disposición.
-
+| ID | Categoría | Especificación y criterio de verificación |
+| --- | --- | --- |
+| **RNF-001** | **Rendimiento 3D y alternativa 2D** | La escena del Aula 3D en Three.js + React Three Fiber debe mantener una navegación fluida en equipos de escritorio estándar y ofrecer en todo momento la conmutación inmediata al **Modo 2D Clásico** para dispositivos móviles, redes limitadas o equipos sin aceleración WebGL óptima. |
+| **RNF-002** | **Seguridad de credenciales y sesiones** | Las contraseñas se almacenan exclusivamente mediante hash seguro con sal por contraseña (`Argon2` o `bcrypt`). Los secretos de invitaciones y tokens de sesión persistidos en servidor se guardan hasheados. El cierre de sesión o restablecimiento de contraseña invalida las sesiones activas en el servidor. |
+| **RNF-003** | **Control de acceso basado en roles y contexto (RBAC)** | Todo endpoint HTTP en `NestJS` y todo evento o ingreso a sala en `Colyseus` verifica autenticación, membresía escolar/de aula o vínculo parental y rol en servidor, devolviendo `401`, `403` o `404` según `RN-04`. Ninguna respuesta pública expone hashes, trazas internas ni consultas SQL. |
+| **RNF-004** | **Privacidad y protección de datos de menores** | Se recolecta únicamente la información mínima necesaria para la actividad escolar. Los datos de alumnos nunca se cruzan entre aulas o escuelas; los padres solo acceden a sus hijos vinculados; los archivos adjuntos residen en S3 privado con URLs firmadas temporales; y los logs de servidor y de IA redactan/omiten cuerpos de mensajes, correos y prompts con información personal. |
+| **RNF-005** | **Accesibilidad e inclusión** | Todas las funciones esenciales del producto (actividades, entregas, calificaciones, material, avisos, chat, tienda y Bot IA) son operables sin depender de precisión con el mouse sobre el lienzo 3D gracias al **Modo 2D Clásico**, con soporte de teclado, foco visible y equivalentes táctiles. |
+| **RNF-006** | **Integridad transaccional e idempotencia** | Operaciones compuestas (registro con creación de escuela/aula, aceptación de invitación, calificación con acreditación de puntos ponderados, compras en tienda y entrega única del Repaso Diario) se ejecutan dentro de transacciones ACID en PostgreSQL mediante Prisma ORM y cuentan con llaves de unicidad/idempotencia ante peticiones concurrentes. |
+| **RNF-007** | **Aislamiento de IA y límites de consumo** | Toda invocación a **Amazon Bedrock** se realiza desde `NestJS` mediante roles IAM de mínimo privilegio (nunca desde el navegador ni desde Colyseus), con límites de tasa (*rate limiting*) por usuario y aula, tiempos de espera acotados y degradación elegante (*fallback*) cuando el servicio externo falle. |
+| **RNF-008** | **Separación arquitectónica y escalabilidad** | `NestJS` (API REST, reglas de negocio y persistencia en RDS PostgreSQL) y `Colyseus` (estado efímero de salas en vivo, avatares y controles sincrónicos) operan como servicios lógicamente desacoplados sobre contenedores en `AWS ECS / Fargate` detrás de un `Application Load Balancer` con TLS (`HTTPS`/`WSS`). |
+| **RNF-009** | **Mantenibilidad e infraestructura como código** | El esquema relacional se gestiona exclusivamente mediante migraciones versionadas de **Prisma** y la infraestructura en AWS mediante **Terraform** en el repositorio backend, verificados por pipelines de integración continua (`GitHub Actions`). |
+| **RNF-010** | **Manejo de zonas horarias y tiempo** | Los instantes se almacenan sin ambigüedad horaria; las reglas de corte diario (Repaso Diario y Racha) se calculan exclusivamente con el reloj del servidor en la zona horaria `America/Argentina/Buenos_Aires` ([`rules/data-and-time.md`](../rules/data-and-time.md)). |
 
 ---
 
-## 6. Resumen de requisitos
+## 7. Entidades Conceptuales
 
-Los conteos se calcularon sobre la sección 5 al armar la versión 0.1. Si se agregan, quitan o repriorizan requisitos a mano, hay que actualizar esta sección y el índice.
+Esta sección describe el modelo conceptual de entidades del dominio escolar derivado de los requerimientos funcionales y alineado con el contrato relacional de [`rules/data.md`](../rules/data.md) y la sección 6.4 del [`master-document.md`](../master-document.md#64-modelo-de-información-general):
 
-| Prefijo | Módulo | Requisitos | Must | Should | Could | MVP | Evolución |
-|---|---|---|---|---|---|---|---|
-| AUT | Cuenta y autenticación | 10 | 5 | 2 | 3 | 7 | 3 |
-| OFI | Oficinas e invitaciones | 18 | 9 | 7 | 2 | 16 | 2 |
-| HAB | Habitaciones y accesos | 13 | 8 | 3 | 2 | 11 | 2 |
-| MUN | Mundo 3D, avatar y presencia | 16 | 8 | 4 | 4 | 13 | 3 |
-| TAR | Tareas (Kanban) | 14 | 7 | 5 | 2 | 13 | 1 |
-| CAR | Cartelera y reuniones | 12 | 8 | 2 | 2 | 10 | 2 |
-| CHA | Chat | 10 | 7 | 1 | 2 | 8 | 2 |
-| NOT | Notificaciones | 7 | 1 | 3 | 3 | 5 | 2 |
-| BOT | Bot y repaso diario | 11 | 2 | 5 | 4 | 9 | 2 |
-| OBJ | Objetos interactuables | 7 | 4 | 1 | 2 | 5 | 2 |
-| **Total** | | **118** | **59** | **33** | **26** | **97** | **21** |
-
-### Índice de requisitos
-
-| ID | Requisito | Prioridad | Fase | Actor |
-|---|---|---|---|---|
-| RF-AUT-001 | Registro de usuario | Must | MVP | Visitante |
-| RF-AUT-002 | Inicio de sesión | Must | MVP | Visitante |
-| RF-AUT-003 | Sesión con vencimiento y renovación | Must | MVP | Usuario |
-| RF-AUT-004 | Cierre de sesión | Must | MVP | Usuario |
-| RF-AUT-005 | Protección de rutas y operaciones | Must | MVP | Sistema |
-| RF-AUT-006 | Recuperación de contraseña | Should | MVP | Visitante |
-| RF-AUT-007 | Gestión del perfil | Should | MVP | Usuario |
-| RF-AUT-008 | Cambio de contraseña con sesión iniciada | Could | Evolución | Usuario |
-| RF-AUT-009 | Límite de intentos fallidos de inicio de sesión | Could | Evolución | Sistema |
-| RF-AUT-010 | Verificación de email al registrarse | Could | Evolución | Visitante |
-| RF-OFI-001 | Creación automática de la oficina propia | Must | MVP | Sistema |
-| RF-OFI-002 | Lista de oficinas del usuario | Must | MVP | Usuario |
-| RF-OFI-003 | Ingreso a una oficina | Must | MVP | Miembro |
-| RF-OFI-004 | Edición de datos de la oficina | Should | MVP | Dueño, Administrador |
-| RF-OFI-005 | Generación de enlace de invitación | Must | MVP | Dueño, Administrador |
-| RF-OFI-006 | Revocación de invitaciones | Must | MVP | Dueño, Administrador |
-| RF-OFI-007 | Lista de invitaciones vigentes | Should | MVP | Dueño, Administrador |
-| RF-OFI-008 | Aceptación de una invitación | Must | MVP | Visitante, Usuario |
-| RF-OFI-009 | Vencimiento automático de invitaciones | Must | MVP | Sistema |
-| RF-OFI-010 | Lista de miembros | Must | MVP | Miembro |
-| RF-OFI-011 | Nombrar y quitar Administradores | Should | MVP | Dueño |
-| RF-OFI-012 | Expulsión de un miembro | Must | MVP | Dueño, Administrador |
-| RF-OFI-013 | Abandono de la oficina | Should | MVP | Administrador, Líder, Miembro |
-| RF-OFI-014 | Baja lógica de la oficina | Should | MVP | Dueño |
-| RF-OFI-015 | Recuperación de la oficina | Should | MVP | Dueño |
-| RF-OFI-016 | Eliminación definitiva tras el plazo | Should | MVP | Sistema |
-| RF-OFI-017 | Invitación por email | Could | Evolución | Dueño, Administrador |
-| RF-OFI-018 | Solicitud de ingreso a una oficina | Could | Evolución | Usuario, Dueño, Administrador |
-| RF-HAB-001 | Habitación principal | Must | MVP | Sistema |
-| RF-HAB-002 | Creación de habitaciones | Must | MVP | Dueño, Administrador |
-| RF-HAB-003 | Límite de habitaciones adicionales | Must | MVP | Sistema |
-| RF-HAB-004 | Edición de habitaciones | Should | MVP | Dueño, Administrador |
-| RF-HAB-005 | Eliminación de habitaciones | Should | MVP | Dueño, Administrador |
-| RF-HAB-006 | Otorgar y quitar acceso a una habitación | Must | MVP | Dueño, Administrador, Líder |
-| RF-HAB-007 | Panel de accesos | Must | MVP | Dueño, Administrador |
-| RF-HAB-008 | Asignación de Líderes | Should | MVP | Dueño, Administrador |
-| RF-HAB-009 | Cambio de habitación | Must | MVP | Miembro |
-| RF-HAB-010 | Efecto de la pérdida de acceso | Must | MVP | Sistema |
-| RF-HAB-011 | Verificación de acceso en el servidor | Must | MVP | Sistema |
-| RF-HAB-012 | Acceso de solo lectura a una habitación | Could | Evolución | Dueño, Administrador, Líder |
-| RF-HAB-013 | Límite configurable de habitaciones | Could | Evolución | Dueño |
-| RF-MUN-001 | Escena isométrica de la habitación | Must | MVP | Miembro |
-| RF-MUN-002 | Movimiento con teclado | Must | MVP | Miembro |
-| RF-MUN-003 | Movimiento por clic a destino | Must | MVP | Miembro |
-| RF-MUN-004 | Controles táctiles | Should | MVP | Miembro |
-| RF-MUN-005 | Colisiones y límites del espacio | Must | MVP | Sistema |
-| RF-MUN-006 | Avatar propio y de otros | Must | MVP | Miembro |
-| RF-MUN-007 | Sincronización de movimiento en tiempo real | Must | MVP | Miembro |
-| RF-MUN-008 | Entrada, salida y desconexión de avatares | Must | MVP | Sistema |
-| RF-MUN-009 | Reconexión | Should | MVP | Miembro |
-| RF-MUN-010 | Lista de presencia | Must | MVP | Miembro |
-| RF-MUN-011 | Personalización y persistencia del avatar | Should | MVP | Usuario |
-| RF-MUN-012 | Acceso a las funciones sin apuntar a objetos 3D | Should | MVP | Miembro |
-| RF-MUN-013 | Uso en pantallas pequeñas | Could | MVP | Miembro |
-| RF-MUN-014 | Estados de actividad | Could | Evolución | Miembro |
-| RF-MUN-015 | Emotes y acciones sociales | Could | Evolución | Miembro |
-| RF-MUN-016 | Sonido ambiente y efectos | Could | Evolución | Usuario |
-| RF-TAR-001 | Ver el tablero de una habitación | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-002 | Crear tarea | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-003 | Editar tarea | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-004 | Mover tarea entre columnas | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-005 | Eliminar tarea | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-006 | Columnas por defecto | Must | MVP | Sistema |
-| RF-TAR-007 | Configurar columnas del tablero | Should | MVP | Líder, Administrador, Dueño |
-| RF-TAR-008 | Asignar responsable | Must | MVP | Miembro con acceso a la habitación |
-| RF-TAR-009 | Tareas huérfanas | Should | MVP | Sistema |
-| RF-TAR-010 | Vista de lista y filtros | Should | MVP | Miembro con acceso a la habitación |
-| RF-TAR-011 | Actualización del tablero en vivo | Should | MVP | Miembro con acceso a la habitación |
-| RF-TAR-012 | Fecha límite y vencidas | Should | MVP | Miembro con acceso a la habitación |
-| RF-TAR-013 | Mis tareas | Could | MVP | Usuario |
-| RF-TAR-014 | Comentarios, etiquetas y adjuntos en tareas | Could | Evolución | Miembro con acceso a la habitación |
-| RF-CAR-001 | Ver la cartelera | Must | MVP | Miembro con acceso a la habitación |
-| RF-CAR-002 | Publicar un anuncio | Must | MVP | Líder, Administrador, Dueño |
-| RF-CAR-003 | Editar y eliminar anuncios propios | Must | MVP | Líder, Administrador, Dueño |
-| RF-CAR-004 | Gestionar anuncios ajenos | Must | MVP | Administrador, Dueño |
-| RF-CAR-005 | Crear una reunión | Must | MVP | Líder, Administrador, Dueño |
-| RF-CAR-006 | Editar y cancelar reuniones | Must | MVP | Líder, Administrador, Dueño |
-| RF-CAR-007 | Confirmar asistencia | Must | MVP | Miembro con acceso a la habitación |
-| RF-CAR-008 | Ver asistentes | Should | MVP | Miembro con acceso a la habitación |
-| RF-CAR-009 | Lista de reuniones | Must | MVP | Miembro con acceso a la habitación |
-| RF-CAR-010 | Vista de calendario | Should | MVP | Miembro con acceso a la habitación |
-| RF-CAR-011 | Anuncio para toda la oficina | Could | Evolución | Administrador, Dueño |
-| RF-CAR-012 | Recordatorios y reuniones recurrentes | Could | Evolución | Líder, Administrador, Dueño |
-| RF-CHA-001 | Canal de la oficina | Must | MVP | Miembro |
-| RF-CHA-002 | Canal de la habitación | Must | MVP | Miembro con acceso a la habitación |
-| RF-CHA-003 | Elegir el canal de envío | Must | MVP | Miembro |
-| RF-CHA-004 | Enviar mensaje | Must | MVP | Miembro |
-| RF-CHA-005 | Recepción en tiempo real | Must | MVP | Miembro |
-| RF-CHA-006 | Historial persistente | Must | MVP | Miembro |
-| RF-CHA-007 | Control de acceso del historial | Must | MVP | Sistema |
-| RF-CHA-008 | Indicador de mensajes no leídos | Should | MVP | Miembro |
-| RF-CHA-009 | Mensajería privada | Could | Evolución | Miembro |
-| RF-CHA-010 | Editar y eliminar mensajes | Could | Evolución | Miembro, Administrador, Dueño |
-| RF-NOT-001 | Centro de notificaciones | Should | MVP | Usuario |
-| RF-NOT-002 | Eventos que generan notificación | Should | MVP | Sistema |
-| RF-NOT-003 | Marcar notificaciones como leídas | Should | MVP | Usuario |
-| RF-NOT-004 | Notificaciones respetan permisos | Must | MVP | Sistema |
-| RF-NOT-005 | Notificaciones en tiempo real | Could | MVP | Usuario |
-| RF-NOT-006 | Notificaciones por email | Could | Evolución | Usuario |
-| RF-NOT-007 | Preferencias de notificación | Could | Evolución | Usuario |
-| RF-BOT-001 | Conversar con el bot | Should | MVP | Usuario |
-| RF-BOT-002 | Consultar tareas, reuniones y anuncios | Should | MVP | Usuario |
-| RF-BOT-003 | Respeto de permisos | Must | MVP | Sistema |
-| RF-BOT-004 | Solo lectura | Must | MVP | Sistema |
-| RF-BOT-005 | Resumen de actividad | Could | MVP | Usuario |
-| RF-BOT-006 | Repaso diario en la primera conexión | Should | MVP | Sistema |
-| RF-BOT-007 | Una sola vez por día | Should | MVP | Sistema |
-| RF-BOT-008 | Repaso sin IA | Should | MVP | Sistema |
-| RF-BOT-009 | Redacción del repaso con IA | Could | MVP | Sistema |
-| RF-BOT-010 | Ejecución de acciones por el bot | Could | Evolución | Usuario |
-| RF-BOT-011 | Reacción del bot a eventos | Could | Evolución | Sistema |
-| RF-OBJ-001 | Interacción con un objeto | Must | MVP | Miembro |
-| RF-OBJ-002 | Objetos del MVP | Must | MVP | Miembro |
-| RF-OBJ-003 | Registro extensible de tipos de objeto | Must | MVP | Sistema |
-| RF-OBJ-004 | Permisos del objeto | Must | MVP | Sistema |
-| RF-OBJ-005 | Posición de los objetos | Should | MVP | Sistema |
-| RF-OBJ-006 | Objetos adicionales | Could | Evolución | Miembro |
-| RF-OBJ-007 | Personalización de la habitación | Could | Evolución | Dueño, Administrador |
+| Entidad conceptual (`docs` / `rules/data.md`) | Propósito en el dominio escolar | Atributos y relaciones principales |
+| --- | --- | --- |
+| **`School`** | Unidad institucional de aislamiento en el camino Escuela. | Posee un único `Owner`, múltiples membresías institucionales (`SchoolMember`) y múltiples aulas (`Classroom`). Soporta baja lógica (`deleted_at`). |
+| **`User` / `Session` / `AvatarConfiguration`** | Cuenta de usuario, sesión autenticada y apariencia persistente del avatar 3D. | Email único normalizado, `display_name`, hash de contraseña, configuración visual 1:1 (`AvatarConfiguration`) y sesiones revocables (`Session`). |
+| **`SchoolMember`** | Membresía de un usuario dentro de una `School`. | Une `User` y `School` con rol institucional (`Owner`, `Admin`, `Teacher`) y estado activo/inactivo. Otorga a `Owner`/`Admin` autoridad docente sobre todas las aulas de la escuela. |
+| **`Classroom`** | Aula virtual persistente (núcleo del producto). | Pertenece exactamente a una `School` o a un `Profesor independiente`. Conserva banderas de estado (`adult_mode`, `chat_muted`, `collaboration_locked`, `games_disabled`, `deleted_at`) y agrupa miembros, pupitres, actividades, material, chat, avisos, tienda y una mascota. |
+| **`ClassroomMembership` (`Enrollment`)** | Membresía de un usuario dentro de un aula (`Profesor` titular o `Alumno` matriculado). | Une `User` y `Classroom` con unicidad por `(classroom_id, user_id)` y soporte de baja lógica (`deleted_at`). |
+| **`ParentStudentLink` (`ParentLink`)** | Vínculo familiar explícito entre un `Padre / Tutor` y un `Alumno` en el contexto escolar. | Une al usuario padre con el usuario hijo (máximo **2** tutores activos por alumno). Es la única fuente de autorización para la vista de padres y se rechaza si `adult_mode = true`. |
+| **`Invitation`** | Invitación por email o código/enlace de incorporación a una escuela o aula. | Almacena únicamente el hash del secreto, email o alcance destino, rol asignado, fecha de expiración (`expires_at`), creador y estado (vigente, usada, revocada). |
+| **`Desk`** | Pupitre / asiento asignable dentro del aula virtual. | Pertenece a un `Classroom` y puede asociarse a un alumno matriculado para interacciones de pupitre, personalización visual y bloqueo de posición durante `Freeze`. |
+| **`StudyMaterial` (`Material` / `BotConfig` / `AllowedMaterial`)** | Bibliografía y archivos docentes subidos al aula y configuración de uso por el Bot IA. | Pertenece a un `Classroom` y a su autor docente; referencia el objeto privado en `Amazon S3` e indica si está habilitado e indexado para consultas RAG del Bot (`is_bot_enabled`). |
+| **`Activity` (`Question` / `Option`)** | Actividad académica publicada por el profesor (`TP` o `Examen`). | Pertenece a un `Classroom`; define formato (`Archivo` u `Opción Múltiple`), consigna, `due_date`/ventana de examen, `max_score` (`0–100`), `allow_late`, `weight_multiplier` y preguntas/opciones con respuesta correcta protegida en servidor. |
+| **`Submission` y `Grade`** | Entrega realizada por un alumno para una actividad y su calificación docente o automática. | `Submission` une `Activity` y `Alumno` (referenciando archivos en S3 o respuestas elegidas, timestamp del servidor e indicador `is_late`). `Grade` registra nota `0–100`, `feedback`, docente evaluador y referencia al asiento de puntos generado. |
+| **`PointTransaction` (`PointsTransaction`)** | Asiento inmutable en el libro mayor de puntos del alumno. | Pertenece al `Alumno`; registra monto positivo (nota ponderada) o negativo (compra en tienda / aporte a mascota) o ajuste compensatorio, con restricción única `(source_type, source_id)` para evitar duplicados. |
+| **`Streak`** | Estado de racha de estudio del alumno. | Uno por alumno; almacena racha actual, mejor racha histórica y la última fecha local (`America/Argentina/Buenos_Aires`) en que completó un hito académico válido (máximo 1 por día). |
+| **`Badge` (`Medal`) y `StudentBadge`** | Catálogo de medallas/logros y adjudicaciones por alumno. | `StudentBadge` une de forma única `(student_id, badge_id)` con la fecha de obtención del logro. |
+| **`ShopItem` y `StudentPurchase` (`ClassroomItem`)** | Catálogo de ítems de la tienda y compras/inventario del alumno o del aula. | `ShopItem` define tipo (ítem de aula, accesorio de avatar/pupitre o accesorio de mascota) y `points_cost`. `StudentPurchase` / `ClassroomItem` registra la adquisición atómica e idempotente. |
+| **`ClassroomPet` (`Pet` / `PetAccessory`)** | Mascota motivacional única del aula y sus accesorios/aportes grupales. | Relación 1:1 con `Classroom` (independiente del Bot IA); registra nivel/contribución acumulada (`pet_contribution`) y accesorios desbloqueados y equipados. |
+| **`Announcement`, `ChatMessage` (`Message`) y `Mention`** | Comunicaciones persistentes del aula y conversaciones Padre ↔ Profesor. | `Announcement` pertenece al tablón del aula; `ChatMessage` pertenece al canal del aula o a una conversación `ParentStudentLink`, incluye estado de moderación docente y referencias `@` resueltas en `Mention`. |
+| **`BotConversationLog` (`BotConversation` / `DailyReviewDelivery`)** | Registro de consultas al Bot Guía de Estudio y control de entrega única del Repaso Diario. | `BotConversationLog` vincula usuario, aula y material citado para auditoría pedagógica docente. `DailyReviewDelivery` garantiza unicidad por `(user_id, local_date)` en hora de Argentina. |
+| **`Notification` y `ActivityMetric`** | Notificaciones al usuario y métricas agregadas de participación escolar. | `Notification` registra estado de lectura in-app y envío idempotente por email `(notification_id, channel)`. `ActivityMetric` consolida tiempo conectado por intervalo, entregas y participación por alumno y aula. |
 
 ---
 
-## 7. Entidades conceptuales
+## 8. Matriz de Trazabilidad
 
-Entidades del dominio que se desprenden de los requisitos. Es una vista **conceptual**, no el modelo de datos definitivo (ese se define en el diseño de datos).
+### 8.1 Trazabilidad entre Requerimientos Funcionales (`RF`), Reglas de Negocio (`RN`) e Historias de Usuario (`HU`)
 
-| Entidad | Descripción | Relaciones principales |
-|---|---|---|
-| Usuario | Persona con cuenta: email, nombre visible, contraseña protegida | Tiene una oficina propia, muchas membresías, un avatar y notificaciones |
-| ConfiguraciónAvatar | Apariencia persistente del avatar | Uno por usuario |
-| Oficina | Espacio de trabajo con estado (activa o dada de baja y fecha de baja) | Tiene un Dueño, muchas membresías y habitaciones |
-| Membresía | Pertenencia de un usuario a una oficina: rol (Dueño, Administrador, Miembro) y estado (activa o dada de baja) | Une Usuario y Oficina |
-| Invitación | Enlace con vencimiento, límite de usos y estado | Pertenece a una oficina, la crea un Dueño o Administrador |
-| Habitación | Espacio de la oficina; puede ser la principal | Tiene accesos, líderes, objetos, tareas, anuncios, reuniones y mensajes |
-| AccesoHabitación | Permiso de un miembro para entrar a una habitación | Une Membresía y Habitación |
-| LiderazgoHabitación | Marca de Líder de un miembro en una habitación | Une Membresía y Habitación |
-| ObjetoHabitación | Instancia de un tipo de objeto ubicada en una habitación | Pertenece a una habitación |
-| Columna | Columna del tablero con nombre y orden | Pertenece a una habitación |
-| Tarea | Título, descripción, responsable, fecha límite, prioridad | Pertenece a una columna y habitación; tiene un responsable opcional |
-| Anuncio | Aviso de la cartelera | Pertenece a una habitación; tiene un autor |
-| Reunión | Evento con fecha, hora y estado (activa o cancelada) | Pertenece a una habitación; tiene un creador |
-| Asistencia | Respuesta de un usuario a una reunión | Une Usuario y Reunión |
-| Mensaje | Texto enviado a un canal | Pertenece a una oficina (canal de oficina) o a una habitación (canal de habitación); tiene un autor |
-| Notificación | Aviso dirigido a un usuario, con estado de lectura | Pertenece a un usuario |
-| EntregaRepasoDiario | Registro de que el repaso del día ya se presentó | Une Usuario y fecha |
+| ID Requerimiento | Nombre del Requerimiento Funcional | Prioridad | Fase | Reglas de Negocio (`RN`) | Historias de Usuario (`HU`) |
+| --- | --- | --- | --- | --- | --- |
+| **RF-AUT-001** | Registro de cuenta y elección de camino organizacional | Must | MVP Core | RN-01, RN-02, RN-20 | HU-AUT-001 |
+| **RF-AUT-002** | Inicio de sesión, renovación y cierre de sesión | Must | MVP Core | RN-04, RN-20 | HU-AUT-002 |
+| **RF-AUT-003** | Gestión de perfil y configuración de avatar base | Must | MVP Core | RN-04, RN-09 | HU-AUT-003 |
+| **RF-AUT-004** | Vinculación Padre-Alumno (`ParentStudentLink`) | Should | MVP Extendido | RN-02, RN-04, RN-16 | HU-AUT-004 |
+| **RF-AUL-001** | Creación y configuración de aula | Must | MVP Core | RN-01, RN-03, RN-09 | HU-AUL-001 |
+| **RF-AUL-002** | Incorporación al aula por invitación o código/enlace de acceso | Must | MVP Core | RN-01, RN-02, RN-04 | HU-AUL-002 |
+| **RF-AUL-003** | Gestión de miembros, roles y bajas lógicas en el aula | Must | MVP Core | RN-01, RN-03, RN-04, RN-18 | HU-AUL-003 |
+| **RF-AUL-004** | Gestión institucional multi-aula para Dueño / Admin de Escuela | Should | MVP Extendido | RN-01, RN-02, RN-03, RN-04 | HU-AUL-004 |
+| **RF-AUL-005** | Aislamiento de recursos y verificación de acceso en servidor | Must | MVP Core | RN-01, RN-03, RN-04 | HU-AUL-005 |
+| **RF-ESP-001** | Navegación en Aula 3D isométrica y sincronización de presencia | Must | MVP Core | RN-01, RN-04, RN-19 | HU-ESP-001 |
+| **RF-ESP-002** | Interacción con pupitres (`Desk`) y objetos educativos del aula | Must | MVP Core | RN-04, RN-10, RN-17 | HU-ESP-002 |
+| **RF-ESP-003** | Conmutación en un clic al Modo 2D Clásico accesible | Must | MVP Core | RN-04, RN-17 | HU-ESP-003 |
+| **RF-ESP-004** | Personalización visual de avatar y pupitre con ítems del aula | Should | MVP Core | RN-09, RN-17 | HU-ESP-004 |
+| **RF-ACT-001** | Publicación y gestión de Actividades (TPs, Exámenes y Material) | Must | MVP Core | RN-01, RN-05, RN-06, RN-18, RN-20 | HU-ACT-001 |
+| **RF-ACT-002** | Bandeja de actividades del alumno y estados del ciclo de vida | Must | MVP Core | RN-01, RN-05, RN-17 | HU-ACT-002 |
+| **RF-ACT-003** | Realización de entregas con archivos adjuntos o respuestas de opción múltiple | Must | MVP Core | RN-04, RN-05, RN-06, RN-20 | HU-ACT-003 |
+| **RF-ACT-004** | Corrección docente, devolución (`feedback`) y acreditación automática de puntos | Must | MVP Core | RN-06, RN-07, RN-16, RN-18 | HU-ACT-004 |
+| **RF-ACT-005** | Historial académico y métricas de actividad del alumno (`ActivityMetric`) | Should | MVP Core | RN-01, RN-04, RN-19 | HU-ACT-005 |
+| **RF-ACT-006** | Vista de seguimiento académico para Padre / Tutor | Should | MVP Extendido | RN-01, RN-04, RN-16 | HU-ACT-006 |
+| **RF-GAM-001** | Billetera de puntos ponderados e historial de movimientos (`PointTransaction`) | Must | MVP Core | RN-04, RN-07, RN-18 | HU-GAM-001 |
+| **RF-GAM-002** | Racha diaria de estudio (`Streak`) y otorgamiento de Medallas (`Badge`) | Must | MVP Core | RN-08, RN-15 | HU-GAM-002 |
+| **RF-GAM-003** | Compra de ítems en la Tienda del Aula (`ShopItem` / `StudentPurchase`) | Must | MVP Core | RN-07, RN-09, RN-17 | HU-GAM-003 |
+| **RF-GAM-004** | Mascota grupal del aula (`ClassroomPet`) y aportes colaborativos | Should | MVP Extendido | RN-07, RN-09, RN-12 | HU-GAM-004 |
+| **RF-GAM-005** | Configuración docente del catálogo de premios y control de minijuegos | Should | MVP Extendido | RN-09, RN-10 | HU-GAM-005 |
+| **RF-COM-001** | Tablón de avisos importantes con notificación in-app y por email | Must | MVP Core | RN-01, RN-16, RN-18, RN-20 | HU-COM-001 |
+| **RF-COM-002** | Chat del aula en tiempo real con `@menciones` y moderación docente | Must | MVP Core | RN-01, RN-04, RN-10, RN-16, RN-18 | HU-COM-002 |
+| **RF-COM-003** | Foro de consultas por actividad y mensajería Padre ↔ Profesor | Should | MVP Core / Extendido | RN-01, RN-04, RN-16 | HU-COM-003 |
+| **RF-COM-004** | Centro de notificaciones in-app y alertas por correo electrónico | Must | MVP Core | RN-01, RN-04, RN-16, RN-18, RN-20 | HU-COM-004 |
+| **RF-VIV-001** | Congelar alumnos en sus pupitres (`Freeze`) y dirigir la atención | Must | MVP Extendido | RN-04, RN-10, RN-19 | HU-VIV-001 |
+| **RF-VIV-002** | Silenciar micrófonos de toda la sala y silenciar el chat del aula (`Mute`) | Should | MVP Extendido | RN-04, RN-10 | HU-VIV-002 |
+| **RF-VIV-003** | Llamadas de audio/video y presentaciones en vivo (WebRTC) | Should | MVP Extendido | RN-04, RN-10, RN-20 | HU-VIV-003 |
+| **RF-VIV-004** | Pizarrón interactivo colaborativo con gráficos matemáticos y fórmulas LaTeX | Should | MVP Extendido | RN-04, RN-10, RN-11, RN-19 | HU-VIV-004 |
+| **RF-BOT-001** | Ingesta y habilitación docente de bibliografía para el Bot (`StudyMaterial`) | Must | MVP Core | RN-01, RN-12, RN-20 | HU-BOT-001 |
+| **RF-BOT-002** | Consulta al Bot Guía de Estudio con RAG, citas, regla anticopia y bloqueo en exámenes | Must | MVP Core | RN-04, RN-12, RN-13, RN-14, RN-16 | HU-BOT-002 |
+| **RF-BOT-003** | Repaso Diario en la primera conexión y pregunta diaria para sumar racha | Must | MVP Core | RN-08, RN-13, RN-14, RN-15, RN-16 | HU-BOT-003 |
+| **RF-BOT-004** | Auditoría y métricas docentes de consultas frecuentes al Bot (`BotConversationLog`) | Should | MVP Extendido | RN-01, RN-04, RN-14 | HU-BOT-004 |
 
----
+### 8.2 Cobertura de los Requisitos Obligatorios del Curso (`R1`–`R8`)
 
-## 8. Trazabilidad con los requisitos del curso
-
-Los requisitos obligatorios del enunciado (R1–R8) incluyen aspectos no funcionales y de entrega que esta ERS no cubre. Se mapean los que dependen del comportamiento funcional:
-
-| Requisito del curso | Cubierto por |
-|---|---|
-| R1 · Tres entidades relacionadas, una `User` | Sección 7: Usuario, Oficina, Membresía, Habitación, Tarea, entre otras |
-| R2 · Registro, login, logout, sesión expirable, rutas protegidas, dos roles, 401/403, aislamiento | RF-AUT-001 a RF-AUT-005, RF-OFI-003, RF-OFI-011, RF-OFI-012, RF-HAB-006, RF-HAB-011, RN-03, RN-16 |
-| R5 · Flujo principal, CRUD completo de una entidad del usuario, validación y estados de interfaz | RF-TAR-001 a RF-TAR-005, RN-17 |
-| IA en el producto (recomendado) | RF-BOT-001 a RF-BOT-009 |
-| Autenticación avanzada (recomendado) | RF-AUT-006, RF-AUT-008, RF-AUT-009, RF-AUT-010 |
-
-R3, R4, R6, R7 y R8 (repositorio, despliegue, justificación técnica, seguridad de la API y defensa) quedan fuera de esta ERS.
-
----
-
-## 9. Supuestos y puntos a validar
-
-| ID | Tema | Propuesta actual | Requisitos afectados |
-|---|---|---|---|
-| P-01 | Identificador de login | Email; el nombre visible es aparte y puede repetirse | RF-AUT-001, RF-AUT-002 |
-| P-02 | Política de contraseña | Mínimo 8 caracteres, sin reglas de composición | RF-AUT-001 |
-| P-03 | Duración de sesión e invitaciones | Parámetros configurables, sin valor fijo en la ERS | RF-AUT-003, RF-OFI-005 |
-| P-04 | Email en el MVP | Entra solo para recuperar contraseña (RF-AUT-006) | RF-AUT-006 |
-| P-05 | Qué pasa si se elimina definitivamente la oficina propia | El usuario queda sin oficina propia; hay que decidir si puede crear una nueva | RF-OFI-016 |
-| P-06 | Eliminar una habitación | Borra su contenido, sin recuperación | RF-HAB-005 |
-| P-07 | Administrador sobre otros Administradores | No puede expulsarlos ni modificarlos; solo el Dueño | RF-OFI-012 |
-| P-08 | Dueño y Administrador en las habitaciones | Acceso total y permisos de Líder en todas | RN-07 |
-| P-09 | Anuncios para toda la oficina | Evolución; falta confirmar si se necesita | RF-CAR-011 |
-| P-10 | Notificar la baja de oficina a los miembros | Sí, mediante notificación | RF-NOT-002 |
-| P-11 | Historial al recuperar acceso a una habitación | Se vuelve a poder leer el historial completo | RF-CHA-007 |
-| P-12 | Objetos concretos del MVP | Tablero, cartelera, puerta y bot; chat y notificaciones desde la interfaz fija | RF-OBJ-002 |
-| P-13 | Prioridad de Administrador delegado y Líder | Should en el MVP; si el tiempo es ajustado pueden pasar a evolución, ya que el curso exige dos roles y alcanzan Dueño y Miembro | RF-OFI-011, RF-HAB-008 |
-| P-14 | Columnas por defecto del tablero | "Pendiente", "En curso" y "Hecho" | RF-TAR-006 |
-| P-15 | Documento maestro | Actualizarlo según la tabla de la sección 1.3, o declarar que esta ERS lo reemplaza en esos puntos | Toda la ERS |
-
----
-
-## 10. Cómo pasar de la ERS a las historias de usuario
-
-Cada requisito se convierte en una o más historias para el tablero Kanban. Regla práctica:
-
-- Un requisito con **pocos criterios** (hasta 3) suele ser una historia.
-- Un requisito con **muchos criterios** o varios actores se divide en historias, cada una con los criterios que le corresponden.
-- Los requisitos con fase **Evolución** van al backlog, sin planificarse en el MVP.
-
-**Plantilla de historia:**
-
-> **Título:** [verbo + resultado]
-> **Referencia:** RF-MÓDULO-NNN
-> **Historia:** Como [actor], quiero [acción], para [beneficio].
-> **Criterios de aceptación:** (copiados del requisito)
-> **Etiquetas:** módulo · prioridad (Must / Should / Could) · fase
-
-**Ejemplo a partir de RF-TAR-004:**
-
-> **Título:** Mover una tarea entre columnas
-> **Referencia:** RF-TAR-004
-> **Historia:** Como miembro con acceso a la habitación, quiero mover una tarea a otra columna, para reflejar el avance del trabajo.
-> **Criterios:** los tres primeros del requisito (persistencia, 403 sin acceso, ver el cambio en vivo) y la alternativa táctil.
-> **Etiquetas:** TAR · Must · MVP
-
-**Orden sugerido por dependencias** (para armar el backlog):
-
-1. Cuenta y autenticación (AUT) y creación de la oficina propia (RF-OFI-001 a RF-OFI-003).
-2. Habitaciones y accesos (HAB) e invitaciones (RF-OFI-005 a RF-OFI-012).
-3. Escena, avatar y presencia (MUN).
-4. Tareas (TAR), que es la base de R5.
-5. Cartelera, reuniones (CAR) y chat (CHA).
-6. Objetos interactuables (OBJ) conectados a las herramientas anteriores.
-7. Notificaciones (NOT) y bot con repaso diario (BOT).
+| Código | Requisito obligatorio IntegrarTEC 2026 | Cobertura en esta ERS |
+| --- | --- | --- |
+| **R1** | Frontend, backend y base de datos relacional con al menos 3 entidades relacionadas (una `User`). | Sección 7: `User`, `School`, `Classroom`, `ClassroomMembership`, `Activity`, `Submission`, `Grade`, `PointTransaction`, entre otras. |
+| **R2** | Registro, login, logout, hash de contraseña, sesión expirable, rutas protegidas, al menos 2 roles, respuestas `401`/`403` y aislamiento entre usuarios. | `RF-AUT-001` a `RF-AUT-004`, `RF-AUL-001` a `RF-AUL-005`, `RNF-002`, `RNF-003`, `RN-01` a `RN-04`, `RN-16`. |
+| **R5** | Flujo principal funcional en producción y CRUD completo de entidad de negocio con doble validación y estados de interfaz. | `RF-ACT-001` a `RF-ACT-005` (ciclo completo de Actividades, Entregas, Calificaciones y acreditación de Puntos Ponderados), `RNF-006`. |
+| **IA recomendada** | Integración real de modelo de IA consumido desde el backend con claves protegidas, límites y manejo de errores. | `RF-BOT-001` a `RF-BOT-004` (Bot Guía de Estudio con RAG sobre Amazon Bedrock y Repaso Diario), `RNF-007`, `RN-12` a `RN-15`. |
