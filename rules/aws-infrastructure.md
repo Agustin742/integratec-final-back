@@ -25,7 +25,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 ## Region
 
-- The environment is hosted in `sa-east-1` (Sao Paulo), because the product is sold in Argentina and realtime latency matters; higher cost is an accepted trade-off (decision D5, pending team approval; see [Technical justification](../docs/technical-justification.md#d5-aws-region)).
+- The environment is hosted in `sa-east-1` (Sao Paulo), because the product is sold in Argentina and realtime latency matters; higher cost is an accepted trade-off (decision D5, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d5-aws-region)).
 
 ## Network and access
 
@@ -48,7 +48,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 - Each repository **MUST** own its pipeline. Backend CI builds and publishes images to ECR and updates ECS; release evidence follows [Deployment and operations](./deployment-and-operations.md).
 - Images **MUST** be reproducible from a commit and tagged with an immutable identifier, not only `latest`.
-- Pipeline credentials **MUST** use GitHub Actions OIDC federation to an IAM role; long-lived IAM user access keys **MUST NOT** be stored in GitHub Secrets (decision D6, pending team approval; see [Technical justification](../docs/technical-justification.md#d6-pipeline-authentication-to-aws)).
+- Pipeline credentials **MUST** use GitHub Actions OIDC federation to an IAM role; long-lived IAM user access keys **MUST NOT** be stored in GitHub Secrets (decision D6, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d6-pipeline-authentication-to-aws)).
 - Database migrations in deployment **MUST** follow the plan required by [Data](./data.md).
 
 ## Observability and cost

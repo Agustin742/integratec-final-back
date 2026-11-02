@@ -23,7 +23,7 @@ Los siete escenarios recorren el ciclo central del MVP Core: alta de cuenta y se
 
 Todo lo que sigue es **diseño propuesto (to-be)**, no relevamiento de implementación: el repositorio solo contiene documentación y no hay código de aplicación ([estado del repositorio](../../../README.md)). Por eso no existen endpoints, verbos, DTOs ni payloads definitivos, y los eventos son ilustrativos. Los nombres de componentes (`AuthService`, `InternalAuthController`, `MovementValidator`, etc.) coinciden con el [diseño de clases](../03-structural/class-design.md) y las entidades con el [modelo de datos](../03-structural/data-model.md), ambos también propuestos. Se rotulan con **(propuesto)** o **(abierto)** los contratos y parámetros que la fuente deja sin definir. Los códigos de error siguen [Authentication and session](../../../rules/authentication-and-session.md#authorization-responses): `401` sin credencial válida, `403` con rol insuficiente sobre un recurso visible y `404` uniforme ante recursos de otra escuela o aula.
 
-Las decisiones de sesión (D1) e integración NestJS-Colyseus (D2) provienen de [Technical justification, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) y están **pendientes de aprobación del equipo**; los flujos las asumen sin darlas por acordadas.
+Las decisiones de sesión (D1) e integración NestJS-Colyseus (D2) provienen de [Technical justification, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) y fueron aprobadas por Agustín el 2026-11-02 (no se afirma aprobación de todo el equipo); los flujos las asumen como diseño propuesto.
 
 ### 1.1 S1 — Registro y login
 

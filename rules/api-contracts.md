@@ -5,7 +5,7 @@ Frontend and backend must agree on observable contracts before either side treat
 ## Ownership and distribution
 
 - Each consumed contract **MUST** have an identifiable backend owner and a frontend integration reference.
-- Decision D4 (pending team approval; see [Technical justification](../docs/technical-justification.md#d4-contract-distribution)): NestJS generates an OpenAPI document through `@nestjs/swagger` decorators, served with the Scalar API reference UI, and the frontend generates its TypeScript types from that document. Shared types for the NestJS and Colyseus services live in `packages/contracts` ([Architecture](./architecture.md)).
+- Decision D4 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d4-contract-distribution)): NestJS generates an OpenAPI document through `@nestjs/swagger` decorators, served with the Scalar API reference UI, and the frontend generates its TypeScript types from that document. Shared types for the NestJS and Colyseus services live in `packages/contracts` ([Architecture](./architecture.md)).
 - The distribution of realtime message and state types to the frontend is **open**. Contributors **MUST NOT** assume a generated SDK or manually copied type package for it is approved.
 - Contract decisions **MUST** identify where the authoritative specification lives and how consumers learn about changes.
 

@@ -13,14 +13,14 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | Entity | Purpose | Key relationships |
 |---|---|---|
 | User | Account: email, display name, password hash | Many memberships; one avatar configuration |
-| Session | Server-side session record, if the chosen mechanism needs one (open) | Belongs to a user |
+| Session | Server-side session record: hashed rotating refresh token and session id checked per request (decided, D1) | Belongs to a user |
 | AvatarConfiguration | Persistent avatar appearance | One per user |
 | School | Isolation unit of the school path | One Owner; many members and classrooms |
 | SchoolMember | Membership with school role (Owner, Admin, Teacher) and state | Joins User and School |
 | Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
 | Enrollment | A student's membership in a classroom, and state | Joins User and Classroom |
 | ParentLink | Link from a parent to one child, within a classroom context | Joins parent User and child User; a parent has many links |
-| Invitation | Hashed secret, target email, target (school or classroom), role, expiry, state | Belongs to a School or Classroom; has a creator |
+| Invitation | Two mechanisms (D7). Email invitation: hashed secret, target email, target (school or classroom), role, expiry, state. Classroom join code: classroom, `Student` role only, hashed secret, expiry, optional maximum uses, use count, state | Belongs to a School or Classroom; has a creator; each join code use is recorded (who and when) |
 | Material | File uploaded by the teacher (stored in object storage) | Belongs to a classroom; has an author |
 | Activity | TP or exam; format file or multiple choice; due date or exam window | Belongs to a classroom |
 | Question / Option | Multiple-choice question and its options, with correct marking | Belong to an activity |
@@ -69,7 +69,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - AllowedMaterial **MUST** be unique per (classroom, material).
 - DailyReviewDelivery **MUST** be unique per (user, local date in America/Argentina/Buenos_Aires) so the review is delivered once; see [AI bot and daily briefing](./ai-bot-and-daily-briefing.md).
 - Notification delivery **MUST** be unique per (notification, channel) to make email sending idempotent.
-- Invitations **MUST** store only a hash of their secret, and the hash **MUST** be unique.
+- Invitations and classroom join codes **MUST** store only a hash of their secret, and the hash **MUST** be unique. A target email is required for email invitations only; a join code has none and its role is fixed to `Student`.
 - Foreign keys **MUST** be declared. Cross-table rules that the database cannot express (for example a submission's student being enrolled in the activity's classroom, or a purchase staying within the balance) **MUST** be enforced in the service layer inside a transaction and verified by tests.
 - Required, optional, and empty values **MUST** be modeled deliberately (see [Data and time](./data-and-time.md)).
 
@@ -107,7 +107,7 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 ## Open decisions
 
 - Final table and column names, enum values, and field limits.
-- Session storage, if the chosen mechanism needs it ([Authentication and session](./authentication-and-session.md)).
+- Exact shape of the join code: one Invitation entity with a kind discriminator or a separate ClassroomJoinCode entity, to be decided in the Prisma baseline schema work item (decision D7).
 - Medal catalog.
 - Resubmission history and grade history representation.
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.

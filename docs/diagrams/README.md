@@ -1,7 +1,7 @@
 # Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
 > **Directorio de arquitectura de diseño** · Plataforma de aulas virtuales 3D para escuelas
-> **Estado:** diseño propuesto alineado al modelo de escuelas y aulas (`master-document.md` v0.3); ante diferencias prevalecen las reglas de dominio y la ERS v0.2. Las decisiones D1 a D6 (2026-11-02) están pendientes de aprobación del equipo. Contratos técnicos propuestos, no implementación
+> **Estado:** diseño propuesto alineado al modelo de escuelas y aulas (`master-document.md` v0.3); ante diferencias prevalecen las reglas de dominio y la ERS v0.2. Las decisiones D1 a D7 (2026-11-02) fueron aprobadas por Agustín el 2026-11-02. Contratos técnicos propuestos, no implementación
 > **Última actualización:** 2 de noviembre de 2026
 
 ---
@@ -34,7 +34,7 @@ flowchart TD
   subgraph R["05-reference (Referencia)"]
     direction LR
     CV["conventions.md<br/>Códigos y Reglas"]
-    GP["gaps.md<br/>decisiones D1 a D6 y huecos abiertos"]
+    GP["gaps.md<br/>decisiones D1 a D7 y huecos abiertos"]
   end
 
   F --> S
@@ -87,4 +87,4 @@ La [guía de revisión](./review-guide.md) describe la entrega en un único PR h
 
 ## 5. Alcance de esta alineación
 
-Escuelas con aulas; profesor independiente con aulas propias; roles Dueño / Admin de Escuela, Profesor, Alumno y Padre; actividades, entregas y calificaciones; puntos, tienda y racha; chat y avisos; controles de aula en vivo; bot de estudio de solo lectura con repaso diario. Las decisiones D1 a D6 del 2026-11-02 (sesión, `onAuth`, monorepo, OpenAPI, región `sa-east-1`, OIDC) están reflejadas como diseño propuesto y pendientes de aprobación del equipo; los puntos que las reglas dejan abiertos figuran en [gaps.md](./05-reference/gaps.md). No se implementa backend, migración ni infraestructura con estos documentos.
+Escuelas con aulas; profesor independiente con aulas propias; roles Dueño / Admin de Escuela, Profesor, Alumno y Padre; actividades, entregas y calificaciones; puntos, tienda y racha; chat y avisos; controles de aula en vivo; bot de estudio de solo lectura con repaso diario. Las decisiones D1 a D7 del 2026-11-02 (sesión, `onAuth`, monorepo, OpenAPI, región `sa-east-1`, OIDC, modelo de invitaciones) fueron aprobadas por Agustín el 2026-11-02 y están reflejadas como diseño propuesto; los puntos que las reglas dejan abiertos figuran en [gaps.md](./05-reference/gaps.md). No se implementa backend, migración ni infraestructura con estos documentos.

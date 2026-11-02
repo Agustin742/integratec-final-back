@@ -155,7 +155,7 @@ Este catálogo resume recorridos y su trazabilidad; no reemplaza los requisitos 
 | UC | Recorrido y actor | Regla funcional / entidades | RF / HU de origen | Fase/prioridad |
 |---|---|---|---|---|
 | 01 | Registro del Visitante | Crea `User`, `AvatarConfiguration` y la estructura del camino elegido (Profesor independiente o `School` con `SchoolMember(owner)`), en una transacción; sin invitación no se obtiene rol en estructuras existentes | RF-AUT-001 / HU-AUT-001 (RN-02, RN-20) | Must · MVP Core |
-| 02 | Login, renovación y logout | Sesión con vencimiento (D1, pendiente de aprobación del equipo); logout y reinicio de contraseña invalidan la sesión y cortan la presencia en Colyseus | RF-AUT-002 / HU-AUT-002 (RN-04) | Must · MVP Core |
+| 02 | Login, renovación y logout | Sesión con vencimiento (D1, aprobada por Agustín el 2026-11-02); logout y reinicio de contraseña invalidan la sesión y cortan la presencia en Colyseus | RF-AUT-002 / HU-AUT-002 (RN-04) | Must · MVP Core |
 | 03 | Perfil y avatar base | `AvatarConfiguration` persistente; ítems bloqueados se rechazan | RF-AUT-003 / HU-AUT-003 (RN-09) | Must · MVP Core |
 | 04 | Vincular Padre / Tutor | Invitación de Profesor o Dueño/Admin aceptada por el adulto; máximo 2 por alumno; rechazada con `adultMode` | RF-AUT-004 / HU-AUT-004 (RN-02, RN-16) | Should · MVP Extendido |
 | 05 | Crear y configurar aula | `Classroom` de exactamente una `School` o un Profesor independiente, con `Pet`, `Desk` base y controles por defecto | RF-AUL-001 / HU-AUL-001 (RN-01) | Must · MVP Core |

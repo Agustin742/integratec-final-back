@@ -12,14 +12,14 @@ The backend is the only authority for identity, session validity, and authorizat
 - The login identifier is the email; the display name is separate and may repeat (assumption P-01). Emails **MUST** be normalized and unique.
 - Passwords **MUST** be hashed with Argon2 or bcrypt (or an equivalent identity service) with per-password salts; plaintext or reversible storage **MUST NOT** exist. The minimum length is 8 characters without composition rules (assumption P-02).
 - Registration **MUST** let the user choose the organization path, **independent teacher** or **school**, and **MUST** create the account together with its initial structure (the teacher's workspace, or the school with the user as Owner) as one atomic operation; a partial result **MUST NOT** remain.
-- Students, parents, and teachers invited into an existing school or classroom join through an **email invitation**; the invitation fixes the role and the target. Accepting requires authentication as the invited account and **MUST NOT** let the invitee choose a different role; invitation rules are in [Classrooms, roles, and permissions](./classrooms-and-roles.md).
+- Teachers and parents invited into an existing school or classroom join through an **email invitation**, and students join through an email invitation or a classroom join code (decision D7); the invitation or code fixes the role and the target. Accepting requires authentication as the invited account and **MUST NOT** let the invitee choose a different role; invitation rules are in [Classrooms, roles, and permissions](./classrooms-and-roles.md).
 - Registering without an invitation **MUST NOT** grant any role in an existing school or classroom.
 - Login failures **MUST NOT** reveal whether the email or the password was wrong. Password-reset requests **MUST** return an identical response for registered and unregistered emails.
 - Responses, logs, and errors **MUST NOT** contain password hashes, reset tokens, or session secrets; see [Observability and privacy](./observability-and-privacy.md).
 
 ## Session lifecycle
 
-- **Decision (D1, pending team approval):** a short-lived JWT access token plus an opaque refresh token stored hashed in the database and rotated on use; see [Technical justification, D1](../docs/technical-justification.md#d1-session-mechanism). The access token **MUST** carry a session identifier that the server checks against the stored session on every protected request, so a revoked session yields `401`. Lifetimes are configuration parameters, not hard-coded values (assumption P-03).
+- **Decision (D1, approved by Agustin on 2026-11-02):** a short-lived JWT access token plus an opaque refresh token stored hashed in the database and rotated on use; see [Technical justification, D1](../docs/technical-justification.md#d1-session-mechanism). The access token **MUST** carry a session identifier that the server checks against the stored session on every protected request, so a revoked session yields `401`. Lifetimes are configuration parameters, not hard-coded values (assumption P-03).
 - The mechanism **MUST** satisfy these invariants:
  - Sessions **MUST** expire and the server **MUST** verify expiry on every protected request; client clocks are never authoritative ([Data and time](./data-and-time.md)).
  - Active users **SHOULD** be renewed before expiry without interruption.

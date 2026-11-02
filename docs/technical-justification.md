@@ -1,6 +1,6 @@
 # Technical Justification (R6)
 
-This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions made in the [project document](../master-document.md) and the decisions listed in [section 7](#7-architecture-decisions-recorded-on-2026-11-02), which are pending team approval. Choices that are still undecided are marked **Open**.
+This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions made in the [project document](../master-document.md) and the decisions listed in [section 7](#7-architecture-decisions-recorded-on-2026-11-02), which were approved by Agustin (decision owner) on 2026-11-02. Choices that are still undecided are marked **Open**.
 
 ## 1. Stack
 
@@ -18,7 +18,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-school and per-classroom scoping matches the product model and avoids a privileged global role.
 - **Alternatives:** An external identity service (master allows "an equivalent identity service"); OAuth or social login (a recommended extra, not planned for the MVP).
 - **Trade-off:** Building authentication in the application gives full control and a clear defense story, but the team owns its security.
-- **Session mechanism:** decided, pending team approval; see [decision D1](#d1-session-mechanism).
+- **Session mechanism:** decided and approved by Agustin on 2026-11-02; see [decision D1](#d1-session-mechanism).
 - **Open:** Lifetimes (configuration parameters) and client-side storage of the tokens.
 
 ## 3. Database and ORM
@@ -34,7 +34,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Why:** Colyseus provides room lifecycle, synchronized state, and reconnection designed for rooms.
 - **Alternatives:** Socket.IO alone, which would require implementing room and state logic; it remains an option only for isolated needs.
 - **Trade-off:** One more service to deploy and learn. The MVP runs one Colyseus instance; scaling out needs a presence and routing strategy that is not defined.
-- **Internal transport and service authentication:** decided, pending team approval; see [decision D2](#d2-nestjs-and-colyseus-integration).
+- **Internal transport and service authentication:** decided and approved by Agustin on 2026-11-02; see [decision D2](#d2-nestjs-and-colyseus-integration).
 - **Open:** The final event names and payloads.
 
 ## 5. Deployment
@@ -44,7 +44,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Alternatives:** A managed PaaS or EC2.
 - **Trade-off:** Fargate, ALB, and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required.
 - **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
-- **Decided, pending team approval:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md).
+- **Decided and approved by Agustin on 2026-11-02:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md).
 - **Open:** Domain, and Amazon Bedrock model availability in `sa-east-1` (see D5).
 
 ## 6. Artificial intelligence
@@ -57,7 +57,7 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 7. Architecture decisions recorded on 2026-11-02
 
-Decided by Agustin on 2026-11-02; **pending team approval**. Until the team approves them, they are not agreed team decisions; per [Documentation and decisions](../rules/documentation-and-decisions.md), a conflict with the team **MUST** be resolved before dependent implementation proceeds.
+Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a claim of team-wide approval; per [Documentation and decisions](../rules/documentation-and-decisions.md), a conflict with the team **MUST** be resolved before dependent implementation proceeds.
 
 ### D1. Session mechanism
 
@@ -66,7 +66,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Rationale:** Short-lived access tokens limit exposure, rotated hashed refresh tokens allow renewal without interruption, and the session identifier check keeps the logout and password-reset invalidation invariants of [Authentication and session](../rules/authentication-and-session.md).
 - **Alternatives:** Cookie-based opaque session (A); opaque bearer token (C).
 - **Affected contracts:** [Authentication and session](../rules/authentication-and-session.md), [Security](../rules/security.md), REST authentication and the realtime join check (D2).
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** Client-side storage of the access and refresh tokens **MUST** be agreed with the frontend before release.
 
 ### D2. NestJS and Colyseus integration
@@ -76,7 +76,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Rationale:** NestJS stays the single authorization service and the answer comes from current persisted state.
 - **Alternatives:** Signed short-lived join ticket verified offline (B); Colyseus reading sessions from the database directly (C), rejected because it breaks the single authorization service rule.
 - **Affected contracts:** [Architecture](../rules/architecture.md), [Realtime and presence](../rules/realtime-and-presence.md), [AWS infrastructure](../rules/aws-infrastructure.md).
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 
 ### D3. Repository layout
 
@@ -85,7 +85,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Rationale:** Services stay separately deployable while sharing one toolchain and one contracts package.
 - **Alternatives:** Colyseus embedded in the NestJS app; two separate backend repositories.
 - **Affected contracts:** [Architecture](../rules/architecture.md), [Infrastructure as code](../rules/infrastructure-as-code.md), and CI (a `package.json` and `pnpm-lock.yaml` are required once present).
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 
 ### D4. Contract distribution
 
@@ -94,7 +94,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Rationale:** The backend owns one authoritative specification and consumers learn about changes by regenerating types.
 - **Alternatives:** A shared `contracts` npm package with zod schemas published to GitHub Packages (rejected: adds publishing, versioning, and registry authentication); manually copied types (rejected: drifts out of sync).
 - **Affected contracts:** [API contracts](../rules/api-contracts.md) and the README "Shared contracts" section.
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** Distribution of realtime message and state types.
 
 ### D5. AWS region
@@ -105,7 +105,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Alternatives:** `us-east-1`, cheaper and with the widest Amazon Bedrock model availability, but with higher latency from Argentina (rejected because realtime responsiveness matters for the target market).
 - **Trade-off:** Higher cost is accepted.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md).
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** Amazon Bedrock model availability in `sa-east-1` **MUST** be verified; cross-region inference may be needed.
 
 ### D6. Pipeline authentication to AWS
@@ -115,7 +115,19 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Rationale:** Short-lived credentials leave no stored keys to leak or rotate.
 - **Alternatives:** IAM user access keys in GitHub Secrets, rejected.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Deployment and operations](../rules/deployment-and-operations.md).
-- **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D7. Invitation model
+
+- **Question:** RN-02, RF-AUL-002, and HU-AUL-002 allow joining by email invitation or by a shareable code/link, while [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) and [Data](../rules/data.md) allowed only single-use email invitations. Which mechanisms are valid?
+- **Outcome (option B):** two mechanisms.
+  1. **Email invitation** (rules unchanged): bound to one target (school or classroom), one role, and one email address; hashed secret, expiry, revocable, single use. It is mandatory for teachers invited by Owner or Admin and for parent/tutor invitations (parents are always invited by email, single use).
+  2. **Classroom join code:** per classroom, shareable by the teacher (Owner or Admin **MAY** also manage it). It grants only the `Student` role in that classroom, never Teacher, Parent, or a school role. The secret is stored hashed and shown once on creation or regeneration (regenerating shows a new code and invalidates the previous one). It has an expiry, can be revoked or regenerated, and has an optional maximum number of uses with a use counter. Acceptance requires an authenticated account. Membership creation is atomic and idempotent: an already-enrolled student is not enrolled twice and does not consume a use. Attempts are rate-limited against brute force, the code has enough entropy for that, and every join is recorded (who and when) for audit.
+- **Rationale:** Loading 30 emails one by one blocks classroom onboarding, and a shareable code (as in Google Classroom) is the norm in schools. The risk of a leaked code is bounded by the Student-only role, expiry, revocation, maximum uses, rate limiting, and authenticated joins.
+- **Alternatives:** Email single-use only (A), rejected because of onboarding friction; an unrestricted permanent link, rejected because it has no expiry or revocation.
+- **Affected contracts:** The invitation data model (target email is required for email invitations; the join code has no target email), membership endpoints, HU-AUL-002, RN-02, RF-AUL-002, [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), and [Data](../rules/data.md).
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Open:** Whether the join code is a single `Invitation` entity with a kind discriminator or a separate `ClassroomJoinCode` entity is left to the Prisma baseline schema work item.
 
 ## 8. Known conflicts and notes
 

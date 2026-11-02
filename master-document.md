@@ -42,7 +42,7 @@ Al registrarse se elige entre **dos caminos de organización**:
 - Cada aula tiene **una mascota** propia.
 - El acceso al aula se verifica siempre en el servidor según la membresía del usuario.
 - **Distinción técnica importante:** un aula almacenada en PostgreSQL no equivale necesariamente a una instancia `Room` de Colyseus. Esta última gestiona la sesión de tiempo real asociada al aula y sus usuarios conectados.
-- **Incorporación por invitación por email:** profesores, alumnos y padres se suman mediante invitaciones enviadas por correo (ver 2.2).
+- **Incorporación por invitación:** profesores y padres se suman siempre mediante invitaciones de un solo uso enviadas por correo; los alumnos, además, pueden unirse con un **código de aula** compartible que solo otorga el rol Alumno, con vencimiento, revocación y máximo de usos opcional (decisión D7, ver 2.2).
 
 ### 2.2 Roles, permisos e invitaciones
 
@@ -423,7 +423,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 
 El núcleo debe completar **un recorrido utilizable en producción**:
 
-1. Caminos de organización (profesor independiente o escuela), roles e **invitaciones por email**.
+1. Caminos de organización (profesor independiente o escuela), roles, **invitaciones por email** y **código de aula** para alumnos.
 2. Aula 3D con avatares y **modo 2D clásico**, con presencia en tiempo real.
 3. Chat del aula con moderación, silenciado del chat y @menciones; tablón de anuncios.
 4. Subida de material (S3).
@@ -517,7 +517,7 @@ El **README obligatorio** contendrá al menos: descripción, enlaces de frontend
 - [ ] Dos usuarios autorizados comparten un aula y se sincroniza su presencia.
 - [ ] El repaso diario se activa una sola vez por día y usuario para los roles distintos de Padre.
 - [ ] El bot se bloquea durante un examen y no entrega soluciones.
-- [ ] La invitación por email llega y permite unirse al aula con el rol correcto.
+- [ ] La invitación por email llega y permite unirse al aula con el rol correcto, y el código de aula inscribe al alumno solo como Alumno.
 
 **Repositorio, infraestructura y documentación**
 
