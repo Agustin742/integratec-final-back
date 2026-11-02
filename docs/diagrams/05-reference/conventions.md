@@ -58,4 +58,4 @@ Posición por fotograma, posiciones transitorias, estados interpolados de avatar
 
 ## 2. Tiempo y alcance de datos
 
-La zona del repaso sigue [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing), sin herencia implícita a otras funciones. Reuniones sigue [Communication and meetings](../../../rules/communication-and-meetings.md#meetings-and-attendance). Fechas e instantes siguen [Data and time](../../../rules/data-and-time.md); almacenamiento permanece abierto donde lo indica [Data](../../../rules/data.md#open-decisions).
+La zona del repaso sigue [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md#daily-review), sin herencia implícita a otras funciones. Reuniones sigue la regla de reuniones (pendiente de realinear). Fechas e instantes siguen [Data and time](../../../rules/data-and-time.md); almacenamiento permanece abierto donde lo indica [Data](../../../rules/data.md#open-decisions).

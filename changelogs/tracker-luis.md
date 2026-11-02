@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-11-02 — Fix documentation links and diagram references
+
+- **Status:** completed
+- **Area / files:** `docs/requirements-decision.md`, `docs/diagrams/`
+- **Change:** Updated internal links and rule anchors across requirements decisions and architecture diagrams to align with realigned school domain rules (`classrooms-and-roles.md`, `activities-and-grading.md`, `communication-and-notifications.md`).
+- **Reason:** Resolve broken link and anchor errors reported by `scripts/ci/check_docs.py`.
+- **Next step:** Review backend architecture and proceed with implementation.
+
 ## 2026-10-26 — Synchronize shared engineering and coordination rules
 
 - **Status:** completed

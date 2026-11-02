@@ -19,7 +19,7 @@ La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirem
 | 7 | Cardinalidades | ERS define oficina/habitaciones, avatar, membresía, acceso y liderazgo; sesiones e historial del bot son diseño técnico | Modelo ER |
 | 8 | Matriz de permisos | Definida en ERS §3 y RN-07 a RN-11; conservar supuestos P-07/P-08/P-13 explícitos | Casos de uso, clases |
 | 9 | Visibilidad de habitación | Acceso por oficina y habitación, no enum público/global propuesto; principal accesible a miembros (RN-03/04) | Arquitectura, ER |
-| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Rooms](../../../rules/rooms-and-permissions.md#invitations-and-membership-changes) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
+| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Rooms](../../../rules/classrooms-and-roles.md#invitations-and-membership) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
 | 11 | Solicitud de ingreso | Could · Evolución, RF-OFI-018; no aprobación adicional en canje de enlace MVP | S9 |
 | 12 | Expulsión y revocación | RN-12/13 y RF-OFI-012: baja lógica, conservar contenido, acceso revocado y tareas huérfanas; no se añade ban | S10, clases |
 | 13 | Estados de tarea | RF-TAR-004/006/007: columnas configurables, no enum fijo. Nombres iniciales en P-14; migración pendiente | ER, S4 |
