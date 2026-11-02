@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+pnpm-lock.yaml
+*.md
+docs/
+rules/
+changelogs/
+scripts/
+.github/

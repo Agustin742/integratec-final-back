@@ -88,6 +88,16 @@ jobs:
           corepack enable
           pnpm install --frozen-lockfile
 
+      - name: Code formatting and linting
+        if: steps.package.outputs.present == 'true'
+        run: |
+          pnpm format:check
+          pnpm lint
+
+      - name: Typecheck
+        if: steps.package.outputs.present == 'true'
+        run: pnpm typecheck
+
       - name: Run tests
         if: steps.package.outputs.present == 'true'
         shell: bash
@@ -101,6 +111,10 @@ jobs:
               echo "No \`test\` script is configured in \`package.json\`; no tests were run."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Build packages
+        if: steps.package.outputs.present == 'true'
+        run: pnpm build
 
       - name: Report docs-only backend
         if: steps.package.outputs.present == 'false'
