@@ -6,7 +6,7 @@
 
 ## 1. Decisiones aprobadas
 
-Las decisiones D1 a D8 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín (responsable de las decisiones) el 2026-11-02; no se afirma aprobación de todo el equipo. Los diagramas las reflejan como diseño propuesto, no implementado. El conflicto previo entre RN-02 / RF-AUL-002 / HU-AUL-002 (correo o código/enlace) y las reglas (solo correo de un solo uso) queda resuelto por D7.
+Las decisiones D1 a D10 de la [justificación técnica, sección 7](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín (responsable de las decisiones) el 2026-11-02; no se afirma aprobación de todo el equipo. Los diagramas las reflejan como diseño propuesto, no implementado. El conflicto previo entre RN-02 / RF-AUL-002 / HU-AUL-002 (correo o código/enlace) y las reglas (solo correo de un solo uso) queda resuelto por D7.
 
 | ID | Decisión | Vistas afectadas |
 |---|---|---|
@@ -18,6 +18,8 @@ Las decisiones D1 a D8 de la [justificación técnica, sección 7](../../technic
 | D6 | GitHub Actions con OIDC hacia un rol IAM, sin claves de larga duración | Arquitectura |
 | D7 | Dos mecanismos de ingreso: invitación por correo (un solo uso; obligatoria para profesores invitados y para padres) y código de unión por aula (solo rol `Student`, hash, vencimiento, revocable, máximo de usos opcional, límite de intentos, auditoría). La forma de la entidad queda para el esquema Prisma base | Datos, aulas, casos de uso |
 | D8 | Artefactos de contrato versionados: el backend genera y **commitea** `openapi.json` (ruta prevista, p. ej. `apps/api/openapi.json`; la fija el bootstrap del monorepo) y su CI falla si está desactualizado; los tipos de estado de sala (`@colyseus/schema` codegen) y de mensajes (`packages/contracts`) se generan o exportan y se commitean; el frontend los trae con `pnpm api:sync` y commitea los tipos generados | Arquitectura, realtime, clases |
+| D9 | Contrato primero: el backend publica los DTO y la entrada OpenAPI de cada endpoint (puede ser un stub que responde `501`) en un PR antes de la implementación o junto con ella; el frontend construye sus mocks (MSW, solo desarrollo y pruebas) desde `openapi.json` (FD9) | Arquitectura, convenciones |
+| D10 | Plazos: los instantes se guardan en UTC y la API devuelve ISO 8601 UTC; cada escuela tiene una zona IANA persistida (por defecto `America/Argentina/Buenos_Aires`); el frontend muestra los plazos en esa zona y la indica; el servidor decide la tardanza en UTC (FD11). Cierra el antiguo hueco 16 | Modelo de datos, convenciones |
 
 ## 2. Huecos abiertos vigentes
 
@@ -40,7 +42,6 @@ Cada fila remite a la regla que la mantiene abierta. **Abierto** significa que n
 | 13 | Efectos de eliminar cuenta, escuela o aula sobre registros retenidos | Abiertos ([Data](../../../rules/data.md#open-decisions), [Classrooms and roles](../../../rules/classrooms-and-roles.md#open-decisions)) | Modelo de datos, casos de uso |
 | 14 | Alcance de la delegación del Admin frente al Dueño (transferir o eliminar la escuela) | Diferido a la implementación de roles ([Classrooms and roles](../../../rules/classrooms-and-roles.md#open-decisions)) | Casos de uso, clases |
 | 15 | Si una cuenta puede tener a la vez camino de escuela y de profesor independiente | Abierto ([Data](../../../rules/data.md#open-decisions)) | Casos de uso, modelo de datos |
-| 16 | Representación del almacenamiento de instantes y de la zona horaria de Buenos Aires | Abierto; el proyecto interpreta instantes con zona horaria presentados en esa zona, por confirmar ([Data](../../../rules/data.md#open-decisions)) | Modelo de datos, convenciones |
 | 17 | Historial de reentregas y de calificaciones; intentos, entrega tardía y crédito parcial; edición o baja de actividades con entregas; fórmula y agregación de `ActivityMetric`; límites y análisis de archivos | Abiertos ([Activities and grading](../../../rules/activities-and-grading.md#open-decisions)) | Modelo de datos, secuencias |
 | 18 | Catálogo de medallas, otras fuentes de puntos, reembolsos y períodos de gracia de la racha; estado inicial de minijuegos; visibilidad de saldos ajenos | Abiertos ([Points and shop](../../../rules/points-and-shop.md#open-decisions)) | Modelo de datos, casos de uso |
 | 19 | Modelo de IA, tecnología de recuperación y límites numéricos de uso; persistencia del texto del repaso; recuperación tras fallo de entrega y repaso en día de examen; alcance de los controles de salida | Abiertos ([Bot](../../../rules/ai-bot-and-daily-briefing.md#open-decisions)) | Secuencias, convenciones |

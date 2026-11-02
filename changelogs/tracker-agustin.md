@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record contract-first stubs and school time zone for deadlines (D9, D10)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/` (api-contracts, data-and-time, data, activities-and-grading), `docs/architecture.md`, `docs/diagrams/` (gaps, conventions, README files, deployment-and-network)
+- **Change:** Recorded D9: the backend publishes each endpoint's DTOs and OpenAPI entry (a `501` stub is allowed) before or with its implementation so the frontend can mock from the contract. Recorded D10: instants stored in UTC, API returns ISO 8601 UTC, each School has a persisted IANA time zone (default `America/Argentina/Buenos_Aires`), the server decides lateness in UTC. Closed gap 16. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The frontend needs to proceed ahead of backend implementation, and deadline display needs one unambiguous time zone for students and teachers.
+- **Next step:** Add the School time zone field in the Prisma baseline schema work item.
+
 ## 2026-11-02 — Record committed REST and realtime contract artifacts (D8)
 
 - **Status:** completed

@@ -142,7 +142,26 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** The exact paths of the committed artifacts, set by the monorepo bootstrap.
 
+### D9. Contract-first stubs and mocking
+
+- **Question:** How can the frontend build screens before the backend implements an endpoint, without drifting from the real contract?
+- **Outcome:** This repository publishes each endpoint's DTOs and OpenAPI entry (a stub returning `501` is allowed) in a pull request before or together with its implementation. The committed `openapi.json` ([D8](#d8-committed-rest-and-realtime-contract-artifacts)) carries it, and the frontend builds its mock handlers from that contract (FD9).
+- **Rationale:** The frontend and backend work in parallel from one authoritative contract, and contract changes stay visible in pull requests.
+- **Alternatives:** The frontend waits for backend merges (rejected: serializes the teams); hand-written mocks without a contract (rejected: drift).
+- **Trade-off:** Contract authoring moves to the start of each endpoint, and stubs **MUST** be replaced by the implementation before the endpoint is considered done.
+- **Affected contracts:** [API contracts](../rules/api-contracts.md), D8, and the frontend decision FD9 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D10. Deadline time zone
+
+- **Question:** In which time zone are activity deadlines stored, evaluated, and shown?
+- **Outcome:** Timestamps are stored in UTC and the API returns ISO 8601 UTC instants. Each School has a persisted IANA time zone, defaulting to `America/Argentina/Buenos_Aires`; independent teachers' classrooms use the same default. The frontend displays deadlines in the school's time zone and indicates the zone (FD11). The server decides lateness using UTC.
+- **Rationale:** Students and teachers of one school see the same deadline time, and server-side evaluation on UTC instants is unambiguous. This replaces the earlier reading that dates are "stored" in the Buenos Aires zone.
+- **Alternatives:** Display in each viewer's browser time zone (rejected: students and teachers could see different deadline times).
+- **Affected contracts:** [Data and time](../rules/data-and-time.md), [Data](../rules/data.md) (School entity), [Activities and grading](../rules/activities-and-grading.md), and the frontend decision FD11. The daily briefing keeps its own fixed `America/Argentina/Buenos_Aires` policy.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
-- The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.
+- The requirements state that dates are "stored" in the Buenos Aires zone; [D10](#d10-deadline-time-zone) decides UTC storage with presentation in the school's time zone, so the requirements wording is superseded for storage.

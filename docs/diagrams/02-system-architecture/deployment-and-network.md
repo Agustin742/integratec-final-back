@@ -16,7 +16,7 @@
 
 ## 1. Conexiones frontend y backend
 
-Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D8 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02; los puntos que las reglas dejan sin resolver se marcan **abierto**.
+Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D10 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02; los puntos que las reglas dejan sin resolver se marcan **abierto**.
 
 ### 1.1 Arquitectura de despliegue y comunicación
 
