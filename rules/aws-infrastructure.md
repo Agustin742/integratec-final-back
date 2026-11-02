@@ -23,10 +23,14 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 | Observability | CloudWatch | Logs, metrics, and alarms |
 | Cost control | AWS Budgets | Budget and alert thresholds |
 
+## Region
+
+- The environment is hosted in `sa-east-1` (Sao Paulo), because the product is sold in Argentina and realtime latency matters; higher cost is an accepted trade-off (decision D5, pending team approval; see [Technical justification](../docs/technical-justification.md#d5-aws-region)).
+
 ## Network and access
 
 - RDS **MUST** be in private subnets with no public access. Its security group **MUST** allow inbound connections only from the NestJS service (and any migration task).
-- Colyseus **MUST NOT** have network access or credentials to the database; it reaches persisted data through NestJS ([Architecture](./architecture.md)).
+- Colyseus **MUST NOT** have network access or credentials to the database; it reaches persisted data through NestJS ([Architecture](./architecture.md)). Its calls to the internal NestJS endpoint use a service secret from Secrets Manager.
 - Each ECS service **MUST** have its own security group. Services receive inbound traffic only from the load balancer, except the internal NestJS and Colyseus channel, which **MUST NOT** be exposed through the public listener.
 - Production traffic **MUST** use HTTPS and WSS. CORS and allowed origins follow [Security](./security.md).
 - ALB health checks **MUST** target a lightweight endpoint per service and **MUST NOT** be presented as proof of a working user flow.
@@ -44,7 +48,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 - Each repository **MUST** own its pipeline. Backend CI builds and publishes images to ECR and updates ECS; release evidence follows [Deployment and operations](./deployment-and-operations.md).
 - Images **MUST** be reproducible from a commit and tagged with an immutable identifier, not only `latest`.
-- Pipeline credentials **SHOULD** use short-lived federation rather than stored keys. This choice is **open**.
+- Pipeline credentials **MUST** use GitHub Actions OIDC federation to an IAM role; long-lived IAM user access keys **MUST NOT** be stored in GitHub Secrets (decision D6, pending team approval; see [Technical justification](../docs/technical-justification.md#d6-pipeline-authentication-to-aws)).
 - Database migrations in deployment **MUST** follow the plan required by [Data](./data.md).
 
 ## Observability and cost
@@ -60,7 +64,7 @@ Evidence **MUST** identify the environment and deployed revision and confirm: ex
 
 ## Open decisions
 
-- Region, instance sizing, and the exact routing (path versus host) for Colyseus.
-- Pipeline authentication to AWS.
+- Instance sizing and the exact routing (path versus host) for Colyseus.
+- Amazon Bedrock model availability in `sa-east-1`; cross-region inference may be needed.
 - Domain, certificate ownership, and S3 usage (uploads are not defined yet).
 - Scaling strategy for Colyseus beyond one instance.

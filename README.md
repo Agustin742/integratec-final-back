@@ -30,4 +30,4 @@ When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 
 
 ## Shared contracts
 
-Ownership of shared contracts across the frontend and backend repositories remains undecided.
+NestJS generates an OpenAPI document (`@nestjs/swagger`) served with the Scalar API reference UI, and the frontend generates its TypeScript types from it. This decision (D4) was made by Agustin on 2026-11-02 and is pending team approval; see [API contracts](./rules/api-contracts.md). Distribution of realtime message and state types remains undecided.

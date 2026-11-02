@@ -229,7 +229,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Tiempo real adicional | **Socket.IO (uso puntual)** | Solo funcionalidades independientes para las que resulte técnicamente necesario; no sustituye a Colyseus. |
 | Base de datos | **Amazon RDS for PostgreSQL** | Persistencia de usuarios, escuelas, aulas, actividades, notas, puntos y mensajes. |
 | Acceso a datos | **Prisma ORM** | Consultas, relaciones y migraciones sobre PostgreSQL alojado en RDS; Prisma **no es** la base de datos. |
-| Repositorios | **Frontend:** `Agustin742/integratec-final-front`; **backend:** `Agustin742/integratec-final-back`. | Repositorios independientes, con CI, build y responsabilidad de despliegue propios. La distribución y propiedad de contratos entre repositorios siguen pendientes de decisión. |
+| Repositorios | **Frontend:** `Agustin742/integratec-final-front`; **backend:** `Agustin742/integratec-final-back`. | Repositorios independientes, con CI, build y responsabilidad de despliegue propios. La distribución de contratos entre repositorios (OpenAPI generado por NestJS) está decidida a la espera de aprobación del equipo; ver `docs/technical-justification.md`. |
 | IA | **Amazon Bedrock + herramientas NestJS** | Inferencia del bot (guía de estudio). |
 | RAG | **Bedrock Knowledge Bases o equivalente** *(candidato, a definir)* | Recuperación sobre material aprobado por el profesor. |
 | Video y voz | **Servicio de medios WebRTC** *(a definir; candidatos: LiveKit, Amazon Chime SDK)* | Videollamadas, llamadas de voz y presentaciones en vivo. |
@@ -281,7 +281,7 @@ La arquitectura siguiente describe el diseño previsto, no servicios ya implemen
          └── Amazon SES: email (a definir)
 ```
 
-**Decisión de separación:** NestJS y Colyseus son responsabilidades lógicas distintas y, de inicio, **servicios desplegables separados**. Colyseus no reemplaza la API REST ni PostgreSQL. Los contratos lógicos entre NestJS y Colyseus pertenecen al backend; la distribución y propiedad de contratos necesarios entre los repositorios frontend y backend siguen sin decidirse. Para coordinar operaciones persistentes, Colyseus utilizará contratos y servicios de aplicación seguros; nunca confiará en permisos aportados solo por el cliente. La integración específica entre ambos servicios se documentará en `rules/architecture.md`.
+**Decisión de separación:** NestJS y Colyseus son responsabilidades lógicas distintas y, de inicio, **servicios desplegables separados**. Colyseus no reemplaza la API REST ni PostgreSQL. Los contratos lógicos entre NestJS y Colyseus pertenecen al backend; la distribución de contratos entre los repositorios frontend y backend (OpenAPI generado por NestJS) está decidida a la espera de aprobación del equipo; ver `docs/technical-justification.md`. Para coordinar operaciones persistentes, Colyseus utilizará contratos y servicios de aplicación seguros; nunca confiará en permisos aportados solo por el cliente. La integración específica entre ambos servicios se documentará en `rules/architecture.md`.
 
 ### 6.2 Canales y propiedad de los datos
 

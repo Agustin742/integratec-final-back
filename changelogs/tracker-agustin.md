@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record architecture decisions
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `docs/architecture.md`, `rules/` (authentication-and-session, architecture, api-contracts, aws-infrastructure, infrastructure-as-code), `README.md`, `master-document.md`
+- **Change:** Recorded six decisions made by Agustin: JWT access plus hashed rotating refresh token, Colyseus `onAuth` verification through an internal NestJS endpoint, pnpm monorepo, OpenAPI with Scalar, `sa-east-1`, and GitHub OIDC for the pipeline. Removed them from the open-decision lists. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** These open decisions blocked implementation work items.
+- **Next step:** Team approval of the six decisions; agree client-side token storage with the frontend; verify Bedrock availability in `sa-east-1`.
+
 ## 2026-11-02 — Align remaining docs with the school niche model
 
 - **Status:** completed

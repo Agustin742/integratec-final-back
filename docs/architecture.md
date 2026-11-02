@@ -106,6 +106,6 @@ The reasoning behind these choices is in the [technical justification](./technic
 
 ## Open points
 
-- Session mechanism and contract distribution between repositories.
-- Internal transport between NestJS and Colyseus.
+- Decided on 2026-11-02, pending team approval: session mechanism, NestJS-Colyseus authentication, monorepo layout, OpenAPI contract distribution, `sa-east-1` region, and OIDC pipeline authentication; see the [technical justification](./technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02).
+- Still open: client-side token storage, realtime message and state types, and the transport for NestJS-to-Colyseus announcements.
 - The detailed [design views](./diagrams/README.md) still describe the earlier office and room model and are pending realignment with the school model. Where they differ, the domain rules prevail.

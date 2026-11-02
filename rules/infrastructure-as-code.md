@@ -13,6 +13,7 @@ AWS infrastructure is defined, reviewed, and changed through Terraform. This rul
 
 - Infrastructure code **MUST** live in the backend repository under `infra/`, next to the pipeline that publishes images to ECR and updates ECS.
 - Terraform **MUST** manage the resources listed in [AWS infrastructure](./aws-infrastructure.md): network, security groups, load balancer, certificates, ECS cluster and services, ECR, RDS, S3, secret containers, IAM roles, log groups, alarms, and budgets.
+- The AWS region is `sa-east-1` and the pipeline authenticates through GitHub Actions OIDC to an IAM role ([AWS infrastructure](./aws-infrastructure.md)); the Terraform provider and the pipeline **MUST** be configured accordingly (decisions D5 and D6, pending team approval).
 - Resources **MUST NOT** be created or changed manually in the console when Terraform manages them. An emergency manual change **MUST** be recorded and then either imported into code or reverted.
 - Resources that cannot be managed by Terraform, or are deliberately left out, **MUST** be listed with their owner and reason in `infra/README.md`.
 
@@ -57,5 +58,4 @@ After an apply, `terraform plan` for the same environment **MUST** report no cha
 
 - How ownership of the ECS task definition is shared between Terraform and the image deployment pipeline, so each image release does not cause drift.
 - Whether Amplify Hosting is managed by Terraform or connected through the console.
-- How the pipeline authenticates to AWS (shared with [AWS infrastructure](./aws-infrastructure.md)).
 - Which environments exist beyond production.
