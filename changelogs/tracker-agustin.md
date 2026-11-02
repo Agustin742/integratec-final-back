@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record multiple-choice scope and classroom member directory (D11, D12)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `docs/functional-requirements.md`, `master-document.md`, `rules/` (classrooms-and-roles, communication-and-notifications, activities-and-grading)
+- **Change:** Recorded D11: auto-graded multiple choice in activities and exams is MVP Core, while ungraded self-assessed practice quizzes stay MVP Extendido; fixed the requirements wording that listed self-assessed quizzes inconsistently. Recorded D12: `GET /classrooms/:id/members` is readable by every classroom member and returns only user id, display name, classroom role, and avatar summary (no emails, parent links, grades, or points; parents not listed), `404` for non-members, paginated, optional `q` display-name prefix filter. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The requirements contradicted themselves on multiple-choice scope, and the frontend needs a minimal roster for @mention autocomplete (issues #52 backend, #51 frontend).
+- **Next step:** Implement the endpoint in #52 and publish its OpenAPI entry first (D9).
+
 ## 2026-11-02 — Record contract-first stubs and school time zone for deadlines (D9, D10)
 
 - **Status:** completed

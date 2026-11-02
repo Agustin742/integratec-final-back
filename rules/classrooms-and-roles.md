@@ -48,6 +48,7 @@ Server-side enforcement is required for every row. "Own classroom" means a class
 | View activity metrics | Any classroom of the school | Own classroom | Own only | Linked child only |
 | View and submit activities, view grades, use the shop | No | No | Yes | Grades of linked child |
 | Chat with classmates | Staff only for moderation | Yes | Yes | No |
+| List the classroom member directory | Yes | Own classroom | Enrolled classroom | No |
 | Message the teacher | Yes | Yes | Yes | Yes (teacher and child) |
 
 Implementers **MUST NOT** extend the matrix. Changes require updating this rule and the master document together.
@@ -61,6 +62,12 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 - A rejected action **MUST NOT** change persisted state.
 - Interacting with a classroom object (desk, board, shop) grants nothing on the related resource; the resource's own check always applies.
 - Live classroom controls are accepted only from a user who is authorized as teacher for that classroom at that moment; see [Live classroom tools](./live-classroom-tools.md).
+
+## Member directory
+
+- Decision D12 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d12-classroom-member-directory)): `GET /classrooms/:id/members` is readable by every member of the classroom, teacher and students. It exists so clients can offer @mention autocomplete.
+- The response **MUST** contain only the user id, display name, classroom role (Teacher or Student), and avatar summary. It **MUST NOT** contain emails, parent links, grades, points, or other personal data. Parent and tutor accounts are not listed.
+- A request from a non-member **MUST** respond `404`, per the uniform policy above. The list **MUST** be paginated and **MUST** accept an optional `q` case-insensitive display-name prefix filter.
 
 ## Invitations and membership
 

@@ -161,6 +161,26 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** [Data and time](../rules/data-and-time.md), [Data](../rules/data.md) (School entity), [Activities and grading](../rules/activities-and-grading.md), and the frontend decision FD11. The daily briefing keeps its own fixed `America/Argentina/Buenos_Aires` policy.
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 
+### D11. Auto-graded multiple choice scope
+
+- **Question:** Is automatic grading of multiple-choice questions part of MVP Core or MVP Extendido?
+- **Outcome:** Multiple-choice questions inside activities and exams are evaluated server-side and graded automatically; this is **MVP Core** (RF-ACT-001, RF-ACT-003). Optional self-assessed practice quizzes, meaning ungraded quizzes for self-study, remain **MVP Extendido**.
+- **Rationale:** The core academic path (publish, submit, grade, award points) needs exam grading that does not depend on manual correction, and the requirements already place multiple choice in the core. The ungraded practice quiz is a separate, optional feature.
+- **Alternatives:** Treating all quizzes as MVP Extendido (rejected: contradicts RF-ACT-001 and RF-ACT-003 and leaves exams without automatic grading).
+- **Trade-off:** The core carries the answer-key storage, hiding, and grading logic; the number of attempts and partial credit stay open.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), the requirements document (`docs/functional-requirements.md`, section 1.3), and the frontend decision FD12 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D12. Classroom member directory
+
+- **Question:** How does a client list the members of a classroom (for example for @mention autocomplete) without exposing personal data?
+- **Outcome:** `GET /classrooms/:id/members` is readable by every member of the classroom, teacher and students. It returns only the user id, display name, classroom role (Teacher or Student), and avatar summary. It **MUST NOT** return emails, parent links, grades, points, or other personal data, and parent or tutor accounts are not listed. A non-member receives `404` (uniform policy). The response is paginated and accepts an optional `q` case-insensitive display-name prefix filter. Tracked in backend issue #52 and consumed by frontend issue #51 (chat mention autocomplete).
+- **Rationale:** Mention autocomplete needs a roster that every member can read, and a minimal projection keeps minors' data inside the classroom boundary.
+- **Alternatives:** Restricting the roster to teachers (rejected: students cannot autocomplete mentions); returning full user records (rejected: exposes personal data); resolving mentions client-side without a roster (rejected: the server resolves mentions and the client needs suggestions).
+- **Trade-off:** Every member can see the classroom's display names, roles, and avatars; the page size and the maximum `q` length are set in the contract.
+- **Affected contracts:** [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), [Communication and notifications](../rules/communication-and-notifications.md), [API contracts](../rules/api-contracts.md), and the frontend decision FD12.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.

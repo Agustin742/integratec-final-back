@@ -28,7 +28,7 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 
 - Questions and options belong to the activity. Each question has at least two options and the correct option(s) are stored server-side.
 - Correct answers **MUST NOT** be returned to students before grading is allowed, and **MUST NOT** be included in any response a student can read while an attempt is open.
-- The server grades multiple-choice automatically, from the persisted answers; the client **MUST NOT** supply the score. Whether the teacher may override an automatic grade is **open**.
+- The server grades multiple-choice automatically, from the persisted answers (MVP Core, decision D11; optional ungraded self-assessed practice quizzes are MVP Extendido); the client **MUST NOT** supply the score. Whether the teacher may override an automatic grade is **open**.
 - Single versus multiple correct options, partial credit, and the number of attempts are **open**; a single attempt is the default assumption.
 
 ## File-submission format
