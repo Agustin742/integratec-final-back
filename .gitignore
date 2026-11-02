@@ -1,6 +1,32 @@
 .codegraph/
 /.vscode/
 
+# Node / pnpm
+node_modules/
+dist/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Testing / Coverage
+coverage/
+.nyc_output/
+
+# Build caches
+.turbo/
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+
 # Terraform
 .terraform/
 *.tfstate

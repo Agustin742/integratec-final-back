@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-11-02 — Bootstrap pnpm monorepo (Issue #10)
+
+- **Status:** completed
+- **Area / files:** `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `apps/api/`, `apps/realtime/`, `packages/contracts/`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Bootstrapped the backend monorepo with `pnpm` workspaces hosting `apps/api` (minimal NestJS application with `/health` endpoint), `apps/realtime` (minimal Colyseus server with `/health` endpoint and zero database dependencies), and `packages/contracts` (internal shared TypeScript interfaces). Configured root strict TypeScript base configuration (`tsconfig.base.json`), ESLint, Prettier, and Vitest smoke test suites across all packages. Pinned Node.js 22 and pnpm 10.
+- **Reason:** Implement issue #10 and establish the foundational monorepo workspace for subsequent backend modules.
+- **Next step:** Configure environment variables and Docker Compose for local PostgreSQL (Issues #12 and #13) and implement Prisma schema migrations (Issue #14).
+
 ## 2026-11-02 — Align ERS, User Stories, and Requirements Decisions with school niche (v0.3)
 
 - **Status:** completed
