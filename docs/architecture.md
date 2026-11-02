@@ -4,7 +4,7 @@ This overview summarizes the backend architecture and links to the rules that go
 
 ## Components
 
-NestJS and Colyseus are separate deployable services. NestJS is the only service that reads and writes PostgreSQL and the only one that calls the AI provider. Colyseus holds live, ephemeral room state.
+NestJS and Colyseus are separate deployable services. NestJS is the only service that reads and writes PostgreSQL and the only one that calls the AI provider. Colyseus holds live, ephemeral classroom session state.
 
 ```mermaid
 flowchart LR
@@ -60,7 +60,7 @@ sequenceDiagram
   participant N as NestJS
 
   C->>Y: join with credential
-  Y->>N: verify identity and room access
+  Y->>N: verify identity and classroom access
   N-->>Y: allowed or denied
   alt allowed
     Y-->>C: joined, presence synchronized
@@ -97,9 +97,9 @@ IAM least-privilege roles apply to each service, and AWS Budgets monitors cost. 
 | Concern | Rule |
 |---|---|
 | Authentication and sessions | [Authentication and session](../rules/authentication-and-session.md) |
-| Offices, rooms, roles, invitations | [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) |
-| Tasks and boards | [Activities and grading](../rules/activities-and-grading.md) |
-| Chat, announcements, meetings | [Communication and notifications](../rules/communication-and-notifications.md) |
+| Schools, classrooms, roles, invitations | [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) |
+| Activities, submissions, and grades | [Activities and grading](../rules/activities-and-grading.md) |
+| Classroom chat, announcements, notifications | [Communication and notifications](../rules/communication-and-notifications.md) |
 | Bot and daily briefing | [AI bot and daily briefing](../rules/ai-bot-and-daily-briefing.md) |
 
 The reasoning behind these choices is in the [technical justification](./technical-justification.md).
@@ -108,4 +108,4 @@ The reasoning behind these choices is in the [technical justification](./technic
 
 - Session mechanism and contract distribution between repositories.
 - Internal transport between NestJS and Colyseus.
-- Detailed [design views](./diagrams/README.md) derive roles, board columns, and the office/room model from the domain rules. They supplement this overview without redefining its constraints.
+- The detailed [design views](./diagrams/README.md) still describe the earlier office and room model and are pending realignment with the school model. Where they differ, the domain rules prevail.

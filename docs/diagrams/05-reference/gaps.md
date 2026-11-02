@@ -4,6 +4,8 @@
 
 ← [Convenciones](./conventions.md) · [Índice](../README.md)
 
+> **Pendiente de realineación:** este registro describe el modelo anterior de oficinas y habitaciones. Sus referencias a oficina, habitación y RN/RF-OFI no corresponden a la ERS v0.2 (modelo de escuelas y aulas); ante diferencias prevalecen la ERS v0.2 y las [reglas de dominio](../../../rules/README.md).
+
 ## 1. Huecos declarados
 
 La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirements-decision.md#confirmaciones-para-la-alineación-documental) ya resuelven parte de los 27 puntos originales. Se conserva su numeración para trazabilidad: **definido funcionalmente** no significa esquema/API aprobados ni implementación. Los supuestos P-01 a P-15 de la ERS siguen identificados allí; esta revisión no los aprueba en bloque.
@@ -19,7 +21,7 @@ La [ERS](../../functional-requirements.md) y las [confirmaciones](../../requirem
 | 7 | Cardinalidades | ERS define oficina/habitaciones, avatar, membresía, acceso y liderazgo; sesiones e historial del bot son diseño técnico | Modelo ER |
 | 8 | Matriz de permisos | Definida en ERS §3 y RN-07 a RN-11; conservar supuestos P-07/P-08/P-13 explícitos | Casos de uso, clases |
 | 9 | Visibilidad de habitación | Acceso por oficina y habitación, no enum público/global propuesto; principal accesible a miembros (RN-03/04) | Arquitectura, ER |
-| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Rooms](../../../rules/classrooms-and-roles.md#invitations-and-membership) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
+| 10 | Invitaciones | Hash único y aceptación atómica obligatorios en [Classrooms, roles, and permissions](../../../rules/classrooms-and-roles.md#invitations-and-membership) y [Data](../../../rules/data.md#constraints-and-uniqueness); formato y duración concreta pendientes | S8, ER |
 | 11 | Solicitud de ingreso | Could · Evolución, RF-OFI-018; no aprobación adicional en canje de enlace MVP | S9 |
 | 12 | Expulsión y revocación | RN-12/13 y RF-OFI-012: baja lógica, conservar contenido, acceso revocado y tareas huérfanas; no se añade ban | S10, clases |
 | 13 | Estados de tarea | RF-TAR-004/006/007: columnas configurables, no enum fijo. Nombres iniciales en P-14; migración pendiente | ER, S4 |

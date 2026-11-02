@@ -4,7 +4,7 @@ The backend is the only authority for identity, session validity, and authorizat
 
 ## Authority and scope
 
-- [Master §2.2](../master-document.md#22-roles-permisos-e-invitaciones), [§6.3](../master-document.md#63-autenticación-entre-servicios), and [§8](../master-document.md#8-seguridad-y-calidad-transversal) establish the requirements; account behavior follows the master document. The `docs/` requirement documents still describe the earlier office model and are pending realignment.
+- [Master §2.2](../master-document.md#22-roles-permisos-e-invitaciones), [§6.3](../master-document.md#63-autenticación-entre-servicios), and [§8](../master-document.md#8-seguridad-y-calidad-transversal) establish the requirements; account behavior follows the master document. The derived design views in `docs/diagrams/` still describe the earlier office model and are pending realignment.
 - Course requirement R2 ([project requirements](./project-requirements.md)) is mandatory: registration, login, logout, hashing, expiring sessions, protected endpoints, roles, `401`/`403`, and user isolation.
 
 ## Credentials and registration

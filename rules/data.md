@@ -4,7 +4,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 
 ## Authority and scope
 
-- Entities come from [master §6.4](../master-document.md#64-modelo-de-información-general) and the product scope in [master §2](../master-document.md#2-alcance-funcional-del-producto). The `docs/` requirement documents still describe the earlier office and room model and are pending realignment; they are not authoritative for this model.
+- Entities come from [master §6.4](../master-document.md#64-modelo-de-información-general) and the product scope in [master §2](../master-document.md#2-alcance-funcional-del-producto). The derived design views in `docs/diagrams/` still describe the earlier office and room model and are pending realignment; they are not authoritative for this model.
 - This rule defines entities, relationships, and invariants, not final column names or types. Anything not stated here is **open**.
 - Business permissions are defined in [Classrooms, roles, and permissions](./classrooms-and-roles.md).
 

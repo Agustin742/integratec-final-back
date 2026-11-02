@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Align remaining docs with the school niche model
+
+- **Status:** completed
+- **Area / files:** `docs/architecture.md`, `docs/technical-justification.md`, `rules/classrooms-and-roles.md`, `rules/authentication-and-session.md`, `rules/data.md`, `docs/diagrams/README.md`, `docs/diagrams/05-reference/gaps.md`
+- **Change:** Replaced office/room wording with school/classroom roles and entities; stated that the derived design views still describe the earlier office and room model and are pending realignment (the requirement documents are already aligned). Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** These documents contradicted the school niche source of truth.
+- **Next step:** Realign `docs/diagrams/` (data model, class design, use cases, flows, deployment) to the school model.
+
 ## 2026-10-30 — Record resolved classroom, grading and points decisions
 
 - **Status:** completed

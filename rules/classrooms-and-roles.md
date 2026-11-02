@@ -6,7 +6,7 @@ Every access decision is made on the server from persisted membership and role. 
 
 - [Master §2.1](../master-document.md#21-escuelas-profesores-y-aulas) and [§2.2](../master-document.md#22-roles-permisos-e-invitaciones) define the organization paths, classrooms, roles, and the capability matrix. This rule turns them into server-side constraints; where they differ, the master document prevails until the team resolves the conflict.
 - [Security](./security.md) governs protected operations; [Authentication and session](./authentication-and-session.md) governs `401` versus `403` and registration; [Data](./data.md) holds the entities.
-- The `docs/` requirement documents still describe the earlier office and room model and are pending realignment. They **MUST NOT** be used to derive permissions.
+- The derived design views in `docs/diagrams/` still describe the earlier office and room model and are pending realignment. They **MUST NOT** be used to derive permissions.
 
 ## Organization paths and classrooms
 

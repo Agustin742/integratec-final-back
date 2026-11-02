@@ -1,7 +1,7 @@
 # Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
 > **Directorio de arquitectura de diseño** · Plataforma de salas de convivencia y organización
-> **Estado:** diseño objetivo alineado con la ERS; contratos técnicos propuestos, no implementación
+> **Estado:** pendiente de realineación al modelo de escuelas y aulas (`master-document.md` v0.3); describe el modelo anterior de oficinas y habitaciones. Ante diferencias prevalecen las reglas de dominio y la ERS v0.2; contratos técnicos propuestos, no implementación
 > **Última actualización:** 28 de octubre de 2026
 
 ---

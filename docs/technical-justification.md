@@ -14,8 +14,8 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 2. Authentication and authorization
 
-- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per office (Owner, Administrator, Leader, Member); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
-- **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-office scoping matches the product model and avoids a privileged global role.
+- **Decision:** NestJS validates credentials with salted Argon2 or bcrypt hashing, manages expiring sessions, and enforces `401` versus `403` on protected endpoints and on realtime joins. Roles are scoped per school or classroom (School Owner, School Admin, Teacher, Student, Parent); there is no global administrator. See [Authentication and session](../rules/authentication-and-session.md) and [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md).
+- **Why:** Course requirement R2 demands hashing, expiring sessions, protected resources, two or more roles, and user isolation. Per-school and per-classroom scoping matches the product model and avoids a privileged global role.
 - **Alternatives:** An external identity service (master allows "an equivalent identity service"); OAuth or social login (a recommended extra, not planned for the MVP).
 - **Trade-off:** Building authentication in the application gives full control and a clear defense story, but the team owns its security.
 - **Open:** The session mechanism (cookie session versus token), lifetime, renewal, and revocation are not decided.
@@ -23,13 +23,13 @@ This document justifies the relevant technical choices of the project: what was 
 ## 3. Database and ORM
 
 - **Decision:** Amazon RDS for PostgreSQL accessed with Prisma ORM; Prisma is the access layer, not the database. See [Data](../rules/data.md).
-- **Why:** The domain is relational (users, memberships, offices, rooms, tasks, meetings, and messages with strong relationships and constraints), and the course requires related entities. Prisma gives typed queries, parameterized access, and migrations.
+- **Why:** The domain is relational (users, schools, classrooms, enrollments, activities, submissions, grades, points, and messages with strong relationships and constraints), and the course requires related entities. Prisma gives typed queries, parameterized access, and migrations.
 - **Alternatives:** MongoDB or other document stores; other ORMs or raw SQL.
 - **Trade-off:** Schema changes require disciplined, reviewed migrations. RDS adds a fixed cost.
 
 ## 4. Realtime
 
-- **Decision:** Colyseus for room sessions, presence, and avatar movement, deployed separately from NestJS. Colyseus never writes durable data; persistent changes go through NestJS and are announced afterward. See [Architecture](../rules/architecture.md) and [Realtime and presence](../rules/realtime-and-presence.md).
+- **Decision:** Colyseus for live classroom sessions, presence, and avatar movement, deployed separately from NestJS. Colyseus never writes durable data; persistent changes go through NestJS and are announced afterward. See [Architecture](../rules/architecture.md) and [Realtime and presence](../rules/realtime-and-presence.md).
 - **Why:** Colyseus provides room lifecycle, synchronized state, and reconnection designed for rooms.
 - **Alternatives:** Socket.IO alone, which would require implementing room and state logic; it remains an option only for isolated needs.
 - **Trade-off:** One more service to deploy and learn. The MVP runs one Colyseus instance; scaling out needs a presence and routing strategy that is not defined.
@@ -54,5 +54,5 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 7. Known conflicts and notes
 
-- The [derived design views](./diagrams/README.md) follow the merged domain rules for office roles, room leadership, and configurable columns. Their fields and contracts remain proposals only where the rules leave them open; they are not competing requirements.
+- The [derived design views](./diagrams/README.md) still describe the earlier office and room model and are pending realignment with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
 - The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.
