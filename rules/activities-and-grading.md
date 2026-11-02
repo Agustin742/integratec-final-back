@@ -14,7 +14,7 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 - Only staff with teacher-level authority over the classroom (the teacher, or the school Owner or Admin) may create, edit, publish, and delete activities. Students and parents **MUST NOT** see unpublished activities.
 - The server **MUST** derive the classroom from the stored activity, not from client-supplied identifiers.
 - Visible states for an activity's work are **pending**, **submitted**, and **graded**. The state of a student's work is derived from the Submission and Grade records, not stored in a separate field that can disagree with them.
-- Title, description, and due date **MUST** be validated and bounded. Limits are **open** and **MUST** be recorded in the contract before release. Due-date semantics follow [Data and time](./data-and-time.md) and **MUST NOT** be shifted by incidental conversion.
+- Title, description, and due date **MUST** be validated and bounded. Limits are **open** and **MUST** be recorded in the contract before release. Due-date semantics follow [Data and time](./data-and-time.md) and **MUST NOT** be shifted by incidental conversion. Deadlines are stored as UTC instants, shown in the school's time zone, and lateness is decided by the server using UTC (decision D10).
 - Editing a published activity after submissions exist, and deleting one with submissions, are **open**. Until decided, deletion **MUST** be refused when submissions or grades exist.
 
 ## Exams
@@ -28,7 +28,7 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 
 - Questions and options belong to the activity. Each question has at least two options and the correct option(s) are stored server-side.
 - Correct answers **MUST NOT** be returned to students before grading is allowed, and **MUST NOT** be included in any response a student can read while an attempt is open.
-- The server grades multiple-choice automatically, from the persisted answers; the client **MUST NOT** supply the score. Whether the teacher may override an automatic grade is **open**.
+- The server grades multiple-choice automatically, from the persisted answers (MVP Core, decision D11; optional ungraded self-assessed practice quizzes are MVP Extendido); the client **MUST NOT** supply the score. Whether the teacher may override an automatic grade is **open**.
 - Single versus multiple correct options, partial credit, and the number of attempts are **open**; a single attempt is the default assumption.
 
 ## File-submission format

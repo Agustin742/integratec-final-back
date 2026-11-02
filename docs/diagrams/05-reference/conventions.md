@@ -59,4 +59,4 @@ Posición por fotograma, posiciones transitorias, estados interpolados de avatar
 
 ## 2. Tiempo y alcance de datos
 
-La zona del repaso sigue [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md#daily-review), sin herencia implícita a otras funciones. Fechas e instantes siguen [Data and time](../../../rules/data-and-time.md); almacenamiento permanece abierto donde lo indica [Data](../../../rules/data.md#open-decisions).
+La zona del repaso sigue [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md#daily-review), sin herencia implícita a otras funciones. Fechas e instantes siguen [Data and time](../../../rules/data-and-time.md); los instantes se guardan en UTC y los plazos se muestran en la zona IANA de la escuela (D10, [justificación técnica](../../technical-justification.md#d10-deadline-time-zone)).

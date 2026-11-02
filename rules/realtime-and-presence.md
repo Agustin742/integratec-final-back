@@ -32,6 +32,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 
 ## Message validation and authority
 
+- Message payload types are exported from `packages/contracts` and room state client types are generated with `@colyseus/schema` codegen and committed, as decided in D8 ([API contracts](./api-contracts.md)).
 - Every client message **MUST** be validated for shape, type, size, and rate before use. Unknown message types **MUST** be ignored or rejected without side effects.
 - The server **MUST** validate movement plausibility (bounds, collisions, speed) and **MUST NOT** accept teleports or movement through obstacles. A frozen avatar **MUST** be rejected any movement input. Exact tick rate and reconciliation approach are **open**.
 - Messages **MUST NOT** carry authority: roles, permissions, and user identity come from the authenticated session, never from the payload.

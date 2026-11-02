@@ -1,5 +1,29 @@
 # Tracker — Agustin
 
+## 2026-11-02 — Record multiple-choice scope and classroom member directory (D11, D12)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `docs/functional-requirements.md`, `master-document.md`, `rules/` (classrooms-and-roles, communication-and-notifications, activities-and-grading)
+- **Change:** Recorded D11: auto-graded multiple choice in activities and exams is MVP Core, while ungraded self-assessed practice quizzes stay MVP Extendido; fixed the requirements wording that listed self-assessed quizzes inconsistently. Recorded D12: `GET /classrooms/:id/members` is readable by every classroom member and returns only user id, display name, classroom role, and avatar summary (no emails, parent links, grades, or points; parents not listed), `404` for non-members, paginated, optional `q` display-name prefix filter. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The requirements contradicted themselves on multiple-choice scope, and the frontend needs a minimal roster for @mention autocomplete (issues #52 backend, #51 frontend).
+- **Next step:** Implement the endpoint in #52 and publish its OpenAPI entry first (D9).
+
+## 2026-11-02 — Record contract-first stubs and school time zone for deadlines (D9, D10)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/` (api-contracts, data-and-time, data, activities-and-grading), `docs/architecture.md`, `docs/diagrams/` (gaps, conventions, README files, deployment-and-network)
+- **Change:** Recorded D9: the backend publishes each endpoint's DTOs and OpenAPI entry (a `501` stub is allowed) before or with its implementation so the frontend can mock from the contract. Recorded D10: instants stored in UTC, API returns ISO 8601 UTC, each School has a persisted IANA time zone (default `America/Argentina/Buenos_Aires`), the server decides lateness in UTC. Closed gap 16. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The frontend needs to proceed ahead of backend implementation, and deadline display needs one unambiguous time zone for students and teachers.
+- **Next step:** Add the School time zone field in the Prisma baseline schema work item.
+
+## 2026-11-02 — Record committed REST and realtime contract artifacts (D8)
+
+- **Status:** completed
+- **Area / files:** `docs/technical-justification.md`, `rules/` (api-contracts, architecture, realtime-and-presence), `README.md`, `docs/architecture.md`, `docs/diagrams/` (gaps, realtime-colyseus, deployment-and-network, class-design, README files)
+- **Change:** Recorded D8: the backend commits `openapi.json` (CI fails if stale), generates Colyseus room state types with `schema-codegen` and exports message payload types from `packages/contracts`, all committed; the frontend pulls them with `pnpm api:sync`. Closed the open item on realtime type distribution. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** The frontend needs contract changes visible in pull requests and a build that does not depend on a running backend.
+- **Next step:** Fix the exact artifact paths and the CI staleness check in the monorepo bootstrap.
+
 ## 2026-11-02 — Record client-side token storage
 
 - **Status:** completed

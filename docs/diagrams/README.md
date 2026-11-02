@@ -1,7 +1,7 @@
 # Diagramas de Arquitectura y Diseño — IntegrarTEC 2026
 
 > **Directorio de arquitectura de diseño** · Plataforma de aulas virtuales 3D para escuelas
-> **Estado:** diseño propuesto alineado al modelo de escuelas y aulas (`master-document.md` v0.3); ante diferencias prevalecen las reglas de dominio y la ERS v0.2. Las decisiones D1 a D7 (2026-11-02) fueron aprobadas por Agustín el 2026-11-02. Contratos técnicos propuestos, no implementación
+> **Estado:** diseño propuesto alineado al modelo de escuelas y aulas (`master-document.md` v0.3); ante diferencias prevalecen las reglas de dominio y la ERS v0.2. Las decisiones D1 a D10 (2026-11-02) fueron aprobadas por Agustín el 2026-11-02. Contratos técnicos propuestos, no implementación
 > **Última actualización:** 2 de noviembre de 2026
 
 ---
@@ -34,7 +34,7 @@ flowchart TD
   subgraph R["05-reference (Referencia)"]
     direction LR
     CV["conventions.md<br/>Códigos y Reglas"]
-    GP["gaps.md<br/>decisiones D1 a D7 y huecos abiertos"]
+    GP["gaps.md<br/>decisiones D1 a D10 y huecos abiertos"]
   end
 
   F --> S

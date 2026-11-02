@@ -95,7 +95,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** A shared `contracts` npm package with zod schemas published to GitHub Packages (rejected: adds publishing, versioning, and registry authentication); manually copied types (rejected: drifts out of sync).
 - **Affected contracts:** [API contracts](../rules/api-contracts.md) and the README "Shared contracts" section.
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
-- **Open:** Distribution of realtime message and state types.
+- **Update:** The distribution mechanism is detailed in [D8](#d8-committed-rest-and-realtime-contract-artifacts), which closes the earlier open item on realtime message and state types.
 
 ### D5. AWS region
 
@@ -129,7 +129,59 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Open:** Whether the join code is a single `Invitation` entity with a kind discriminator or a separate `ClassroomJoinCode` entity is left to the Prisma baseline schema work item.
 
+### D8. Committed REST and realtime contract artifacts
+
+- **Question:** In what form does this repository publish its contracts so the frontend can consume them without a running backend, and how are realtime message and state types distributed?
+- **Outcome:**
+  1. **REST:** NestJS generates `openapi.json` and this repository **COMMITS** it (planned path, for example `apps/api/openapi.json`; the exact path is set by the monorepo bootstrap). Backend CI **MUST** fail if the committed file is stale versus the code. The frontend sync script (`pnpm api:sync`) fetches the committed file from this repository (`develop` branch, through the raw GitHub URL or a local checkout path) and regenerates its types with `openapi-typescript`; the generated types are committed in the frontend repository.
+  2. **Realtime:** this repository generates client-side TypeScript for Colyseus room state with `@colyseus/schema` codegen (`schema-codegen`) and exports realtime message payload types from `packages/contracts`. The generated artifacts are committed here (path set by the monorepo bootstrap), and the same frontend sync script pulls them into the frontend repository.
+- **Rationale:** One committed artifact is the authoritative contract; a stale check keeps it faithful to the code; the frontend build and its pull request diffs show contract changes without depending on a deployed backend.
+- **Alternatives:** Generating types in frontend CI from the deployed backend (rejected: the build depends on backend availability and contract changes are not visible in pull requests); publishing `packages/contracts` to GitHub Packages (rejected: publishing, versioning, and registry authentication overhead); hand-written realtime types in the frontend (rejected: drift and runtime errors).
+- **Trade-off:** Someone must run the frontend sync; types are stale until then.
+- **Affected contracts:** [API contracts](../rules/api-contracts.md), [Architecture](../rules/architecture.md), [Realtime and presence](../rules/realtime-and-presence.md), CI (staleness check), and the README "Shared contracts" section. The frontend side is decision FD7 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Open:** The exact paths of the committed artifacts, set by the monorepo bootstrap.
+
+### D9. Contract-first stubs and mocking
+
+- **Question:** How can the frontend build screens before the backend implements an endpoint, without drifting from the real contract?
+- **Outcome:** This repository publishes each endpoint's DTOs and OpenAPI entry (a stub returning `501` is allowed) in a pull request before or together with its implementation. The committed `openapi.json` ([D8](#d8-committed-rest-and-realtime-contract-artifacts)) carries it, and the frontend builds its mock handlers from that contract (FD9).
+- **Rationale:** The frontend and backend work in parallel from one authoritative contract, and contract changes stay visible in pull requests.
+- **Alternatives:** The frontend waits for backend merges (rejected: serializes the teams); hand-written mocks without a contract (rejected: drift).
+- **Trade-off:** Contract authoring moves to the start of each endpoint, and stubs **MUST** be replaced by the implementation before the endpoint is considered done.
+- **Affected contracts:** [API contracts](../rules/api-contracts.md), D8, and the frontend decision FD9 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D10. Deadline time zone
+
+- **Question:** In which time zone are activity deadlines stored, evaluated, and shown?
+- **Outcome:** Timestamps are stored in UTC and the API returns ISO 8601 UTC instants. Each School has a persisted IANA time zone, defaulting to `America/Argentina/Buenos_Aires`; independent teachers' classrooms use the same default. The frontend displays deadlines in the school's time zone and indicates the zone (FD11). The server decides lateness using UTC.
+- **Rationale:** Students and teachers of one school see the same deadline time, and server-side evaluation on UTC instants is unambiguous. This replaces the earlier reading that dates are "stored" in the Buenos Aires zone.
+- **Alternatives:** Display in each viewer's browser time zone (rejected: students and teachers could see different deadline times).
+- **Affected contracts:** [Data and time](../rules/data-and-time.md), [Data](../rules/data.md) (School entity), [Activities and grading](../rules/activities-and-grading.md), and the frontend decision FD11. The daily briefing keeps its own fixed `America/Argentina/Buenos_Aires` policy.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D11. Auto-graded multiple choice scope
+
+- **Question:** Is automatic grading of multiple-choice questions part of MVP Core or MVP Extendido?
+- **Outcome:** Multiple-choice questions inside activities and exams are evaluated server-side and graded automatically; this is **MVP Core** (RF-ACT-001, RF-ACT-003). Optional self-assessed practice quizzes, meaning ungraded quizzes for self-study, remain **MVP Extendido**.
+- **Rationale:** The core academic path (publish, submit, grade, award points) needs exam grading that does not depend on manual correction, and the requirements already place multiple choice in the core. The ungraded practice quiz is a separate, optional feature.
+- **Alternatives:** Treating all quizzes as MVP Extendido (rejected: contradicts RF-ACT-001 and RF-ACT-003 and leaves exams without automatic grading).
+- **Trade-off:** The core carries the answer-key storage, hiding, and grading logic; the number of attempts and partial credit stay open.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), the requirements document (`docs/functional-requirements.md`, section 1.3), and the frontend decision FD12 in its repository's `docs/technical-justification.md`.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D12. Classroom member directory
+
+- **Question:** How does a client list the members of a classroom (for example for @mention autocomplete) without exposing personal data?
+- **Outcome:** `GET /classrooms/:id/members` is readable by every member of the classroom, teacher and students. It returns only the user id, display name, classroom role (Teacher or Student), and avatar summary. It **MUST NOT** return emails, parent links, grades, points, or other personal data, and parent or tutor accounts are not listed. A non-member receives `404` (uniform policy). The response is paginated and accepts an optional `q` case-insensitive display-name prefix filter. Tracked in backend issue #52 and consumed by frontend issue #51 (chat mention autocomplete).
+- **Rationale:** Mention autocomplete needs a roster that every member can read, and a minimal projection keeps minors' data inside the classroom boundary.
+- **Alternatives:** Restricting the roster to teachers (rejected: students cannot autocomplete mentions); returning full user records (rejected: exposes personal data); resolving mentions client-side without a roster (rejected: the server resolves mentions and the client needs suggestions).
+- **Trade-off:** Every member can see the classroom's display names, roles, and avatars; the page size and the maximum `q` length are set in the contract.
+- **Affected contracts:** [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), [Communication and notifications](../rules/communication-and-notifications.md), [API contracts](../rules/api-contracts.md), and the frontend decision FD12.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
-- The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.
+- The requirements state that dates are "stored" in the Buenos Aires zone; [D10](#d10-deadline-time-zone) decides UTC storage with presentation in the school's time zone, so the requirements wording is superseded for storage.

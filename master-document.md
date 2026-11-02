@@ -425,9 +425,9 @@ El núcleo debe completar **un recorrido utilizable en producción**:
 
 1. Caminos de organización (profesor independiente o escuela), roles, **invitaciones por email** y **código de aula** para alumnos.
 2. Aula 3D con avatares y **modo 2D clásico**, con presencia en tiempo real.
-3. Chat del aula con moderación, silenciado del chat y @menciones; tablón de anuncios.
+3. Chat del aula con moderación, silenciado del chat y @menciones (con autocompletado desde el padrón del aula, decisión D12); tablón de anuncios.
 4. Subida de material (S3).
-5. **Actividades** (TP y examen; entrega de archivo y opción múltiple) con revisión, calificaciones y **puntos ponderados**.
+5. **Actividades** (TP y examen; entrega de archivo y opción múltiple con corrección automática en el servidor) con revisión, calificaciones y **puntos ponderados**. Los cuestionarios de práctica autoevaluados y sin nota son MVP extendido (decisión D11).
 6. Métricas de seguimiento del alumno (tiempo conectado, entregas, participación).
 7. **Congelar** y bloqueo en asientos.
 8. Racha de conexión.

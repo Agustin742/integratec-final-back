@@ -15,7 +15,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | User | Account: email, display name, password hash | Many memberships; one avatar configuration |
 | Session | Server-side session record: hashed rotating refresh token and session id checked per request (decided, D1) | Belongs to a user |
 | AvatarConfiguration | Persistent avatar appearance | One per user |
-| School | Isolation unit of the school path | One Owner; many members and classrooms |
+| School | Isolation unit of the school path; persisted IANA time zone (default `America/Argentina/Buenos_Aires`, D10) | One Owner; many members and classrooms |
 | SchoolMember | Membership with school role (Owner, Admin, Teacher) and state | Joins User and School |
 | Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
 | Enrollment | A student's membership in a classroom, and state | Joins User and Classroom |
@@ -112,5 +112,4 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 - Resubmission history and grade history representation.
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.
 - School, classroom, and account deletion effects.
-- Storage representation of instants; this project interprets "Buenos Aires time" as timezone-aware instants presented in that zone, to be confirmed.
 - Whether one user may hold a school path and an independent-teacher path under one account.

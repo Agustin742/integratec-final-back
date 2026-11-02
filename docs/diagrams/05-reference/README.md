@@ -9,7 +9,7 @@ Esta carpeta contiene las **convenciones derivadas de las reglas y la ERS**, tra
 | Archivo | Descripción | Contenido clave |
 |---|---|---|
 | [conventions.md](./conventions.md) | Convenciones transversales | Catálogo de códigos de error (401, 403, 404, etc.), orden estricto de verificación (auth → permisos → validación → persistencia), estrategias de idempotencia y límites de IA. |
-| [gaps.md](./gaps.md) | Huecos declarados (Tracking) | Registro de decisiones D1 a D7 aprobadas por Agustín y de huecos abiertos vigentes, con la regla que los origina. |
+| [gaps.md](./gaps.md) | Huecos declarados (Tracking) | Registro de decisiones D1 a D10 aprobadas por Agustín y de huecos abiertos vigentes, con la regla que los origina. |
 
 ## Navegación
 
