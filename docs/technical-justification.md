@@ -92,7 +92,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Question:** How do the frontend and backend repositories share API contracts?
 - **Outcome:** NestJS generates an OpenAPI document (through `@nestjs/swagger` decorators) served with the Scalar API reference UI; the frontend generates its TypeScript types from that document.
 - **Rationale:** The backend owns one authoritative specification and consumers learn about changes by regenerating types.
-- **Alternatives:** Not recorded with this decision; a shared workspace, a generated SDK, and manually copied types were previously unapproved.
+- **Alternatives:** A shared `contracts` npm package with zod schemas published to GitHub Packages (rejected: adds publishing, versioning, and registry authentication); manually copied types (rejected: drifts out of sync).
 - **Affected contracts:** [API contracts](../rules/api-contracts.md) and the README "Shared contracts" section.
 - **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
 - **Open:** Distribution of realtime message and state types.
@@ -102,7 +102,7 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 - **Question:** Which AWS region hosts the environment?
 - **Outcome:** `sa-east-1` (Sao Paulo).
 - **Rationale:** The product is sold in Argentina and realtime latency matters.
-- **Alternatives:** Not recorded with this decision.
+- **Alternatives:** `us-east-1`, cheaper and with the widest Amazon Bedrock model availability, but with higher latency from Argentina (rejected because realtime responsiveness matters for the target market).
 - **Trade-off:** Higher cost is accepted.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md).
 - **Approval:** Decided by Agustin on 2026-11-02; pending team approval.
