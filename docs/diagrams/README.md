@@ -71,7 +71,7 @@ flowchart TD
 
 1. **Mermaid como formato editable:** Los diagramas son código Mermaid en Markdown. Son vistas derivadas de la ERS, las decisiones y las reglas; no una fuente de requisitos nuevos ni evidencia de implementación. La representación visual debe verificarse con un renderer compatible, no asumirse por usar Mermaid.
 2. **Autoridad Única:** NestJS y PostgreSQL son la autoridad exclusiva de los datos persistentes (usuarios, salas, tareas, chat). Colyseus gestiona únicamente estado efímero en memoria (presencia y movimiento).
-3. **Persistencia antes de difusión:** NestJS valida y confirma en RDS antes de notificar a destinatarios autorizados. Las secuencias REST son ejemplos; el camino de envío del chat permanece abierto según [Communication and meetings](../../rules/communication-and-meetings.md#chat).
+3. **Persistencia antes de difusión:** NestJS valida y confirma en RDS antes de notificar a destinatarios autorizados. Las secuencias REST son ejemplos; el camino de envío del chat permanece abierto según [Communication and meetings](../../rules/communication-and-notifications.md#classroom-chat).
 
 ---
 

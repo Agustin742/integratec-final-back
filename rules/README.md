@@ -47,15 +47,17 @@ Rules describe **how the project must be designed and built**. They are not impl
 - [API contracts](./api-contracts.md) — cross-repository ownership, payloads, compatibility, and integration evidence.
 - [Data and time](./data-and-time.md) — opaque identity, optional values, dates, time zones, and persistence boundaries.
 - [Data](./data.md) — relational entities, constraints, deletion policy, and migration discipline.
-- [Realtime and presence](./realtime-and-presence.md) — Colyseus rooms, join authorization, ephemeral state, and reconnection.
+- [Realtime and presence](./realtime-and-presence.md) — Colyseus classroom rooms, join authorization, ephemeral state, classroom control broadcasts, and reconnection.
 
 ### Domain rules
 
 - [Authentication and session](./authentication-and-session.md) — credentials, hashing, expiring sessions, logout, and `401` versus `403`.
-- [Offices, rooms, and permissions](./rooms-and-permissions.md) — roles, permission matrix, invitations, and server-side access checks.
-- [Tasks and productivity](./tasks-and-productivity.md) — task authority, validation, and board consistency.
-- [Communication and meetings](./communication-and-meetings.md) — chat history access, announcements, meetings, and attendance.
-- [AI bot and daily briefing](./ai-bot-and-daily-briefing.md) — Bedrock integration, read-only bot, once-per-day briefing, and fallback.
+- [Classrooms, roles, and permissions](./classrooms-and-roles.md) — organization paths, roles, school Owner/Admin authority, email invitations, parents, adult mode, and server-side access checks.
+- [Activities and grading](./activities-and-grading.md) — TP and exam activities, file and multiple-choice submissions, grades, weighted points, and activity metrics.
+- [Points, streak, and shop](./points-and-shop.md) — points ledger, streak on real activity, shop, classroom items, mini-games, pet, and medals.
+- [Communication and notifications](./communication-and-notifications.md) — classroom chat, moderation and mute, mentions, announcements, parent messages, and in-app and email notifications.
+- [Live classroom tools](./live-classroom-tools.md) — freeze, mute, collaboration lock, calls and presentations, and collaborative whiteboard.
+- [AI bot and daily briefing](./ai-bot-and-daily-briefing.md) — Bedrock integration, RAG over approved material, exam block, guide-only rule, once-per-day review, and fallback.
 
 ### Operation and reliability
 

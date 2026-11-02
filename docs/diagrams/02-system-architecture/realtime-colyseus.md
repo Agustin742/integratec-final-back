@@ -77,7 +77,7 @@ Los nombres de la tabla son los ocho eventos que lista el documento fuente, más
 
 ### 1.3 Regla de consistencia y autoridad
 
-Se ilustra el camino REST propuesto, seguido de difusión después del commit. La autoridad de persistencia es NestJS; el transporte de envío del chat sigue abierto entre REST y un mensaje realtime validado y procesado por NestJS, según [Communication](../../../rules/communication-and-meetings.md#chat). El ejemplo no descarta esa alternativa ni duplica la [regla de arquitectura](../../../rules/architecture.md#integration-between-nestjs-and-colyseus).
+Se ilustra el camino REST propuesto, seguido de difusión después del commit. La autoridad de persistencia es NestJS; el transporte de envío del chat sigue abierto entre REST y un mensaje realtime validado y procesado por NestJS, según [Communication](../../../rules/communication-and-notifications.md#classroom-chat). El ejemplo no descarta esa alternativa ni duplica la [regla de arquitectura](../../../rules/architecture.md#integration-between-nestjs-and-colyseus).
 
 ```mermaid
 sequenceDiagram

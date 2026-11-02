@@ -194,7 +194,7 @@ El orden es la garantía: el `INSERT` y la confirmación de RDS preceden a la di
 
 ### 1.6 S6 — Repaso diario del bot
 
-RF-BOT-003/004 y RF-BOT-006 a RF-BOT-009: solo lectura de datos autorizados, primera conexión autenticada del día y fallback estructurado. La fecha del servidor usa America/Argentina/Buenos_Aires para el repaso, sin extender esa política a otras funciones, según [su regla](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing). La propuesta técnica debe distinguir reserva de generación y entrega completada: encontrar una reserva no prueba que el usuario ya recibió su repaso.
+RF-BOT-003/004 y RF-BOT-006 a RF-BOT-009: solo lectura de datos autorizados, primera conexión autenticada del día y fallback estructurado. La fecha del servidor usa America/Argentina/Buenos_Aires para el repaso, sin extender esa política a otras funciones, según [su regla](../../../rules/ai-bot-and-daily-briefing.md#daily-review). La propuesta técnica debe distinguir reserva de generación y entrega completada: encontrar una reserva no prueba que el usuario ya recibió su repaso.
 
 ```mermaid
 sequenceDiagram
@@ -231,7 +231,7 @@ sequenceDiagram
     end
 ```
 
-La clave única usuario/fecha y la decisión atómica son obligatorias según [Data](../../../rules/data.md#constraints-and-uniqueness) y [la regla del bot](../../../rules/ai-bot-and-daily-briefing.md#daily-briefing); recuperación de reservas, reintentos y confirmación de presentación necesitan contrato técnico antes de implementar. No se afirma entrega exactamente una vez por insertar un marcador anticipado. RF-BOT-008 permite el resumen sin IA y RF-BOT-009 agrega redacción IA como Could; el proveedor no bloquea el resumen estructurado. El bot no crea, modifica ni elimina tareas, reuniones o anuncios, **aunque el usuario se lo pida** (RF-BOT-004); esas acciones son Evolución (RF-BOT-010). Persistir la propia entrega del repaso no habilita escritura de negocio por el bot.
+La clave única usuario/fecha y la decisión atómica son obligatorias según [Data](../../../rules/data.md#constraints-and-uniqueness) y [la regla del bot](../../../rules/ai-bot-and-daily-briefing.md#daily-review); recuperación de reservas, reintentos y confirmación de presentación necesitan contrato técnico antes de implementar. No se afirma entrega exactamente una vez por insertar un marcador anticipado. RF-BOT-008 permite el resumen sin IA y RF-BOT-009 agrega redacción IA como Could; el proveedor no bloquea el resumen estructurado. El bot no crea, modifica ni elimina tareas, reuniones o anuncios, **aunque el usuario se lo pida** (RF-BOT-004); esas acciones son Evolución (RF-BOT-010). Persistir la propia entrega del repaso no habilita escritura de negocio por el bot.
 
 ### 1.7 S7 — Reconexión, token expirado y logout
 

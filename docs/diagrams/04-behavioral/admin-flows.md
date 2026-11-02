@@ -52,7 +52,7 @@ sequenceDiagram
     end
 ```
 
-La reinvitación de una persona expulsada no restaura sus accesos anteriores (RF-OFI-008). Guardar solo hash y validar/consumir la invitación atómicamente son obligatorios en [Rooms and permissions](../../../rules/rooms-and-permissions.md#invitations-and-membership-changes); el formato de token y las respuestas concretas requieren diseño técnico; el flujo no impone consumo único ni aprobación manual después de aceptar el enlace.
+La reinvitación de una persona expulsada no restaura sus accesos anteriores (RF-OFI-008). Guardar solo hash y validar/consumir la invitación atómicamente son obligatorios en [Rooms and permissions](../../../rules/classrooms-and-roles.md#invitations-and-membership); el formato de token y las respuestas concretas requieren diseño técnico; el flujo no impone consumo único ni aprobación manual después de aceptar el enlace.
 
 ### 1.2 S9 — Solicitud de ingreso y aprobación
 
@@ -135,7 +135,7 @@ sequenceDiagram
     api-->>member: estado actualizado
 ```
 
-La respuesta de asistencia puede cambiarse antes de la reunión, nunca si está cancelada o pasada (RF-CAR-007). Gestionar anuncios ajenos o editar/cancelar reuniones ajenas corresponde únicamente a Dueño/Admin (RF-CAR-004/006). La misma regla aplica aunque el cliente manipule un ID. La programación sigue [Communication and meetings](../../../rules/communication-and-meetings.md#meetings-and-attendance) y [Data and time](../../../rules/data-and-time.md), sin generalizar la política del repaso.
+La respuesta de asistencia puede cambiarse antes de la reunión, nunca si está cancelada o pasada (RF-CAR-007). Gestionar anuncios ajenos o editar/cancelar reuniones ajenas corresponde únicamente a Dueño/Admin (RF-CAR-004/006). La misma regla aplica aunque el cliente manipule un ID. La programación sigue la regla de reuniones (pendiente de realinear) y [Data and time](../../../rules/data-and-time.md), sin generalizar la política del repaso.
 
 ### 1.5 S12 — Admin intenta nombrar otro Admin
 
