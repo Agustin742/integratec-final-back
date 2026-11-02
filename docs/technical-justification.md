@@ -119,5 +119,5 @@ Decided by Agustin on 2026-11-02; **pending team approval**. Until the team appr
 
 ## 8. Known conflicts and notes
 
-- The [derived design views](./diagrams/README.md) still describe the earlier office and room model and are pending realignment with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
+- The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
 - The requirements state that dates are "stored" in the Buenos Aires zone; the project plans timezone-aware instants presented in that zone, pending confirmation.
