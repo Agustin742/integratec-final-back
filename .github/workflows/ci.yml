@@ -109,18 +109,31 @@ jobs:
         if: steps.package.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Code formatting and linting
+      - name: Code formatting
         if: steps.package.outputs.present == 'true'
         shell: bash
         run: |
-          if node -e "process.exit(require('./package.json').scripts?.['format:check'] && require('./package.json').scripts?.lint ? 0 : 1)"; then
+          if node -e "process.exit(require('./package.json').scripts?.['format:check'] ? 0 : 1)"; then
             pnpm format:check
+          else
+            echo "::notice title=Format not configured::Formatting check script is not configured; step skipped."
+            {
+              echo '## Format not configured'
+              echo "No \`format:check\` script is configured in \`package.json\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Code linting
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.lint ? 0 : 1)"; then
             pnpm lint
           else
-            echo "::notice title=Lint/Format not configured::Formatting or linting scripts are not configured; step skipped."
+            echo "::notice title=Lint not configured::Linting script is not configured; step skipped."
             {
-              echo '## Lint and formatting not configured'
-              echo "Required \`format:check\` or \`lint\` script missing in \`package.json\`."
+              echo '## Lint not configured'
+              echo "No \`lint\` script is configured in \`package.json\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
