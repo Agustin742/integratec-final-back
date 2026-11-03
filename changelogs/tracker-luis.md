@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-11-03 — Extend CI with pnpm caching and PostgreSQL service container (Issue #11)
+
+- **Status:** completed
+- **Area / files:** `.github/workflows/ci.yml`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Extended `.github/workflows/ci.yml` for Issue #11: added a health-checked `postgres:16-alpine` service container with test credentials and injected `DATABASE_URL` for future Prisma integration tests; enabled Corepack and configured `pnpm` store caching via `actions/setup-node@v4`; added defensive step guards with `$GITHUB_STEP_SUMMARY` for formatting, linting, typecheck, testing, and building; and updated `README.md` to document the CI setup.
+- **Reason:** Implement issue #11 to ensure fast, deterministic CI runs with package caching and real database integration test readiness.
+- **Next step:** Merge PR #11 into develop, then implement typed environment configuration (Issue #12) and Docker Compose setup (Issue #13).
+
 ## 2026-11-02 — Address review feedback on monorepo bootstrap (Issue #10)
 
 - **Status:** completed

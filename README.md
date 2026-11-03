@@ -72,7 +72,7 @@ git diff --check
 
 The local whitespace command checks uncommitted changes; CI checks the proposed committed diff against the PR base or push's previous SHA. Workflow validation also requires actionlint 1.7.7: `actionlint .github/workflows/ci.yml`.
 
-When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22, installs with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Otherwise, it explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
+When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22 with `pnpm` store caching, provisions an active PostgreSQL 16 service container (`localhost:5432` with healthcheck for upcoming Prisma database and integration testing), installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Each step is guarded against missing scripts and reports a GitHub notice and step summary when absent. Otherwise, CI explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
 
 ## Shared contracts
 
