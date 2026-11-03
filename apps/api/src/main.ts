@@ -1,6 +1,6 @@
-import { bootstrap } from './bootstrap';
+import { start } from './bootstrap';
 
-bootstrap().catch((err: unknown) => {
+start(process.env, (code) => process.exit(code)).catch((err: unknown) => {
   console.error('Failed to start NestJS API:', err);
   process.exit(1);
 });
