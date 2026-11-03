@@ -14,6 +14,24 @@ jobs:
   checks:
     name: checks
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aula_virtual_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aula_virtual_test?schema=public
+
     steps:
       - name: Enforce promotion source branch
         if: github.event_name == 'pull_request'
@@ -76,27 +94,62 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Enable Corepack
+        if: steps.package.outputs.present == 'true'
+        run: corepack enable
+
       - name: Set up Node.js 22
         if: steps.package.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: 'pnpm'
 
       - name: Install dependencies
         if: steps.package.outputs.present == 'true'
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Code formatting and linting
+      - name: Code formatting
         if: steps.package.outputs.present == 'true'
+        shell: bash
         run: |
-          pnpm format:check
-          pnpm lint
+          if node -e "process.exit(require('./package.json').scripts?.['format:check'] ? 0 : 1)"; then
+            pnpm format:check
+          else
+            echo "::notice title=Format not configured::Formatting check script is not configured; step skipped."
+            {
+              echo '## Format not configured'
+              echo "No \`format:check\` script is configured in \`package.json\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Code linting
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.lint ? 0 : 1)"; then
+            pnpm lint
+          else
+            echo "::notice title=Lint not configured::Linting script is not configured; step skipped."
+            {
+              echo '## Lint not configured'
+              echo "No \`lint\` script is configured in \`package.json\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Typecheck
         if: steps.package.outputs.present == 'true'
-        run: pnpm typecheck
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.typecheck ? 0 : 1)"; then
+            pnpm typecheck
+          else
+            echo "::notice title=Typecheck not configured::No typecheck script is configured; step skipped."
+            {
+              echo '## Typecheck not configured'
+              echo "No \`typecheck\` script is configured in \`package.json\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Run tests
         if: steps.package.outputs.present == 'true'
@@ -114,7 +167,17 @@ jobs:
 
       - name: Build packages
         if: steps.package.outputs.present == 'true'
-        run: pnpm build
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.build ? 0 : 1)"; then
+            pnpm build
+          else
+            echo "::notice title=Build not configured::No build script is configured; step skipped."
+            {
+              echo '## Build not configured'
+              echo "No \`build\` script is configured in \`package.json\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Report docs-only backend
         if: steps.package.outputs.present == 'false'
