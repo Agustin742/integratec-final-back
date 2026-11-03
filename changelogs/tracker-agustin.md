@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-03 — Typed environment configuration for api and realtime (#12)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/config/`, `apps/realtime/src/config/`, `eslint.config.mjs`, `apps/*/.env.example`, `README.md`, `.gitignore`
+- **Change:** Added zod-validated `loadApiConfig` / `loadRealtimeConfig`, fail-fast startup with an aggregated diagnostic, a lint rule against direct `process.env` reads, `.env.example` files, a `.env.*` ignore rule, and a Configuration section in the README. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** Rule `configuration-and-environments.md` requires a typed boundary and clear diagnostics; the apps previously read `process.env` ad hoc and enabled CORS for any origin.
+- **Next step:** Open the PR for #12 into `develop`; wire the typed config into persistence and token services as they land.
+
 ## 2026-11-02 — Record multiple-choice scope and classroom member directory (D11, D12)
 
 - **Status:** completed
