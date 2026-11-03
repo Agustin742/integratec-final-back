@@ -48,6 +48,44 @@ pnpm --filter @aula/api start:dev
 pnpm --filter @aula/realtime start:dev
 ```
 
+## Configuration
+
+Both services read their configuration once at startup through a typed, validated boundary ([`apps/api/src/config`](./apps/api/src/config/api-config.ts) and [`apps/realtime/src/config`](./apps/realtime/src/config/realtime-config.ts)). If any variable is missing or invalid, the process prints one diagnostic that lists every offending variable by name (never its value) and exits with code 1. Feature code must not read `process.env` directly; ESLint enforces this outside the config modules and process entrypoints. See [Configuration and environments](./rules/configuration-and-environments.md).
+
+Copy `apps/<app>/.env.example` to `apps/<app>/.env` and replace the placeholders. Real `.env` files are git-ignored; `.env.example` is tracked and contains placeholders only. The API does not load `.env` files on its own: export the variables in your shell or start it with `node --env-file=.env`. The realtime server loads `.env.<NODE_ENV>` and `.env` from its working directory through `@colyseus/tools` before validating them. Every variable below is read at startup, so **any change requires a restart**.
+
+Generate a secret with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate, so a service cannot start with it. Use the same value in the API and the realtime server.
+
+### API (`apps/api`)
+
+| Variable                  | Required / default                                | Purpose                                                                  | Classification | Restart |
+| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ | -------------- | ------- |
+| `NODE_ENV`                | Default `development`; `development`, `test`, `production` | Environment name                                                | Public         | Yes     |
+| `PORT`                    | Default `3000`; integer 1-65535                   | HTTP listen port                                                         | Public         | Yes     |
+| `DATABASE_URL`            | Required; `postgres://` or `postgresql://` URL    | PostgreSQL connection string (includes credentials)                      | Private        | Yes     |
+| `JWT_ACCESS_TTL`          | Default `15m`; `<integer>` + `s`, `m`, `h` or `d` | Access token lifetime                                                    | Public         | Yes     |
+| `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
+| `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
+| `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+| `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
+
+### Realtime (`apps/realtime`)
+
+| Variable                  | Required / default                                | Purpose                                                                  | Classification | Restart |
+| ------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------ | -------------- | ------- |
+| `NODE_ENV`                | Default `development`; `development`, `test`, `production` | Environment name                                                | Public         | Yes     |
+| `PORT`                    | Default `2567`; integer 1-65535                   | Colyseus and HTTP listen port                                            | Public         | Yes     |
+| `API_INTERNAL_URL`        | Required; absolute `http(s)` URL                  | Base URL of the API for internal calls                                   | Private        | Yes     |
+| `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+
+Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
+
 ## Documentation
 
 The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints.

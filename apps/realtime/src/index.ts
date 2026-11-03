@@ -1,5 +1,9 @@
 import { listen } from '@colyseus/tools';
 import appConfig from './app.config';
+import { start } from './start';
 
-const port = Number(process.env.PORT || 2567);
-listen(appConfig, port);
+start(
+  process.env,
+  (code) => process.exit(code),
+  (port) => listen(appConfig, port),
+);
