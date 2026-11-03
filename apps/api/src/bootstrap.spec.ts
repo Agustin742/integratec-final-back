@@ -1,3 +1,5 @@
+import type { AddressInfo } from 'node:net';
+import { NestApplication } from '@nestjs/core';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { start } from './bootstrap';
 
@@ -20,6 +22,17 @@ describe('start', () => {
 
   it('boots the app and applies the CORS allowlist and port when valid', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    // Record the configured port, but bind an ephemeral one so the test never
+    // collides with a port already in use on the machine or by a parallel worker.
+    const realListen = NestApplication.prototype.listen as (
+      this: NestApplication,
+      port: number,
+    ) => ReturnType<NestApplication['listen']>;
+    const listen = vi.spyOn(NestApplication.prototype, 'listen').mockImplementation(function (
+      this: NestApplication,
+    ) {
+      return realListen.call(this, 0);
+    });
     const exit = vi.fn();
     const app = await start(
       {
@@ -32,12 +45,14 @@ describe('start', () => {
     );
     try {
       expect(exit).not.toHaveBeenCalled();
-      const res = await fetch('http://127.0.0.1:3999/health', {
+      expect(listen).toHaveBeenCalledExactlyOnceWith(3999);
+      const { port } = app!.getHttpServer().address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/health`, {
         headers: { Origin: 'http://localhost:5173' },
       });
       expect(res.status).toBe(200);
       expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
-      const other = await fetch('http://127.0.0.1:3999/health', {
+      const other = await fetch(`http://127.0.0.1:${port}/health`, {
         headers: { Origin: 'http://evil.example.com' },
       });
       expect(other.headers.get('access-control-allow-origin')).toBeNull();
