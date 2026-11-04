@@ -67,11 +67,19 @@ docker compose ps
 docker compose down
 ```
 
-The database credentials and configuration match `apps/api/.env.example` (`user: postgres`, `password: postgres`, `database: aula_virtual`, `port: 5432`). Database state is persisted across container restarts in the named volume `postgres_data`.
+The database credentials and configuration match `apps/api/.env.example` (`user: postgres`, `password: postgres`, `database: aula_virtual`, `port: 5432`). These credentials are for local development only, so the host port is published on `127.0.0.1` only (configurable via `POSTGRES_PORT`, defaulting to `5432` or `5433` if you have local PostgreSQL running). Database state is persisted across container restarts in the Docker volume `aula_postgres_data` (declared as `postgres_data` in the compose file). To reset the database, run `docker compose down -v`.
 
 ### Running services in containers
 
 Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22-alpine`, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
+
+The application services require `INTERNAL_SERVICE_SECRET`, and the compose file deliberately provides no default for it. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with a generated secret:
+
+```bash
+echo "INTERNAL_SERVICE_SECRET=<generated-secret>" > .env
+```
+
+If the secret is missing or shorter than 32 characters, the services exit at startup with the configuration diagnostic described in [Configuration](#configuration). `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `ALLOWED_ORIGINS` can be overridden in the same file; the password is embedded in `DATABASE_URL`, so avoid URL-reserved characters such as `@`, `:`, `/` or `#`.
 
 To start the database and all application services:
 

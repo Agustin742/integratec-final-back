@@ -4,7 +4,7 @@
 
 - **Status:** completed
 - **Area / files:** `.dockerignore`, `docker-compose.yml`, `apps/api/Dockerfile`, `apps/realtime/Dockerfile`, `README.md`, `changelogs/tracker-luis.md`
-- **Change:** Implemented Issue #13 Docker setup: added root `.dockerignore` excluding dependencies, build artifacts, environments, and docs; created `docker-compose.yml` with health-checked PostgreSQL 16 on port 5432 with `postgres_data` volume matching `apps/api/.env.example`, plus optional `api` and `realtime` containers under the `app` profile; authored multi-stage `apps/api/Dockerfile` and `apps/realtime/Dockerfile` on `node:22-alpine` using Corepack pnpm, non-root `USER node`, container health checks, and monorepo contract building; and updated `README.md` with Docker Compose workflows.
+- **Change:** Implemented Issue #13 Docker setup: added root `.dockerignore` excluding dependencies, build artifacts, environments, and docs; created `docker-compose.yml` with health-checked PostgreSQL 16 on `127.0.0.1:5432` with the `aula_postgres_data` volume matching `apps/api/.env.example`, plus optional `api` and `realtime` containers under the `app` profile (no default for `INTERNAL_SERVICE_SECRET`, which is read from a git-ignored root `.env`); authored multi-stage `apps/api/Dockerfile` and `apps/realtime/Dockerfile` on `node:22-alpine` using Corepack pnpm, non-root `USER node`, container health checks, and monorepo contract building; and updated `README.md` with Docker Compose workflows.
 - **Reason:** Enable local containerized PostgreSQL database service and production-ready container builds for API and realtime microservices.
 - **Next step:** Merge PR for Issue #13 into develop, then proceed with Prisma baseline schema and migrations (Issue #14).
 
