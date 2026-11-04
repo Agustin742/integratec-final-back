@@ -17,7 +17,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 resource "aws_iam_role" "github_actions" {
-  name                 = "${var.project}-github-actions"
+  name                 = "${var.project}-${local.environment}-github-actions"
   description          = "Assumed by GitHub Actions on ${var.github_repository}@${var.github_branch} through OIDC."
   max_session_duration = 3600
 

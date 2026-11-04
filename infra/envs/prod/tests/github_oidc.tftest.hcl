@@ -16,7 +16,7 @@ mock_provider "aws" {
   override_resource {
     target = aws_iam_role.github_actions
     values = {
-      arn = "arn:aws:iam::123456789012:role/aula-virtual-github-actions"
+      arn = "arn:aws:iam::123456789012:role/aula-virtual-prod-github-actions"
     }
   }
 }
@@ -37,6 +37,11 @@ run "github_oidc_provider_trusts_only_sts_audience" {
 
 run "role_is_assumable_only_from_main_via_oidc" {
   command = apply
+
+  assert {
+    condition     = aws_iam_role.github_actions.name == "aula-virtual-prod-github-actions"
+    error_message = "The role name must include the environment (infrastructure-as-code naming rule)."
+  }
 
   assert {
     condition     = jsondecode(aws_iam_role.github_actions.assume_role_policy).Statement[0].Action == "sts:AssumeRoleWithWebIdentity"
@@ -92,7 +97,7 @@ run "role_policy_is_least_privilege_on_state" {
   }
 
   assert {
-    condition     = output.github_actions_role_arn == "arn:aws:iam::123456789012:role/aula-virtual-github-actions"
+    condition     = output.github_actions_role_arn == "arn:aws:iam::123456789012:role/aula-virtual-prod-github-actions"
     error_message = "The role ARN must be exported for the CI workflow."
   }
 }
