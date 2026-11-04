@@ -49,3 +49,23 @@ run "state_bucket_is_hardened" {
     error_message = "Bucket policy must deny any request that does not use TLS."
   }
 }
+
+run "rejects_invalid_project_prefix" {
+  command = plan
+
+  variables {
+    project = "Aula Virtual"
+  }
+
+  expect_failures = [var.project]
+}
+
+run "rejects_invalid_region" {
+  command = plan
+
+  variables {
+    region = "not-a-region"
+  }
+
+  expect_failures = [var.region]
+}

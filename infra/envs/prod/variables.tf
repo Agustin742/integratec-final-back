@@ -37,7 +37,7 @@ variable "github_branch" {
   default     = "main"
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9._/-]+$", var.github_branch)) && !strcontains(var.github_branch, "*")
-    error_message = "github_branch must be a single branch name without wildcards."
+    condition     = can(regex("^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$", var.github_branch)) && !strcontains(var.github_branch, "..")
+    error_message = "github_branch must be a single branch name: no wildcards, no leading or trailing slash, no '..'."
   }
 }

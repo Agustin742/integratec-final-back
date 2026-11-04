@@ -106,3 +106,46 @@ run "rejects_invalid_github_repository" {
 
   expect_failures = [var.github_repository]
 }
+
+run "rejects_wildcard_branch" {
+  command = plan
+
+  variables {
+    github_branch = "*"
+  }
+
+  expect_failures = [var.github_branch]
+}
+
+run "rejects_branch_with_leading_slash" {
+  command = plan
+
+  variables {
+    github_branch = "/main"
+  }
+
+  expect_failures = [var.github_branch]
+}
+
+run "rejects_branch_with_parent_segment" {
+  command = plan
+
+  variables {
+    github_branch = "release/../main"
+  }
+
+  expect_failures = [var.github_branch]
+}
+
+run "accepts_nested_branch_name" {
+  command = plan
+
+  variables {
+    github_branch = "release/v1.0"
+  }
+
+  assert {
+    condition     = endswith(jsondecode(aws_iam_role.github_actions.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"], ":ref:refs/heads/release/v1.0")
+    error_message = "A valid nested branch name must be accepted verbatim."
+  }
+}
