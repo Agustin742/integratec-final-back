@@ -48,6 +48,51 @@ pnpm --filter @aula/api start:dev
 pnpm --filter @aula/realtime start:dev
 ```
 
+## Docker and local database
+
+A local development stack is provided with `docker-compose.yml`.
+
+### Local PostgreSQL
+
+Start the health-checked PostgreSQL 16 container:
+
+```bash
+# Start PostgreSQL in background (default port 5432)
+docker compose up -d postgres
+
+# Check container status and health
+docker compose ps
+
+# Stop PostgreSQL container
+docker compose down
+```
+
+The database credentials and configuration match `apps/api/.env.example` (`user: postgres`, `password: postgres`, `database: aula_virtual`, `port: 5432`). Database state is persisted across container restarts in the named volume `postgres_data`.
+
+### Running services in containers
+
+Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22-alpine`, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
+
+To start the database and all application services:
+
+```bash
+# Start postgres, api, and realtime containers
+docker compose --profile app up -d --build
+
+# Stop all containers and networks
+docker compose --profile app down
+```
+
+To build individual container images manually:
+
+```bash
+# Build API image
+docker build -t aula-api -f apps/api/Dockerfile .
+
+# Build Realtime server image
+docker build -t aula-realtime -f apps/realtime/Dockerfile .
+```
+
 ## Configuration
 
 Both services read their configuration once at startup through a typed, validated boundary ([`apps/api/src/config`](./apps/api/src/config/api-config.ts) and [`apps/realtime/src/config`](./apps/realtime/src/config/realtime-config.ts)). If any variable is missing or invalid, the process prints one diagnostic that lists every offending variable by name (never its value) and exits with code 1. Feature code must not read `process.env` directly; ESLint enforces this outside the config modules and process entrypoints. See [Configuration and environments](./rules/configuration-and-environments.md).
