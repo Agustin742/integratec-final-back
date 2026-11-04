@@ -89,25 +89,46 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual((folder / 'summary').read_text(), summary)
 
 
+def terraform_roots(base):
+    """Root modules are directories with a versions.tf; child modules are not CI roots."""
+    return sorted(path.parent.relative_to(base).as_posix()
+                  for path in (base / 'infra').rglob('versions.tf')
+                  if '.terraform' not in path.parts)
+
+
+def terraform_job(workflow):
+    return workflow.split('\n  terraform:\n', 1)[1].split('\n  checks:\n', 1)[0]
+
+
 class TerraformTests(unittest.TestCase):
+    def test_root_detection_ignores_child_modules(self):
+        with tempfile.TemporaryDirectory(prefix='.fixtures-', dir=CHECKER.parent) as scratch:
+            base = Path(scratch)
+            for relative in ['infra/envs/prod/versions.tf', 'infra/envs/prod/main.tf',
+                             'infra/modules/network/main.tf',
+                             'infra/envs/prod/.terraform/modules/x/versions.tf']:
+                (base / relative).parent.mkdir(parents=True, exist_ok=True)
+                (base / relative).write_text('', encoding='utf-8')
+            self.assertEqual(terraform_roots(base), ['infra/envs/prod'])
+
     def test_every_terraform_root_is_checked(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
-        roots = sorted({path.parent.relative_to(ROOT).as_posix()
-                        for path in (ROOT / 'infra').rglob('*.tf')
-                        if '.terraform' not in path.parts})
+        job = terraform_job((ROOT / '.github/workflows/ci.yml').read_text())
+        roots = terraform_roots(ROOT)
         self.assertTrue(roots, 'expected at least one Terraform root under infra/')
         for root in roots:
             with self.subTest(root=root):
-                self.assertIn(f'          - {root}\n', workflow)
+                self.assertIn(f'          - {root}\n', job)
 
-    def test_terraform_checks_run_per_root(self):
-        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+    def test_terraform_checks_run_inside_each_root(self):
+        job = terraform_job((ROOT / '.github/workflows/ci.yml').read_text())
+        self.assertIn('    defaults:\n      run:\n        working-directory: ${{ matrix.root }}\n', job)
+        self.assertIn('          persist-credentials: false\n', job)
         for command in ['terraform fmt -check -recursive',
                         'terraform init -backend=false -input=false -lockfile=readonly',
                         'terraform validate -no-color',
                         'terraform test -no-color']:
             with self.subTest(command=command):
-                self.assertIn(f'run: {command}\n', workflow)
+                self.assertIn(f'run: {command}\n', job)
 
 
 class DocumentationTests(unittest.TestCase):
