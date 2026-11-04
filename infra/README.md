@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform. This directory holds the skeleton: a remote state bucket, the `prod` root, and the GitHub Actions OIDC role. Application resources (network, ECS, RDS, ECR, ...) are added by later issues.
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds the skeleton: a remote state bucket, the `prod` root, and the GitHub Actions OIDC role (disabled by default, see below). Application resources (network, ECS, RDS, ECR, ...) are added by later issues.
 
 Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
 
@@ -9,7 +9,7 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: GitHub Actions OIDC provider and CI role today, application resources later. | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`) today, application resources later. | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
@@ -21,7 +21,7 @@ Conventions:
 ## Requirements
 
 - Terraform `~> 1.16` (CI uses 1.16.6) and AWS provider `~> 6.71`, pinned in each `versions.tf` and `.terraform.lock.hcl`.
-- AWS CLI v2 signed in to the target account with permission to manage S3 and IAM (`aws sts get-caller-identity` must succeed).
+- AWS CLI v2 signed in to the target account with permission to manage S3 and IAM (`aws sts get-caller-identity` must succeed). The account's Region is `us-east-2`; sign in with `aws login --region us-east-2` (short-lived credentials, no access keys) and select the profile with `AWS_PROFILE`, for example `export AWS_PROFILE=<profile>`.
 
 ## Bootstrap (once per AWS account)
 
@@ -53,7 +53,11 @@ terraform plan                                   # must report no changes
 
 ## GitHub Actions OIDC role
 
-`envs/prod` creates the `token.actions.githubusercontent.com` OIDC provider and the role `aula-virtual-prod-github-actions` (output `github_actions_role_arn`).
+`envs/prod` can create the `token.actions.githubusercontent.com` OIDC provider and the role `aula-virtual-prod-github-actions` (output `github_actions_role_arn`).
+
+**Disabled by default.** The variable `enable_github_oidc` defaults to `false`, so none of these resources are planned and `github_actions_role_arn` is `null`. The reason: the current AWS account was created with the "Sign up for AWS (new)" experience, and an AWS-managed service control policy denies `iam:CreateOpenIDConnectProvider` (the policies cannot be edited unless the account's advanced features are activated, which needs a paid plan, removes the spend limit, and is irreversible). Until then, Terraform is applied locally with short-lived `aws login` credentials and there is no pipeline deployment; long-lived access keys are never an alternative (decision D6).
+
+To enable it later, after the restriction is lifted: set `enable_github_oidc = true` (for example in the git-ignored `terraform.tfvars`), review the plan, apply, and copy the `github_actions_role_arn` output into the workflow below.
 
 | Control | Value |
 |---------|-------|
@@ -71,7 +75,7 @@ steps:
   - uses: aws-actions/configure-aws-credentials@v4
     with:
       role-to-assume: <github_actions_role_arn output>
-      aws-region: sa-east-1
+      aws-region: us-east-2
 ```
 
 ## CI checks
@@ -89,6 +93,8 @@ The `terraform` job in `.github/workflows/ci.yml` runs on every pull request, fo
 |----------|--------|-----|
 | State locking | S3 native lockfile | Supported since Terraform 1.10; avoids a DynamoDB table. |
 | State bucket creation | Separate `bootstrap/` root with local state | The bucket cannot hold its own state; isolating it keeps `prod` fully remote. |
+| Region | `us-east-2` | Assigned to the account by AWS from the contact country and enforced by managed service control policies; it cannot be changed (D5). |
+| CI role creation | Behind `enable_github_oidc`, default `false` | The managed policies deny creating the OIDC provider in this account (D6). |
 | CI role trust | `main` branch only | Only reviewed, merged code can touch AWS. Pull request plans need a separate read-only role (see below). |
 | Environments | `prod` only | No other environment is agreed yet (open decision in the IaC rule). |
 
@@ -103,5 +109,6 @@ The `terraform` job in `.github/workflows/ci.yml` runs on every pull request, fo
 
 ## Known gaps
 
+- **GitHub OIDC is not available in the current account**, so CI cannot deploy and there is no CI role yet; see [GitHub Actions OIDC role](#github-actions-oidc-role).
 - **`terraform plan` in CI is not implemented yet.** The IaC rule requires CI to run `plan` and the plan to be reviewed. That needs a read-only role whose trust accepts pull requests, which is deferred to the pipeline issue. Until then, changes are planned locally and the plan output is summarized in the pull request.
 - Actions in the workflow are pinned by tag, not by commit SHA. SHA pinning should be applied to the whole workflow in one change.

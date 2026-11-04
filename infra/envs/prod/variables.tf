@@ -1,11 +1,11 @@
 variable "region" {
   description = "AWS region for the prod environment (decision D5)."
   type        = string
-  default     = "sa-east-1"
+  default     = "us-east-2"
 
   validation {
     condition     = can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]$", var.region))
-    error_message = "region must be an AWS region code such as sa-east-1."
+    error_message = "region must be an AWS region code such as us-east-2."
   }
 }
 
@@ -40,4 +40,11 @@ variable "github_branch" {
     condition     = can(regex("^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$", var.github_branch)) && !strcontains(var.github_branch, "..")
     error_message = "github_branch must be a single branch name: no wildcards, no leading or trailing slash, no '..'."
   }
+}
+
+variable "enable_github_oidc" {
+  description = "Create the GitHub Actions OIDC provider and CI role (decision D6). Disabled by default because an AWS-managed service control policy in the current account denies iam:CreateOpenIDConnectProvider; set it to true once that restriction is lifted."
+  type        = bool
+  default     = false
+  nullable    = false
 }

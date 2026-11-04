@@ -8,7 +8,7 @@ Los diagramas de esta carpeta se alinearon al modelo de escuelas y aulas y a las
 |---|---|---|
 | 1 | [01 Funcional](./01-functional/use-cases.md) | Actores Dueño / Admin de Escuela, Profesor, Alumno y Padre; IDs RF/RN vigentes de la [ERS](../functional-requirements.md) |
 | 2 | [03 Estructural](./03-structural/data-model.md) | Entidades `School`, `SchoolMember`, `Classroom`, `ClassroomMembership`, `ParentLink`; exclusión escuela / profesor independiente |
-| 3 | [02 Sistemas](./02-system-architecture/deployment-and-network.md) | Topología AWS en `sa-east-1`, `onAuth` contra NestJS (D2), puntos marcados como abiertos |
+| 3 | [02 Sistemas](./02-system-architecture/deployment-and-network.md) | Topología AWS en `us-east-2`, `onAuth` contra NestJS (D2), puntos marcados como abiertos |
 | 4 | [04 Dinámica](./04-behavioral/core-flows.md) | Secuencias S1 a S13 coherentes con arquitectura y modelo |
 | 5 | [05 Referencia](./05-reference/gaps.md) | Huecos abiertos con su regla de origen |
 

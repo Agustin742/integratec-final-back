@@ -1,11 +1,16 @@
 mock_provider "aws" {}
 
-run "defaults_target_prod_in_sa_east_1" {
+run "defaults_target_prod_in_us_east_2" {
   command = plan
 
   assert {
-    condition     = var.region == "sa-east-1"
-    error_message = "The default region must be sa-east-1 (decision D5)."
+    condition     = var.region == "us-east-2"
+    error_message = "The default region must be us-east-2 (decision D5)."
+  }
+
+  assert {
+    condition     = var.enable_github_oidc == false
+    error_message = "GitHub OIDC resources must be opt-in (the account's managed SCP denies the provider)."
   }
 
   assert {

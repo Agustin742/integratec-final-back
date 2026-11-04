@@ -12,7 +12,7 @@ terraform {
   # supplied at init time with -backend-config (see prod.s3.tfbackend.example).
   backend "s3" {
     key          = "prod/terraform.tfstate"
-    region       = "sa-east-1"
+    region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
   }

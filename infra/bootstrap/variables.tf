@@ -1,11 +1,11 @@
 variable "region" {
   description = "AWS region that hosts the Terraform state bucket (decision D5)."
   type        = string
-  default     = "sa-east-1"
+  default     = "us-east-2"
 
   validation {
     condition     = can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]$", var.region))
-    error_message = "region must be an AWS region code such as sa-east-1."
+    error_message = "region must be an AWS region code such as us-east-2."
   }
 }
 

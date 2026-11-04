@@ -1,3 +1,5 @@
+# Disabled by default (enable_github_oidc = false): an AWS-managed service
+# control policy in the current account denies iam:CreateOpenIDConnectProvider.
 # GitHub Actions authenticates to AWS with short-lived OIDC tokens instead of
 # long-lived access keys (decision D6).
 
@@ -12,11 +14,15 @@ locals {
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
+  count = var.enable_github_oidc ? 1 : 0
+
   url            = "https://${local.github_oidc_host}"
   client_id_list = ["sts.amazonaws.com"]
 }
 
 resource "aws_iam_role" "github_actions" {
+  count = var.enable_github_oidc ? 1 : 0
+
   name                 = "${var.project}-${local.environment}-github-actions"
   description          = "Assumed by GitHub Actions on ${var.github_repository}@${var.github_branch} through OIDC."
   max_session_duration = 3600
@@ -27,7 +33,7 @@ resource "aws_iam_role" "github_actions" {
       {
         Effect    = "Allow"
         Action    = "sts:AssumeRoleWithWebIdentity"
-        Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+        Principal = { Federated = aws_iam_openid_connect_provider.github[0].arn }
         Condition = {
           StringEquals = {
             "${local.github_oidc_host}:aud" = "sts.amazonaws.com"
@@ -43,8 +49,10 @@ resource "aws_iam_role" "github_actions" {
 # identity resources managed here so plans can refresh them. Later issues add
 # only the permissions their resources need.
 resource "aws_iam_role_policy" "github_actions_state" {
+  count = var.enable_github_oidc ? 1 : 0
+
   name = "terraform-state-${local.environment}"
-  role = aws_iam_role.github_actions.id
+  role = aws_iam_role.github_actions[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -71,13 +79,13 @@ resource "aws_iam_role_policy" "github_actions_state" {
         Sid      = "ReadOwnIdentity"
         Effect   = "Allow"
         Action   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"]
-        Resource = [aws_iam_role.github_actions.arn]
+        Resource = [aws_iam_role.github_actions[0].arn]
       },
       {
         Sid      = "ReadOidcProvider"
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
-        Resource = [aws_iam_openid_connect_provider.github.arn]
+        Resource = [aws_iam_openid_connect_provider.github[0].arn]
       }
     ]
   })

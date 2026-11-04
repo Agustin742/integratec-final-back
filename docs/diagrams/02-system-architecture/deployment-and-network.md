@@ -33,7 +33,7 @@ flowchart LR
   subgraph gh["GitHub"]
     actions["GitHub Actions (OIDC, D6)"]
   end
-  subgraph aws["AWS sa-east-1 (D5)"]
+  subgraph aws["AWS us-east-2 (D5)"]
     amplify["Amplify Hosting: estáticos"]
     alb["ALB + TLS (ACM)"]
     ecr["ECR: imágenes por servicio"]
@@ -95,7 +95,7 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 > | Ruteo del ALB hacia Colyseus (ruta o host) | abierto |
 > | Dominio y propiedad del certificado ACM | abierto |
 > | Dimensionamiento de tareas y de la instancia de RDS | abierto |
-> | Disponibilidad de modelos de Bedrock en `sa-east-1`; podría requerir inferencia entre regiones (D5) | abierto |
+> | Disponibilidad de modelos de Bedrock en `us-east-2`; podría requerir inferencia entre regiones (D5) | abierto |
 > | Escalado de Colyseus más allá de una instancia (presencia, matchmaking, ruteo, reconexión) | abierto |
 > | Uso de S3 (las cargas de archivos no están definidas) | abierto |
 > | Transporte de anuncios de NestJS a Colyseus | abierto ([Architecture](../../../rules/architecture.md#open-decisions)) |

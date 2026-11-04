@@ -106,6 +106,6 @@ The reasoning behind these choices is in the [technical justification](./technic
 
 ## Open points
 
-- Decided and approved by Agustin on 2026-11-02: session mechanism, NestJS-Colyseus authentication, monorepo layout, OpenAPI contract distribution, committed REST and realtime contract artifacts (D8), contract-first stubs (D9), the school time zone for deadlines (D10), `sa-east-1` region, and OIDC pipeline authentication; see the [technical justification](./technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02).
+- Decided and approved by Agustin on 2026-11-02: session mechanism, NestJS-Colyseus authentication, monorepo layout, OpenAPI contract distribution, committed REST and realtime contract artifacts (D8), contract-first stubs (D9), the school time zone for deadlines (D10), `us-east-2` region (updated 2026-11-04 because the account's Region is assigned by AWS), and OIDC pipeline authentication (resources gated while the account blocks the provider); see the [technical justification](./technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02).
 - Still open: the transport for NestJS-to-Colyseus announcements.
 - The detailed [design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail.
