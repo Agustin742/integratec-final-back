@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-04 — Terraform skeleton, remote state, and GitHub OIDC role (#16)
+
+- **Status:** in-progress
+- **Area / files:** `infra/bootstrap/`, `infra/envs/prod/`, `infra/README.md`, `.github/workflows/ci.yml`, `scripts/ci/test_checks.py`, `.gitignore`, `docs/technical-justification.md` (D6)
+- **Change:** Added a bootstrap root for the hardened S3 state bucket, the `prod` root with an S3 backend using the native lockfile, the GitHub Actions OIDC provider and a `main`-only least-privilege CI role, `terraform test` suites with a mocked provider, a CI job running fmt, validate, and tests per root, and the infra README. Done with AI assistance (Claude Code), reviewed by Agustin.
+- **Reason:** Later infrastructure issues need remote state, keyless pipeline authentication (D6), and validated Terraform.
+- **Next step:** Apply bootstrap and prod in the AWS account after explicit approval and confirm a second plan shows no changes; then open the PR into `develop`.
+
 ## 2026-11-03 — Typed environment configuration for api and realtime (#12)
 
 - **Status:** completed

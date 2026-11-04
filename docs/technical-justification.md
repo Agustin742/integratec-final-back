@@ -116,6 +116,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** IAM user access keys in GitHub Secrets, rejected.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Deployment and operations](../rules/deployment-and-operations.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Implementation:** The role `aula-virtual-prod-github-actions` trusts only workflows on the `main` branch of this repository (exact `sub` match, audience `sts.amazonaws.com`) and starts with least-privilege access to the prod state. A read-only role for pull request plans is deferred. See [infra/README.md](../infra/README.md#github-actions-oidc-role). Trust scope approved by Agustin on 2026-11-03.
 
 ### D7. Invitation model
 
