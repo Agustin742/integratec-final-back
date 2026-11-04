@@ -19,3 +19,25 @@ variable "project" {
     error_message = "project must be lowercase letters, digits and hyphens (3 to 32 characters)."
   }
 }
+
+variable "github_repository" {
+  description = "GitHub repository (owner/name) whose workflows may assume the CI role (decision D6)."
+  type        = string
+  default     = "Agustin742/integratec-final-back"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.github_repository))
+    error_message = "github_repository must have the form owner/name."
+  }
+}
+
+variable "github_branch" {
+  description = "Only workflows running on this branch may assume the CI role."
+  type        = string
+  default     = "main"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._/-]+$", var.github_branch)) && !strcontains(var.github_branch, "*")
+    error_message = "github_branch must be a single branch name without wildcards."
+  }
+}
