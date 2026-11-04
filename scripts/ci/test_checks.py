@@ -89,6 +89,27 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual((folder / 'summary').read_text(), summary)
 
 
+class TerraformTests(unittest.TestCase):
+    def test_every_terraform_root_is_checked(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        roots = sorted({path.parent.relative_to(ROOT).as_posix()
+                        for path in (ROOT / 'infra').rglob('*.tf')
+                        if '.terraform' not in path.parts})
+        self.assertTrue(roots, 'expected at least one Terraform root under infra/')
+        for root in roots:
+            with self.subTest(root=root):
+                self.assertIn(f'          - {root}\n', workflow)
+
+    def test_terraform_checks_run_per_root(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        for command in ['terraform fmt -check -recursive',
+                        'terraform init -backend=false -input=false -lockfile=readonly',
+                        'terraform validate -no-color',
+                        'terraform test -no-color']:
+            with self.subTest(command=command):
+                self.assertIn(f'run: {command}\n', workflow)
+
+
 class DocumentationTests(unittest.TestCase):
     def test_public_checker_cases(self):
         cases = [
