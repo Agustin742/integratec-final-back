@@ -2,11 +2,12 @@
 
 ## 2026-11-04 — Terraform skeleton, remote state, and GitHub OIDC role (#16)
 
-- **Status:** in-progress
+- **Status:** completed
 - **Area / files:** `infra/bootstrap/`, `infra/envs/prod/`, `infra/README.md`, `.github/workflows/ci.yml`, `scripts/ci/test_checks.py`, `.gitignore`, `docs/technical-justification.md` (D5, D6), `docs/architecture.md`, `docs/diagrams/`, `rules/aws-infrastructure.md`, `rules/infrastructure-as-code.md`
 - **Change:** Added a bootstrap root for the hardened S3 state bucket, the `prod` root with an S3 backend using the native lockfile, the GitHub Actions OIDC provider and a `main`-only least-privilege CI role, `terraform test` suites with a mocked provider, a CI job running fmt, validate, and tests per root, and the infra README. Update 2026-11-04: the account assigns `us-east-2` and blocks the OIDC provider through AWS-managed policies, so D5 moved from `sa-east-1` to `us-east-2` and the OIDC provider, role, and policy are gated by `enable_github_oidc` (default `false`); Terraform is applied locally with short-lived `aws login` credentials and the OIDC pipeline deploy is deferred. Done with AI assistance (Claude Code), reviewed by Agustin.
 - **Reason:** Later infrastructure issues need remote state, keyless pipeline authentication (D6), and validated Terraform.
-- **Next step:** Apply bootstrap and prod in the AWS account after explicit approval and confirm a second plan shows no changes; then open the PR into `develop`.
+- **Verification:** `terraform fmt -check`, `validate`, and `terraform test` pass for both roots (bootstrap 3, prod 12); docs checks pass. Applied in `us-east-2` with explicit approval: bootstrap created the state bucket (6 resources) and prod wrote its first remote state (0 resources, OIDC disabled); a second plan of each root shows no changes, and the bucket's versioning and public access block were confirmed with the AWS CLI. The OIDC trust (only `main` can assume the role) is not verified in AWS because the role is not created in this account.
+- **Next step:** Open the PR into `develop`. Decide the keyless deploy pipeline (for example CodePipeline with a GitHub connection) in its own issue.
 
 ## 2026-11-03 — Typed environment configuration for api and realtime (#12)
 
