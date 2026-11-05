@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { MembershipState, Prisma, SchoolRole } from '@prisma/client';
 import { RegistrationPath } from '@aula/contracts';
 import * as bcrypt from 'bcrypt';
@@ -41,6 +41,7 @@ export class AuthService {
             email: normalizedEmail,
             passwordHash,
             displayName: dto.displayName.trim(),
+            registrationPath: dto.path,
           },
         });
 
@@ -54,24 +55,50 @@ export class AuthService {
         let createdSchool: { id: string; name: string; slug: string; timeZone: string } | undefined;
 
         if (dto.path === RegistrationPath.SCHOOL) {
-          if (!dto.schoolName?.trim()) {
-            throw new BadRequestException('schoolName is required when path is SCHOOL');
-          }
-
-          const baseSlug = slugify(dto.schoolName).slice(0, 140);
+          const rawSchoolName = dto.schoolName?.trim() || 'Escuela';
+          const baseSlug = slugify(rawSchoolName).slice(0, 140) || 'escuela';
           let candidateSlug = baseSlug;
-          const slugCollision = await tx.school.findUnique({ where: { slug: candidateSlug } });
-          if (slugCollision) {
-            candidateSlug = `${baseSlug}-${Math.random().toString(36).substring(2, 7)}`;
+
+          let attempts = 0;
+          while (attempts < 5) {
+            const collision = await tx.school.findUnique({ where: { slug: candidateSlug } });
+            if (!collision) break;
+            const suffix = Math.random().toString(36).substring(2, 7);
+            candidateSlug = `${baseSlug.slice(0, 133)}-${suffix}`;
+            attempts++;
           }
 
-          const school = await tx.school.create({
-            data: {
-              name: dto.schoolName.trim(),
-              slug: candidateSlug,
-              timeZone: 'America/Argentina/Buenos_Aires',
-            },
-          });
+          let school;
+          try {
+            school = await tx.school.create({
+              data: {
+                name: rawSchoolName,
+                slug: candidateSlug,
+                timeZone: 'America/Argentina/Buenos_Aires',
+              },
+            });
+          } catch (createErr) {
+            if (
+              createErr instanceof Prisma.PrismaClientKnownRequestError &&
+              createErr.code === 'P2002'
+            ) {
+              const target = String(createErr.meta?.target ?? '');
+              if (target.includes('slug')) {
+                const fallbackSuffix = Math.random().toString(36).substring(2, 8);
+                school = await tx.school.create({
+                  data: {
+                    name: rawSchoolName,
+                    slug: `${baseSlug.slice(0, 130)}-${fallbackSuffix}`,
+                    timeZone: 'America/Argentina/Buenos_Aires',
+                  },
+                });
+              } else {
+                throw createErr;
+              }
+            } else {
+              throw createErr;
+            }
+          }
 
           await tx.schoolMember.create({
             data: {
@@ -94,7 +121,7 @@ export class AuthService {
           id: user.id,
           email: user.email,
           displayName: user.displayName,
-          path: dto.path,
+          path: user.registrationPath,
           school: createdSchool,
           createdAt: user.createdAt.toISOString(),
         };
@@ -104,7 +131,7 @@ export class AuthService {
         const target = String(error.meta?.target ?? '');
         if (target.includes('slug')) {
           throw new ConflictException(
-            'A school with this slug already exists. Please choose a different school name.',
+            'Unable to reserve school slug due to concurrent registration. Please retry.',
           );
         }
         throw new ConflictException('A user with this email address already exists');
