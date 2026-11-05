@@ -107,7 +107,7 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 ## Open decisions
 
 - Final table and column names, enum values, and field limits.
-- Exact shape of the join code: one Invitation entity with a kind discriminator or a separate ClassroomJoinCode entity, to be decided in the Prisma baseline schema work item (decision D7).
+- Exact shape of the join code: decided in issue #14 (D7) as a single `Invitation` entity with a `kind` discriminator (`email` vs `join_code`) plus `JoinCodeUsage`.
 - Medal catalog.
 - Resubmission history and grade history representation.
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.

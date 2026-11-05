@@ -131,7 +131,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** Email single-use only (A), rejected because of onboarding friction; an unrestricted permanent link, rejected because it has no expiry or revocation.
 - **Affected contracts:** The invitation data model (target email is required for email invitations; the join code has no target email), membership endpoints, HU-AUL-002, RN-02, RF-AUL-002, [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), and [Data](../rules/data.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
-- **Open:** Whether the join code is a single `Invitation` entity with a kind discriminator or a separate `ClassroomJoinCode` entity is left to the Prisma baseline schema work item.
+- **Outcome update (2026-11-05, issue #14):** Decided as a single `Invitation` entity with a `kind` discriminator (`email` vs `join_code`), paired with a child `JoinCodeUsage` table to record each join code redemption (who and when). Database-level CHECK constraints enforce valid targets and max uses.
 
 ### D8. Committed REST and realtime contract artifacts
 
