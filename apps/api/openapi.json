@@ -1,0 +1,105 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Returns 200 while the process is up. It does not probe the database.",
+        "operationId": "HealthController_getHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The API process is alive.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/HealthStatus" } }
+            }
+          }
+        },
+        "summary": "Liveness check",
+        "tags": ["health"]
+      }
+    }
+  },
+  "info": {
+    "title": "Aula Virtual API",
+    "description": "REST API of Aula Virtual. Every error uses the shared ErrorEnvelope schema; clients branch on error.code.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "HealthStatus": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["ok", "error"], "example": "ok" },
+          "service": { "type": "string", "example": "api" },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": ["status", "service", "timestamp"]
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "VALIDATION_FAILED",
+          "BAD_REQUEST",
+          "UNAUTHENTICATED",
+          "FORBIDDEN",
+          "NOT_FOUND",
+          "CONFLICT",
+          "TOO_MANY_REQUESTS",
+          "SERVICE_UNAVAILABLE",
+          "INTERNAL_ERROR"
+        ],
+        "description": "Stable machine-readable code. Clients branch on this, never on the message."
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "example": "address.city",
+            "description": "Dotted path of the invalid field."
+          },
+          "messages": {
+            "example": ["city must be longer than or equal to 3 characters"],
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["field", "messages"]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "example": "VALIDATION_FAILED",
+            "description": "Stable machine-readable code. Clients branch on this, never on the message.",
+            "allOf": [{ "$ref": "#/components/schemas/ErrorCode" }]
+          },
+          "message": { "type": "string", "example": "Validation failed" },
+          "details": {
+            "description": "Per-field problems, when applicable.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ErrorDetail" }
+          },
+          "correlationId": {
+            "type": "string",
+            "example": "3f2b8c1e-0d1a-4f4e-9a55-6f0c2f9c1a11",
+            "description": "Echoes the x-request-id header; quote it when reporting a problem."
+          }
+        },
+        "required": ["code", "message", "correlationId"]
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": { "error": { "$ref": "#/components/schemas/ErrorBody" } },
+        "required": ["error"]
+      }
+    }
+  }
+}

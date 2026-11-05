@@ -1,11 +1,16 @@
 import { NestFactory } from '@nestjs/core';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { CORRELATION_ID_HEADER } from './http/error-envelope';
+import { configureHttp } from './http/configure-http';
+import { mountApiDocs } from './openapi/docs';
 import { ConfigValidationError, loadApiConfig, type ApiConfig } from './config/api-config';
 
 export async function bootstrap(config: ApiConfig): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule.forRoot(config));
-  app.enableCors({ origin: config.allowedOrigins });
+  app.enableCors({ origin: config.allowedOrigins, exposedHeaders: [CORRELATION_ID_HEADER] });
+  configureHttp(app);
+  mountApiDocs(app, config);
   await app.listen(config.port);
   console.log(`NestJS API is running on port ${config.port} (${config.nodeEnv})`);
   return app;

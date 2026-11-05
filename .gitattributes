@@ -1,2 +1,5 @@
 # Set default behavior to automatically normalize line endings to LF on commit
 * text=auto eol=lf
+
+# Committed API contract: keep LF on every OS so the staleness check is stable.
+apps/api/openapi.json text eol=lf

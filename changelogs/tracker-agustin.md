@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-05 — OpenAPI document and REST error envelope baseline (#15)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/http/`, `apps/api/src/openapi/`, `apps/api/openapi.json`, `.gitattributes`, `.github/workflows/ci.yml`, `docs/api-conventions.md`, `README.md`
+- **Change:** Added a global validation pipe (unknown fields rejected, per-field details), a single error envelope with stable codes and `x-request-id` correlation, a JSON request log, pagination and sort conventions, the OpenAPI builder with Scalar at `/docs` outside production, `pnpm openapi:export` with the committed `apps/api/openapi.json`, a CI staleness check, and `docs/api-conventions.md`.
+- **Reason:** Frontend and backend need one observable error and list contract, and the committed OpenAPI file (D8, D9) must exist before endpoints are implemented.
+- **Next step:** Push the branch, open the PR into `develop`, and get teammate review. Close #15 manually after merge because closing keywords only fire on `main`.
+
 ## 2026-11-04 — Terraform skeleton, remote state, and GitHub OIDC role (#16)
 
 - **Status:** completed
