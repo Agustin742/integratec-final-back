@@ -16,7 +16,7 @@
 
 ## 1. Conexiones frontend y backend
 
-Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D10 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02; los puntos que las reglas dejan sin resolver se marcan **abierto**.
+Esta sección muestra cómo se comunican el frontend React y los dos servicios backend del producto, qué transporte corresponde a cada operación y quién es la autoridad de cada dato. Todo lo descrito es **diseño objetivo (to-be) propuesto**: el repositorio solo contiene documentación y no hay código de aplicación ni infraestructura implementados ([estado del repositorio](../../../README.md)), así que no existen todavía endpoints, DTOs ni eventos definitivos. Los nombres de eventos son ilustrativos. Las decisiones D1 a D10 de la [justificación técnica](../../technical-justification.md#7-architecture-decisions-recorded-on-2026-11-02) fueron tomadas y aprobadas por Agustín el 2026-11-02, y D13 (cómputo en un único host EC2) el 2026-11-05; los puntos que las reglas dejan sin resolver se marcan **abierto**.
 
 ### 1.1 Arquitectura de despliegue y comunicación
 
@@ -35,11 +35,11 @@ flowchart LR
   end
   subgraph aws["AWS us-east-2 (D5)"]
     amplify["Amplify Hosting: estáticos"]
-    alb["ALB + TLS (ACM)"]
     ecr["ECR: imágenes por servicio"]
-    subgraph computo["Cómputo (ECS Fargate)"]
+    subgraph computo["Cómputo (un host EC2 con Docker Compose, D13)"]
+      caddy["Caddy: TLS Let's Encrypt, única entrada pública"]
       nest["apps/api: NestJS"]
-      colyseus["apps/realtime: Colyseus (1 tarea en el MVP)"]
+      colyseus["apps/realtime: Colyseus (1 contenedor en el MVP)"]
     end
     subgraph datos["Datos y servicios"]
       rds["RDS PostgreSQL (subredes privadas, Prisma)"]
@@ -54,10 +54,10 @@ flowchart LR
   ui -->|"lee y escribe"| state
   ui -->|"consulta y muta"| cache
   world3d -->|"captura input de avatar"| sdk
-  cache -->|"HTTPS / REST"| alb
-  sdk -->|"WSS"| alb
-  alb -->|"HTTPS / REST: target group NestJS"| nest
-  alb -->|"WSS: target group Colyseus (ruta o host: abierto)"| colyseus
+  cache -->|"HTTPS / REST"| caddy
+  sdk -->|"WSS"| caddy
+  caddy -->|"HTTPS / REST: ruta de la API hacia NestJS"| nest
+  caddy -->|"WSS: ruta o host reservado hacia Colyseus (ruta o host: abierto)"| colyseus
   colyseus -->|"onAuth: verifica sesión y acceso (endpoint interno + secreto de servicio, D2)"| nest
   nest -.->|"anuncia cambios ya confirmados (transporte: abierto)"| colyseus
   nest -->|"Prisma: consultas y migraciones"| rds
@@ -68,11 +68,11 @@ flowchart LR
   nest -.->|"credenciales en runtime"| secrets
   colyseus -.->|"secreto de servicio en runtime"| secrets
   actions -->|"asume rol IAM por OIDC y publica"| ecr
-  ecr -->|"imágenes versionadas"| nest
-  ecr -->|"imágenes versionadas"| colyseus
+  ecr -->|"imágenes versionadas (pull del host)"| nest
+  ecr -->|"imágenes versionadas (pull del host)"| colyseus
 ```
 
-Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni infraestructura desplegada. Los recursos deben gestionarse con [Terraform](../../../rules/infrastructure-as-code.md), respetando [AWS infrastructure](../../../rules/aws-infrastructure.md); el pipeline se autentica por OIDC contra un rol IAM, sin claves de larga duración (D6), según [Deployment and operations](../../../rules/deployment-and-operations.md). Alternativas y concesiones se explican en la [justificación técnica](../../technical-justification.md). El layout propuesto del repositorio de servicios es un monorepo pnpm con `apps/api`, `apps/realtime` y `packages/contracts` (D3).
+Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni infraestructura desplegada. Los recursos deben gestionarse con [Terraform](../../../rules/infrastructure-as-code.md), respetando [AWS infrastructure](../../../rules/aws-infrastructure.md); el pipeline se autentica por OIDC contra un rol IAM, sin claves de larga duración (D6; el despliegue sin claves por CodePipeline se decide en la issue #58), según [Deployment and operations](../../../rules/deployment-and-operations.md). Alternativas y concesiones se explican en la [justificación técnica](../../technical-justification.md). El layout propuesto del repositorio de servicios es un monorepo pnpm con `apps/api`, `apps/realtime` y `packages/contracts` (D3).
 
 **Autoridad de cada dato**
 
@@ -86,20 +86,20 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 | Controles de aula (congelar, silenciar, bloquear colaboración) | Colyseus acepta solo de quien NestJS confirmó con autoridad docente; los estados persistentes los escribe NestJS | Bloqueo de congelamiento efímero; silencio de chat y juegos deshabilitados persistidos por NestJS | WSS + REST |
 | Repaso diario del bot | NestJS, con Bedrock solo del lado servidor | `DailyReviewDelivery` por usuario y fecha, zona `America/Argentina/Buenos_Aires` | HTTPS / REST en la primera conexión autenticada del día |
 
-> **Lectura del diagrama.** El navegador solo tiene dos canales de aplicación hacia AWS: HTTPS/REST hacia el `target group` de NestJS y WSS hacia el de Colyseus, ambos a través del ALB con TLS ([documento maestro](../../../master-document.md)). Bedrock se invoca únicamente desde NestJS con permisos IAM; la arista punteada marca que el cliente no tiene acceso directo. RDS es la base relacional persistente: solo NestJS la escribe con Prisma, y Colyseus no tiene acceso de red ni credenciales a ella ([AWS infrastructure](../../../rules/aws-infrastructure.md#network-and-access)). El canal interno entre Colyseus y NestJS no se expone por el listener público. Un aula del producto en PostgreSQL no equivale a una instancia `Room` de Colyseus. El video y la voz no pasan por Colyseus; el servicio de medios sigue abierto ([Live classroom tools](../../../rules/live-classroom-tools.md)).
+> **Lectura del diagrama.** El navegador solo tiene dos canales de aplicación hacia AWS: HTTPS/REST hacia NestJS y WSS hacia Colyseus, ambos a través de Caddy con TLS de Let's Encrypt en el host EC2 ([documento maestro](../../../master-document.md), D13). Bedrock se invoca únicamente desde NestJS con permisos IAM; la arista punteada marca que el cliente no tiene acceso directo. RDS es la base relacional persistente: solo NestJS la escribe con Prisma, y Colyseus no tiene acceso de red ni credenciales a ella ([AWS infrastructure](../../../rules/aws-infrastructure.md#network-and-access)). El canal interno entre Colyseus y NestJS queda en la red privada de Docker y no se enruta por Caddy. Un aula del producto en PostgreSQL no equivale a una instancia `Room` de Colyseus. El video y la voz no pasan por Colyseus; el servicio de medios sigue abierto ([Live classroom tools](../../../rules/live-classroom-tools.md)).
 
 > **Puntos abiertos de infraestructura** ([AWS infrastructure](../../../rules/aws-infrastructure.md#open-decisions)):
 >
 > | Tema | Estado |
 > |---|---|
-> | Ruteo del ALB hacia Colyseus (ruta o host) | abierto |
-> | Dominio y propiedad del certificado ACM | abierto |
-> | Dimensionamiento de tareas y de la instancia de RDS | abierto |
-> | Disponibilidad de modelos de Bedrock en `us-east-2`; podría requerir inferencia entre regiones (D5) | abierto |
+> | Ruteo de Caddy hacia Colyseus (ruta o host) | abierto |
+> | Dominio y nombre DNS para la IP elástica (Let's Encrypt lo requiere) | abierto |
+> | Dimensionamiento de la instancia de RDS (el host es `t3.small`, D13) | abierto |
+> | Modelo de Bedrock con inferencia on-demand dentro de `us-east-2` (el plan Free no admite inferencia entre regiones; D5) | abierto, por verificar en la consola |
 > | Escalado de Colyseus más allá de una instancia (presencia, matchmaking, ruteo, reconexión) | abierto |
 > | Uso de S3 (las cargas de archivos no están definidas) | abierto |
 > | Transporte de anuncios de NestJS a Colyseus | abierto ([Architecture](../../../rules/architecture.md#open-decisions)) |
-> | Si Terraform gestiona Amplify, entornos además de producción, propiedad de la task definition | abierto ([Infrastructure as code](../../../rules/infrastructure-as-code.md#open-decisions)) |
+> | Si Terraform gestiona Amplify, entornos además de producción, propiedad del Compose y las etiquetas de imagen en el host | abierto ([Infrastructure as code](../../../rules/infrastructure-as-code.md#open-decisions)) |
 > | Almacenamiento de tokens en el cliente (D1) | decidido: `sessionStorage` (FD1 del frontend) |
 
 ### 1.2 Matriz de canales
@@ -164,7 +164,7 @@ flowchart LR
   prof(["Profesor, Dueño o Admin de escuela"])
   pad(["Padre"])
   web["React + Three.js"]
-  alb["ALB"]
+  caddy["Caddy (EC2)"]
   api["NestJS"]
   col["Colyseus"]
   rds[("RDS PostgreSQL")]
@@ -172,10 +172,10 @@ flowchart LR
   alu -->|"aula 3D o Modo 2D"| web
   prof -->|"aula, administración y controles"| web
   pad -->|"seguimiento (sin aula 3D)"| web
-  web -->|"REST: cuenta, aulas, actividades, chat, invitaciones, avisos"| alb
-  web <-->|"WSS: movimiento, presencia, controles, difusión"| alb
-  alb --> api
-  alb --> col
+  web -->|"REST: cuenta, aulas, actividades, chat, invitaciones, avisos"| caddy
+  web <-->|"WSS: movimiento, presencia, controles, difusión"| caddy
+  caddy --> api
+  caddy --> col
   api -->|"Prisma"| rds
   api -.->|"anuncia cambio confirmado"| col
   col -->|"onAuth: verifica sesión y acceso"| api

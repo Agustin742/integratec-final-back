@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds the skeleton: a remote state bucket, the `prod` root, and the GitHub Actions OIDC role (disabled by default, see below). Application resources (network, ECS, RDS, ECR, ...) are added by later issues.
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds the skeleton: a remote state bucket, the `prod` root, and the GitHub Actions OIDC role (disabled by default, see below). Application resources (network, EC2 host, RDS, ECR, ...) are added by later issues.
 
 Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
 

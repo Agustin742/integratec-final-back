@@ -38,7 +38,7 @@ sequenceDiagram
     participant db as RDS PostgreSQL
 
     user->>web: completar formulario y elegir camino (Profesor independiente o Escuela)
-    web->>api: registro por HTTPS al ALB
+    web->>api: registro por HTTPS a Caddy (proxy inverso en EC2)
     api->>api: validar DTO en servidor y normalizar email
     api->>svc: registrar cuenta
     svc->>db: transacción: INSERT User con hash de contraseña, AvatarConfiguration y estructura del camino

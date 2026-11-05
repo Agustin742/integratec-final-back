@@ -11,8 +11,8 @@ AWS infrastructure is defined, reviewed, and changed through Terraform. This rul
 
 ## Scope and location
 
-- Infrastructure code **MUST** live in the backend repository under `infra/`, next to the pipeline that publishes images to ECR and updates ECS.
-- Terraform **MUST** manage the resources listed in [AWS infrastructure](./aws-infrastructure.md): network, security groups, load balancer, certificates, ECS cluster and services, ECR, RDS, S3, secret containers, IAM roles, log groups, alarms, and budgets.
+- Infrastructure code **MUST** live in the backend repository under `infra/`, next to the pipeline that publishes images to ECR and deploys them to the EC2 host.
+- Terraform **MUST** manage the resources listed in [AWS infrastructure](./aws-infrastructure.md): network, security groups, the EC2 host with its Elastic IP and instance profile, ECR, RDS, S3, secret containers, IAM roles, log groups, alarms, and budgets.
 - The AWS region is `us-east-2` (decision D5, updated 2026-11-04). The pipeline **MUST** authenticate through GitHub Actions OIDC to an IAM role once the account allows creating the OIDC provider (decision D6; the resources are gated by `enable_github_oidc`). Until then there is no pipeline deployment: Terraform is applied locally with short-lived credentials, and long-lived access keys **MUST NOT** be created or stored anywhere ([AWS infrastructure](./aws-infrastructure.md)).
 - Resources **MUST NOT** be created or changed manually in the console when Terraform manages them. An emergency manual change **MUST** be recorded and then either imported into code or reverted.
 - Resources that cannot be managed by Terraform, or are deliberately left out, **MUST** be listed with their owner and reason in `infra/README.md`.
@@ -56,6 +56,6 @@ After an apply, `terraform plan` for the same environment **MUST** report no cha
 
 ## Open decisions
 
-- How ownership of the ECS task definition is shared between Terraform and the image deployment pipeline, so each image release does not cause drift.
+- How the Docker Compose file and image tags on the host are owned between Terraform (host provisioning) and the image deployment pipeline (SSM Run Command), so each image release does not cause drift.
 - Whether Amplify Hosting is managed by Terraform or connected through the console.
 - Which environments exist beyond production.
