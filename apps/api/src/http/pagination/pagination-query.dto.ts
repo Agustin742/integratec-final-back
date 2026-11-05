@@ -5,6 +5,8 @@ import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
+/** Caps `skip` at a safe, reasonable offset so a huge `page` is a 400, not a driver error. */
+export const MAX_PAGE = 10_000;
 
 /**
  * Query contract shared by every list endpoint (offset pagination).
@@ -23,6 +25,7 @@ export class PaginationQueryDto {
   @ApiPropertyOptional({
     type: 'integer',
     minimum: 1,
+    maximum: MAX_PAGE,
     default: DEFAULT_PAGE,
     description: '1-based page number.',
   })
@@ -30,6 +33,7 @@ export class PaginationQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(MAX_PAGE)
   page: number = DEFAULT_PAGE;
 
   @ApiPropertyOptional({
