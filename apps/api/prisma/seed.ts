@@ -1,12 +1,10 @@
 import { PrismaClient } from '@prisma/client';
+import { assertSafeToSeed } from './seed-guard';
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
-  const nodeEnv = process.env.NODE_ENV;
-  if (nodeEnv === 'production' || nodeEnv === 'staging') {
-    throw new Error(`Refusing to seed database in ${nodeEnv} environment`);
-  }
+  assertSafeToSeed(process.env);
 
   // Clean existing seed data
   await prisma.joinCodeUsage.deleteMany();
