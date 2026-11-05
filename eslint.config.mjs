@@ -24,9 +24,14 @@ export default tseslint.config(
     },
   },
   {
-    // The only places allowed to touch the raw environment: the config modules
-    // and the process entrypoints that hand it to them.
-    files: ['apps/*/src/config/**/*.ts', 'apps/api/src/main.ts', 'apps/realtime/src/index.ts'],
+    // The only places allowed to touch the raw environment: the config modules,
+    // the process entrypoints that hand it to them, and the standalone seed script.
+    files: [
+      'apps/*/src/config/**/*.ts',
+      'apps/api/src/main.ts',
+      'apps/realtime/src/index.ts',
+      'apps/api/prisma/seed.ts',
+    ],
     rules: {
       'no-restricted-properties': 'off',
     },

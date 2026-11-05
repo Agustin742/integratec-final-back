@@ -3,6 +3,11 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv === 'production' || nodeEnv === 'staging') {
+    throw new Error(`Refusing to seed database in ${nodeEnv} environment`);
+  }
+
   // Clean existing seed data
   await prisma.joinCodeUsage.deleteMany();
   await prisma.invitation.deleteMany();
@@ -51,7 +56,7 @@ async function main(): Promise<void> {
 
   const parent = await prisma.user.create({
     data: {
-      email: 'padre.roberto@gmail.com',
+      email: 'padre.roberto@example.com',
       passwordHash: syntheticHash,
       displayName: 'Roberto Padre',
     },
