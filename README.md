@@ -155,6 +155,8 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `JWT_ACCESS_TTL`          | Default `15m`; `<integer>` + `s`, `m`, `h` or `d` | Access token lifetime                                                    | Public         | Yes     |
 | `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
+| `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
+| `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
 

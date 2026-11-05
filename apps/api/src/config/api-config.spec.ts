@@ -28,6 +28,8 @@ describe('loadApiConfig', () => {
       accessTokenTtlSeconds: 900,
       refreshTokenTtlSeconds: 604800,
       invitationTtlSeconds: 604800,
+      outboxPollIntervalSeconds: 5,
+      outboxMaxAttempts: 5,
       internalServiceSecret: SECRET,
       allowedOrigins: ['http://localhost:5173'],
     });
@@ -42,6 +44,8 @@ describe('loadApiConfig', () => {
       JWT_ACCESS_TTL: '30s',
       REFRESH_TOKEN_TTL: '2h',
       INVITATION_TTL: '3d',
+      OUTBOX_POLL_INTERVAL: '30s',
+      OUTBOX_MAX_ATTEMPTS: '8',
       ALLOWED_ORIGINS: ' https://a.example.com , https://b.example.com:8443 ',
     });
     expect(config).toMatchObject({
@@ -50,6 +54,8 @@ describe('loadApiConfig', () => {
       accessTokenTtlSeconds: 30,
       refreshTokenTtlSeconds: 7200,
       invitationTtlSeconds: 259200,
+      outboxPollIntervalSeconds: 30,
+      outboxMaxAttempts: 8,
       allowedOrigins: ['https://a.example.com', 'https://b.example.com:8443'],
     });
   });
@@ -99,7 +105,13 @@ describe('loadApiConfig', () => {
     expect(messageOf({ ...validEnv(), NODE_ENV: 'staging' })).toContain('NODE_ENV');
   });
 
-  it.each(['JWT_ACCESS_TTL', 'REFRESH_TOKEN_TTL', 'INVITATION_TTL'])(
+  it.each(['0', '21', 'abc', '1.5', '-1'])('rejects OUTBOX_MAX_ATTEMPTS=%s', (value) => {
+    expect(messageOf({ ...validEnv(), OUTBOX_MAX_ATTEMPTS: value })).toContain(
+      'OUTBOX_MAX_ATTEMPTS',
+    );
+  });
+
+  it.each(['JWT_ACCESS_TTL', 'REFRESH_TOKEN_TTL', 'INVITATION_TTL', 'OUTBOX_POLL_INTERVAL'])(
     'rejects a malformed %s',
     (name) => {
       for (const value of ['15', '15x', 'm', '-5m', '1.5h', '0m']) {

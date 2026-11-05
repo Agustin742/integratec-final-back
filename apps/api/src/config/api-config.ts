@@ -16,6 +16,8 @@ export interface ApiConfig {
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   invitationTtlSeconds: number;
+  outboxPollIntervalSeconds: number;
+  outboxMaxAttempts: number;
   internalServiceSecret: string;
   allowedOrigins: string[];
 }
@@ -103,6 +105,22 @@ const envSchema = z.object({
   JWT_ACCESS_TTL: duration('15m'),
   REFRESH_TOKEN_TTL: duration('7d'),
   INVITATION_TTL: duration('7d'),
+  OUTBOX_POLL_INTERVAL: duration('5s'),
+  OUTBOX_MAX_ATTEMPTS: z
+    .string()
+    .default('5')
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+$/, 'must be an integer between 1 and 20')
+        .transform(Number)
+        .pipe(
+          z
+            .number()
+            .min(1, 'must be an integer between 1 and 20')
+            .max(20, 'must be an integer between 1 and 20'),
+        ),
+    ),
   INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
   ALLOWED_ORIGINS: z
     .string(required)
@@ -145,6 +163,8 @@ export function loadApiConfig(env: Env): ApiConfig {
     accessTokenTtlSeconds: values.JWT_ACCESS_TTL,
     refreshTokenTtlSeconds: values.REFRESH_TOKEN_TTL,
     invitationTtlSeconds: values.INVITATION_TTL,
+    outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
+    outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
     allowedOrigins: values.ALLOWED_ORIGINS,
   };

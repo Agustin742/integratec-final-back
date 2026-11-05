@@ -261,6 +261,24 @@ model Invitation {
   @@map("invitations")
 }
 
+/// Transactional outbox: written in the same transaction as the business change and
+/// delivered at-least-once to in-process handlers after commit. Rows are never deleted
+/// here; `processedAt` marks delivery and `failedAt` marks exhausted retries.
+model OutboxEvent {
+  id          String    @id @default(uuid()) @db.Uuid
+  type        String    @db.VarChar(100)
+  payload     Json
+  occurredAt  DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  availableAt DateTime  @default(now()) @map("available_at") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  failedAt    DateTime? @map("failed_at") @db.Timestamptz(6)
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.VarChar(300)
+
+  @@index([processedAt, failedAt, availableAt])
+  @@map("outbox_events")
+}
+
 model JoinCodeUsage {
   id           String   @id @default(uuid()) @db.Uuid
   invitationId String   @map("invitation_id") @db.Uuid

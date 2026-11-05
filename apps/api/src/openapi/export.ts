@@ -24,6 +24,8 @@ const EXPORT_CONFIG: ApiConfig = {
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
   invitationTtlSeconds: 1,
+  outboxPollIntervalSeconds: 1,
+  outboxMaxAttempts: 1,
   internalServiceSecret: 'openapi-export-placeholder-not-a-secret',
   allowedOrigins: ['http://localhost'],
 };

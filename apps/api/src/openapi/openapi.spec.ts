@@ -21,6 +21,8 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 604800,
   invitationTtlSeconds: 604800,
+  outboxPollIntervalSeconds: 5,
+  outboxMaxAttempts: 5,
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
   allowedOrigins: ['http://localhost:5173'],
 });
