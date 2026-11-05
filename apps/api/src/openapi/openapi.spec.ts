@@ -3,11 +3,12 @@ import { resolve } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../app.module';
 import type { ApiConfig } from '../config/api-config';
 import { ERROR_CODES } from '../http/error-envelope';
 import { configureHttp } from '../http/configure-http';
+import { PrismaService } from '../prisma/prisma.service';
 import { mountApiDocs } from './docs';
 import { renderOpenApiJson, OPENAPI_FILE_PATH } from './export';
 import { buildOpenApiDocument } from './openapi-document';
@@ -27,7 +28,15 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule.forRoot(config(nodeEnv))],
-  }).compile();
+  })
+    .overrideProvider(PrismaService)
+    .useValue({
+      $connect: vi.fn(),
+      $disconnect: vi.fn(),
+      onModuleInit: vi.fn(),
+      onModuleDestroy: vi.fn(),
+    })
+    .compile();
   const app = moduleRef.createNestApplication();
   configureHttp(app, { logSink: () => undefined });
   mountApiDocs(app, config(nodeEnv));
