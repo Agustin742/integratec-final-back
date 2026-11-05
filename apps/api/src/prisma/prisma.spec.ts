@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, RegistrationPath } from '@prisma/client';
 
 describe('Prisma Baseline Relational Constraints Integration Tests', () => {
   let prisma: PrismaClient;
@@ -35,6 +35,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
         email: `test.owner.${timestamp}@example.edu.ar`,
         passwordHash: 'dummy-hash-for-integration-tests',
         displayName: 'Test Owner',
+        registrationPath: RegistrationPath.SCHOOL,
       },
     });
 
@@ -43,6 +44,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
         email: `test.teacher.${timestamp}@example.edu.ar`,
         passwordHash: 'dummy-hash-for-integration-tests',
         displayName: 'Test Teacher',
+        registrationPath: RegistrationPath.SCHOOL,
       },
     });
 
@@ -51,6 +53,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
         email: `test.student.${timestamp}@example.edu.ar`,
         passwordHash: 'dummy-hash-for-integration-tests',
         displayName: 'Test Student',
+        registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
       },
     });
 
@@ -59,6 +62,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
         email: `test.parent.${timestamp}@example.edu.ar`,
         passwordHash: 'dummy-hash-for-integration-tests',
         displayName: 'Test Parent',
+        registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
       },
     });
 
@@ -195,6 +199,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
           email: testOwnerUser.email,
           passwordHash: 'some-hash',
           displayName: 'Duplicate User',
+          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
@@ -207,6 +212,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
           email: testOwnerUser.email.toUpperCase(),
           passwordHash: 'some-hash',
           displayName: 'Duplicate User Casing',
+          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
         },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
@@ -220,6 +226,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
         email: `extra.owner.${Date.now()}@example.com`,
         passwordHash: 'dummy-hash',
         displayName: 'Extra Candidate',
+        registrationPath: RegistrationPath.SCHOOL,
       },
     });
 

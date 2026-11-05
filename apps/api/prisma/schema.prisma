@@ -66,7 +66,7 @@ model User {
   email            String           @unique @db.VarChar(255)
   passwordHash     String           @map("password_hash") @db.VarChar(255)
   displayName      String           @map("display_name") @db.VarChar(100)
-  registrationPath RegistrationPath @default(INDEPENDENT_TEACHER) @map("registration_path")
+  registrationPath RegistrationPath @map("registration_path")
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 

@@ -68,37 +68,13 @@ export class AuthService {
             attempts++;
           }
 
-          let school;
-          try {
-            school = await tx.school.create({
-              data: {
-                name: rawSchoolName,
-                slug: candidateSlug,
-                timeZone: 'America/Argentina/Buenos_Aires',
-              },
-            });
-          } catch (createErr) {
-            if (
-              createErr instanceof Prisma.PrismaClientKnownRequestError &&
-              createErr.code === 'P2002'
-            ) {
-              const target = String(createErr.meta?.target ?? '');
-              if (target.includes('slug')) {
-                const fallbackSuffix = Math.random().toString(36).substring(2, 8);
-                school = await tx.school.create({
-                  data: {
-                    name: rawSchoolName,
-                    slug: `${baseSlug.slice(0, 130)}-${fallbackSuffix}`,
-                    timeZone: 'America/Argentina/Buenos_Aires',
-                  },
-                });
-              } else {
-                throw createErr;
-              }
-            } else {
-              throw createErr;
-            }
-          }
+          const school = await tx.school.create({
+            data: {
+              name: rawSchoolName,
+              slug: candidateSlug,
+              timeZone: 'America/Argentina/Buenos_Aires',
+            },
+          });
 
           await tx.schoolMember.create({
             data: {
