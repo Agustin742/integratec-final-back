@@ -195,6 +195,60 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 
+## Platform ports
+
+Shared infrastructure that stories consume through a port (an interface plus an injection token), never through a provider. Code lives in `apps/api/src/platform`. None of the modules is imported in `AppModule`: the first feature module that needs one imports it.
+
+### Email
+
+Port in [`email`](./apps/api/src/platform/email/email.port.ts). Only an in-memory stub exists: it records messages and logs without the body or recipient, and makes no network call. The provider, digest, opt-out and bounce policy are open (gap 7).
+
+```ts
+@Module({ imports: [EmailModule] /* ... */ })
+export class PasswordResetModule {}
+
+constructor(@Inject(EMAIL_PORT) private readonly email: EmailPort) {}
+await this.email.send({ to, subject, text });
+```
+
+### Transactional outbox
+
+Port in [`outbox`](./apps/api/src/platform/outbox/outbox.writer.ts). Use it for domain events that must exist if and only if the business change commits. Importing `OutboxModule` also starts the dispatcher polling (`OUTBOX_POLL_INTERVAL`).
+
+```ts
+// Producer: record inside the same transaction as the change.
+await this.prisma.$transaction(async (tx) => {
+  await tx.announcement.create({ data });
+  await this.outbox.record(tx, { type: 'classroom.announcement.created', payload: { id } });
+});
+
+// Consumer: register in onModuleInit; event.id is stable across redeliveries.
+onModuleInit() {
+  this.registry.register('classroom.announcement.created', async (event) => { /* ... */ });
+}
+```
+
+- Delivery is **at-least-once**: handlers **must be idempotent** (deduplicate on `event.id`). Throw to request a retry; never put personal data in the error, it is stored in `lastError`.
+- Retries back off 5s, 10s, 20s... up to 1h, for `OUTBOX_MAX_ATTEMPTS` attempts. An exhausted event keeps `failedAt` and stays in the table for inspection.
+- An event type with no registered handler counts as a failed attempt (it is not dropped), so a missing registration never loses events silently.
+- Handlers run outside any transaction with a 30s timeout; a timeout is a failed attempt. A claimed row is leased for 5 minutes, so a crashed process only delays redelivery.
+- Polling is off when `NODE_ENV=test`; tests call `OutboxDispatcher.dispatchPending()` explicitly.
+
+### Object storage
+
+Port in [`storage`](./apps/api/src/platform/storage/storage.port.ts) with an S3 adapter. Import `StorageModule` and inject `STORAGE_PORT`.
+
+```ts
+constructor(@Inject(STORAGE_PORT) private readonly storage: StoragePort) {}
+await this.storage.put(`materials/${classroomId}/${fileId}`, bytes, { contentType: 'application/pdf' });
+const url = await this.storage.getSignedDownloadUrl(key); // default TTL: STORAGE_SIGNED_URL_TTL
+```
+
+- Keys are opaque strings chosen by the caller and validated: non-empty, at most 1024 bytes, no leading `/`, no `\`, no control characters, no empty, `.` or `..` segments (`InvalidStorageKeyError`). Reading a missing key throws `StorageObjectNotFoundError`; deleting one succeeds.
+- Content validation (type allow-list, size, count) belongs to the calling story, not to the port.
+- Signed URLs are short-lived bearer credentials: hand them to the client, never log or persist them.
+- In production credentials come from the instance role (leave `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` unset). Locally use MinIO: `docker compose up -d minio minio-init` (see [Local object storage](#local-object-storage-minio)). MinIO was chosen over LocalStack because only S3 is needed and it is lighter.
+
 ## Documentation
 
 The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints. REST conventions (error envelope, validation, pagination, OpenAPI workflow) are in [API conventions](./docs/api-conventions.md).
