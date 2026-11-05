@@ -1,0 +1,277 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SchoolRole {
+  OWNER   @map("owner")
+  ADMIN   @map("admin")
+  TEACHER @map("teacher")
+
+  @@map("school_role")
+}
+
+enum MembershipState {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+
+  @@map("membership_state")
+}
+
+enum ClassroomRole {
+  TEACHER @map("teacher")
+  STUDENT @map("student")
+
+  @@map("classroom_role")
+}
+
+enum InvitationKind {
+  EMAIL     @map("email")
+  JOIN_CODE @map("join_code")
+
+  @@map("invitation_kind")
+}
+
+enum InvitationRole {
+  OWNER   @map("owner")
+  ADMIN   @map("admin")
+  TEACHER @map("teacher")
+  STUDENT @map("student")
+
+  @@map("invitation_role")
+}
+
+enum InvitationState {
+  PENDING @map("pending")
+  USED    @map("used")
+  REVOKED @map("revoked")
+  EXPIRED @map("expired")
+
+  @@map("invitation_state")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  displayName  String   @map("display_name") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  avatarConfig           AvatarConfiguration?
+  sessions               Session[]
+  schoolMemberships      SchoolMember[]
+  independentClassrooms  Classroom[]           @relation("IndependentTeacherClassrooms")
+  classroomMemberships   ClassroomMembership[]
+  createdInvitations     Invitation[]          @relation("InvitationCreator")
+  parentOfLinks          ParentLink[]          @relation("ParentLinks")
+  childInLinks           ParentLink[]          @relation("ChildLinks")
+  usedJoinCodes          JoinCodeUsage[]
+
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash") @db.VarChar(255)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@map("sessions")
+}
+
+model AvatarConfiguration {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @unique @map("user_id") @db.Uuid
+  appearance Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("avatar_configurations")
+}
+
+model School {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @db.VarChar(150)
+  slug      String    @unique @db.VarChar(150)
+  timeZone  String    @default("America/Argentina/Buenos_Aires") @map("time_zone") @db.VarChar(100)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  members     SchoolMember[]
+  classrooms  Classroom[]
+  invitations Invitation[]
+
+  @@map("schools")
+}
+
+model SchoolMember {
+  id        String          @id @default(uuid()) @db.Uuid
+  schoolId  String          @map("school_id") @db.Uuid
+  userId    String          @map("user_id") @db.Uuid
+  role      SchoolRole
+  state     MembershipState @default(ACTIVE)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, userId])
+  @@index([schoolId])
+  @@index([userId])
+  @@map("school_members")
+}
+
+model Classroom {
+  id                    String    @id @default(uuid()) @db.Uuid
+  schoolId              String?   @map("school_id") @db.Uuid
+  independentTeacherId  String?   @map("independent_teacher_id") @db.Uuid
+  name                  String    @db.VarChar(120)
+  adultMode             Boolean   @default(false) @map("adult_mode")
+  chatMuted             Boolean   @default(false) @map("chat_muted")
+  collaborationLocked   Boolean   @default(false) @map("collaboration_locked")
+  gamesDisabled         Boolean   @default(false) @map("games_disabled")
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school             School?               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  independentTeacher User?                 @relation("IndependentTeacherClassrooms", fields: [independentTeacherId], references: [id], onDelete: Restrict)
+  memberships        ClassroomMembership[]
+  desks              Desk[]
+  pet                ClassroomPet?
+  invitations        Invitation[]
+  parentLinks        ParentLink[]
+
+  @@index([schoolId])
+  @@index([independentTeacherId])
+  @@map("classrooms")
+}
+
+model ClassroomMembership {
+  id          String          @id @default(uuid()) @db.Uuid
+  classroomId String          @map("classroom_id") @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  role        ClassroomRole   @default(STUDENT)
+  state       MembershipState @default(ACTIVE)
+  deletedAt   DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  desk      Desk?
+
+  @@unique([classroomId, userId])
+  @@index([classroomId])
+  @@index([userId])
+  @@map("classroom_memberships")
+}
+
+model Desk {
+  id           String   @id @default(uuid()) @db.Uuid
+  classroomId  String   @map("classroom_id") @db.Uuid
+  membershipId String?  @unique @map("membership_id") @db.Uuid
+  deskIndex    Int      @map("desk_index")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom  Classroom            @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  membership ClassroomMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+
+  @@unique([classroomId, deskIndex])
+  @@index([classroomId])
+  @@map("desks")
+}
+
+model ClassroomPet {
+  id          String   @id @default(uuid()) @db.Uuid
+  classroomId String   @unique @map("classroom_id") @db.Uuid
+  name        String   @db.VarChar(50)
+  species     String   @default("cat") @db.VarChar(50)
+  level       Int      @default(1)
+  experience  Int      @default(0)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+
+  @@map("classroom_pets")
+}
+
+model ParentLink {
+  id          String          @id @default(uuid()) @db.Uuid
+  parentId    String          @map("parent_id") @db.Uuid
+  childId     String          @map("child_id") @db.Uuid
+  classroomId String          @map("classroom_id") @db.Uuid
+  state       MembershipState @default(ACTIVE)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent    User      @relation("ParentLinks", fields: [parentId], references: [id], onDelete: Restrict)
+  child     User      @relation("ChildLinks", fields: [childId], references: [id], onDelete: Restrict)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+
+  @@unique([parentId, childId, classroomId])
+  @@index([parentId])
+  @@index([childId])
+  @@index([classroomId])
+  @@map("parent_links")
+}
+
+model Invitation {
+  id          String          @id @default(uuid()) @db.Uuid
+  kind        InvitationKind  @default(EMAIL)
+  secretHash  String          @unique @map("secret_hash") @db.VarChar(255)
+  targetEmail String?         @map("target_email") @db.VarChar(255)
+  schoolId    String?         @map("school_id") @db.Uuid
+  classroomId String?         @map("classroom_id") @db.Uuid
+  role        InvitationRole  @default(STUDENT)
+  maxUses     Int?            @map("max_uses")
+  useCount    Int             @default(0) @map("use_count")
+  expiresAt   DateTime        @map("expires_at") @db.Timestamptz(6)
+  state       InvitationState @default(PENDING)
+  createdById String          @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  school    School?         @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classroom Classroom?      @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  createdBy User            @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  usages    JoinCodeUsage[]
+
+  @@index([schoolId])
+  @@index([classroomId])
+  @@index([createdById])
+  @@index([targetEmail])
+  @@map("invitations")
+}
+
+model JoinCodeUsage {
+  id           String   @id @default(uuid()) @db.Uuid
+  invitationId String   @map("invitation_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  usedAt       DateTime @default(now()) @map("used_at") @db.Timestamptz(6)
+
+  invitation Invitation @relation(fields: [invitationId], references: [id], onDelete: Restrict)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([invitationId, userId])
+  @@index([invitationId])
+  @@index([userId])
+  @@map("join_code_usages")
+}

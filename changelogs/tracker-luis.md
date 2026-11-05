@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-11-04 — Baseline Prisma schema and relational migrations (Issue #14)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/`, `apps/api/src/prisma/`, `apps/api/Dockerfile`, `.github/workflows/ci.yml`, `package.json`, `apps/api/package.json`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #14: set up Prisma ORM in `apps/api` with initial migration for baseline relational schema covering `User`, `Session`, `AvatarConfiguration`, `School`, `SchoolMember`, `Classroom`, `ClassroomMembership`, `Desk`, `ClassroomPet`, `ParentLink`, `Invitation`, and `JoinCodeUsage`. Enforced required database-level constraints: normalized unique email, single active owner per school partial index, exclusive ownership CHECK on `Classroom` (school OR independent teacher), invitation integrity CHECK (email required for email kind, absent for join codes with role student, use count <= max uses), and default Buenos Aires time zone. Created NestJS global `PrismaModule` and `PrismaService`. Added synthetic seed script (`prisma/seed.ts`). Authored comprehensive integration tests exercising all database constraints against PostgreSQL. Updated CI workflow with automated migration step and updated Dockerfile for container builds.
+- **Reason:** Provide durable relational data model foundation, Prisma Client integration, and strict database constraint guarantees for subsequent domain modules.
+- **Next step:** Merge PR for Issue #14 into develop, then proceed with authentication endpoints and session management.
+
 ## 2026-11-03 — Docker Compose local PostgreSQL and service Dockerfiles (Issue #13)
 
 - **Status:** completed

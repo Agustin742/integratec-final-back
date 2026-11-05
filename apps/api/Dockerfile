@@ -10,9 +10,11 @@ COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/contracts/tsconfig.json ./packages/contracts/
 COPY apps/api/package.json ./apps/api/
 COPY apps/api/tsconfig.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
 COPY apps/realtime/package.json ./apps/realtime/
 
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile && \
+    pnpm --filter @aula/api prisma:generate
 
 COPY packages/contracts/src ./packages/contracts/src
 COPY apps/api/src ./apps/api/src
@@ -31,10 +33,12 @@ ENV PORT=3000
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/contracts/package.json ./packages/contracts/
 COPY apps/api/package.json ./apps/api/
+COPY apps/api/prisma ./apps/api/prisma
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && \
     pnpm install --prod --frozen-lockfile
 
+COPY --from=builder /app/node_modules /app/node_modules
 COPY --from=builder /app/packages/contracts/src ./packages/contracts/src
 COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
 COPY --from=builder /app/apps/api/dist ./apps/api/dist

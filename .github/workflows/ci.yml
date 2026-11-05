@@ -149,6 +149,18 @@ jobs:
         if: steps.package.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Apply Prisma migrations
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          if node -e "process.exit(require('./package.json').scripts?.['prisma:migrate:deploy'] || require('./apps/api/package.json').scripts?.['prisma:migrate:deploy'] ? 0 : 1)"; then
+            pnpm prisma:generate
+            pnpm prisma:migrate:deploy
+            pnpm prisma:seed
+          else
+            echo "::notice title=Prisma migrations not configured::No prisma:migrate:deploy script configured; step skipped."
+          fi
+
       - name: Check committed OpenAPI document is up to date
         if: steps.package.outputs.present == 'true'
         shell: bash

@@ -7,8 +7,15 @@
     "start": "node dist/main.js",
     "openapi:export": "ts-node -r tsconfig-paths/register src/openapi/export-cli.ts",
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:seed": "ts-node prisma/seed.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@aula/contracts": "workspace:*",
@@ -16,6 +23,7 @@
     "@nestjs/core": "^11.0.10",
     "@nestjs/platform-express": "^11.0.10",
     "@nestjs/swagger": "^12.1.0",
+    "@prisma/client": "6.4.1",
     "@scalar/nestjs-api-reference": "^1.2.34",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -30,6 +38,7 @@
     "@types/node": "^22.13.4",
     "@types/supertest": "^6.0.3",
     "prettier": "^3.9.10",
+    "prisma": "6.4.1",
     "supertest": "^7.3.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
