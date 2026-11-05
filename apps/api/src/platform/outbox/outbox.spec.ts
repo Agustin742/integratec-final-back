@@ -34,6 +34,12 @@ const config: ApiConfig = {
   outboxMaxAttempts: MAX_ATTEMPTS,
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
   allowedOrigins: ['http://localhost'],
+  s3Bucket: 'outbox-spec-placeholder',
+  s3Region: 'sa-east-1',
+  s3Endpoint: undefined,
+  s3ForcePathStyle: false,
+  s3Credentials: undefined,
+  storageSignedUrlTtlSeconds: 1,
 };
 
 describe('transactional outbox (integration, real Postgres)', () => {

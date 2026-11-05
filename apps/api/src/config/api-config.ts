@@ -20,7 +20,19 @@ export interface ApiConfig {
   outboxMaxAttempts: number;
   internalServiceSecret: string;
   allowedOrigins: string[];
+  s3Bucket: string;
+  s3Region: string;
+  /** Set only for S3-compatible services such as MinIO; undefined means AWS S3. */
+  s3Endpoint: string | undefined;
+  s3ForcePathStyle: boolean;
+  /** Undefined means the SDK default provider chain (the EC2 instance role in production). */
+  s3Credentials: { accessKeyId: string; secretAccessKey: string } | undefined;
+  /** Default lifetime of signed download URLs. */
+  storageSignedUrlTtlSeconds: number;
 }
+
+/** Upper bound for any signed download URL lifetime, configured or requested. */
+export const MAX_SIGNED_URL_TTL_SECONDS = 3600;
 
 export interface ConfigIssue {
   variable: string;
@@ -48,9 +60,16 @@ const DURATION_MESSAGE = 'must be a positive duration such as 30s, 15m, 12h or 7
 const ORIGINS_MESSAGE =
   'must be a comma-separated list of http(s) origins without path, e.g. https://app.example.com';
 
+const BUCKET_MESSAGE =
+  'must be a bucket name of 3-63 lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit';
+const REGION_MESSAGE = 'must be an AWS region name such as sa-east-1';
+const ENDPOINT_MESSAGE =
+  'must be an http(s) origin without path, e.g. http://localhost:9000 (leave unset for AWS S3)';
+const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
+
 const required = { error: 'is required' };
 
-const duration = (fallback: string) =>
+const duration = (fallback: string, maxSeconds?: number, maxMessage = DURATION_MESSAGE) =>
   z
     .string()
     .default(fallback)
@@ -59,7 +78,12 @@ const duration = (fallback: string) =>
         .string()
         .regex(/^\d+[smhd]$/, DURATION_MESSAGE)
         .transform((value) => Number.parseInt(value, 10) * SECONDS_PER_UNIT[value.slice(-1)])
-        .pipe(z.number().min(1, DURATION_MESSAGE)),
+        .pipe(
+          z
+            .number()
+            .min(1, DURATION_MESSAGE)
+            .max(maxSeconds ?? Infinity, maxMessage),
+        ),
     );
 
 const isPostgresUrl = (value: string): boolean => {
@@ -80,53 +104,79 @@ const isHttpOrigin = (value: string): boolean => {
   }
 };
 
-const envSchema = z.object({
-  NODE_ENV: z
-    .enum(NODE_ENVIRONMENTS, { error: `must be one of: ${NODE_ENVIRONMENTS.join(', ')}` })
-    .default('development'),
-  PORT: z
-    .string()
-    .default('3000')
-    .pipe(
-      z
-        .string()
-        .regex(/^\d+$/, 'must be an integer between 1 and 65535')
-        .transform(Number)
-        .pipe(
-          z
-            .number()
-            .min(1, 'must be an integer between 1 and 65535')
-            .max(65535, 'must be an integer between 1 and 65535'),
-        ),
-    ),
-  DATABASE_URL: z
-    .string(required)
-    .refine(isPostgresUrl, 'must be a postgres:// or postgresql:// URL with a host'),
-  JWT_ACCESS_TTL: duration('15m'),
-  REFRESH_TOKEN_TTL: duration('7d'),
-  INVITATION_TTL: duration('7d'),
-  OUTBOX_POLL_INTERVAL: duration('5s'),
-  OUTBOX_MAX_ATTEMPTS: z
-    .string()
-    .default('5')
-    .pipe(
-      z
-        .string()
-        .regex(/^\d+$/, 'must be an integer between 1 and 20')
-        .transform(Number)
-        .pipe(
-          z
-            .number()
-            .min(1, 'must be an integer between 1 and 20')
-            .max(20, 'must be an integer between 1 and 20'),
-        ),
-    ),
-  INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
-  ALLOWED_ORIGINS: z
-    .string(required)
-    .transform((value) => value.split(',').map((origin) => origin.trim()))
-    .refine((origins) => origins.length > 0 && origins.every(isHttpOrigin), ORIGINS_MESSAGE),
-});
+const envSchema = z
+  .object({
+    NODE_ENV: z
+      .enum(NODE_ENVIRONMENTS, { error: `must be one of: ${NODE_ENVIRONMENTS.join(', ')}` })
+      .default('development'),
+    PORT: z
+      .string()
+      .default('3000')
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, 'must be an integer between 1 and 65535')
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, 'must be an integer between 1 and 65535')
+              .max(65535, 'must be an integer between 1 and 65535'),
+          ),
+      ),
+    DATABASE_URL: z
+      .string(required)
+      .refine(isPostgresUrl, 'must be a postgres:// or postgresql:// URL with a host'),
+    JWT_ACCESS_TTL: duration('15m'),
+    REFRESH_TOKEN_TTL: duration('7d'),
+    INVITATION_TTL: duration('7d'),
+    OUTBOX_POLL_INTERVAL: duration('5s'),
+    OUTBOX_MAX_ATTEMPTS: z
+      .string()
+      .default('5')
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, 'must be an integer between 1 and 20')
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, 'must be an integer between 1 and 20')
+              .max(20, 'must be an integer between 1 and 20'),
+          ),
+      ),
+    INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
+    ALLOWED_ORIGINS: z
+      .string(required)
+      .transform((value) => value.split(',').map((origin) => origin.trim()))
+      .refine((origins) => origins.length > 0 && origins.every(isHttpOrigin), ORIGINS_MESSAGE),
+    S3_BUCKET: z.string(required).regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, BUCKET_MESSAGE),
+    S3_REGION: z
+      .string()
+      .default('sa-east-1')
+      .pipe(z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d+$/, REGION_MESSAGE)),
+    S3_ENDPOINT: z.string().refine(isHttpOrigin, ENDPOINT_MESSAGE).optional(),
+    S3_FORCE_PATH_STYLE: z
+      .enum(['true', 'false'], { error: 'must be true or false' })
+      .default('false')
+      .transform((value) => value === 'true'),
+    S3_ACCESS_KEY_ID: z.string().optional(),
+    S3_SECRET_ACCESS_KEY: z.string().optional(),
+    STORAGE_SIGNED_URL_TTL: duration('5m', MAX_SIGNED_URL_TTL_SECONDS, SIGNED_URL_TTL_MESSAGE),
+  })
+  .superRefine((env, ctx) => {
+    // Both keys or neither: with neither, the SDK resolves the instance role.
+    if ((env.S3_ACCESS_KEY_ID === undefined) !== (env.S3_SECRET_ACCESS_KEY === undefined)) {
+      const missing =
+        env.S3_ACCESS_KEY_ID === undefined ? 'S3_ACCESS_KEY_ID' : 'S3_SECRET_ACCESS_KEY';
+      ctx.addIssue({
+        code: 'custom',
+        path: [missing],
+        message: 'is required when the other S3 credential variable is set',
+      });
+    }
+  });
 
 type Env = NodeJS.ProcessEnv | Record<string, string | undefined>;
 
@@ -167,5 +217,14 @@ export function loadApiConfig(env: Env): ApiConfig {
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
     allowedOrigins: values.ALLOWED_ORIGINS,
+    s3Bucket: values.S3_BUCKET,
+    s3Region: values.S3_REGION,
+    s3Endpoint: values.S3_ENDPOINT,
+    s3ForcePathStyle: values.S3_FORCE_PATH_STYLE,
+    s3Credentials:
+      values.S3_ACCESS_KEY_ID !== undefined && values.S3_SECRET_ACCESS_KEY !== undefined
+        ? { accessKeyId: values.S3_ACCESS_KEY_ID, secretAccessKey: values.S3_SECRET_ACCESS_KEY }
+        : undefined,
+    storageSignedUrlTtlSeconds: values.STORAGE_SIGNED_URL_TTL,
   };
 }

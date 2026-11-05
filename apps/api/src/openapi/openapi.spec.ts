@@ -25,6 +25,12 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   outboxMaxAttempts: 5,
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
   allowedOrigins: ['http://localhost:5173'],
+  s3Bucket: 'synthetic-bucket',
+  s3Region: 'sa-east-1',
+  s3Endpoint: undefined,
+  s3ForcePathStyle: false,
+  s3Credentials: undefined,
+  storageSignedUrlTtlSeconds: 300,
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {

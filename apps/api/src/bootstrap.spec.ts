@@ -43,6 +43,7 @@ describe('start', () => {
         DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula',
         INTERNAL_SERVICE_SECRET: 'test-only-secret-with-at-least-32-characters',
         ALLOWED_ORIGINS: 'http://localhost:5173',
+        S3_BUCKET: 'aula-virtual-dev',
       },
       exit,
     );

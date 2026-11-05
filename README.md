@@ -92,6 +92,16 @@ The database credentials and configuration match `apps/api/.env.example` (`user:
 
 If another PostgreSQL instance already occupies port `5432`, set `POSTGRES_PORT=5433` in the repository-root Compose `.env` before starting the container. When running the API outside Docker with `pnpm --filter @aula/api start:dev`, also update `DATABASE_URL` in `apps/api/.env` to use the chosen host port, for example `postgresql://postgres:postgres@localhost:5433/aula_virtual?schema=public` with the default local credentials. Export that updated value into the API process environment as described in [Configuration](#configuration); `start:dev` does not load `.env` automatically. The containerized API continues to use `postgres:5432` on the Compose network, regardless of `POSTGRES_PORT`.
 
+### Local object storage (MinIO)
+
+Start the S3-compatible object store and create the development bucket (the one-shot `minio-init` container exits when done):
+
+```bash
+docker compose up -d minio minio-init
+```
+
+The API talks to it with `S3_ENDPOINT=http://localhost:9000`, `S3_FORCE_PATH_STYLE=true`, `S3_BUCKET=aula-virtual-dev` and the local-only credentials `minioadmin` / `minioadmin` (override with `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the Compose `.env`, and keep `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` equal to them). The API and console ports are published on `127.0.0.1` only (`MINIO_PORT`, `MINIO_CONSOLE_PORT`). Data persists in the volume `aula_minio_data`. The upstream `minio/minio` images are no longer published, so Compose pins the last Bitnami legacy build; it is a development stand-in only and production uses AWS S3 with the instance role. The `StoragePort` integration spec runs against this container, locally and in CI.
+
 ### Running services in containers
 
 Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
@@ -159,6 +169,13 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
+| `S3_BUCKET`               | Required; 3-63 lowercase letters, digits, dots or hyphens | Object storage bucket (local default in Compose: `aula-virtual-dev`) | Public         | Yes     |
+| `S3_REGION`               | Default `sa-east-1`; AWS region name              | Region used to sign storage requests                                     | Public         | Yes     |
+| `S3_ENDPOINT`             | Optional; `http(s)` origin without path           | Set only for an S3-compatible service such as MinIO (`http://localhost:9000`); unset means AWS S3 | Public | Yes |
+| `S3_FORCE_PATH_STYLE`     | Default `false`; `true` or `false`                | Path-style bucket addressing; `true` for MinIO                           | Public         | Yes     |
+| `S3_ACCESS_KEY_ID`        | Optional; set together with `S3_SECRET_ACCESS_KEY` | Static storage credential for local MinIO; leave both unset in AWS so the EC2 instance role is used | Private | Yes |
+| `S3_SECRET_ACCESS_KEY`    | Optional; set together with `S3_ACCESS_KEY_ID`    | Static storage credential for local MinIO; never commit a real value     | Private        | Yes     |
+| `STORAGE_SIGNED_URL_TTL`  | Default `5m`; same format, 1s to 1h               | Default lifetime of signed download URLs                                 | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 
@@ -195,7 +212,7 @@ git diff --check
 
 The local whitespace command checks uncommitted changes; CI checks the proposed committed diff against the PR base or push's previous SHA. Workflow validation also requires actionlint 1.7.7: `actionlint .github/workflows/ci.yml`.
 
-When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22 with `pnpm` store caching, provisions an active PostgreSQL 16 service container (`localhost:5432` with healthcheck for upcoming Prisma database and integration testing), installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Each step is guarded against missing scripts and reports a GitHub notice and step summary when absent. Otherwise, CI explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
+When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22 with `pnpm` store caching, provisions an active PostgreSQL 16 service container (`localhost:5432` with healthcheck for upcoming Prisma database and integration testing), starts MinIO and its bucket bootstrap from `docker-compose.yml` for the object storage integration spec, installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Each step is guarded against missing scripts and reports a GitHub notice and step summary when absent. Otherwise, CI explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
 
 ## Shared contracts
 
