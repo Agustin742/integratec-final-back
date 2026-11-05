@@ -234,7 +234,7 @@ sequenceDiagram
     end
 ```
 
-El filtro por aula y material habilitado se aplica en el servidor antes de invocar a Bedrock, y el Bot no crea, edita ni borra datos en el MVP, ni siquiera ante un pedido explícito (RN-14, RF-BOT-004). Siguen **abiertos** en [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md): modelo concreto, límites numéricos por usuario, aula y global, si se persiste `BotConversation` y su retención, la detección de uso indebido y la extensión de las pruebas adversarias. Verificar la disponibilidad de modelos de Bedrock en `sa-east-1` es una condición pendiente de la decisión D5.
+El filtro por aula y material habilitado se aplica en el servidor antes de invocar a Bedrock, y el Bot no crea, edita ni borra datos en el MVP, ni siquiera ante un pedido explícito (RN-14, RF-BOT-004). Siguen **abiertos** en [AI bot and daily briefing](../../../rules/ai-bot-and-daily-briefing.md): modelo concreto, límites numéricos por usuario, aula y global, si se persiste `BotConversation` y su retención, la detección de uso indebido y la extensión de las pruebas adversarias. Verificar la disponibilidad de modelos de Bedrock en `us-east-2` es una condición pendiente de la decisión D5.
 
 ---
 

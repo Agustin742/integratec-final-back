@@ -1,0 +1,4 @@
+# Copy to prod.s3.tfbackend and run:
+#   terraform init -backend-config=prod.s3.tfbackend
+# The bucket name is the state_bucket_name output of infra/bootstrap.
+bucket = "aula-virtual-tfstate-<account-id>"

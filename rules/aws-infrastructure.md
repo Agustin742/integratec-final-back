@@ -25,7 +25,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 ## Region
 
-- The environment is hosted in `sa-east-1` (Sao Paulo), because the product is sold in Argentina and realtime latency matters; higher cost is an accepted trade-off (decision D5, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d5-aws-region)).
+- The environment is hosted in `us-east-2` (US East, Ohio). AWS assigns this Region to the account by contact country and denies other Regions through managed service control policies, so it cannot be changed; higher latency from Argentina is an accepted trade-off (decision D5, updated and approved by Agustin on 2026-11-04; see [Technical justification](../docs/technical-justification.md#d5-aws-region)).
 
 ## Network and access
 
@@ -65,6 +65,6 @@ Evidence **MUST** identify the environment and deployed revision and confirm: ex
 ## Open decisions
 
 - Instance sizing and the exact routing (path versus host) for Colyseus.
-- Amazon Bedrock model availability in `sa-east-1`; cross-region inference may be needed.
+- Amazon Bedrock model availability in `us-east-2`; cross-region inference may be needed.
 - Domain, certificate ownership, and S3 usage (uploads are not defined yet).
 - Scaling strategy for Colyseus beyond one instance.

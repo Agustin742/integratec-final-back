@@ -8,7 +8,7 @@ Esta carpeta propone la **infraestructura en la nube, límites de proceso y prot
 
 | Archivo | Descripción | Contenido clave |
 |---|---|---|
-| [deployment-and-network.md](./deployment-and-network.md) | Topología física y red | Diagrama de infraestructura AWS en `sa-east-1` (Amplify, ALB, ECR, ECS Fargate, RDS PostgreSQL, S3, Secrets Manager, Bedrock, GitHub OIDC), matriz de canales REST vs WSS, flujo de acceso a escuelas y aulas y puntos abiertos de infraestructura. |
+| [deployment-and-network.md](./deployment-and-network.md) | Topología física y red | Diagrama de infraestructura AWS en `us-east-2` (Amplify, ALB, ECR, ECS Fargate, RDS PostgreSQL, S3, Secrets Manager, Bedrock, GitHub OIDC), matriz de canales REST vs WSS, flujo de acceso a escuelas y aulas y puntos abiertos de infraestructura. |
 | [realtime-colyseus.md](./realtime-colyseus.md) | Comunicación WebSocket / Colyseus | Ciclo de conexión con `onAuth` contra NestJS (D2), catálogo de eventos por aula, controles de aula, regla de consistencia y autoridad de datos, y decisiones abiertas de realtime. |
 
 ## Navegación

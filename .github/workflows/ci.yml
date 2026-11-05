@@ -11,6 +11,46 @@ on:
       - develop
 
 jobs:
+  # Static Terraform checks only: no AWS credentials, no remote state, no plan.
+  # Every root module (directory with a versions.tf) under infra/ must be listed;
+  # scripts/ci/test_checks.py enforces it.
+  terraform:
+    name: terraform (${{ matrix.root }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - infra/bootstrap
+          - infra/envs/prod
+    defaults:
+      run:
+        working-directory: ${{ matrix.root }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.16.6
+          terraform_wrapper: false
+
+      - name: Terraform format
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init without backend
+        run: terraform init -backend=false -input=false -lockfile=readonly
+
+      - name: Terraform validate
+        run: terraform validate -no-color
+
+      - name: Terraform test
+        run: terraform test -no-color
+
   checks:
     name: checks
     runs-on: ubuntu-latest

@@ -45,7 +45,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Trade-off:** Fargate, ALB, and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required.
 - **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
 - **Decided and approved by Agustin on 2026-11-02:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md).
-- **Open:** Domain, and Amazon Bedrock model availability in `sa-east-1` (see D5).
+- **Open:** Domain, and Amazon Bedrock model availability in `us-east-2` (see D5).
 
 ## 6. Artificial intelligence
 
@@ -100,13 +100,14 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 ### D5. AWS region
 
 - **Question:** Which AWS region hosts the environment?
-- **Outcome:** `sa-east-1` (Sao Paulo).
+- **Outcome:** `us-east-2` (US East, Ohio).
 - **Rationale:** The product is sold in Argentina and realtime latency matters.
 - **Alternatives:** `us-east-1`, cheaper and with the widest Amazon Bedrock model availability, but with higher latency from Argentina (rejected because realtime responsiveness matters for the target market).
 - **Trade-off:** Higher cost is accepted.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
-- **Open:** Amazon Bedrock model availability in `sa-east-1` **MUST** be verified; cross-region inference may be needed.
+- **Update (2026-11-04):** The AWS account was created with the "Sign up for AWS (new)" experience, which assigns the project Region by contact country (Argentina: `us-east-2`) and denies every other Region through AWS-managed service control policies; the Region cannot be changed ([AWS documentation](https://docs.aws.amazon.com/accounts/latest/reference/project-regions.html)). The previous choice of `sa-east-1` and its latency rationale are superseded. Latency from Argentina is higher; this is an accepted trade-off. Approved by Agustin on 2026-11-04.
+- **Open:** Amazon Bedrock model availability in `us-east-2` **MUST** be verified; cross-region inference may be needed. The managed service control policies of the Free Tier plan may also restrict Bedrock usage (to verify).
 
 ### D6. Pipeline authentication to AWS
 
@@ -116,6 +117,8 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** IAM user access keys in GitHub Secrets, rejected.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Deployment and operations](../rules/deployment-and-operations.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Implementation:** The role `aula-virtual-prod-github-actions` trusts only workflows on the `main` branch of this repository (exact `sub` match, audience `sts.amazonaws.com`) and starts with least-privilege access to the prod state. A read-only role for pull request plans is deferred. See [infra/README.md](../infra/README.md#github-actions-oidc-role). Trust scope approved by Agustin on 2026-11-03.
+- **Update (2026-11-04):** In the current AWS account, an AWS-managed service control policy denies `iam:CreateOpenIDConnectProvider`, so the OIDC provider cannot be created. The provider, role, and policy stay in code behind the variable `enable_github_oidc` (default `false`). Until it is enabled, Terraform is applied locally with short-lived credentials from `aws login`; no long-lived access keys exist anywhere. Pipeline deployment through OIDC is deferred until the account's advanced features are activated ([AWS documentation](https://docs.aws.amazon.com/accounts/latest/reference/activate-advanced-features.html); this requires a paid plan, removes the spend limit, and is irreversible), after which the variable is set to `true`. Approved by Agustin on 2026-11-04.
 
 ### D7. Invitation model
 

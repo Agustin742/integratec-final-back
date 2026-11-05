@@ -13,7 +13,7 @@ AWS infrastructure is defined, reviewed, and changed through Terraform. This rul
 
 - Infrastructure code **MUST** live in the backend repository under `infra/`, next to the pipeline that publishes images to ECR and updates ECS.
 - Terraform **MUST** manage the resources listed in [AWS infrastructure](./aws-infrastructure.md): network, security groups, load balancer, certificates, ECS cluster and services, ECR, RDS, S3, secret containers, IAM roles, log groups, alarms, and budgets.
-- The AWS region is `sa-east-1` and the pipeline authenticates through GitHub Actions OIDC to an IAM role ([AWS infrastructure](./aws-infrastructure.md)); the Terraform provider and the pipeline **MUST** be configured accordingly (decisions D5 and D6, approved by Agustin on 2026-11-02).
+- The AWS region is `us-east-2` (decision D5, updated 2026-11-04). The pipeline **MUST** authenticate through GitHub Actions OIDC to an IAM role once the account allows creating the OIDC provider (decision D6; the resources are gated by `enable_github_oidc`). Until then there is no pipeline deployment: Terraform is applied locally with short-lived credentials, and long-lived access keys **MUST NOT** be created or stored anywhere ([AWS infrastructure](./aws-infrastructure.md)).
 - Resources **MUST NOT** be created or changed manually in the console when Terraform manages them. An emergency manual change **MUST** be recorded and then either imported into code or reverted.
 - Resources that cannot be managed by Terraform, or are deliberately left out, **MUST** be listed with their owner and reason in `infra/README.md`.
 
