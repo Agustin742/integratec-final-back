@@ -100,7 +100,14 @@ Start the S3-compatible object store and create the development bucket (the one-
 docker compose up -d minio minio-init
 ```
 
-The API talks to it with `S3_ENDPOINT=http://localhost:9000`, `S3_FORCE_PATH_STYLE=true`, `S3_BUCKET=aula-virtual-dev` and the local-only credentials `minioadmin` / `minioadmin` (override with `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the Compose `.env`, and keep `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` equal to them). The API and console ports are published on `127.0.0.1` only (`MINIO_PORT`, `MINIO_CONSOLE_PORT`). Data persists in the volume `aula_minio_data`. The upstream `minio/minio` images are no longer published, so Compose pins the last Bitnami legacy build; it is a development stand-in only and production uses AWS S3 with the instance role. The `StoragePort` integration spec runs against this container, locally and in CI.
+The API talks to it with `S3_ENDPOINT=http://localhost:9000`, `S3_FORCE_PATH_STYLE=true`, `S3_BUCKET=aula-virtual-dev` and the local-only credentials `minioadmin` / `minioadmin` (override with `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the Compose `.env`, and keep `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` equal to them). The API and console ports are published on `127.0.0.1` only (`MINIO_PORT`, `MINIO_CONSOLE_PORT`). Data persists in the volume `aula_minio_data`. Upstream MinIO images are no longer available (`minio/minio` on Docker Hub denies access and `quay.io/minio/minio` is gone) and the Bitnami images are unmaintained, so Compose uses `cgr.dev/chainguard/minio` and `cgr.dev/chainguard/minio-client`. Chainguard's free tier only publishes `latest`, so both are pinned by index digest (`image:latest@sha256:...`) in `docker-compose.yml`. To bump them, resolve the new digests and replace them in that file:
+
+```bash
+docker buildx imagetools inspect cgr.dev/chainguard/minio:latest        # use the top-level "Digest"
+docker buildx imagetools inspect cgr.dev/chainguard/minio-client:latest
+```
+
+The server health check uses the bundled `mc ready local`, and `minio-init` runs a single idempotent `mc mb --ignore-existing` (the client image has no shell; URL-encode special characters if you set a custom `MINIO_ROOT_PASSWORD`). It is a development stand-in only and production uses AWS S3 with the instance role. The `StoragePort` integration spec runs against this container, locally and in CI.
 
 ### Running services in containers
 

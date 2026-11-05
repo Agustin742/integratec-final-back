@@ -223,7 +223,7 @@ jobs:
 
       # A service container cannot take a command, so MinIO comes from the same
       # Compose definitions used locally: `--wait` blocks until the health check
-      # passes and `run minio-init` creates the bucket (retrying until MinIO is ready).
+      # passes and `run minio-init` creates the bucket (idempotently).
       - name: Start MinIO and create the test bucket
         if: steps.package.outputs.present == 'true'
         shell: bash

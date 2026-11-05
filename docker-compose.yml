@@ -21,53 +21,48 @@ services:
       retries: 5
       start_period: 10s
 
-  # Local S3-compatible object store for development and tests. The upstream
-  # minio/minio images are no longer published, so this uses the last pinned
-  # Bitnami legacy build. It is a local stand-in only; production uses AWS S3.
+  # Local S3-compatible object store for development and tests. Upstream
+  # minio/minio images are no longer published and the Bitnami images are
+  # unmaintained, so this uses the Chainguard images. Their free tier only
+  # publishes `latest`, so each image is pinned by digest (see the README for how
+  # to bump it). It is a local stand-in only; production uses AWS S3.
   minio:
-    image: bitnamilegacy/minio:2025.7.23-debian-12-r5
+    image: cgr.dev/chainguard/minio:latest@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
     container_name: aula-minio
     restart: unless-stopped
+    # The image entrypoint is the minio binary, so only its arguments go here.
+    command: ['server', '/data', '--console-address', ':9001']
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      MINIO_DEFAULT_BUCKETS: ''
+      # Lets the health check below reach this container without credentials.
+      MC_HOST_local: http://localhost:9000
     ports:
       - '127.0.0.1:${MINIO_PORT:-9000}:9000'
       - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
     volumes:
-      - minio_data:/bitnami/minio/data
+      - minio_data:/data
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://localhost:9000/minio/health/live']
-      interval: 10s
+      # The image has no curl; its bundled `mc` probes the cluster health endpoint.
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 10s
+      retries: 10
+      start_period: 5s
 
   # One-shot bootstrap: creates the bucket if it does not exist, then exits.
-  # It retries the connection because the Bitnami image restarts MinIO once
-  # after its internal setup, so the first health probe can pass too early.
+  # The client image has no shell, so the alias comes from MC_HOST_local and the
+  # command is a single `mc` call; readiness is guaranteed by the minio health check.
   minio-init:
-    image: bitnamilegacy/minio-client:2025.7.21-debian-12-r3
+    image: cgr.dev/chainguard/minio-client:latest@sha256:ac75abc3947742b7d5d11e145eb0759c5b59ae697956fda325e91f6fd742b005
     container_name: aula-minio-init
     depends_on:
       minio:
         condition: service_healthy
     restart: 'no'
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-      S3_BUCKET: ${S3_BUCKET:-aula-virtual-dev}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        for attempt in 1 2 3 4 5 6 7 8 9 10; do
-          mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && break
-          [ "$$attempt" = 10 ] && exit 1
-          sleep 3
-        done &&
-        mc mb --ignore-existing "local/$$S3_BUCKET"
+      MC_HOST_local: http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD:-minioadmin}@minio:9000
+    command: ['mb', '--ignore-existing', 'local/${S3_BUCKET:-aula-virtual-dev}']
 
   api:
     build:
