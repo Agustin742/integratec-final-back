@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { NestApplication } from '@nestjs/core';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { start } from './bootstrap';
+import { PrismaService } from './prisma/prisma.service';
 
 describe('start', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -33,6 +34,8 @@ describe('start', () => {
     ) {
       return realListen.call(this, 0);
     });
+    vi.spyOn(PrismaService.prototype, 'onModuleInit').mockImplementation(async () => undefined);
+    vi.spyOn(PrismaService.prototype, 'onModuleDestroy').mockImplementation(async () => undefined);
     const exit = vi.fn();
     const app = await start(
       {

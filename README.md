@@ -41,6 +41,24 @@ pnpm openapi:export
 pnpm build
 ```
 
+### Database and Prisma workflows
+
+With local PostgreSQL running (`docker compose up -d postgres`), run database migrations and seeding:
+
+```bash
+# Apply pending database migrations
+pnpm prisma:migrate:deploy
+
+# In development: create and apply a migration from schema changes
+pnpm prisma:migrate:dev
+
+# Seed database with realistic synthetic school data
+pnpm prisma:seed
+
+# Regenerate Prisma Client
+pnpm prisma:generate
+```
+
 To run individual services locally:
 
 ```bash

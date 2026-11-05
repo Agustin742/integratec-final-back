@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-05 — PR #65 review fixes: seed allowlist and Prisma client in the runtime image
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/seed.ts`, `apps/api/prisma/seed-guard.ts`, `apps/api/prisma/seed-guard.spec.ts`, `apps/api/Dockerfile`
+- **Change:** Replaced the seed denylist (`production`/`staging`) with an allowlist evaluated before any deletion: the seed now runs only when `DATABASE_URL` points to `localhost`, `127.0.0.1`, `::1`, or the compose `postgres` host, and still refuses `production`/`staging`. Error messages show the host only, never credentials. Added unit tests that need no database. In the API Dockerfile the builder now stages only the generated `.prisma/client` output at its original path and the runtime stage copies that, instead of copying the contents of `@prisma+client*` over `.pnpm/`, which overwrote pnpm's hoisted links.
+- **Reason:** With `NODE_ENV` unset and `DATABASE_URL` pointing to a real database, the seed would wipe every table; the old Dockerfile copy only worked by accident. Verified by building the image, loading `PrismaClient` in it, and getting `/health` 200 against a throwaway Postgres.
+- **Next step:** None
+
 ## 2026-11-05 — Move production compute to a single EC2 host (D13)
 
 - **Status:** in-progress (documentation done; pending PR review)
