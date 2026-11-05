@@ -17,6 +17,43 @@
         "summary": "Liveness check",
         "tags": ["health"]
       }
+    },
+    "/auth/register": {
+      "post": {
+        "description": "Creates a user account, baseline avatar configuration, and the initial organizational structure atomically.",
+        "operationId": "AuthController_register",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RegisterRequestDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Account and organizational structure created successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegisterResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or missing required fields (e.g. invalid email, short password).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "A user with this normalized email address already exists.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Register account and select organizational path",
+        "tags": ["auth"]
+      }
     }
   },
   "info": {
@@ -41,6 +78,105 @@
           }
         },
         "required": ["status", "service", "timestamp"]
+      },
+      "RegisterRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "User email address, normalized to lowercase and trimmed",
+            "maxLength": 255
+          },
+          "password": {
+            "type": "string",
+            "example": "passwordSegura123",
+            "description": "User password (between 8 characters and 72 UTF-8 bytes)",
+            "minLength": 8,
+            "maxLength": 72
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Prof. Ana García",
+            "description": "Display name for the user profile",
+            "maxLength": 100
+          },
+          "path": {
+            "type": "string",
+            "enum": ["INDEPENDENT_TEACHER", "SCHOOL"],
+            "example": "INDEPENDENT_TEACHER",
+            "description": "Organizational path chosen during registration"
+          },
+          "schoolName": {
+            "type": "string",
+            "example": "Colegio Belgrano Day",
+            "description": "School name (required when path is SCHOOL)",
+            "maxLength": 150
+          }
+        },
+        "required": ["email", "password", "displayName", "path"]
+      },
+      "SchoolSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Unique school identifier (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "Colegio Belgrano Day",
+            "description": "Name of the created school"
+          },
+          "slug": {
+            "type": "string",
+            "example": "colegio-belgrano-day",
+            "description": "Unique slug generated for the school"
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "IANA time zone for the school"
+          }
+        },
+        "required": ["id", "name", "slug", "timeZone"]
+      },
+      "RegisterResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Unique user identifier (UUID)"
+          },
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "Registered user email address"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Prof. Ana García",
+            "description": "User display name"
+          },
+          "path": {
+            "type": "string",
+            "enum": ["INDEPENDENT_TEACHER", "SCHOOL"],
+            "example": "INDEPENDENT_TEACHER",
+            "description": "Organizational path chosen during registration"
+          },
+          "school": {
+            "description": "Created school details if path is SCHOOL",
+            "allOf": [{ "$ref": "#/components/schemas/SchoolSummaryDto" }]
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-11-05T20:00:00.000Z",
+            "description": "Account creation instant in UTC (ISO 8601)"
+          }
+        },
+        "required": ["id", "email", "displayName", "path", "createdAt"]
       },
       "ErrorCode": {
         "type": "string",

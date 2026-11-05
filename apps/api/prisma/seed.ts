@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, RegistrationPath } from '@prisma/client';
 import { assertSafeToSeed } from './seed-guard';
 
 const prisma = new PrismaClient();
@@ -28,6 +28,7 @@ async function main(): Promise<void> {
       email: 'directora@escuela-modelo.edu.ar',
       passwordHash: syntheticHash,
       displayName: 'Directora Marta',
+      registrationPath: RegistrationPath.SCHOOL,
       avatarConfig: {
         create: {
           appearance: { style: 'professional', color: '#1E3A8A' },
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
       email: 'profe.carlos@escuela-modelo.edu.ar',
       passwordHash: syntheticHash,
       displayName: 'Prof. Carlos Perez',
+      registrationPath: RegistrationPath.SCHOOL,
     },
   });
 
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
       email: 'alumno.lucas@escuela-modelo.edu.ar',
       passwordHash: syntheticHash,
       displayName: 'Lucas Alumno',
+      registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
     },
   });
 
@@ -57,6 +60,7 @@ async function main(): Promise<void> {
       email: 'padre.roberto@example.com',
       passwordHash: syntheticHash,
       displayName: 'Roberto Padre',
+      registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
     },
   });
 
