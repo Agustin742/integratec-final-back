@@ -38,7 +38,7 @@ COPY apps/api/prisma ./apps/api/prisma
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate && \
     pnpm install --prod --frozen-lockfile
 
-COPY --from=builder /app/node_modules /app/node_modules
+COPY --from=builder /app/node_modules/.pnpm/@prisma+client* /app/node_modules/.pnpm/
 COPY --from=builder /app/packages/contracts/src ./packages/contracts/src
 COPY --from=builder /app/packages/contracts/dist ./packages/contracts/dist
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
