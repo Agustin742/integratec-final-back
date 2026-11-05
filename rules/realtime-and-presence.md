@@ -67,7 +67,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 
 ## Scaling and deployment
 
-- The MVP **MUST** run one Colyseus instance to preserve room coherence. Adding instances **MUST NOT** be done by only duplicating tasks behind the load balancer; it requires a compatible presence, matchmaking, routing, and reconnection strategy, and a decision first ([master §7.4](../master-document.md#74-despliegue-red-y-operación)).
+- The MVP **MUST** run one Colyseus instance to preserve room coherence. Adding instances **MUST NOT** be done by only duplicating containers behind the reverse proxy; it requires a compatible presence, matchmaking, routing, and reconnection strategy, and a decision first ([master §7.4](../master-document.md#74-despliegue-red-y-operación)).
 - Deployment topology is in [AWS infrastructure](./aws-infrastructure.md). WebSocket traffic **MUST** use WSS in production.
 - Socket.IO is excluded for the MVP; any use needs an independent justification and **MUST NOT** substitute Colyseus.
 - Video and voice media do not pass through Colyseus; see [Live classroom tools](./live-classroom-tools.md).

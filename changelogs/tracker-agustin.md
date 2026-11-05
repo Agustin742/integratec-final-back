@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-05 — Move production compute to a single EC2 host (D13)
+
+- **Status:** in-progress (documentation done; pending PR review)
+- **Area / files:** `docs/technical-justification.md` (D13, D5, section 5), `master-document.md` (section 7), `rules/` (aws-infrastructure, infrastructure-as-code, realtime-and-presence, architecture), `docs/architecture.md`, `docs/functional-requirements.md` (RNF-008), `docs/diagrams/` (deployment-and-network, core-flows, gaps, README files), `infra/README.md`
+- **Change:** Recorded D13: production compute moves from ECS Fargate behind an Application Load Balancer (plus NAT) to one `t3.small` EC2 host running Docker Compose with Caddy (Let's Encrypt TLS), NestJS, and Colyseus; RDS stays a separate managed database; no SSH (SSM Session Manager); deploys through the keyless CodePipeline flow and SSM Run Command. Updated the services, network, identity, delivery, and observability rules, the diagrams, and the Spanish project document to match. Updated D5 and gaps 20 to 23: Bedrock is available on the Free plan but global and geographic cross-Region inference are not supported, so the bot needs an in-Region on-demand model in `us-east-2` (to confirm in the console). Decision approved by Agustin on 2026-11-05.
+- **Reason:** The account uses the credit-based Free plan; the fixed hourly cost of an ALB, two Fargate services, and a NAT gateway (roughly USD 60 to 100 per month with RDS, unverified estimate) would exhaust the credits in about 2 to 3 months, while a single host costs roughly USD 10 to 15 per month plus RDS.
+- **Next step:** PR review into `develop`; then implement the network, host, and pipeline in backend issues #59 to #62. Decide the domain and DNS name for Let's Encrypt (gap 20) and the in-Region Bedrock model (gap 21).
+
 ## 2026-11-05 — OpenAPI document and REST error envelope baseline (#15)
 
 - **Status:** in-progress

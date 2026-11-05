@@ -1,6 +1,6 @@
 # Technical Justification (R6)
 
-This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions made in the [project document](../master-document.md) and the decisions listed in [section 7](#7-architecture-decisions-recorded-on-2026-11-02), which were approved by Agustin (decision owner) on 2026-11-02. Choices that are still undecided are marked **Open**.
+This document justifies the relevant technical choices of the project: what was chosen, why, which alternatives were considered, and what the choice costs. It develops the summary in [master §11](../master-document.md#11-justificación-arquitectónica-de-alto-nivel) and satisfies course requirement R6. It records decisions made in the [project document](../master-document.md) and the decisions listed in [section 7](#7-architecture-decisions-recorded-on-2026-11-02), which were approved by Agustin (decision owner) on 2026-11-02, plus [D13](#d13-production-compute-on-a-single-ec2-host), approved on 2026-11-05. Choices that are still undecided are marked **Open**.
 
 ## 1. Stack
 
@@ -39,13 +39,13 @@ This document justifies the relevant technical choices of the project: what was 
 
 ## 5. Deployment
 
-- **Decision:** AWS with Amplify Hosting for the frontend and ECS on Fargate behind an Application Load Balancer for NestJS and Colyseus, ECR for images, RDS in private subnets, S3 for objects, Secrets Manager, IAM least privilege, CloudWatch, and Budgets. See [AWS infrastructure](../rules/aws-infrastructure.md) and [Deployment and operations](../rules/deployment-and-operations.md).
-- **Why:** Colyseus needs long-running processes and WebSocket connections, which Fargate supports and Lambda does not suit. One cloud provider also hosts the database and the AI service.
-- **Alternatives:** A managed PaaS or EC2.
-- **Trade-off:** Fargate, ALB, and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required.
+- **Decision:** AWS with Amplify Hosting for the frontend and, for NestJS and Colyseus, a single EC2 host running Docker Compose behind a Caddy reverse proxy ([D13](#d13-production-compute-on-a-single-ec2-host), which supersedes the original ECS on Fargate behind an Application Load Balancer), ECR for images, RDS in private subnets, S3 for objects, Secrets Manager, IAM least privilege, CloudWatch, and Budgets. See [AWS infrastructure](../rules/aws-infrastructure.md) and [Deployment and operations](../rules/deployment-and-operations.md).
+- **Why:** Colyseus needs long-running processes and WebSocket connections, which a container host supports and Lambda does not suit. One cloud provider also hosts the database and the AI service.
+- **Alternatives:** A managed PaaS; ECS on Fargate behind an ALB (the original design, superseded by D13 for cost); see D13 for the full comparison.
+- **Trade-off:** The EC2 host and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required; D13 lists the availability and operations costs of the single host.
 - **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
-- **Decided and approved by Agustin on 2026-11-02:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md).
-- **Open:** Domain, and Amazon Bedrock model availability in `us-east-2` (see D5).
+- **Decided and approved by Agustin on 2026-11-02:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md). Production compute was decided later, on 2026-11-05 ([D13](#d13-production-compute-on-a-single-ec2-host)).
+- **Open:** Domain and DNS name (Let's Encrypt needs one), and the Amazon Bedrock model with in-Region inference in `us-east-2` (see D5).
 
 ## 6. Artificial intelligence
 
@@ -107,7 +107,8 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
 - **Update (2026-11-04):** The AWS account was created with the "Sign up for AWS (new)" experience, which assigns the project Region by contact country (Argentina: `us-east-2`) and denies every other Region through AWS-managed service control policies; the Region cannot be changed ([AWS documentation](https://docs.aws.amazon.com/accounts/latest/reference/project-regions.html)). The previous choice of `sa-east-1` and its latency rationale are superseded. Latency from Argentina is higher; this is an accepted trade-off. Approved by Agustin on 2026-11-04.
-- **Open:** Amazon Bedrock model availability in `us-east-2` **MUST** be verified; cross-region inference may be needed. The managed service control policies of the Free Tier plan may also restrict Bedrock usage (to verify).
+- **Update (2026-11-05):** Verified in the [AWS documentation of services supported on the new sign-up plan](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.md): Amazon Bedrock is available on the Free plan, but global and geographic cross-Region inference are not supported on it. The bot **MUST** therefore use a model with in-Region on-demand inference in `us-east-2`.
+- **Open:** Which model offers in-Region on-demand inference in `us-east-2` **MUST** be checked in the console before choosing the bot model.
 
 ### D6. Pipeline authentication to AWS
 
@@ -183,6 +184,26 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Trade-off:** Every member can see the classroom's display names, roles, and avatars; the page size and the maximum `q` length are set in the contract.
 - **Affected contracts:** [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md), [Communication and notifications](../rules/communication-and-notifications.md), [API contracts](../rules/api-contracts.md), and the frontend decision FD12.
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+
+### D13. Production compute on a single EC2 host
+
+- **Question:** Where do NestJS and Colyseus run in production, given that the AWS account uses the credit-based Free plan?
+- **Outcome:** One EC2 host replaces ECS on Fargate, the Application Load Balancer, and the NAT gateway. RDS PostgreSQL stays a separate managed database. Target design:
+  1. **Network:** a VPC in `us-east-2` with one public subnet for the host and private subnets in at least two Availability Zones for the RDS DB subnet group. No NAT gateway, no load balancer, no ACM.
+  2. **Host:** `t3.small` (x86_64, Free-plan eligible), Amazon Linux 2023, encrypted gp3 volume, IMDSv2 required, and an Elastic IP (a public IPv4 address has an hourly charge).
+  3. **Runtime:** Docker Compose with `caddy`, `api` (NestJS), and `realtime` (Colyseus). Caddy is the only public entry: automatic Let's Encrypt TLS, HTTP to HTTPS redirect, API paths to NestJS, and the reserved path or host to Colyseus with WebSocket upgrade. The internal NestJS and Colyseus channel stays on the private Docker network and is not routed.
+  4. **Access:** host security group inbound 443 and 80 only; no SSH (administration through SSM Session Manager); RDS inbound 5432 only from the host security group. The instance profile grants least privilege: ECR pull, specific Secrets Manager secrets, CloudWatch Logs, SSM, and Bedrock later. Secrets are read from Secrets Manager on the host at deploy or start and injected as container environment variables.
+  5. **Operations:** containers log with the Docker `awslogs` driver to CloudWatch with explicit retention; alarms cover EC2 status checks, CPU, container health, and RDS; AWS Budgets stays.
+  6. **Deploy:** the keyless pipeline (CodePipeline, CodeBuild, CodeConnections; backend issue #58) has CodeBuild push immutable-tagged images to ECR, then an SSM Run Command stage pulls them and runs `docker compose up -d`, followed by a health check.
+- **Rationale:** The account uses the credit-based Free plan (`us-east-2` only; the account closes after 6 months or when credits run out). An ALB, two Fargate services, and a NAT gateway are fixed hourly costs (roughly USD 60 to 100 per month with RDS, an unverified estimate) that would exhaust the credits in about 2 to 3 months. A single `t3.small` costs roughly USD 10 to 15 per month plus RDS.
+- **Alternatives:**
+  1. ECS on Fargate behind an ALB (the previous design): managed, scalable, and health-checked, but the fixed cost is too high for the credits.
+  2. API Gateway in front of the API: rejected. Its WebSocket API terminates connections and invokes per-message integrations, so it cannot proxy Colyseus' persistent WebSocket to its own server (rooms live in process memory); it has connection limits (2 hours maximum, 10 minutes idle) and per-message pricing, and it would still need a second HTTPS entry for Colyseus.
+  3. PostgreSQL in a container on the same host: rejected. RDS stays for managed backups and point-in-time recovery, survival of host failure, and a clear fit with course requirement R4 (cloud-hosted database).
+- **Trade-off:** The host is a single point of failure for the API and realtime. The team patches the OS and Docker itself, and scaling is vertical only. Colyseus multi-instance scaling stays open (gap 22). Recovery is to re-provision the host from Terraform and redeploy; data is protected by RDS automated backups.
+- **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Realtime and presence](../rules/realtime-and-presence.md), [Architecture](../rules/architecture.md), and the deployment sections of the project document. Supersedes the compute and public-entry parts of section 5.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-05.
+- **Open:** Domain and routing. Path versus host routing for Colyseus remains open (gap 20). Let's Encrypt needs a DNS name that points to the Elastic IP; a free wildcard DNS name (for example sslip.io) is a candidate interim option, not decided.
 
 ## 8. Known conflicts and notes
 

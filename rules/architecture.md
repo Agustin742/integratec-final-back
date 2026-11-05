@@ -31,7 +31,7 @@ Both directions are internal, server-to-server contracts. Decision D2 (approved 
 | Colyseus to NestJS | Verify the caller's identity and access to a classroom before admission, and re-verify when access may have changed | The answer **MUST** come from current persisted state, never from client-supplied claims |
 | NestJS to Colyseus | Announce a change already committed (for example a message, grade, or classroom control state) so connected clients can update | **MUST** be sent only after the database commit; failure **MUST NOT** roll back the committed change |
 
-- Internal endpoints or channels **MUST NOT** be reachable from the public internet or routed by the public load balancer. They **MUST** authenticate the calling service with a credential injected through secure configuration; see [Configuration](./configuration-and-environments.md) and [AWS infrastructure](./aws-infrastructure.md).
+- Internal endpoints or channels **MUST NOT** be reachable from the public internet or routed by the public reverse proxy. They **MUST** authenticate the calling service with a credential injected through secure configuration; see [Configuration](./configuration-and-environments.md) and [AWS infrastructure](./aws-infrastructure.md).
 - A lost notification **MUST** be recoverable: REST remains the source of truth and clients reconcile through it.
 - Events and payloads are illustrative until agreed ([master §6.2](../master-document.md#62-canales-y-propiedad-de-los-datos)); names, payloads, and acknowledgements **MUST** be specified under [API contracts](./api-contracts.md) before consumers rely on them.
 

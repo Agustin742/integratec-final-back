@@ -336,17 +336,17 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
           ┌──────────────────────┴──────────────────────┐
           │ HTTPS                                      │ HTTPS / WSS
           ▼                                            ▼
-   AWS Amplify Hosting                      Application Load Balancer
-   React + Vite + Three.js                   Certificado TLS (ACM)
+   AWS Amplify Hosting                      Host EC2 (t3.small, Docker Compose)
+   React + Vite + Three.js                   Caddy: TLS Let's Encrypt, única entrada pública
    React Three Fiber + UI                     │
           │                           ┌───────────────┴─────────────────┐
           │                           ▼                                 ▼
-          │                   ECS / Fargate                        ECS / Fargate
+          │                   Contenedor                           Contenedor
           │                   NestJS API                           Colyseus
           │                   REST / Auth / IA                     Rooms / estado vivo
           │                           │                                 │
           │                           ├──── autorización / eventos ─────┤
-          │                           │
+          │                           │      (red privada de Docker)
           │                 ┌─────────┼───────────────┬─────────────┐
           │                 ▼         ▼               ▼             ▼
           │             RDS PG      Bedrock        Amazon S3     Amazon SES
@@ -357,9 +357,9 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 
    Amazon ECR: imágenes Docker de NestJS y Colyseus
    AWS Secrets Manager: secretos y credenciales de los servicios
-   IAM: permisos mínimos de ECS para Bedrock, RDS/S3/SES y otros servicios
+   IAM: perfil de instancia con permisos mínimos para ECR, Secrets Manager, CloudWatch, SSM y Bedrock
    CloudWatch: logs, métricas y alarmas; AWS Budgets: control de costos
-   GitHub Actions: tests, build y publicación a Amplify / ECR / ECS
+   GitHub Actions: tests, build y publicación a Amplify; pipeline sin claves (CodePipeline/CodeBuild) hacia ECR y el host por SSM
 ```
 
 ### 7.2 Rol de cada servicio y conexión entre componentes
@@ -367,9 +367,9 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 | Servicio AWS | Qué ejecuta o almacena | Cómo se conecta al proyecto |
 |---|---|---|
 | **Amplify Hosting** | Build estática de React + Vite, que incluye la aplicación Three.js/R3F, el modo 2D y paneles React. | Sirve por HTTPS los archivos del frontend; el navegador consume la API NestJS y abre sesiones Colyseus. |
-| **Application Load Balancer (ALB)** | Entrada pública HTTPS y conexiones WebSocket seguras (WSS). | Enruta rutas de API a un target group de NestJS y rutas de Colyseus a su target group; admite la actualización de HTTP a WebSocket. |
-| **ECS con Fargate** | Dos servicios de contenedores Node.js persistentes: NestJS y Colyseus. | Mantiene vivos los procesos y conexiones de aulas; no se utiliza Lambda para hospedar las Rooms. |
-| **ECR** | Imágenes Docker versionadas de cada servicio. | GitHub Actions publica las imágenes; ECS despliega las versiones correspondientes. |
+| **Caddy en el host EC2** | Entrada pública HTTPS y conexiones WebSocket seguras (WSS), con certificados Let's Encrypt automáticos. | Redirige HTTP a HTTPS; enruta rutas de API a NestJS y la ruta o host reservado a Colyseus; admite la actualización de HTTP a WebSocket. |
+| **Host EC2 (`t3.small`) con Docker Compose** | Contenedores persistentes: `caddy`, `api` (NestJS) y `realtime` (Colyseus). | Mantiene vivos los procesos y conexiones de aulas; no se utiliza Lambda para hospedar las Rooms (decisión D13). |
+| **ECR** | Imágenes Docker versionadas de cada servicio. | El pipeline publica las imágenes con etiqueta inmutable; el host las descarga y ejecuta `docker compose up -d`. |
 | **RDS for PostgreSQL** | Base de datos relacional persistente. | NestJS se conecta por red privada y utiliza Prisma ORM para consultas/migraciones. Colyseus obtiene/verifica datos persistentes a través de la capa de negocio. |
 | **Amazon Bedrock** | Inferencia de modelos para el bot y, como candidato, Knowledge Bases para el RAG. | NestJS invoca Bedrock desde el servidor con permisos IAM y ejecuta sus propias herramientas autorizadas. |
 | **S3** | Material y archivos subidos (PDF, imágenes), entregas y recursos del mundo 3D que requieran almacenamiento de objetos. | Acceso controlado desde el backend; recursos públicos se entregan con políticas de distribución adecuadas. |
@@ -381,7 +381,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 ### 7.3 Flujo completo de uso
 
 1. El usuario entra a la URL pública servida por **Amplify** y descarga React, Three.js, React Three Fiber y demás recursos del cliente.
-2. Al registrarse elige su camino (profesor independiente o escuela) o acepta una **invitación por email**. El navegador llama por **HTTPS** a la API **NestJS** a través del **ALB**; NestJS valida la identidad y consulta o modifica los datos en **RDS PostgreSQL** mediante **Prisma**.
+2. Al registrarse elige su camino (profesor independiente o escuela) o acepta una **invitación por email**. El navegador llama por **HTTPS** a la API **NestJS** a través de **Caddy**; NestJS valida la identidad y consulta o modifica los datos en **RDS PostgreSQL** mediante **Prisma**.
 3. El profesor crea el aula, sube material a **S3**, configura el material permitido para el bot e invita a alumnos y padres por email.
 4. Al entrar al aula (3D o 2D), el cliente solicita conexión a **Colyseus** por HTTPS/WSS. Colyseus valida la identidad y la pertenencia al aula con el backend de negocio y vincula la sesión activa con el aula persistente.
 5. **Colyseus** sincroniza movimientos, presencia y estado efímero (incluidos congelar y silenciar); **Three.js** representa estos cambios. No se escriben posiciones de cada fotograma en RDS.
@@ -392,13 +392,14 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 ### 7.4 Despliegue, red y operación
 
 - Los repositorios frontend y backend tienen **CI, build y responsabilidad de despliegue independientes**. El frontend produce su build web de React/Vite; el backend produce imágenes Docker para la API NestJS y el servidor Colyseus.
-- Cada repositorio administra su propio flujo de **GitHub Actions** y sus verificaciones. La publicación del frontend en Amplify y de las imágenes backend en ECR, seguida de la actualización de ECS, corresponde a sus respectivos flujos; la coordinación entre ellos no presupone un workspace compartido.
+- Cada repositorio administra su propio flujo de **GitHub Actions** y sus verificaciones. La publicación del frontend en Amplify y de las imágenes backend en ECR, seguida del despliegue en el host EC2 mediante SSM Run Command y una verificación de salud, corresponde a sus respectivos flujos; la coordinación entre ellos no presupone un workspace compartido.
 - Los recursos AWS se definen y modifican con **Terraform** desde el repositorio backend (`infra/`), sin cambios manuales en la consola sobre recursos gestionados. El detalle está en `rules/infrastructure-as-code.md` del backend.
-- El **ALB** termina TLS con certificado de **AWS Certificate Manager**; dirige `/api/*` a NestJS y una ruta/host reservado al servicio Colyseus. Se configuran explícitamente endpoints de matchmaking, conexiones WebSocket y orígenes permitidos sin mezclar los servicios.
-- Los servicios ECS tienen **Security Groups** específicos. **RDS permanece en subredes privadas**, accesible solo desde los componentes autorizados. Las tareas ECS usan roles IAM de mínimo privilegio; Bedrock y el servicio de correo se invocan desde NestJS, nunca desde el navegador.
+- **Caddy** termina TLS con certificados automáticos de Let's Encrypt (requiere un nombre DNS que apunte a la IP elástica del host); dirige `/api/*` a NestJS y una ruta/host reservado al servicio Colyseus. Se configuran explícitamente endpoints de matchmaking, conexiones WebSocket y orígenes permitidos sin mezclar los servicios. El canal interno entre NestJS y Colyseus queda en la red privada de Docker y no se enruta.
+- El **Security Group** del host admite solo los puertos 443 y 80, sin SSH (la administración usa SSM Session Manager). **RDS permanece en subredes privadas** de al menos dos zonas de disponibilidad y solo admite conexiones al puerto 5432 desde el Security Group del host. No hay NAT gateway ni balanceador. El perfil de instancia IAM tiene mínimo privilegio; Bedrock y el servicio de correo se invocan desde NestJS, nunca desde el navegador.
 - Las credenciales, claves de sesión y cadenas de conexión se inyectan por configuración segura. El frontend recibe únicamente valores públicos (por ejemplo, URL de API y URL de Colyseus).
-- Colyseus inicia con una instancia del servicio para simplificar la coherencia de las Rooms del MVP. La ampliación horizontal exige una estrategia Colyseus compatible de presencia, matchmaking, ruteo y reconexión; no basta con duplicar tareas ECS detrás del balanceador.
-- Se mantienen health checks, logs, políticas de reinicio, alarmas y un presupuesto de AWS, porque ECS/Fargate, ALB, RDS y red pueden generar cargos continuos incluso con poco tráfico.
+- Colyseus inicia con una instancia del servicio para simplificar la coherencia de las Rooms del MVP. La ampliación horizontal exige una estrategia Colyseus compatible de presencia, matchmaking, ruteo y reconexión; no basta con duplicar contenedores detrás del proxy inverso.
+- Se mantienen health checks, logs (driver `awslogs` hacia CloudWatch con retención explícita), políticas de reinicio, alarmas y un presupuesto de AWS, porque el host EC2, su IP elástica y RDS generan cargos continuos incluso con poco tráfico.
+- El host único es un punto único de falla para la API y el tiempo real; la recuperación consiste en reaprovisionar el host con Terraform y volver a desplegar, y los datos quedan protegidos por los respaldos automáticos de RDS. La decisión, sus alternativas y concesiones están en la justificación técnica (D13, aprobada por Agustín el 2026-11-05).
 - El desarrollo local usa los mismos componentes de aplicación con contenedores y PostgreSQL local; la prueba y entrega final utiliza los servicios **AWS** descritos y URLs públicas HTTPS/WSS.
 
 ## 8. Seguridad y calidad transversal
@@ -542,7 +543,7 @@ Esta sección resume el fundamento; la comparación formal requerida por **R6** 
 | Colyseus | Room lifecycle, estado multijugador autoritativo y sincronización diseñada para aulas (congelar, asientos, presencia). | Socket.IO requeriría implementar más lógica de salas y estado; Colyseus incorpora otro servicio y aprendizaje. |
 | NestJS | API estructurada, módulos, validación y autorización del dominio escolar. | Express/Fastify directos como opciones más livianas; NestJS agrega estructura y convenciones. |
 | RDS PostgreSQL + Prisma ORM | Relaciones fuertes entre escuelas, aulas, roles, actividades, notas y puntos. | MongoDB/otros ORM; cambios de esquema y migraciones requieren disciplina. |
-| AWS con ECS/Fargate | Hospeda procesos persistentes para NestJS y Colyseus. | PaaS administrados o EC2; Fargate/ALB/RDS añaden costo fijo y operación. |
+| AWS con un host EC2 y Docker Compose | Hospeda procesos persistentes para NestJS y Colyseus detrás de Caddy. | ECS/Fargate con ALB (diseño anterior, descartado por costo fijo) o PaaS administrados; el host único es un punto único de falla y exige parchear el sistema operativo y Docker. |
 | Amazon Bedrock desde NestJS (RAG: Knowledge Bases o equivalente, a confirmar) | IA gestionada en AWS con IAM y autorización centralizadas en NestJS; el RAG limita al bot al material aprobado. | Llamada directa desde frontend descartada por seguridad; RAG propio con vector store (más control, más operación); dependencia y costos de inferencia de AWS. |
 | Servicio de medios WebRTC (LiveKit o Amazon Chime SDK, a definir) | Video, voz y presentaciones sin construir infraestructura WebRTC propia. | Mesh P2P (no escala) o servidor propio (más operación); un servicio administrado añade costo y dependencia. |
 | Sincronización colaborativa (Colyseus o Yjs, a definir) | Pizarra, gráficos y LaTeX compartidos con bloqueo del profesor. | Colyseus reutiliza infraestructura existente; un CRDT ofrece mejor resolución de conflictos a costa de otra pieza. |

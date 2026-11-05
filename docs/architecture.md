@@ -76,21 +76,21 @@ Rules: [Authentication and session](../rules/authentication-and-session.md), [Cl
 ```mermaid
 flowchart TD
   user["User"] --> amplify["Amplify Hosting: React build"]
-  user --> alb["Application Load Balancer with ACM certificate"]
-  alb --> nest["ECS Fargate: NestJS"]
-  alb --> col["ECS Fargate: Colyseus"]
+  user --> caddy["EC2 host: Caddy, Let's Encrypt TLS"]
+  caddy --> nest["Docker: NestJS"]
+  caddy --> col["Docker: Colyseus"]
   nest --> rds[("RDS PostgreSQL, private subnets")]
   nest --> bedrock["Amazon Bedrock"]
   nest --> s3["S3"]
   nest -. "secrets" .-> sm["Secrets Manager"]
   col -. "secrets" .-> sm
-  ecr["ECR images"] -. "deploy" .-> nest
-  ecr -. "deploy" .-> col
+  ecr["ECR images"] -. "pull and compose up" .-> nest
+  ecr -. "pull and compose up" .-> col
   nest -. "logs" .-> cw["CloudWatch"]
   col -. "logs" .-> cw
 ```
 
-IAM least-privilege roles apply to each service, and AWS Budgets monitors cost. Rules: [AWS infrastructure](../rules/aws-infrastructure.md), [Deployment and operations](../rules/deployment-and-operations.md), [Configuration and environments](../rules/configuration-and-environments.md).
+The EC2 instance profile follows least privilege, and AWS Budgets monitors cost. Production compute is a single EC2 host (decision D13). Rules: [AWS infrastructure](../rules/aws-infrastructure.md), [Deployment and operations](../rules/deployment-and-operations.md), [Configuration and environments](../rules/configuration-and-environments.md).
 
 ## Responsibilities by rule
 
