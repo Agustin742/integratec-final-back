@@ -15,6 +15,7 @@ const CODE_BY_STATUS: Record<number, ErrorCode> = {
   404: ERROR_CODES.NOT_FOUND,
   409: ERROR_CODES.CONFLICT,
   429: ERROR_CODES.TOO_MANY_REQUESTS,
+  503: ERROR_CODES.SERVICE_UNAVAILABLE,
 };
 
 const SAFE_MESSAGES: Record<ErrorCode, string> = {
@@ -25,14 +26,27 @@ const SAFE_MESSAGES: Record<ErrorCode, string> = {
   NOT_FOUND: 'The requested resource was not found.',
   CONFLICT: 'The request conflicts with the current state of the resource.',
   TOO_MANY_REQUESTS: 'Too many requests. Try again later.',
+  SERVICE_UNAVAILABLE: 'The service is temporarily unavailable. Try again later.',
   INTERNAL_ERROR: 'An unexpected error occurred.',
 };
 
-/** Body-parser errors (e.g. malformed JSON) carry an HTTP status but are not HttpExceptions. */
+/**
+ * Body-parser / http-errors style client errors (e.g. malformed JSON) carry a 4xx
+ * status and `expose: true` but are not HttpExceptions. Any other object with a
+ * numeric `status` is not trusted.
+ */
+function exposedClientStatus(exception: unknown): number | undefined {
+  if (typeof exception !== 'object' || exception === null) return undefined;
+  const { status, statusCode, expose } = exception as Record<string, unknown>;
+  const value = typeof status === 'number' ? status : statusCode;
+  return expose === true && typeof value === 'number' && value >= 400 && value < 500
+    ? value
+    : undefined;
+}
+
 function statusOf(exception: unknown): number {
   if (exception instanceof HttpException) return exception.getStatus();
-  const status = (exception as { status?: unknown } | null)?.status;
-  return typeof status === 'number' && status >= 400 && status < 500 ? status : 500;
+  return exposedClientStatus(exception) ?? 500;
 }
 
 /**
@@ -50,16 +64,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let status = statusOf(exception);
     let code: ErrorCode = CODE_BY_STATUS[status] ?? ERROR_CODES.INTERNAL_ERROR;
-    if (!(status in CODE_BY_STATUS) && status < 500) {
-      code = ERROR_CODES.BAD_REQUEST;
+    if (code === ERROR_CODES.INTERNAL_ERROR && status < 500) {
+      code = ERROR_CODES.BAD_REQUEST; // unmapped 4xx keeps its own status
     }
-    if (code === ERROR_CODES.INTERNAL_ERROR) {
+    const where = `${request.method} ${request.path} (${correlationId})`;
+    if (code === ERROR_CODES.SERVICE_UNAVAILABLE) {
+      // An intentional, expected 503: not an unhandled failure.
+      this.logger.warn(`Service unavailable on ${where}`);
+    } else if (code === ERROR_CODES.INTERNAL_ERROR) {
       status = 500;
       // Server-side only: the stack helps debugging; the request is identified by path and id.
       this.logger.error(
-        `Unhandled exception on ${request.method} ${request.path} (${correlationId})`,
+        `Unhandled exception on ${where}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+    }
+
+    if (response.headersSent) {
+      // Too late to send an envelope; just terminate the response.
+      this.logger.warn(`Headers already sent, envelope skipped on ${where}`);
+      response.end();
+      return;
     }
 
     const body: ErrorEnvelope = { error: { code, message: SAFE_MESSAGES[code], correlationId } };

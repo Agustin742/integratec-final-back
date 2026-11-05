@@ -1,8 +1,11 @@
+import { EventEmitter } from 'node:events';
 import {
+  type ArgumentsHost,
   Body,
   Controller,
   Get,
   HttpException,
+  Logger,
   Post,
   Query,
   type INestApplication,
@@ -11,8 +14,10 @@ import { Test } from '@nestjs/testing';
 import { Type } from 'class-transformer';
 import { IsEmail, IsInt, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AllExceptionsFilter } from './all-exceptions.filter';
 import { configureHttp } from './configure-http';
+import { createRequestContextMiddleware } from './request-context.middleware';
 
 class AddressDto {
   @IsString()
@@ -50,6 +55,13 @@ class SampleController {
   @Get('http')
   http(@Query('code') code: string) {
     throw new HttpException('internal detail that should not matter', Number(code));
+  }
+
+  @Get('plain')
+  plain(@Query('kind') kind: string) {
+    // Plain objects (not Error/HttpException) that merely look like HTTP errors.
+    if (kind === 'exposed') throw { status: 422, expose: true, message: 'client detail' };
+    throw { status: 418, message: 'secret detail' };
   }
 }
 
@@ -139,6 +151,89 @@ describe('HTTP baseline', () => {
       expect(JSON.stringify(res.body)).not.toContain('internal detail');
     });
 
+    it.each([
+      [400, 'BAD_REQUEST'],
+      [413, 'BAD_REQUEST'],
+      [422, 'BAD_REQUEST'],
+    ])('maps a thrown HttpException %i to %s keeping its status', async (status, code) => {
+      const res = await request(server()).get(`/sample/http?code=${status}`);
+      expect(res.status).toBe(status);
+      expect(res.body.error.code).toBe(code);
+      expect(JSON.stringify(res.body)).not.toContain('internal detail');
+    });
+
+    it('keeps 503 as SERVICE_UNAVAILABLE and logs it as a warning, not an unhandled error', async () => {
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const res = await request(server()).get('/sample/http?code=503');
+        expect(res.status).toBe(503);
+        expect(res.body.error.code).toBe('SERVICE_UNAVAILABLE');
+        expect(JSON.stringify(res.body)).not.toContain('internal detail');
+        expect(warnSpy).toHaveBeenCalled();
+        expect(errorSpy).not.toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('collapses any other 5xx HttpException to 500 INTERNAL_ERROR and logs an error', async () => {
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const res = await request(server()).get('/sample/http?code=502');
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('INTERNAL_ERROR');
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('trusts a plain thrown object with a 4xx status only when it is marked expose', async () => {
+      const exposed = await request(server()).get('/sample/plain?kind=exposed');
+      expect(exposed.status).toBe(422);
+      expect(exposed.body.error.code).toBe('BAD_REQUEST');
+    });
+
+    it('treats a plain object with a numeric 4xx status but no expose flag as a 500', async () => {
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const res = await request(server()).get('/sample/plain?kind=unmarked');
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('INTERNAL_ERROR');
+        expect(JSON.stringify(res.body)).not.toContain('secret detail');
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('does not write the envelope when headers were already sent', () => {
+      const filter = new AllExceptionsFilter();
+      const response = {
+        headersSent: true,
+        getHeader: () => 'id-1',
+        status: vi.fn(),
+        json: vi.fn(),
+        end: vi.fn(),
+      };
+      const host = {
+        switchToHttp: () => ({
+          getResponse: () => response,
+          getRequest: () => ({ method: 'GET', path: '/x' }),
+        }),
+      } as unknown as ArgumentsHost;
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        filter.catch(new Error('late failure'), host);
+      } finally {
+        errorSpy.mockRestore();
+      }
+      expect(response.status).not.toHaveBeenCalled();
+      expect(response.json).not.toHaveBeenCalled();
+      expect(response.end).toHaveBeenCalled();
+    });
+
     it('returns 500 INTERNAL_ERROR with a generic message for unexpected errors', async () => {
       const res = await request(server()).get('/sample/crash');
       expect(res.status).toBe(500);
@@ -185,6 +280,32 @@ describe('HTTP baseline', () => {
         correlationId: saneId,
       });
       expect(typeof entry.durationMs).toBe('number');
+    });
+
+    it('logs a request aborted before the response finished, exactly once', () => {
+      const emitter = new EventEmitter() as EventEmitter & Record<string, unknown>;
+      const response = Object.assign(emitter, {
+        statusCode: 200,
+        setHeader: () => undefined,
+      });
+      const out: string[] = [];
+      const middleware = createRequestContextMiddleware((line) => out.push(line));
+      middleware(
+        { headers: {}, method: 'GET', originalUrl: '/slow?token=abc' } as never,
+        response as never,
+        () => undefined,
+      );
+      response.emit('close');
+      response.emit('close');
+      expect(out).toHaveLength(1);
+      expect(JSON.parse(out[0])).toMatchObject({ path: '/slow', aborted: true });
+      expect(out[0]).not.toContain('abc');
+    });
+
+    it('does not log twice when a finished response also closes', async () => {
+      await request(server()).get('/nope');
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]).aborted).toBeUndefined();
     });
 
     it('never logs bodies, credentials, query values or error messages', async () => {

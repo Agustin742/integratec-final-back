@@ -22,7 +22,10 @@ export function createRequestContextMiddleware(write: (line: string) => void) {
     response.setHeader(CORRELATION_ID_HEADER, correlationId);
     const startedAt = process.hrtime.bigint();
 
-    response.on('finish', () => {
+    let logged = false;
+    const log = (aborted: boolean): void => {
+      if (logged) return;
+      logged = true;
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
       write(
         JSON.stringify({
@@ -33,9 +36,14 @@ export function createRequestContextMiddleware(write: (line: string) => void) {
           status: response.statusCode,
           durationMs: Math.round(durationMs * 100) / 100,
           correlationId,
+          ...(aborted ? { aborted: true } : {}),
         }),
       );
-    });
+    };
+
+    response.on('finish', () => log(false));
+    // 'close' without a prior 'finish' means the client went away mid-request.
+    response.on('close', () => log(true));
 
     next();
   };

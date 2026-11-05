@@ -56,6 +56,9 @@ describe('start', () => {
         headers: { Origin: 'http://evil.example.com' },
       });
       expect(other.headers.get('access-control-allow-origin')).toBeNull();
+      expect(res.headers.get('access-control-expose-headers')?.toLowerCase()).toContain(
+        'x-request-id',
+      );
 
       // The HTTP baseline (envelope + correlation id) applies to the real app.
       const missing = await fetch(`http://127.0.0.1:${port}/does-not-exist`, {
