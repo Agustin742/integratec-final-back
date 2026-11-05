@@ -1,5 +1,13 @@
 # Tracker — Luis
 
+## 2026-11-05 — Account registration and organizational path selection (Issue #17)
+
+- **Status:** in-progress
+- **Area / files:** `packages/contracts/src/index.ts`, `apps/api/package.json`, `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261105230000_add_user_registration_path/`, `apps/api/src/auth/`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #17 (HU-AUT-001): added `POST /auth/register` endpoint with atomic account creation supporting independent teacher and school paths. Exported `RegistrationPath` enum and constant array in `@aula/contracts`. Added new Prisma migration creating `registration_path` enum and column on `User` to persist the chosen organizational path. Implemented salted password hashing via bcrypt (10 rounds) and enforced password boundary limit of 72 UTF-8 bytes to prevent silent truncation. Handled school path atomically by creating `School`, automatic collision-resilient slug generation, and assigning `SchoolMember` with `OWNER` role. Created default empty `AvatarConfiguration`. Handled race conditions and uniqueness constraints returning 409 Conflict. Added comprehensive Vitest tests verifying DTO validation, UTF-8 byte boundary, transactional atomicity, persistence of registration path, and concurrent duplicate registrations (`Promise.all`). Updated OpenAPI spec.
+- **Reason:** Implement account registration and path selection fulfilling HU-AUT-001, address PR #66 code review feedback, and enforce strict Definition of Done (DoD).
+- **Next step:** Complete review on PR #66, obtain approval, and merge into develop.
+
 ## 2026-11-04 — Baseline Prisma schema and relational migrations (Issue #14)
 
 - **Status:** completed
