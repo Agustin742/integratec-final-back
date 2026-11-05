@@ -67,11 +67,13 @@ docker compose ps
 docker compose down
 ```
 
-The database credentials and configuration match `apps/api/.env.example` (`user: postgres`, `password: postgres`, `database: aula_virtual`, `port: 5432`). These credentials are for local development only, so the host port is published on `127.0.0.1` only (configurable via `POSTGRES_PORT`, defaulting to `5432` or `5433` if you have local PostgreSQL running). Database state is persisted across container restarts in the Docker volume `aula_postgres_data` (declared as `postgres_data` in the compose file). To reset the database, run `docker compose down -v`.
+The database credentials and configuration match `apps/api/.env.example` (`user: postgres`, `password: postgres`, `database: aula_virtual`, `port: 5432`). These credentials are for local development only, so the host port is published on `127.0.0.1` only (configurable via `POSTGRES_PORT`, always defaulting to `5432`; there is no automatic fallback to another port). Database state is persisted across container restarts in the Docker volume `aula_postgres_data` (declared as `postgres_data` in the compose file). To reset the database, run `docker compose down -v`.
+
+If another PostgreSQL instance already occupies port `5432`, set `POSTGRES_PORT=5433` in the repository-root Compose `.env` before starting the container. When running the API outside Docker with `pnpm --filter @aula/api start:dev`, also update `DATABASE_URL` in `apps/api/.env` to use the chosen host port, for example `postgresql://postgres:postgres@localhost:5433/aula_virtual?schema=public` with the default local credentials. Export that updated value into the API process environment as described in [Configuration](#configuration); `start:dev` does not load `.env` automatically. The containerized API continues to use `postgres:5432` on the Compose network, regardless of `POSTGRES_PORT`.
 
 ### Running services in containers
 
-Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22-alpine`, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
+Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
 
 The application services require `INTERNAL_SERVICE_SECRET`, and the compose file deliberately provides no default for it. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with a generated secret:
 
@@ -87,6 +89,11 @@ To start the database and all application services:
 # Start postgres, api, and realtime containers
 docker compose --profile app up -d --build
 
+# Wait for all three containers to report healthy, then check both endpoints
+docker compose --profile app ps
+curl --fail http://localhost:3000/health
+curl --fail http://localhost:2567/health
+
 # Stop all containers and networks
 docker compose --profile app down
 ```
@@ -100,6 +107,8 @@ docker build -t aula-api -f apps/api/Dockerfile .
 # Build Realtime server image
 docker build -t aula-realtime -f apps/realtime/Dockerfile .
 ```
+
+The API currently validates `DATABASE_URL` but does not open a database connection. API-to-PostgreSQL connectivity verification is **not applicable yet**; a successful `/health` response does not prove database access. See the [PR #56 verification record](./docs/pr-56-verification.md) for the earlier reviewer run, the successful pinned-image checks and the remaining review limitations.
 
 ## Configuration
 

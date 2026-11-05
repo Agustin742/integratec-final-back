@@ -1,5 +1,13 @@
 # Tracker — Alejo
 
+## 2026-11-04 — Address blocking feedback on PR #56
+
+- **Status:** blocked
+- **Area / files:** `apps/api/Dockerfile`, `apps/realtime/Dockerfile`, `README.md`, `scripts/ci/test_dockerfiles.py`, `docs/pr-56-verification.md`
+- **Change:** On local branch `fix/pr-56-review-feedback`, pinned all four Node stages to the official Node 22.23.4 Alpine multi-platform digest, corrected the PostgreSQL host-port and host API environment instructions, and recorded Agustin's earlier run separately from the successful corrected-image verification. Observed the new structural test fail before the fix; all six tooling/structural tests and 58-file documentation checks now pass, as does diff whitespace. Frozen-lockfile installation, lint, typecheck, all 50 application tests and build pass on host Node 24.15.0. Repository-wide formatting fails only on the unrelated local `.atl/.skill-registry.cache.json`; no cache or dependency-script approvals were changed. Luis's tracker and commit history are preserved. Alejo authorized publishing the correction to the existing PR #56 branch and requesting Agustin's technical review.
+- **Reason:** Address Agustin's blocking review requests without including the optional networking, pnpm or image-size suggestions.
+- **Next step:** Docker verification now passes: both images built, all three containers became healthy, both endpoints returned HTTP 200/status ok, both processes used node, the generated runtime secret was absent from image config/history, and both missing-secret starts exited 1 with the expected variable diagnostic. The isolated test resources were removed successfully; source fingerprints and the earlier helper Unicode failure are recorded in `docs/pr-56-verification.md`. Independent verification remains blocked by the harness admission rejection; no retry or verdict is claimed. Native assessment could not assess undeclared untracked scope. Leave the unrelated formatting cache unchanged. Agustin's independent technical review and passing remote CI remain required before merge. Publication receipts, the correction commit and CI outcomes belong in the existing PR #56 discussion; this tracker does not imply they have passed. No merge is authorized.
+
 ## 2026-10-28 — Reconcile PR #6 with merged domain rules
 
 - **Status:** completed

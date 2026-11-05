@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies and compile
-FROM node:22-alpine AS builder
+FROM node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
@@ -21,7 +21,7 @@ RUN pnpm --filter @aula/contracts build && \
     pnpm --filter @aula/api build
 
 # Stage 2: Production runtime
-FROM node:22-alpine AS runner
+FROM node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runner
 
 WORKDIR /app
 
