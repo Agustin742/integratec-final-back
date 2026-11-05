@@ -1,9 +1,9 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, ApiSchema } from '@nestjs/swagger';
 import {
   ERROR_CODES,
   type ErrorCode,
-  type ErrorDetail as ErrorDetailShape,
-  type ErrorEnvelope as ErrorEnvelopeShape,
+  type ErrorDetail,
+  type ErrorEnvelope,
 } from './error-envelope';
 
 /*
@@ -11,10 +11,12 @@ import {
  * `error-envelope.ts` stay the source of truth: each class below `implements`
  * the matching type, so the compiler fails if a field is added, renamed or
  * retyped on one side only, and the code list is generated from ERROR_CODES.
- * The class names become the component schema names (ErrorEnvelope, ...).
+ * `@ApiSchema` keeps the published component names (ErrorEnvelope, ...) equal
+ * to the type names, while the classes carry a `Dto` suffix.
  */
 
-export class ErrorDetail implements ErrorDetailShape {
+@ApiSchema({ name: 'ErrorDetail' })
+export class ErrorDetailDto implements ErrorDetail {
   @ApiProperty({ example: 'address.city', description: 'Dotted path of the invalid field.' })
   field!: string;
 
@@ -22,9 +24,10 @@ export class ErrorDetail implements ErrorDetailShape {
   messages!: string[];
 }
 
-type ErrorBodyShape = ErrorEnvelopeShape['error'];
+type ErrorBody = ErrorEnvelope['error'];
 
-export class ErrorBody implements ErrorBodyShape {
+@ApiSchema({ name: 'ErrorBody' })
+export class ErrorBodyDto implements ErrorBody {
   @ApiProperty({
     enum: Object.values(ERROR_CODES),
     enumName: 'ErrorCode',
@@ -36,8 +39,11 @@ export class ErrorBody implements ErrorBodyShape {
   @ApiProperty({ example: 'Validation failed' })
   message!: string;
 
-  @ApiPropertyOptional({ type: [ErrorDetail], description: 'Per-field problems, when applicable.' })
-  details?: ErrorDetail[];
+  @ApiPropertyOptional({
+    type: [ErrorDetailDto],
+    description: 'Per-field problems, when applicable.',
+  })
+  details?: ErrorDetailDto[];
 
   @ApiProperty({
     example: '3f2b8c1e-0d1a-4f4e-9a55-6f0c2f9c1a11',
@@ -47,7 +53,8 @@ export class ErrorBody implements ErrorBodyShape {
 }
 
 /** The single error body returned by every failing endpoint. */
-export class ErrorEnvelope implements ErrorEnvelopeShape {
-  @ApiProperty({ type: ErrorBody })
-  error!: ErrorBody;
+@ApiSchema({ name: 'ErrorEnvelope' })
+export class ErrorEnvelopeDto implements ErrorEnvelope {
+  @ApiProperty({ type: ErrorBodyDto })
+  error!: ErrorBodyDto;
 }

@@ -99,7 +99,8 @@ describe('openapi export', () => {
   });
 
   it('matches the committed apps/api/openapi.json (run `pnpm openapi:export` if stale)', async () => {
-    const committed = readFileSync(OPENAPI_FILE_PATH, 'utf8');
+    // Normalize CRLF so a Windows checkout without eol=lf cannot fake staleness.
+    const committed = readFileSync(OPENAPI_FILE_PATH, 'utf8').replace(/\r\n/g, '\n');
     expect(await renderOpenApiJson()).toBe(committed);
     expect(committed.endsWith('\n')).toBe(true);
   });

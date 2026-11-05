@@ -50,6 +50,23 @@ function statusOf(exception: unknown): number {
 }
 
 /**
+ * Server-side diagnostic text for the log only: the exception message and, when
+ * present, its cause (name, message and stack). Never sent to the client and
+ * never built from request data.
+ */
+function describeFailure(exception: unknown): string {
+  if (!(exception instanceof Error)) return '';
+  let text = `: ${exception.message}`;
+  const { cause } = exception;
+  if (cause instanceof Error) {
+    text += ` | cause ${cause.name}: ${cause.message}\n${cause.stack ?? ''}`;
+  } else if (cause !== undefined) {
+    text += ` | cause: ${String(cause)}`;
+  }
+  return text;
+}
+
+/**
  * Turns every thrown error into the single `ErrorEnvelope`. Messages are fixed
  * per code on purpose: exception messages and stacks never reach the client.
  */
@@ -70,7 +87,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const where = `${request.method} ${request.path} (${correlationId})`;
     if (code === ERROR_CODES.SERVICE_UNAVAILABLE) {
       // An intentional, expected 503: not an unhandled failure.
-      this.logger.warn(`Service unavailable on ${where}`);
+      this.logger.warn(`Service unavailable on ${where}${describeFailure(exception)}`);
     } else if (code === ERROR_CODES.INTERNAL_ERROR) {
       status = 500;
       // Server-side only: the stack helps debugging; the request is identified by path and id.
@@ -81,9 +98,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     if (response.headersSent) {
-      // Too late to send an envelope; just terminate the response.
-      this.logger.warn(`Headers already sent, envelope skipped on ${where}`);
-      response.end();
+      // Too late to send an envelope. Ending normally would present a truncated
+      // body as complete, so abort the connection and let the client see the failure.
+      this.logger.warn(`Headers already sent, connection aborted on ${where}`);
+      response.destroy();
       return;
     }
 

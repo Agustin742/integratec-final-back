@@ -1,8 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
-import type { HealthStatus as HealthStatusShape } from '@aula/contracts';
+import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import type { HealthStatus } from '@aula/contracts';
 
-/** OpenAPI schema of the liveness response; `implements` keeps it aligned with `@aula/contracts`. */
-export class HealthStatus implements HealthStatusShape {
+/**
+ * OpenAPI schema of the liveness response; `implements` keeps it aligned with
+ * `@aula/contracts`. Published in the document as `HealthStatus`.
+ */
+@ApiSchema({ name: 'HealthStatus' })
+export class HealthStatusDto implements HealthStatus {
   @ApiProperty({ enum: ['ok', 'error'], example: 'ok' })
   status!: 'ok' | 'error';
 

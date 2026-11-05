@@ -54,13 +54,17 @@ class SampleController {
 
   @Get('http')
   http(@Query('code') code: string) {
-    throw new HttpException('internal detail that should not matter', Number(code));
+    throw new HttpException('internal detail that should not matter', Number(code), {
+      cause: Object.assign(new Error('pool exhausted'), { name: 'DbDown' }),
+    });
   }
 
   @Get('plain')
   plain(@Query('kind') kind: string) {
     // Plain objects (not Error/HttpException) that merely look like HTTP errors.
     if (kind === 'exposed') throw { status: 422, expose: true, message: 'client detail' };
+    if (kind === 'statuscode') throw { statusCode: 422, expose: true, message: 'client detail' };
+    if (kind === 'exposed5xx') throw { status: 502, expose: true, message: 'upstream detail' };
     throw { status: 418, message: 'secret detail' };
   }
 }
@@ -166,12 +170,17 @@ describe('HTTP baseline', () => {
       const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       const warnSpy = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       try {
-        const res = await request(server()).get('/sample/http?code=503');
+        const res = await request(server()).get('/sample/http?code=503&token=secret-query-value');
         expect(res.status).toBe(503);
         expect(res.body.error.code).toBe('SERVICE_UNAVAILABLE');
         expect(JSON.stringify(res.body)).not.toContain('internal detail');
         expect(warnSpy).toHaveBeenCalled();
         expect(errorSpy).not.toHaveBeenCalled();
+        // Server-side diagnostics keep the message and the cause; the client never sees them.
+        const logged = warnSpy.mock.calls.flat().join(' | ');
+        expect(logged).toContain('internal detail that should not matter');
+        expect(logged).toContain('DbDown: pool exhausted');
+        expect(logged).not.toContain('secret-query-value');
       } finally {
         vi.restoreAllMocks();
       }
@@ -195,6 +204,26 @@ describe('HTTP baseline', () => {
       expect(exposed.body.error.code).toBe('BAD_REQUEST');
     });
 
+    it('falls back to `statusCode` when an exposed object has no `status`', async () => {
+      const res = await request(server()).get('/sample/plain?kind=statuscode');
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('BAD_REQUEST');
+      expect(JSON.stringify(res.body)).not.toContain('client detail');
+    });
+
+    it('never trusts an exposed object with a 5xx status: it becomes a 500', async () => {
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        const res = await request(server()).get('/sample/plain?kind=exposed5xx');
+        expect(res.status).toBe(500);
+        expect(res.body.error.code).toBe('INTERNAL_ERROR');
+        expect(JSON.stringify(res.body)).not.toContain('upstream detail');
+        expect(errorSpy).toHaveBeenCalled();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it('treats a plain object with a numeric 4xx status but no expose flag as a 500', async () => {
       const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       try {
@@ -208,7 +237,7 @@ describe('HTTP baseline', () => {
       }
     });
 
-    it('does not write the envelope when headers were already sent', () => {
+    it('aborts the connection instead of writing the envelope when headers were already sent', () => {
       const filter = new AllExceptionsFilter();
       const response = {
         headersSent: true,
@@ -216,6 +245,7 @@ describe('HTTP baseline', () => {
         status: vi.fn(),
         json: vi.fn(),
         end: vi.fn(),
+        destroy: vi.fn(),
       };
       const host = {
         switchToHttp: () => ({
@@ -231,7 +261,8 @@ describe('HTTP baseline', () => {
       }
       expect(response.status).not.toHaveBeenCalled();
       expect(response.json).not.toHaveBeenCalled();
-      expect(response.end).toHaveBeenCalled();
+      expect(response.end).not.toHaveBeenCalled();
+      expect(response.destroy).toHaveBeenCalled();
     });
 
     it('returns 500 INTERNAL_ERROR with a generic message for unexpected errors', async () => {
@@ -298,7 +329,7 @@ describe('HTTP baseline', () => {
       response.emit('close');
       response.emit('close');
       expect(out).toHaveLength(1);
-      expect(JSON.parse(out[0])).toMatchObject({ path: '/slow', aborted: true });
+      expect(JSON.parse(out[0])).toMatchObject({ path: '/slow', status: 499, aborted: true });
       expect(out[0]).not.toContain('abc');
     });
 

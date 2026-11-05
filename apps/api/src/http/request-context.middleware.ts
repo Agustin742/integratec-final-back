@@ -3,6 +3,8 @@ import type { NextFunction, Request, Response } from 'express';
 import { CORRELATION_ID_HEADER } from './error-envelope';
 
 const SAFE_CORRELATION_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+/** Non-standard status (nginx convention) logged when the client closed the request early. */
+const CLIENT_CLOSED_REQUEST = 499;
 const MAX_LOGGED_PATH_LENGTH = 200;
 
 export function resolveCorrelationId(incoming: unknown): string {
@@ -33,7 +35,7 @@ export function createRequestContextMiddleware(write: (line: string) => void) {
           event: 'http_request',
           method: request.method,
           path: request.originalUrl.split('?')[0].slice(0, MAX_LOGGED_PATH_LENGTH),
-          status: response.statusCode,
+          status: aborted ? CLIENT_CLOSED_REQUEST : response.statusCode,
           durationMs: Math.round(durationMs * 100) / 100,
           correlationId,
           ...(aborted ? { aborted: true } : {}),

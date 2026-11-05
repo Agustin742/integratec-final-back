@@ -5,7 +5,10 @@ import { AppModule } from '../app.module';
 import type { ApiConfig } from '../config/api-config';
 import { buildOpenApiDocument } from './openapi-document';
 
-/** Committed contract artifact (Decision D8). */
+/**
+ * Committed contract artifact (Decision D8): the frontend consumes this file via
+ * its `api:sync` step, and CI fails when it is stale. See rules/api-contracts.md.
+ */
 export const OPENAPI_FILE_PATH = resolve(__dirname, '../../openapi.json');
 
 /**
