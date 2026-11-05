@@ -8,6 +8,14 @@
 - **Reason:** The account uses the credit-based Free plan; the fixed hourly cost of an ALB, two Fargate services, and a NAT gateway (roughly USD 60 to 100 per month with RDS, unverified estimate) would exhaust the credits in about 2 to 3 months, while a single host costs roughly USD 10 to 15 per month plus RDS.
 - **Next step:** PR review into `develop`; then implement the network, host, and pipeline in backend issues #59 to #62. Decide the domain and DNS name for Let's Encrypt (gap 20) and the in-Region Bedrock model (gap 21).
 
+## 2026-11-05 — OpenAPI document and REST error envelope baseline (#15)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/http/`, `apps/api/src/openapi/`, `apps/api/openapi.json`, `.gitattributes`, `.github/workflows/ci.yml`, `docs/api-conventions.md`, `README.md`
+- **Change:** Added a global validation pipe (unknown fields rejected, per-field details), a single error envelope with stable codes and `x-request-id` correlation, a JSON request log, pagination and sort conventions, the OpenAPI builder with Scalar at `/docs` outside production, `pnpm openapi:export` with the committed `apps/api/openapi.json`, a CI staleness check, and `docs/api-conventions.md`.
+- **Reason:** Frontend and backend need one observable error and list contract, and the committed OpenAPI file (D8, D9) must exist before endpoints are implemented.
+- **Next step:** Push the branch, open the PR into `develop`, and get teammate review. Close #15 manually after merge because closing keywords only fire on `main`.
+
 ## 2026-11-04 — Terraform skeleton, remote state, and GitHub OIDC role (#16)
 
 - **Status:** completed

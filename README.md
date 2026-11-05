@@ -34,6 +34,9 @@ pnpm typecheck
 pnpm format:check
 pnpm lint
 
+# Regenerate the committed OpenAPI document (apps/api/openapi.json)
+pnpm openapi:export
+
 # Build all packages
 pnpm build
 ```
@@ -150,7 +153,7 @@ Blank values are treated as unset. "Public" means the value is not a credential;
 
 ## Documentation
 
-The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints.
+The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints. REST conventions (error envelope, validation, pagination, OpenAPI workflow) are in [API conventions](./docs/api-conventions.md).
 
 Design diagrams (use cases, architecture, realtime, data model, classes, and sequences) live in [`docs/diagrams/`](./docs/diagrams/README.md). Mermaid is their editable source format, not authority over requirements or approved decisions. The views are aligned with the functional baseline; technical proposals are not implemented or approved contracts merely because they appear in a diagram. The [review guide](./docs/diagrams/review-guide.md) records local review slices, observed checks, and outstanding visual/remote verification.
 
@@ -176,4 +179,4 @@ When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 
 
 ## Shared contracts
 
-NestJS generates an OpenAPI document (`@nestjs/swagger`) served with the Scalar API reference UI, and the frontend generates its TypeScript types from it. The generated `openapi.json` is committed in this repository (planned path, for example `apps/api/openapi.json`) and CI fails if it is stale versus the code. Realtime room state types are generated with `@colyseus/schema` codegen and message payload types are exported from `packages/contracts`; both are committed, and the frontend pulls everything with its `pnpm api:sync` script. These decisions (D4 and D8) were made and approved by Agustin on 2026-11-02; see [API contracts](./rules/api-contracts.md). None of this exists yet: it is planned for future issues.
+NestJS generates an OpenAPI document (`@nestjs/swagger`) served with the Scalar API reference UI, and the frontend generates its TypeScript types from it. The generated `openapi.json` is committed at `apps/api/openapi.json` (regenerate with `pnpm openapi:export`; see [API conventions](./docs/api-conventions.md#openapi-document-and-api-reference)) and CI fails if it is stale versus the code. Realtime room state types are generated with `@colyseus/schema` codegen and message payload types are exported from `packages/contracts`; both are committed, and the frontend pulls everything with its `pnpm api:sync` script. These decisions (D4 and D8) were made and approved by Agustin on 2026-11-02; see [API contracts](./rules/api-contracts.md). The REST side (OpenAPI document, Scalar reference outside production, committed `openapi.json`, CI staleness check) is implemented; the Colyseus schema codegen and `packages/contracts` message types are planned for future issues.

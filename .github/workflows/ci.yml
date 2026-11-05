@@ -149,6 +149,16 @@ jobs:
         if: steps.package.outputs.present == 'true'
         run: pnpm install --frozen-lockfile
 
+      - name: Check committed OpenAPI document is up to date
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          pnpm openapi:export
+          if ! git diff --exit-code -- apps/api/openapi.json; then
+            echo "::error title=openapi.json is stale::apps/api/openapi.json does not match the code. Run 'pnpm openapi:export' and commit the result." >&2
+            exit 1
+          fi
+
       - name: Code formatting
         if: steps.package.outputs.present == 'true'
         shell: bash
