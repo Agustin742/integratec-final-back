@@ -337,13 +337,14 @@ CHECK (
 );
 
 -- 3. Invitation integrity rules per D7:
--- Email invitations require target_email; join codes MUST NOT have target_email and MUST have role 'student'
+-- Email invitations require target_email and at least one target (school_id or classroom_id);
+-- Join codes MUST NOT have target_email, MUST have role 'student', and MUST have classroom_id
 -- Join codes use_count cannot exceed max_uses when max_uses is set
 ALTER TABLE "invitations"
 ADD CONSTRAINT "invitations_kind_check"
 CHECK (
-  ("kind" = 'email' AND "target_email" IS NOT NULL) OR
-  ("kind" = 'join_code' AND "target_email" IS NULL AND "role" = 'student')
+  ("kind" = 'email' AND "target_email" IS NOT NULL AND ("school_id" IS NOT NULL OR "classroom_id" IS NOT NULL)) OR
+  ("kind" = 'join_code' AND "target_email" IS NULL AND "role" = 'student' AND "classroom_id" IS NOT NULL)
 );
 
 ALTER TABLE "invitations"
@@ -351,3 +352,6 @@ ADD CONSTRAINT "invitations_max_uses_check"
 CHECK (
   "max_uses" IS NULL OR "use_count" <= "max_uses"
 );
+
+-- 4. Unique normalized email
+CREATE UNIQUE INDEX "users_email_lower_idx" ON "users"(LOWER("email"));

@@ -197,7 +197,19 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
           displayName: 'Duplicate User',
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'P2002' });
+  });
+
+  it('rejects duplicate email for User regardless of casing (normalized email)', async () => {
+    await expect(
+      prisma.user.create({
+        data: {
+          email: testOwnerUser.email.toUpperCase(),
+          passwordHash: 'some-hash',
+          displayName: 'Duplicate User Casing',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 
   // 3. School Owner Partial Unique Index Tests
@@ -223,7 +235,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
             state: 'ACTIVE',
           },
         }),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: 'P2002' });
     } finally {
       await prisma.user.delete({ where: { id: extraUser.id } });
     }
@@ -240,7 +252,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
           state: 'ACTIVE',
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 
   // 5. Unique (classroom_id, user_id) in ClassroomMembership
@@ -254,7 +266,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
           state: 'ACTIVE',
         },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 
   // 6. Invitation Integrity Tests
@@ -324,6 +336,39 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
     ).rejects.toThrow();
   });
 
+  it('rejects duplicate invitation hash (unique secret_hash)', async () => {
+    const secretHash = `duplicate-hash-${Date.now()}`;
+    const first = await prisma.invitation.create({
+      data: {
+        kind: 'EMAIL',
+        secretHash,
+        targetEmail: `target1.${Date.now()}@example.com`,
+        schoolId: testSchool.id,
+        role: 'TEACHER',
+        expiresAt: new Date(Date.now() + 100000),
+        createdById: testOwnerUser.id,
+      },
+    });
+
+    try {
+      await expect(
+        prisma.invitation.create({
+          data: {
+            kind: 'EMAIL',
+            secretHash,
+            targetEmail: `target2.${Date.now()}@example.com`,
+            schoolId: testSchool.id,
+            role: 'TEACHER',
+            expiresAt: new Date(Date.now() + 100000),
+            createdById: testOwnerUser.id,
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'P2002' });
+    } finally {
+      await prisma.invitation.delete({ where: { id: first.id } });
+    }
+  });
+
   // 7. ParentLink Uniqueness Tests
   it('rejects duplicate parent link for (parent, child, classroom)', async () => {
     const parentLink = await prisma.parentLink.create({
@@ -343,7 +388,7 @@ describe('Prisma Baseline Relational Constraints Integration Tests', () => {
             classroomId: testClassroom.id,
           },
         }),
-      ).rejects.toThrow();
+      ).rejects.toMatchObject({ code: 'P2002' });
     } finally {
       await prisma.parentLink.delete({ where: { id: parentLink.id } });
     }
