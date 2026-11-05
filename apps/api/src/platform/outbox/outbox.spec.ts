@@ -7,7 +7,7 @@ import { ApiConfigModule } from '../../config/config.module';
 import type { ApiConfig } from '../../config/api-config';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OutboxDispatcher, backoffMs } from './outbox.dispatcher';
+import { OutboxDispatcher, backoffMs, type OutboxDispatcherOptions } from './outbox.dispatcher';
 import { OutboxHandlerRegistry, type OutboxEventEnvelope } from './outbox.registry';
 import { OutboxModule } from './outbox.module';
 import { OutboxWriter } from './outbox.writer';
@@ -74,6 +74,13 @@ describe('transactional outbox (integration, real Postgres)', () => {
   const record = (payload: Prisma.InputJsonObject = { classroomId: 'c-1' }) =>
     prisma.$transaction((tx) => writer.record(tx, { type, payload }));
 
+  // Scoped to this test's type so rows of other types in the shared database are never claimed.
+  const dispatch = (now?: Date, batchSize = 10, target: OutboxDispatcher = dispatcher) =>
+    target.dispatchPending(batchSize, now, [type]);
+
+  const recordId = async (payload: Prisma.InputJsonObject): Promise<string> =>
+    prisma.$transaction((tx) => writer.record(tx, { type, payload }));
+
   it('delivers a committed event exactly once', async () => {
     const received: OutboxEventEnvelope[] = [];
     registry.register(type, (event) => {
@@ -82,8 +89,8 @@ describe('transactional outbox (integration, real Postgres)', () => {
     });
 
     await record({ classroomId: 'c-1' });
-    const first = await dispatcher.dispatchPending();
-    const second = await dispatcher.dispatchPending();
+    const first = await dispatch();
+    const second = await dispatch();
 
     expect(received).toHaveLength(1);
     expect(received[0]).toMatchObject({ type, payload: { classroomId: 'c-1' } });
@@ -103,7 +110,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
         throw new Error('business failure');
       }),
     ).rejects.toThrow('business failure');
-    await dispatcher.dispatchPending();
+    await dispatch();
 
     expect(await prisma.outboxEvent.count({ where: { type } })).toBe(0);
     expect(handler).not.toHaveBeenCalled();
@@ -117,7 +124,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
     await record();
     const t0 = new Date();
 
-    const first = await dispatcher.dispatchPending(10, t0);
+    const first = await dispatch(t0);
     expect(first).toMatchObject({ delivered: 0, retried: 1, exhausted: 0 });
     let row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
     expect(row.attempts).toBe(1);
@@ -127,25 +134,25 @@ describe('transactional outbox (integration, real Postgres)', () => {
     expect(row.lastError!.length).toBeLessThanOrEqual(300);
 
     // Not yet available: the handler is not called again.
-    await dispatcher.dispatchPending(10, new Date(t0.getTime() + backoffMs(1) - 1));
+    await dispatch(new Date(t0.getTime() + backoffMs(1) - 1));
     expect(handler).toHaveBeenCalledTimes(1);
 
     const t1 = new Date(t0.getTime() + backoffMs(1));
-    await dispatcher.dispatchPending(10, t1);
+    await dispatch(t1);
     row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
     expect(row.attempts).toBe(2);
     expect(row.availableAt.getTime()).toBe(t1.getTime() + backoffMs(2));
     expect(backoffMs(2)).toBe(backoffMs(1) * 2);
 
     const t2 = new Date(t1.getTime() + backoffMs(2));
-    const last = await dispatcher.dispatchPending(10, t2);
+    const last = await dispatch(t2);
     expect(last).toMatchObject({ retried: 0, exhausted: 1 });
     row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
     expect(row.attempts).toBe(MAX_ATTEMPTS);
     expect(row.failedAt).not.toBeNull();
     expect(row.processedAt).toBeNull();
 
-    await dispatcher.dispatchPending(10, new Date(t2.getTime() + 365 * 24 * 3600 * 1000));
+    await dispatch(new Date(t2.getTime() + 365 * 24 * 3600 * 1000));
     expect(handler).toHaveBeenCalledTimes(MAX_ATTEMPTS);
   });
 
@@ -157,8 +164,8 @@ describe('transactional outbox (integration, real Postgres)', () => {
     await record();
     const t0 = new Date();
 
-    await dispatcher.dispatchPending(10, t0);
-    const retry = await dispatcher.dispatchPending(10, new Date(t0.getTime() + backoffMs(1)));
+    await dispatch(t0);
+    const retry = await dispatch(new Date(t0.getTime() + backoffMs(1)));
 
     expect(retry.delivered).toBe(1);
     const row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
@@ -170,7 +177,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     await record();
 
-    const result = await dispatcher.dispatchPending();
+    const result = await dispatch();
 
     expect(result).toMatchObject({ delivered: 0, retried: 1 });
     const row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
@@ -192,7 +199,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
     });
     for (let i = 0; i < 6; i += 1) await record({ n: i });
 
-    const both = Promise.all([dispatcher.dispatchPending(3), other.dispatchPending(3)]);
+    const both = Promise.all([dispatch(undefined, 3), dispatch(undefined, 3, other)]);
     // Both dispatchers must hold a disjoint batch at the same time; a plain
     // FOR UPDATE would leave the second one blocked, so this would time out.
     await vi.waitFor(() => expect(entered).toBe(2), { timeout: 10_000 });
@@ -204,6 +211,134 @@ describe('transactional outbox (integration, real Postgres)', () => {
     expect(new Set(seen).size).toBe(6);
   }, 20_000);
 
+  describe('slow and stuck handlers', () => {
+    const options: OutboxDispatcherOptions = { handlerTimeoutMs: 100, leaseMs: 60_000 };
+    let fast: OutboxDispatcher;
+    beforeEach(() => {
+      fast = new OutboxDispatcher(prisma, registry, config, options);
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    });
+
+    it('fails a handler that exceeds the timeout without undoing another event that succeeded', async () => {
+      const slowId = await recordId({ slow: true });
+      const okId = await recordId({ slow: false });
+      registry.register(type, (event) =>
+        event.id === slowId ? new Promise<void>(() => undefined) : Promise.resolve(),
+      );
+      const t0 = new Date();
+
+      const result = await dispatch(t0, 10, fast);
+
+      expect(result).toMatchObject({ delivered: 1, retried: 1, exhausted: 0 });
+      const ok = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: okId } });
+      expect(ok.processedAt).not.toBeNull();
+      const slow = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: slowId } });
+      expect(slow.processedAt).toBeNull();
+      expect(slow.attempts).toBe(1);
+      expect(slow.lastError).toContain('OutboxHandlerTimeoutError');
+      expect(slow.availableAt.getTime()).toBe(t0.getTime() + backoffMs(1));
+    });
+
+    it('reaches the max attempts for a handler that always hangs', async () => {
+      registry.register(type, () => new Promise<void>(() => undefined));
+      await record();
+      let at = new Date();
+
+      for (let i = 0; i < MAX_ATTEMPTS; i += 1) {
+        await dispatch(at, 10, fast);
+        at = new Date(at.getTime() + backoffMs(i + 1));
+      }
+
+      const row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
+      expect(row.attempts).toBe(MAX_ATTEMPTS);
+      expect(row.failedAt).not.toBeNull();
+    });
+
+    it('does not block later polls or shutdown on a handler that never settles', async () => {
+      registry.register(type, () => new Promise<void>(() => undefined));
+      await record();
+      const tick = () => (fast as unknown as { tick(): void }).tick();
+      const original = fast.dispatchPending.bind(fast);
+      // The poller is unscoped; keep this test off rows of other types in the shared database.
+      const later = vi
+        .spyOn(fast, 'dispatchPending')
+        .mockImplementation((batchSize, now) => original(batchSize, now, [type]));
+
+      tick();
+      await fast.onModuleDestroy();
+      expect(later).toHaveBeenCalledTimes(1);
+
+      tick();
+      expect(later).toHaveBeenCalledTimes(2);
+      await fast.onModuleDestroy();
+    });
+
+    it('makes a claimed row due again once its lease expires (simulated crash)', async () => {
+      const handler = vi.fn(() => Promise.resolve());
+      registry.register(type, handler);
+      await record();
+      const t0 = new Date();
+      // The process "dies" after claiming: the outcome is never persisted.
+      vi.spyOn(fast as unknown as { settle(): Promise<void> }, 'settle').mockRejectedValueOnce(
+        new Error('connection lost'),
+      );
+
+      await dispatch(t0, 10, fast);
+      expect(handler).toHaveBeenCalledTimes(1);
+      let row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
+      expect(row.processedAt).toBeNull();
+      expect(row.availableAt.getTime()).toBe(t0.getTime() + options.leaseMs);
+
+      await dispatch(new Date(t0.getTime() + options.leaseMs - 1), 10, fast);
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      const redelivered = await dispatch(new Date(t0.getTime() + options.leaseMs), 10, fast);
+      expect(redelivered.delivered).toBe(1);
+      expect(handler).toHaveBeenCalledTimes(2);
+      row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
+      expect(row.processedAt).not.toBeNull();
+    });
+
+    it('does not start events that could outlive their lease, leaving them due', async () => {
+      const tight = new OutboxDispatcher(prisma, registry, config, {
+        handlerTimeoutMs: 100,
+        leaseMs: 150,
+      });
+      const handler = vi.fn(() => new Promise<void>((resolve) => setTimeout(resolve, 80)));
+      registry.register(type, handler);
+      for (let i = 0; i < 3; i += 1) await record({ n: i });
+      const t0 = new Date();
+
+      const result = await dispatch(t0, 10, tight);
+
+      expect(handler.mock.calls.length).toBeLessThan(3);
+      expect(result.delivered).toBe(handler.mock.calls.length);
+      const pending = await prisma.outboxEvent.findMany({ where: { type, processedAt: null } });
+      expect(pending).toHaveLength(3 - result.delivered);
+      for (const row of pending)
+        expect(row.availableAt.getTime()).toBeLessThanOrEqual(t0.getTime());
+    });
+  });
+
+  it('ignores pending rows of other types and leaves them untouched', async () => {
+    const foreign = await prisma.outboxEvent.create({
+      data: { type: `${type}.foreign`, payload: { keep: true } },
+    });
+    try {
+      registry.register(type, () => Promise.resolve());
+      await record();
+
+      const result = await dispatch();
+
+      expect(result).toMatchObject({ delivered: 1, retried: 0, exhausted: 0 });
+      const untouched = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: foreign.id } });
+      expect(untouched).toEqual(foreign);
+    } finally {
+      await prisma.outboxEvent.delete({ where: { id: foreign.id } });
+    }
+  });
+
   it('logs structured diagnostics without payload contents', async () => {
     const log = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
@@ -211,7 +346,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
     registry.register(type, () => Promise.reject(new Error('boom')));
     await record({ secret: 'student-private-note' });
 
-    await dispatcher.dispatchPending();
+    await dispatch();
 
     const logged = JSON.stringify([...log.mock.calls, ...error.mock.calls, ...warn.mock.calls]);
     expect(logged).toContain('outbox.dispatch');
