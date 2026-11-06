@@ -254,6 +254,17 @@ const url = await this.storage.getSignedDownloadUrl(key); // default TTL: STORAG
 - Signed URLs are short-lived bearer credentials: hand them to the client, never log or persist them.
 - In production credentials come from the instance role (leave `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` unset). Locally use MinIO: `docker compose up -d minio minio-init` (see [Local object storage](#local-object-storage-minio)). MinIO was chosen over LocalStack because only S3 is needed and it is lighter.
 
+## Authentication and sessions
+
+Endpoints live under `/auth` (`register`, `login`, `refresh`, `logout`, `password-reset/request`, `password-reset/confirm`); request and response shapes are in the committed [OpenAPI document](./apps/api/openapi.json). Policy lives in [Authentication and session](./rules/authentication-and-session.md). Code is in `apps/api/src/auth`.
+
+- **Login:** returns a short-lived access JWT (HS256, signed with `JWT_SECRET`, claims `{ sub, sid }`, lifetime `JWT_ACCESS_TTL`) and an opaque refresh token. Only the hash of the refresh token is stored, in `RefreshToken`, tied to a session id.
+- **Refresh:** rotates the refresh token on every use. Presenting an already-rotated token is treated as reuse and revokes the whole session, except inside the `REFRESH_REUSE_GRACE` window (default 30s, `0s` disables), which tolerates a client retrying after a lost response.
+- **Logout:** revokes the current session.
+- **Password reset:** `request` always answers `202` whether or not the account exists (no enumeration) and records a transactional outbox event; a handler sends the email through `EmailPort` with the link `PASSWORD_RESET_URL_BASE?token=<token>`. The token is random, stored hashed, single-use and expires after `PASSWORD_RESET_TTL`. `confirm` sets the new password and revokes all of the user's sessions.
+
+Known limitations: login and reset requests are not throttled yet (planned for #19 or later), expired refresh-token rows are not cleaned up yet, and `EmailPort` is still the in-memory stub, so no real email is sent.
+
 ## Documentation
 
 The [master document](./master-document.md) records product scope and technology choices; the [functional requirements (ERS)](./docs/functional-requirements.md) define functional behavior and permissions. [Requirements decisions](./docs/requirements-decision.md) record confirmed clarifications, and [rules](./rules/README.md) govern engineering constraints. REST conventions (error envelope, validation, pagination, OpenAPI workflow) are in [API conventions](./docs/api-conventions.md).

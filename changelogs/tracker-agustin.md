@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-06 — Authentication and session lifecycle (#18)
+
+- **Status:** completed (pending PR review)
+- **Area / files:** `apps/api/src/auth/`, `apps/api/prisma/` (`RefreshToken` and `PasswordResetToken` models and migrations), `apps/api/src/config/api-config.ts`, `apps/api/openapi.json`, `apps/api/.env.example`, `docker-compose.yml`, `README.md`
+- **Change:** Added login (HS256 access JWT with `sub` and `sid`, opaque refresh token stored hashed), refresh rotation with reuse detection and a configurable `REFRESH_REUSE_GRACE` window, logout, and password reset request and confirm (always `202` on request, outbox event, single-use expiring token, all sessions revoked on confirm). Added the new configuration variables, passed `REFRESH_REUSE_GRACE` through Compose, and documented the session lifecycle in the README.
+- **Reason:** Frontend and later stories need authenticated sessions that follow decision D1 and the authentication rule.
+- **Next step:** Open the PR into `develop`. Follow-ups: throttling for login and reset request, cleanup of expired refresh-token rows, and stabilizing flaky concurrency tests (`outbox.spec.ts` SKIP LOCKED, refresh concurrency, register concurrency).
+
 ## 2026-11-05 — Platform ports: email, transactional outbox, object storage (#45)
 
 - **Status:** in-progress (implementation and docs done; PR pending)
