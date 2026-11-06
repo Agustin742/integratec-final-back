@@ -23,6 +23,7 @@
     "@aws-sdk/s3-request-presigner": "3.1163.0",
     "@nestjs/common": "^11.0.10",
     "@nestjs/core": "^11.0.10",
+    "@nestjs/jwt": "^12.0.3",
     "@nestjs/platform-express": "^11.0.10",
     "@nestjs/swagger": "^12.1.0",
     "@prisma/client": "6.4.1",

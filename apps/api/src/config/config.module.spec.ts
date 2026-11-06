@@ -8,6 +8,7 @@ describe('ApiConfigModule', () => {
     const config = loadApiConfig({
       DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula',
       INTERNAL_SERVICE_SECRET: 'test-only-secret-with-at-least-32-characters',
+      JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-chars',
       ALLOWED_ORIGINS: 'http://localhost:5173',
       S3_BUCKET: 'aula-virtual-dev',
     });

@@ -113,10 +113,11 @@ The server health check uses the bundled `mc ready local`, and `minio-init` runs
 
 Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
 
-The application services require `INTERNAL_SERVICE_SECRET`, and the compose file deliberately provides no default for it. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with a generated secret:
+The application services require `INTERNAL_SERVICE_SECRET` (and the API also `JWT_SECRET`), and the compose file deliberately provides no default for them. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with generated secrets:
 
 ```bash
 echo "INTERNAL_SERVICE_SECRET=<generated-secret>" > .env
+echo "JWT_SECRET=<another-generated-secret>" >> .env
 ```
 
 If the secret is missing or shorter than 32 characters, the services exit at startup with the configuration diagnostic described in [Configuration](#configuration). `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `ALLOWED_ORIGINS` can be overridden in the same file; the password is embedded in `DATABASE_URL`, so avoid URL-reserved characters such as `@`, `:`, `/` or `#`.
@@ -171,10 +172,14 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `DATABASE_URL`            | Required; `postgres://` or `postgresql://` URL    | PostgreSQL connection string (includes credentials)                      | Private        | Yes     |
 | `JWT_ACCESS_TTL`          | Default `15m`; `<integer>` + `s`, `m`, `h` or `d` | Access token lifetime                                                    | Public         | Yes     |
 | `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
+| `REFRESH_REUSE_GRACE`     | Default `30s`, max `5m`; `0s` disables            | Window in which a rotated refresh token is retried without revoking      | Public         | Yes     |
+| `PASSWORD_RESET_TTL`      | Default `1h`, max `24h`; same format              | Lifetime of an emailed password reset link (single-use)                  | Public         | Yes     |
+| `PASSWORD_RESET_URL_BASE` | Required in production; default `http://localhost:5173/reset-password`; absolute `http(s)` URL without query or fragment | Frontend page that finishes a reset; the emailed link is `<base>?token=<token>` | Public | Yes |
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+| `JWT_SECRET`              | Required; at least 32 characters                  | HS256 signing key of access tokens (API only; never shared with the realtime server) | Private | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
 | `S3_BUCKET`               | Required; 3-63 lowercase letters, digits, dots or hyphens | Object storage bucket (local default in Compose: `aula-virtual-dev`) | Public         | Yes     |
 | `S3_REGION`               | Default `sa-east-1`; AWS region name              | Region used to sign storage requests                                     | Public         | Yes     |
@@ -248,6 +253,17 @@ const url = await this.storage.getSignedDownloadUrl(key); // default TTL: STORAG
 - Content validation (type allow-list, size, count) belongs to the calling story, not to the port.
 - Signed URLs are short-lived bearer credentials: hand them to the client, never log or persist them.
 - In production credentials come from the instance role (leave `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` unset). Locally use MinIO: `docker compose up -d minio minio-init` (see [Local object storage](#local-object-storage-minio)). MinIO was chosen over LocalStack because only S3 is needed and it is lighter.
+
+## Authentication and sessions
+
+Endpoints live under `/auth` (`register`, `login`, `refresh`, `logout`, `password-reset/request`, `password-reset/confirm`); request and response shapes are in the committed [OpenAPI document](./apps/api/openapi.json). Policy lives in [Authentication and session](./rules/authentication-and-session.md). Code is in `apps/api/src/auth`.
+
+- **Login:** returns a short-lived access JWT (HS256, signed with `JWT_SECRET`, claims `{ sub, sid }`, lifetime `JWT_ACCESS_TTL`) and an opaque refresh token. Only the hash of the refresh token is stored, in `RefreshToken`, tied to a session id.
+- **Refresh:** rotates the refresh token on every use. Presenting an already-rotated token is treated as reuse and revokes the whole session, except inside the `REFRESH_REUSE_GRACE` window (default 30s, `0s` disables), which tolerates a client retrying after a lost response.
+- **Logout:** revokes the current session.
+- **Password reset:** `request` always answers `202` whether or not the account exists (no enumeration) and records a transactional outbox event; a handler sends the email through `EmailPort` with the link `PASSWORD_RESET_URL_BASE?token=<token>`. The token is random, stored hashed, single-use and expires after `PASSWORD_RESET_TTL`. `confirm` sets the new password and revokes all of the user's sessions.
+
+Known limitations: login and reset requests are not throttled yet (planned for #19 or later), expired refresh-token rows are not cleaned up yet, and `EmailPort` is still the in-memory stub, so no real email is sent.
 
 ## Documentation
 
