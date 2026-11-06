@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { MembershipState, Prisma, SchoolRole } from '@prisma/client';
 import { RegistrationPath } from '@aula/contracts';
@@ -8,26 +14,23 @@ import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginRequestDto } from './dto/login-request.dto';
-import { LoginResponseDto } from './dto/login-response.dto';
+import { RefreshRequestDto } from './dto/refresh-request.dto';
 import { RegisterRequestDto } from './dto/register-request.dto';
 import { RegisterResponseDto } from './dto/register-response.dto';
-import { generateRefreshToken, hashRefreshToken } from './session-tokens';
-import type { AccessTokenClaims } from './session-verifier.service';
+import { TokenPairResponseDto } from './dto/token-pair-response.dto';
+import {
+  type AccessTokenClaims,
+  generateRefreshToken,
+  hashRefreshToken,
+  signAccessToken,
+} from './session-tokens';
 import { slugify } from './slugify';
 
 const BCRYPT_SALT_ROUNDS = 10;
 
 @Injectable()
-export class AuthService {
-  /**
-   * Hash compared against when the email is unknown, so that path costs a bcrypt
-   * comparison like a real one and response time does not reveal which emails exist.
-   * Computed once, with the same cost factor as real hashes.
-   */
-  private readonly dummyPasswordHash = bcrypt.hash(
-    randomBytes(16).toString('hex'),
-    BCRYPT_SALT_ROUNDS,
-  );
+export class AuthService implements OnModuleInit {
+  private dummyPasswordHashPromise: Promise<string> | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -36,12 +39,37 @@ export class AuthService {
   ) {}
 
   /**
+   * Warms the dummy hash at startup so the first unknown-email login is not slower
+   * than later ones. A failure here fails the boot loudly instead of surfacing as an
+   * unhandled rejection.
+   */
+  async onModuleInit(): Promise<void> {
+    await this.getDummyPasswordHash();
+  }
+
+  /**
+   * Hash compared against when the email is unknown, so that path costs a bcrypt
+   * comparison like a real one and response time does not reveal which emails exist.
+   * Computed once and memoized, with the same cost factor as real hashes. A failed
+   * computation is not cached, so a later call retries.
+   */
+  private getDummyPasswordHash(): Promise<string> {
+    this.dummyPasswordHashPromise ??= bcrypt
+      .hash(randomBytes(16).toString('hex'), BCRYPT_SALT_ROUNDS)
+      .catch((error: unknown) => {
+        this.dummyPasswordHashPromise = undefined;
+        throw error;
+      });
+    return this.dummyPasswordHashPromise;
+  }
+
+  /**
    * Authenticates by email and password and opens a session: a stored session row,
    * its first refresh token (kept only as a SHA-256 digest) and a short-lived JWT
    * access token bound to that session. Unknown email and wrong password are
    * indistinguishable to the caller.
    */
-  async login(dto: LoginRequestDto): Promise<LoginResponseDto> {
+  async login(dto: LoginRequestDto): Promise<TokenPairResponseDto> {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
       select: { id: true, passwordHash: true },
@@ -49,7 +77,7 @@ export class AuthService {
 
     const passwordMatches = await bcrypt.compare(
       dto.password,
-      user?.passwordHash ?? (await this.dummyPasswordHash),
+      user?.passwordHash ?? (await this.getDummyPasswordHash()),
     );
     if (user === null || !passwordMatches) {
       throw new UnauthorizedException();
@@ -66,13 +94,81 @@ export class AuthService {
       select: { id: true },
     });
 
-    const claims: AccessTokenClaims = { sub: user.id, sid: session.id };
-    const accessToken = await this.jwt.signAsync(claims, {
-      expiresIn: this.config.accessTokenTtlSeconds,
-    });
+    return this.tokenPair({ sub: user.id, sid: session.id }, refreshToken);
+  }
 
+  /**
+   * Exchanges a refresh token for a new pair. The presented token is single-use:
+   * it is marked rotated and replaced inside one transaction, and the new access
+   * token keeps the same session id. The session keeps its original `expiresAt`
+   * (an absolute lifetime): rotating never slides it, so a stolen-but-rotating
+   * credential cannot keep a session alive forever.
+   *
+   * Presenting an already-rotated token means two parties hold the same credential,
+   * so the whole session is revoked. Every failure is the same generic 401.
+   */
+  async refresh(dto: RefreshRequestDto): Promise<TokenPairResponseDto> {
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash: hashRefreshToken(dto.refreshToken) },
+      select: {
+        id: true,
+        rotatedAt: true,
+        session: { select: { id: true, userId: true, expiresAt: true, revokedAt: true } },
+      },
+    });
+    if (stored === null) throw new UnauthorizedException();
+
+    const { session } = stored;
+    if (stored.rotatedAt !== null) {
+      await this.revokeSession(session.id);
+      throw new UnauthorizedException();
+    }
+    if (session.revokedAt !== null || session.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException();
+    }
+
+    const nextRefreshToken = generateRefreshToken();
+    // The outcome is returned, not thrown: a throw would roll the transaction back,
+    // and the reuse revocation below must persist even though the request fails.
+    const rotated = await this.prisma.$transaction(async (tx) => {
+      // Conditional update: of two concurrent refreshes with the same token only
+      // one sees `rotatedAt: null` and matches; the other is handled as reuse.
+      const { count } = await tx.refreshToken.updateMany({
+        where: { id: stored.id, rotatedAt: null },
+        data: { rotatedAt: new Date() },
+      });
+      if (count !== 1) return false;
+      await tx.refreshToken.create({
+        data: { sessionId: session.id, tokenHash: hashRefreshToken(nextRefreshToken) },
+      });
+      return true;
+    });
+    if (!rotated) {
+      await this.revokeSession(session.id);
+      throw new UnauthorizedException();
+    }
+
+    return this.tokenPair({ sub: session.userId, sid: session.id }, nextRefreshToken);
+  }
+
+  /** Revokes a session. Idempotent: an already revoked session keeps its first `revokedAt`. */
+  async logout(sessionId: string): Promise<void> {
+    await this.revokeSession(sessionId);
+  }
+
+  private async revokeSession(sessionId: string): Promise<void> {
+    await this.prisma.session.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  private async tokenPair(
+    claims: AccessTokenClaims,
+    refreshToken: string,
+  ): Promise<TokenPairResponseDto> {
     return {
-      accessToken,
+      accessToken: await signAccessToken(this.jwt, claims, this.config.accessTokenTtlSeconds),
       refreshToken,
       tokenType: 'Bearer',
       expiresIn: this.config.accessTokenTtlSeconds,

@@ -70,7 +70,9 @@
           "200": {
             "description": "Session opened.",
             "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponseDto" } }
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPairResponseDto" }
+              }
             }
           },
           "400": {
@@ -87,6 +89,62 @@
           }
         },
         "summary": "Log in with email and password",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Exchanges a refresh token for a new access token and a new refresh token for the same session. The presented refresh token becomes invalid; presenting an already rotated token revokes the whole session. The session keeps its original expiry.",
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RefreshRequestDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token pair issued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPairResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (missing or malformed refreshToken).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Unknown, already rotated, or expired refresh token, or a revoked or expired session. The response is the same generic error in every case.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Rotate the refresh token",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Revokes the session of the Bearer access token. Afterwards that access token and the session's refresh tokens are rejected with 401.",
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": { "description": "Session revoked." },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Log out and revoke the current session",
         "tags": ["auth"]
       }
     }
@@ -290,7 +348,7 @@
         },
         "required": ["email", "password"]
       },
-      "LoginResponseDto": {
+      "TokenPairResponseDto": {
         "type": "object",
         "properties": {
           "accessToken": {
@@ -316,6 +374,18 @@
           }
         },
         "required": ["accessToken", "refreshToken", "tokenType", "expiresIn"]
+      },
+      "RefreshRequestDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "The current opaque refresh token. It is single-use: the response carries its replacement.",
+            "maxLength": 512
+          }
+        },
+        "required": ["refreshToken"]
       }
     }
   }

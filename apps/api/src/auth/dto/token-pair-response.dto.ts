@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class LoginResponseDto {
+/** Access and refresh token pair, returned by both login and refresh. */
+export class TokenPairResponseDto {
   @ApiProperty({
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4ifQ.signature',
     description: 'Short-lived JWT (HS256). Send it as `Authorization: Bearer <accessToken>`.',

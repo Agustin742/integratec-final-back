@@ -106,11 +106,20 @@ describe('SessionVerifier (HU-AUT-002)', () => {
 
   it('rejects a token whose payload was altered after signing', async () => {
     const { accessToken } = await login();
-    const [header, , signature] = accessToken.split('.');
-    const payload = Buffer.from(JSON.stringify({ sub: userId, sid: MISSING_ID })).toString(
+    // The untouched token is accepted: it belongs to a live session.
+    await expect(verifier.verifyToken(accessToken)).resolves.toBeDefined();
+
+    // Same real `sub` and `sid` (live session), same expiry; only an extra claim is
+    // added and the original signature kept. This fails solely because the signature
+    // no longer matches the payload, so it proves the signature check runs.
+    const [header, encodedPayload, signature] = accessToken.split('.');
+    const original = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8'),
+    ) as object;
+    const altered = Buffer.from(JSON.stringify({ ...original, role: 'admin' })).toString(
       'base64url',
     );
-    await expectRejected(`Bearer ${header}.${payload}.${signature}`);
+    await expectRejected(`Bearer ${header}.${altered}.${signature}`);
   });
 
   it('rejects an unsigned (alg none) token', async () => {

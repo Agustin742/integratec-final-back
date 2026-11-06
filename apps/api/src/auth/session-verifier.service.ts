@@ -1,12 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-
-/** Claims carried by access tokens: `sub` is the user id, `sid` the session id. */
-export interface AccessTokenClaims {
-  sub: string;
-  sid: string;
-}
+import type { AccessTokenClaims } from './session-tokens';
 
 export interface VerifiedSession {
   userId: string;

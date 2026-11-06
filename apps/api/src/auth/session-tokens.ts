@@ -1,4 +1,20 @@
 import { createHash, randomBytes } from 'node:crypto';
+import type { JwtService } from '@nestjs/jwt';
+
+/** Claims carried by access tokens: `sub` is the user id, `sid` the session id. */
+export interface AccessTokenClaims {
+  sub: string;
+  sid: string;
+}
+
+/** Signs a short-lived access token bound to a session (login and refresh share this). */
+export function signAccessToken(
+  jwt: JwtService,
+  claims: AccessTokenClaims,
+  ttlSeconds: number,
+): Promise<string> {
+  return jwt.signAsync({ sub: claims.sub, sid: claims.sid }, { expiresIn: ttlSeconds });
+}
 
 /** Opaque refresh token: 32 random bytes, base64url (43 characters). */
 export function generateRefreshToken(): string {
