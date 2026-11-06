@@ -15,6 +15,7 @@ export const authTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =>
   databaseUrl: TEST_DATABASE_URL,
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 604800,
+  refreshReuseGraceSeconds: 30,
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,

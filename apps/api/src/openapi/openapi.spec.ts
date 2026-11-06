@@ -20,6 +20,7 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   databaseUrl: 'postgresql://user:password@localhost:5432/synthetic',
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 604800,
+  refreshReuseGraceSeconds: 30,
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,

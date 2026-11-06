@@ -105,7 +105,11 @@ export class AuthService implements OnModuleInit {
    * credential cannot keep a session alive forever.
    *
    * Presenting an already-rotated token means two parties hold the same credential,
-   * so the whole session is revoked. Every failure is the same generic 401.
+   * so the whole session is revoked, unless it happens within the reuse grace window
+   * of the rotation: parallel tabs and retries after a lost response are then
+   * answered with a fresh pair for the same session and nothing is revoked. The
+   * trade-off is that a stolen token replayed inside that short window goes
+   * undetected. Every failure is the same generic 401.
    */
   async refresh(dto: RefreshRequestDto): Promise<TokenPairResponseDto> {
     const stored = await this.prisma.refreshToken.findUnique({
@@ -119,36 +123,55 @@ export class AuthService implements OnModuleInit {
     if (stored === null) throw new UnauthorizedException();
 
     const { session } = stored;
-    if (stored.rotatedAt !== null) {
-      await this.revokeSession(session.id);
-      throw new UnauthorizedException();
-    }
     if (session.revokedAt !== null || session.expiresAt.getTime() <= Date.now()) {
       throw new UnauthorizedException();
     }
 
     const nextRefreshToken = generateRefreshToken();
-    // The outcome is returned, not thrown: a throw would roll the transaction back,
-    // and the reuse revocation below must persist even though the request fails.
-    const rotated = await this.prisma.$transaction(async (tx) => {
-      // Conditional update: of two concurrent refreshes with the same token only
-      // one sees `rotatedAt: null` and matches; the other is handled as reuse.
-      const { count } = await tx.refreshToken.updateMany({
-        where: { id: stored.id, rotatedAt: null },
-        data: { rotatedAt: new Date() },
+    let rotatedAt = stored.rotatedAt;
+    if (rotatedAt === null) {
+      // The outcome is returned, not thrown: a throw would roll the transaction back,
+      // and the reuse revocation below must persist even though the request fails.
+      const rotated = await this.prisma.$transaction(async (tx) => {
+        // Conditional update: of two concurrent refreshes with the same token only
+        // one sees `rotatedAt: null` and matches; the other is handled as a reuse.
+        const { count } = await tx.refreshToken.updateMany({
+          where: { id: stored.id, rotatedAt: null },
+          data: { rotatedAt: new Date() },
+        });
+        if (count !== 1) return false;
+        await tx.refreshToken.create({
+          data: { sessionId: session.id, tokenHash: hashRefreshToken(nextRefreshToken) },
+        });
+        return true;
       });
-      if (count !== 1) return false;
-      await tx.refreshToken.create({
-        data: { sessionId: session.id, tokenHash: hashRefreshToken(nextRefreshToken) },
+      if (rotated) {
+        return this.tokenPair({ sub: session.userId, sid: session.id }, nextRefreshToken);
+      }
+      // Lost the race: the winner's rotation time is what the grace window counts from.
+      const winner = await this.prisma.refreshToken.findUnique({
+        where: { id: stored.id },
+        select: { rotatedAt: true },
       });
-      return true;
-    });
-    if (!rotated) {
+      rotatedAt = winner?.rotatedAt ?? null;
+    }
+
+    if (rotatedAt === null || !this.isWithinReuseGrace(rotatedAt)) {
       await this.revokeSession(session.id);
       throw new UnauthorizedException();
     }
 
+    // Benign reuse: a new live token for the same session. The earlier successors
+    // stay valid, so every concurrent caller keeps a working credential.
+    await this.prisma.refreshToken.create({
+      data: { sessionId: session.id, tokenHash: hashRefreshToken(nextRefreshToken) },
+    });
     return this.tokenPair({ sub: session.userId, sid: session.id }, nextRefreshToken);
+  }
+
+  private isWithinReuseGrace(rotatedAt: Date): boolean {
+    const graceMs = this.config.refreshReuseGraceSeconds * 1000;
+    return graceMs > 0 && Date.now() - rotatedAt.getTime() <= graceMs;
   }
 
   /** Revokes a session. Idempotent: an already revoked session keeps its first `revokedAt`. */

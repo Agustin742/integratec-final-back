@@ -26,6 +26,7 @@ const config: ApiConfig = {
   databaseUrl: 'postgresql://storage-spec.invalid:5432/none',
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
+  refreshReuseGraceSeconds: 1,
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: 1,

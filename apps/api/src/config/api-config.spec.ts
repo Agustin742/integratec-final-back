@@ -30,6 +30,7 @@ describe('loadApiConfig', () => {
       databaseUrl: 'postgresql://user:pw@localhost:5432/aula?schema=public',
       accessTokenTtlSeconds: 900,
       refreshTokenTtlSeconds: 604800,
+      refreshReuseGraceSeconds: 30,
       invitationTtlSeconds: 604800,
       outboxPollIntervalSeconds: 5,
       outboxMaxAttempts: 5,
@@ -53,6 +54,7 @@ describe('loadApiConfig', () => {
       DATABASE_URL: 'postgres://db.internal/aula',
       JWT_ACCESS_TTL: '30s',
       REFRESH_TOKEN_TTL: '2h',
+      REFRESH_REUSE_GRACE: '2m',
       INVITATION_TTL: '3d',
       OUTBOX_POLL_INTERVAL: '30s',
       OUTBOX_MAX_ATTEMPTS: '8',
@@ -63,6 +65,7 @@ describe('loadApiConfig', () => {
       port: 8080,
       accessTokenTtlSeconds: 30,
       refreshTokenTtlSeconds: 7200,
+      refreshReuseGraceSeconds: 120,
       invitationTtlSeconds: 259200,
       outboxPollIntervalSeconds: 30,
       outboxMaxAttempts: 8,
@@ -140,6 +143,26 @@ describe('loadApiConfig', () => {
       }
     },
   );
+
+  describe('REFRESH_REUSE_GRACE', () => {
+    it('accepts 0s to disable the grace window', () => {
+      expect(loadApiConfig({ ...validEnv(), REFRESH_REUSE_GRACE: '0s' })).toMatchObject({
+        refreshReuseGraceSeconds: 0,
+      });
+    });
+
+    it.each(['30', '30x', 's', '-5s', '1.5m'])('rejects REFRESH_REUSE_GRACE=%s', (value) => {
+      expect(messageOf({ ...validEnv(), REFRESH_REUSE_GRACE: value })).toContain(
+        'REFRESH_REUSE_GRACE',
+      );
+    });
+
+    it('rejects a window longer than 5 minutes', () => {
+      expect(messageOf({ ...validEnv(), REFRESH_REUSE_GRACE: '6m' })).toContain(
+        'REFRESH_REUSE_GRACE',
+      );
+    });
+  });
 
   it.each(['mysql://localhost/db', 'not a url', 'http://localhost'])(
     'rejects DATABASE_URL=%s',

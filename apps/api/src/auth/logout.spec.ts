@@ -11,6 +11,7 @@ import { configureHttp } from '../http/configure-http';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthModule } from './auth.module';
+import { AuthService } from './auth.service';
 import { SessionVerifier } from './session-verifier.service';
 import { authTestConfig } from './testing/auth-test-config';
 
@@ -97,12 +98,16 @@ describe('Auth / Logout (HU-AUT-002)', () => {
     });
   });
 
-  it('does not overwrite the revocation time of an already revoked session', async () => {
+  it('keeps the first revocation time when the session is revoked again', async () => {
     const { accessToken, sid } = await login();
     await logout(`Bearer ${accessToken}`).expect(204);
     const earlier = new Date(Date.now() - 60_000);
     await prisma.session.update({ where: { id: sid }, data: { revokedAt: earlier } });
-    await logout(`Bearer ${accessToken}`).expect(401);
+
+    // The verifier rejects a dead token before any revocation, so the second
+    // revocation is driven through the service, the path a repeated logout reaches.
+    await expect(app.get(AuthService).logout(sid)).resolves.toBeUndefined();
+
     const session = await prisma.session.findUniqueOrThrow({ where: { id: sid } });
     expect(session.revokedAt?.getTime()).toBe(earlier.getTime());
   });

@@ -172,6 +172,7 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `DATABASE_URL`            | Required; `postgres://` or `postgresql://` URL    | PostgreSQL connection string (includes credentials)                      | Private        | Yes     |
 | `JWT_ACCESS_TTL`          | Default `15m`; `<integer>` + `s`, `m`, `h` or `d` | Access token lifetime                                                    | Public         | Yes     |
 | `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
+| `REFRESH_REUSE_GRACE`     | Default `30s`, max `5m`; `0s` disables            | Window in which a rotated refresh token is retried without revoking      | Public         | Yes     |
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |

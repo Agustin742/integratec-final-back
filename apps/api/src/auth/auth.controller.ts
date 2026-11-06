@@ -80,7 +80,9 @@ export class AuthController {
     description:
       'Exchanges a refresh token for a new access token and a new refresh token for the same ' +
       'session. The presented refresh token becomes invalid; presenting an already rotated ' +
-      'token revokes the whole session. The session keeps its original expiry.',
+      'token revokes the whole session, except within a short reuse window after its rotation ' +
+      '(REFRESH_REUSE_GRACE, default 30s) where a new pair is issued for the same session. ' +
+      'The session keeps its original expiry.',
   })
   @ApiOkResponse({ type: TokenPairResponseDto, description: 'New token pair issued.' })
   @ApiBadRequestResponse({

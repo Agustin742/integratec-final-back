@@ -10,6 +10,7 @@ import { configureHttp } from '../http/configure-http';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthModule } from './auth.module';
+import { REFRESH_TOKEN_MAX_LENGTH } from './dto/refresh-request.dto';
 import { hashRefreshToken } from './session-tokens';
 import { SessionVerifier } from './session-verifier.service';
 import { authTestConfig } from './testing/auth-test-config';
@@ -48,6 +49,14 @@ describe('Auth / Refresh rotation (HU-AUT-002)', () => {
       () => true,
       () => false,
     );
+
+  /** Moves a token's `rotatedAt` into the past, standing in for elapsed time. */
+  const ageRotation = async (refreshToken: string, ageMs: number) => {
+    await prisma.refreshToken.update({
+      where: { tokenHash: hashRefreshToken(refreshToken) },
+      data: { rotatedAt: new Date(Date.now() - ageMs) },
+    });
+  };
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -88,6 +97,20 @@ describe('Auth / Refresh rotation (HU-AUT-002)', () => {
         );
       },
     );
+  });
+
+  describe('refresh token length limit', () => {
+    it('rejects a token over the limit with 400 VALIDATION_FAILED', async () => {
+      const res = await refresh('a'.repeat(REFRESH_TOKEN_MAX_LENGTH + 1)).expect(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'refreshToken' })]),
+      );
+    });
+
+    it('passes validation at exactly the limit (unknown token: 401)', async () => {
+      await refresh('a'.repeat(REFRESH_TOKEN_MAX_LENGTH)).expect(401);
+    });
   });
 
   describe('successful rotation', () => {
@@ -142,10 +165,11 @@ describe('Auth / Refresh rotation (HU-AUT-002)', () => {
   });
 
   describe('reuse detection', () => {
-    it('revokes the whole session when a rotated token is presented again', async () => {
+    it('revokes the whole session when a rotated token is presented after the grace window', async () => {
       const first = await login();
       const second = (await refresh(first.refreshToken).expect(200)).body as TokenPair;
       expect(await isAccepted(second.accessToken)).toBe(true);
+      await ageRotation(first.refreshToken, config.refreshReuseGraceSeconds * 1000 + 1000);
 
       const reuse = await refresh(first.refreshToken).expect(401);
       expect(reuse.body.error.code).toBe('UNAUTHENTICATED');
@@ -159,23 +183,108 @@ describe('Auth / Refresh rotation (HU-AUT-002)', () => {
       expect(await isAccepted(second.accessToken)).toBe(false);
       expect(await isAccepted(first.accessToken)).toBe(false);
     });
+  });
 
-    it('lets at most one of several concurrent refreshes with the same token succeed', async () => {
+  describe('reuse grace window', () => {
+    it('lets every concurrent refresh with the same token succeed and keeps the session alive', async () => {
       const first = await login();
       const results = await Promise.all([
         refresh(first.refreshToken),
         refresh(first.refreshToken),
         refresh(first.refreshToken),
       ]);
-      const statuses = results.map((res) => res.status);
-      expect(statuses.filter((status) => status === 200).length).toBeLessThanOrEqual(1);
-      expect(statuses.every((status) => status === 200 || status === 401)).toBe(true);
+      expect(results.map((res) => res.status)).toEqual([200, 200, 200]);
 
-      // Never two live successor tokens for the same session.
-      const live = await prisma.refreshToken.count({
-        where: { sessionId: first.sid, rotatedAt: null },
+      const session = await prisma.session.findUniqueOrThrow({ where: { id: first.sid } });
+      expect(session.revokedAt).toBeNull();
+
+      const pairs = results.map((res) => res.body as TokenPair);
+      expect(new Set(pairs.map((pair) => pair.refreshToken)).size).toBe(3);
+      for (const pair of pairs) {
+        expect(await isAccepted(pair.accessToken)).toBe(true);
+        await refresh(pair.refreshToken).expect(200);
+      }
+    });
+
+    it('issues a new pair for the same session when a rotated token is retried within the window', async () => {
+      const first = await login();
+      const second = (await refresh(first.refreshToken).expect(200)).body as TokenPair;
+      const before = await prisma.session.findUniqueOrThrow({ where: { id: first.sid } });
+
+      const third = (await refresh(first.refreshToken).expect(200)).body as TokenPair;
+      expect(third.refreshToken).not.toBe(second.refreshToken);
+      expect(third.refreshToken).not.toBe(first.refreshToken);
+      await expect(verifier.verifyToken(third.accessToken)).resolves.toEqual({
+        userId,
+        sessionId: first.sid,
       });
-      expect(live).toBeLessThanOrEqual(1);
+
+      // Nothing was revoked: the earlier successor keeps working and so does the new one.
+      const after = await prisma.session.findUniqueOrThrow({ where: { id: first.sid } });
+      expect(after.revokedAt).toBeNull();
+      expect(after.expiresAt.getTime()).toBe(before.expiresAt.getTime());
+      expect(await isAccepted(second.accessToken)).toBe(true);
+      await refresh(second.refreshToken).expect(200);
+      await refresh(third.refreshToken).expect(200);
+
+      // Only digests are stored for every token issued.
+      const rows = await prisma.refreshToken.findMany({ where: { sessionId: first.sid } });
+      const hashes = rows.map((row) => row.tokenHash);
+      expect(hashes).toContain(hashRefreshToken(third.refreshToken));
+      expect(hashes).not.toContain(third.refreshToken);
+    });
+
+    it('answers 401 for a rotated token retried within the window on a revoked session', async () => {
+      const first = await login();
+      await refresh(first.refreshToken).expect(200);
+      await prisma.session.update({ where: { id: first.sid }, data: { revokedAt: new Date() } });
+      await refresh(first.refreshToken).expect(401);
+    });
+
+    it('answers 401 for a rotated token retried within the window on an expired session', async () => {
+      const first = await login();
+      await refresh(first.refreshToken).expect(200);
+      await prisma.session.update({
+        where: { id: first.sid },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      await refresh(first.refreshToken).expect(401);
+    });
+  });
+
+  describe('reuse grace window disabled', () => {
+    let strictApp: INestApplication;
+
+    beforeAll(async () => {
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          ApiConfigModule.forRoot(authTestConfig({ refreshReuseGraceSeconds: 0 })),
+          PrismaModule,
+          AuthModule,
+        ],
+      }).compile();
+      strictApp = moduleRef.createNestApplication();
+      configureHttp(strictApp, { logSink: () => undefined });
+      await strictApp.init();
+    });
+
+    afterAll(async () => {
+      await strictApp?.close();
+    });
+
+    it('treats any reuse of a rotated token as a breach and revokes the session', async () => {
+      const server = strictApp.getHttpServer();
+      const first = (await request(server).post('/auth/login').send({ email, password }))
+        .body as TokenPair;
+      const send = (refreshToken: string) =>
+        request(server).post('/auth/refresh').send({ refreshToken });
+      await send(first.refreshToken).expect(200);
+
+      await send(first.refreshToken).expect(401);
+
+      const sid = jwt.decode<{ sid: string }>(first.accessToken).sid;
+      const session = await prisma.session.findUniqueOrThrow({ where: { id: sid } });
+      expect(session.revokedAt).not.toBeNull();
     });
   });
 

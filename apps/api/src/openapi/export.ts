@@ -23,6 +23,7 @@ const EXPORT_CONFIG: ApiConfig = {
   databaseUrl: 'postgresql://openapi-export.invalid:5432/none',
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
+  refreshReuseGraceSeconds: 30,
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: 1,

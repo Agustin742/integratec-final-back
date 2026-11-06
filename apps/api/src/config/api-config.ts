@@ -15,6 +15,11 @@ export interface ApiConfig {
   databaseUrl: string;
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
+  /**
+   * Window after a refresh token is rotated in which presenting it again is treated as a
+   * benign retry (parallel tabs, lost response) instead of reuse. 0 disables it.
+   */
+  refreshReuseGraceSeconds: number;
   invitationTtlSeconds: number;
   outboxPollIntervalSeconds: number;
   outboxMaxAttempts: number;
@@ -32,6 +37,9 @@ export interface ApiConfig {
   /** Default lifetime of signed download URLs. */
   storageSignedUrlTtlSeconds: number;
 }
+
+/** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
+export const MAX_REFRESH_REUSE_GRACE_SECONDS = 300;
 
 /** Upper bound for any signed download URL lifetime, configured or requested. */
 export const MAX_SIGNED_URL_TTL_SECONDS = 3600;
@@ -67,11 +75,17 @@ const BUCKET_MESSAGE =
 const REGION_MESSAGE = 'must be an AWS region name such as sa-east-1';
 const ENDPOINT_MESSAGE =
   'must be an http(s) origin without path, e.g. http://localhost:9000 (leave unset for AWS S3)';
+const REUSE_GRACE_MESSAGE = 'must be a duration between 0s and 5m, such as 30s (0s disables it)';
 const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
 
 const required = { error: 'is required' };
 
-const duration = (fallback: string, maxSeconds?: number, maxMessage = DURATION_MESSAGE) =>
+const duration = (
+  fallback: string,
+  maxSeconds?: number,
+  maxMessage = DURATION_MESSAGE,
+  minSeconds = 1,
+) =>
   z
     .string()
     .default(fallback)
@@ -83,7 +97,7 @@ const duration = (fallback: string, maxSeconds?: number, maxMessage = DURATION_M
         .pipe(
           z
             .number()
-            .min(1, DURATION_MESSAGE)
+            .min(minSeconds, DURATION_MESSAGE)
             .max(maxSeconds ?? Infinity, maxMessage),
         ),
     );
@@ -131,6 +145,7 @@ const envSchema = z
       .refine(isPostgresUrl, 'must be a postgres:// or postgresql:// URL with a host'),
     JWT_ACCESS_TTL: duration('15m'),
     REFRESH_TOKEN_TTL: duration('7d'),
+    REFRESH_REUSE_GRACE: duration('30s', MAX_REFRESH_REUSE_GRACE_SECONDS, REUSE_GRACE_MESSAGE, 0),
     INVITATION_TTL: duration('7d'),
     OUTBOX_POLL_INTERVAL: duration('5s'),
     OUTBOX_MAX_ATTEMPTS: z
@@ -215,6 +230,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     databaseUrl: values.DATABASE_URL,
     accessTokenTtlSeconds: values.JWT_ACCESS_TTL,
     refreshTokenTtlSeconds: values.REFRESH_TOKEN_TTL,
+    refreshReuseGraceSeconds: values.REFRESH_REUSE_GRACE,
     invitationTtlSeconds: values.INVITATION_TTL,
     outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,

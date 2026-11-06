@@ -29,6 +29,7 @@ const config: ApiConfig = {
   databaseUrl: testDatabaseUrl(),
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
+  refreshReuseGraceSeconds: 1,
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: MAX_ATTEMPTS,
