@@ -24,6 +24,8 @@ const EXPORT_CONFIG: ApiConfig = {
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
   refreshReuseGraceSeconds: 30,
+  passwordResetTtlSeconds: 3600,
+  passwordResetUrlBase: 'http://localhost:5173/reset-password',
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: 1,

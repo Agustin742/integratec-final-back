@@ -16,16 +16,22 @@ export function signAccessToken(
   return jwt.signAsync({ sub: claims.sub, sid: claims.sid }, { expiresIn: ttlSeconds });
 }
 
-/** Opaque refresh token: 32 random bytes, base64url (43 characters). */
-export function generateRefreshToken(): string {
+/** Opaque bearer token: 32 random bytes, base64url (43 characters). */
+export function generateOpaqueToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
 /**
- * Refresh tokens are high-entropy random values, so a plain SHA-256 digest is
+ * Opaque tokens are high-entropy random values, so a plain SHA-256 digest is
  * enough to make the stored value useless if the database is read. The digest
- * is hex (64 characters) and is what `refresh_tokens.token_hash` holds.
+ * is hex (64 characters), the value `token_hash` columns hold.
  */
-export function hashRefreshToken(token: string): string {
+export function hashOpaqueToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
+
+/** Refresh tokens are opaque tokens (see {@link generateOpaqueToken}). */
+export const generateRefreshToken = generateOpaqueToken;
+
+/** Digest stored in `refresh_tokens.token_hash` (see {@link hashOpaqueToken}). */
+export const hashRefreshToken = hashOpaqueToken;

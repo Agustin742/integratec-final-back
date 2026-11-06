@@ -21,6 +21,8 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 604800,
   refreshReuseGraceSeconds: 30,
+  passwordResetTtlSeconds: 3600,
+  passwordResetUrlBase: 'http://localhost:5173/reset-password',
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,

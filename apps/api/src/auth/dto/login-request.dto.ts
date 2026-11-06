@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
-import { MaxUtf8Bytes } from './register-request.dto';
+import { MaxUtf8Bytes } from './password-policy';
 
 export class LoginRequestDto {
   @ApiProperty({

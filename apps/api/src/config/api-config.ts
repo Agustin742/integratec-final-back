@@ -20,6 +20,14 @@ export interface ApiConfig {
    * benign retry (parallel tabs, lost response) instead of reuse. 0 disables it.
    */
   refreshReuseGraceSeconds: number;
+  /** How long an emailed password reset link stays valid. */
+  passwordResetTtlSeconds: number;
+  /**
+   * Frontend page that completes a reset. The emailed link is `<base>?token=<token>`, so
+   * the base has no query string or fragment. Required in production; elsewhere it
+   * defaults to the local frontend.
+   */
+  passwordResetUrlBase: string;
   invitationTtlSeconds: number;
   outboxPollIntervalSeconds: number;
   outboxMaxAttempts: number;
@@ -43,6 +51,12 @@ export const MAX_REFRESH_REUSE_GRACE_SECONDS = 300;
 
 /** Upper bound for any signed download URL lifetime, configured or requested. */
 export const MAX_SIGNED_URL_TTL_SECONDS = 3600;
+
+/** Upper bound for the password reset link lifetime: a reset link is a bearer credential. */
+export const MAX_PASSWORD_RESET_TTL_SECONDS = 86400;
+
+/** Local frontend reset page, used when `PASSWORD_RESET_URL_BASE` is unset outside production. */
+export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/reset-password';
 
 export interface ConfigIssue {
   variable: string;
@@ -76,6 +90,9 @@ const REGION_MESSAGE = 'must be an AWS region name such as sa-east-1';
 const ENDPOINT_MESSAGE =
   'must be an http(s) origin without path, e.g. http://localhost:9000 (leave unset for AWS S3)';
 const REUSE_GRACE_MESSAGE = 'must be a duration between 0s and 5m, such as 30s (0s disables it)';
+const PASSWORD_RESET_TTL_MESSAGE = 'must be a duration between 1s and 24h, such as 1h';
+const PASSWORD_RESET_URL_MESSAGE =
+  'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/reset-password';
 const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
 
 const required = { error: 'is required' };
@@ -120,6 +137,24 @@ const isHttpOrigin = (value: string): boolean => {
   }
 };
 
+const isResetUrlBase = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      url.hostname !== '' &&
+      url.username === '' &&
+      url.password === '' &&
+      url.search === '' &&
+      url.hash === '' &&
+      !value.includes('?') &&
+      !value.includes('#')
+    );
+  } catch {
+    return false;
+  }
+};
+
 const envSchema = z
   .object({
     NODE_ENV: z
@@ -146,6 +181,12 @@ const envSchema = z
     JWT_ACCESS_TTL: duration('15m'),
     REFRESH_TOKEN_TTL: duration('7d'),
     REFRESH_REUSE_GRACE: duration('30s', MAX_REFRESH_REUSE_GRACE_SECONDS, REUSE_GRACE_MESSAGE, 0),
+    PASSWORD_RESET_TTL: duration('1h', MAX_PASSWORD_RESET_TTL_SECONDS, PASSWORD_RESET_TTL_MESSAGE),
+    // A rejected value is never echoed (it could carry credentials), only the variable name.
+    PASSWORD_RESET_URL_BASE: z
+      .string()
+      .refine(isResetUrlBase, PASSWORD_RESET_URL_MESSAGE)
+      .optional(),
     INVITATION_TTL: duration('7d'),
     OUTBOX_POLL_INTERVAL: duration('5s'),
     OUTBOX_MAX_ATTEMPTS: z
@@ -184,6 +225,14 @@ const envSchema = z
     STORAGE_SIGNED_URL_TTL: duration('5m', MAX_SIGNED_URL_TTL_SECONDS, SIGNED_URL_TTL_MESSAGE),
   })
   .superRefine((env, ctx) => {
+    // A production link must point at the real frontend, never silently at localhost.
+    if (env.NODE_ENV === 'production' && env.PASSWORD_RESET_URL_BASE === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PASSWORD_RESET_URL_BASE'],
+        message: 'is required in production',
+      });
+    }
     // Both keys or neither: with neither, the SDK resolves the instance role.
     if ((env.S3_ACCESS_KEY_ID === undefined) !== (env.S3_SECRET_ACCESS_KEY === undefined)) {
       const missing =
@@ -231,6 +280,8 @@ export function loadApiConfig(env: Env): ApiConfig {
     accessTokenTtlSeconds: values.JWT_ACCESS_TTL,
     refreshTokenTtlSeconds: values.REFRESH_TOKEN_TTL,
     refreshReuseGraceSeconds: values.REFRESH_REUSE_GRACE,
+    passwordResetTtlSeconds: values.PASSWORD_RESET_TTL,
+    passwordResetUrlBase: values.PASSWORD_RESET_URL_BASE ?? DEFAULT_PASSWORD_RESET_URL_BASE,
     invitationTtlSeconds: values.INVITATION_TTL,
     outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,

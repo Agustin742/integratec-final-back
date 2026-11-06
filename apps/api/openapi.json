@@ -147,6 +147,65 @@
         "summary": "Log out and revoke the current session",
         "tags": ["auth"]
       }
+    },
+    "/auth/password-reset/request": {
+      "post": {
+        "description": "Always answers 202 with the same body, whether or not the email belongs to an account, so it cannot be used to discover registered emails. For a registered email a link (`<PASSWORD_RESET_URL_BASE>?token=<token>`) is emailed asynchronously; it is single-use and expires after PASSWORD_RESET_TTL (default 1h). Public endpoint.",
+        "operationId": "AuthController_requestPasswordReset",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasswordResetRequestDto" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Request accepted. Identical for registered and unregistered emails.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PasswordResetRequestedResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (missing or malformed email).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Request a password reset email",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "description": "Spends the token from the emailed link: sets the new password and revokes every session of the account, so previous access and refresh tokens stop working. The token works once. Public endpoint.",
+        "operationId": "AuthController_confirmPasswordReset",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasswordResetConfirmRequestDto" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Password changed and previous sessions revoked." },
+          "400": {
+            "description": "Validation failed (missing token, password outside the policy), or the token is unknown, already used or expired (BAD_REQUEST, the same generic error in every case).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Set a new password with a reset token",
+        "tags": ["auth"]
+      }
     }
   },
   "info": {
@@ -386,6 +445,48 @@
           }
         },
         "required": ["refreshToken"]
+      },
+      "PasswordResetRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "Email of the account to reset, normalized to lowercase and trimmed",
+            "maxLength": 255
+          }
+        },
+        "required": ["email"]
+      },
+      "PasswordResetRequestedResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "If the email belongs to an account, a reset link has been sent.",
+            "description": "Constant message; it never reveals whether the email is registered."
+          }
+        },
+        "required": ["message"]
+      },
+      "PasswordResetConfirmRequestDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "The opaque token from the emailed link (`?token=`). It works once.",
+            "maxLength": 512
+          },
+          "newPassword": {
+            "type": "string",
+            "example": "passwordSegura123",
+            "description": "The new password, under the same policy as registration",
+            "minLength": 8,
+            "maxLength": 72
+          }
+        },
+        "required": ["token", "newPassword"]
       }
     }
   }

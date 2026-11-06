@@ -2,12 +2,18 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { type ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
+import { EmailModule } from '../platform/email/email.module';
+import { OutboxModule } from '../platform/outbox/outbox.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { PasswordResetRequestedHandler } from './password-reset-requested.handler';
+import { PasswordResetService } from './password-reset.service';
 import { SessionVerifier } from './session-verifier.service';
 
 @Module({
   imports: [
+    EmailModule,
+    OutboxModule,
     JwtModule.registerAsync({
       inject: [API_CONFIG],
       useFactory: (config: ApiConfig) => ({
@@ -19,7 +25,7 @@ import { SessionVerifier } from './session-verifier.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, SessionVerifier],
+  providers: [AuthService, SessionVerifier, PasswordResetService, PasswordResetRequestedHandler],
   exports: [AuthService, SessionVerifier],
 })
 export class AuthModule {}

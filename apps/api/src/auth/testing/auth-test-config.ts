@@ -16,6 +16,8 @@ export const authTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =>
   accessTokenTtlSeconds: 900,
   refreshTokenTtlSeconds: 604800,
   refreshReuseGraceSeconds: 30,
+  passwordResetTtlSeconds: 3600,
+  passwordResetUrlBase: 'https://app.example.test/reset-password',
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,

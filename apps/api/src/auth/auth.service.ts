@@ -24,9 +24,8 @@ import {
   hashRefreshToken,
   signAccessToken,
 } from './session-tokens';
+import { BCRYPT_SALT_ROUNDS, hashPassword } from './password-hash';
 import { slugify } from './slugify';
-
-const BCRYPT_SALT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -216,7 +215,7 @@ export class AuthService implements OnModuleInit {
     }
 
     // 2. Hash password securely with per-password salt
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_SALT_ROUNDS);
+    const passwordHash = await hashPassword(dto.password);
 
     // 3. Atomically create User, AvatarConfiguration and organization structure
     try {

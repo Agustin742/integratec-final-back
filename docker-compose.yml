@@ -83,6 +83,8 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-7d}
+      PASSWORD_RESET_TTL: ${PASSWORD_RESET_TTL:-1h}
+      PASSWORD_RESET_URL_BASE: ${PASSWORD_RESET_URL_BASE:-http://localhost:5173/reset-password}
       INVITATION_TTL: ${INVITATION_TTL:-7d}
       S3_BUCKET: ${S3_BUCKET:-aula-virtual-dev}
       S3_REGION: ${S3_REGION:-sa-east-1}

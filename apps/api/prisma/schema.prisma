@@ -72,6 +72,7 @@ model User {
 
   avatarConfig           AvatarConfiguration?
   sessions               Session[]
+  passwordResetTokens    PasswordResetToken[]
   schoolMemberships      SchoolMember[]
   independentClassrooms  Classroom[]           @relation("IndependentTeacherClassrooms")
   classroomMemberships   ClassroomMembership[]
@@ -111,6 +112,26 @@ model RefreshToken {
 
   @@index([sessionId])
   @@map("refresh_tokens")
+}
+
+/// Single-use password reset tokens. Only the SHA-256 hex digest of the opaque token
+/// is stored; the raw value exists only in the emailed link. `sourceEventId` ties a
+/// row to the outbox event that requested it, so redelivering the event is idempotent,
+/// and `sentAt` records that the email went out.
+model PasswordResetToken {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt        DateTime? @map("used_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  sourceEventId String?   @unique @map("source_event_id") @db.Uuid
+  sentAt        DateTime? @map("sent_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model AvatarConfiguration {

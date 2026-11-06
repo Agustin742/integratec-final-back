@@ -1,5 +1,6 @@
 import { Body, Controller, Headers, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
+  ApiAcceptedResponse,
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
@@ -12,11 +13,15 @@ import {
 } from '@nestjs/swagger';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { AuthService } from './auth.service';
+import { PasswordResetConfirmRequestDto } from './dto/password-reset-confirm-request.dto';
+import { PasswordResetRequestDto } from './dto/password-reset-request.dto';
+import { PasswordResetRequestedResponseDto } from './dto/password-reset-requested-response.dto';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { RefreshRequestDto } from './dto/refresh-request.dto';
 import { RegisterRequestDto } from './dto/register-request.dto';
 import { RegisterResponseDto } from './dto/register-response.dto';
 import { TokenPairResponseDto } from './dto/token-pair-response.dto';
+import { PasswordResetService } from './password-reset.service';
 import { SessionVerifier } from './session-verifier.service';
 
 @ApiTags('auth')
@@ -25,6 +30,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly sessionVerifier: SessionVerifier,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   @Post('register')
@@ -116,5 +122,49 @@ export class AuthController {
   async logout(@Headers('authorization') authorization: string | undefined): Promise<void> {
     const { sessionId } = await this.sessionVerifier.verifyAuthorizationHeader(authorization);
     await this.authService.logout(sessionId);
+  }
+
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: 'Request a password reset email',
+    description:
+      'Always answers 202 with the same body, whether or not the email belongs to an account, ' +
+      'so it cannot be used to discover registered emails. For a registered email a link ' +
+      '(`<PASSWORD_RESET_URL_BASE>?token=<token>`) is emailed asynchronously; it is single-use ' +
+      'and expires after PASSWORD_RESET_TTL (default 1h). Public endpoint.',
+  })
+  @ApiAcceptedResponse({
+    type: PasswordResetRequestedResponseDto,
+    description: 'Request accepted. Identical for registered and unregistered emails.',
+  })
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Validation failed (missing or malformed email).',
+  })
+  async requestPasswordReset(
+    @Body() dto: PasswordResetRequestDto,
+  ): Promise<PasswordResetRequestedResponseDto> {
+    return this.passwordReset.request(dto);
+  }
+
+  @Post('password-reset/confirm')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Set a new password with a reset token',
+    description:
+      'Spends the token from the emailed link: sets the new password and revokes every session ' +
+      'of the account, so previous access and refresh tokens stop working. The token works ' +
+      'once. Public endpoint.',
+  })
+  @ApiNoContentResponse({ description: 'Password changed and previous sessions revoked.' })
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Validation failed (missing token, password outside the policy), or the token is unknown, ' +
+      'already used or expired (BAD_REQUEST, the same generic error in every case).',
+  })
+  async confirmPasswordReset(@Body() dto: PasswordResetConfirmRequestDto): Promise<void> {
+    await this.passwordReset.confirm(dto);
   }
 }
