@@ -19,6 +19,8 @@ export interface ApiConfig {
   outboxPollIntervalSeconds: number;
   outboxMaxAttempts: number;
   internalServiceSecret: string;
+  /** HS256 signing key of access tokens. Never log or return it. */
+  jwtSecret: string;
   allowedOrigins: string[];
   s3Bucket: string;
   s3Region: string;
@@ -147,6 +149,7 @@ const envSchema = z
           ),
       ),
     INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
+    JWT_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
     ALLOWED_ORIGINS: z
       .string(required)
       .transform((value) => value.split(',').map((origin) => origin.trim()))
@@ -216,6 +219,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
+    jwtSecret: values.JWT_SECRET,
     allowedOrigins: values.ALLOWED_ORIGINS,
     s3Bucket: values.S3_BUCKET,
     s3Region: values.S3_REGION,

@@ -33,6 +33,7 @@ const config: ApiConfig = {
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: MAX_ATTEMPTS,
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
+  jwtSecret: 'outbox-jwt-placeholder-not-a-secret-000000',
   allowedOrigins: ['http://localhost'],
   s3Bucket: 'outbox-spec-placeholder',
   s3Region: 'sa-east-1',

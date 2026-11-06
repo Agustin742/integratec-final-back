@@ -26,6 +26,7 @@ Una `School` es la unidad de aislamiento del camino institucional y tiene un ún
 erDiagram
   User ||--o| AvatarConfiguration : configures
   User ||--o{ Session : opens
+  Session ||--o{ RefreshToken : issues
   User ||--o{ SchoolMember : holds
   School ||--|{ SchoolMember : has
   School |o--o{ Classroom : groups
@@ -62,10 +63,17 @@ erDiagram
   Session {
     uuid id PK
     uuid userId FK
-    string refreshTokenHash "D1, aprobada por Agustin el 2026-11-02"
     datetime expiresAt
     datetime revokedAt "opcional"
     datetime createdAt
+  }
+
+  RefreshToken {
+    uuid id PK
+    uuid sessionId FK
+    string tokenHash "SHA-256 hex, unico; D1, aprobada por Agustin el 2026-11-02"
+    datetime createdAt
+    datetime rotatedAt "opcional, marca un token ya rotado"
   }
 
   AvatarConfiguration {
@@ -194,7 +202,7 @@ Lecturas del modelo y alcance:
 - **Autoridad derivada, no duplicada.** Dueño y Admin obtienen autoridad docente de `SchoolMember` y del `schoolId` del aula; el modelo no crea una `ClassroomMembership` por aula para ellos (RN-03). Un Profesor solo actúa sobre las aulas en las que consta como docente.
 - **El estado del trabajo del alumno se deriva.** `Pendiente`, `Entregada`, `Corregida` y `Vencida` se calculan desde `Submission`, `Grade` y la hora del servidor; no hay un campo de estado que pueda contradecirlos (RN-05).
 - **Opción múltiple se corrige en el servidor.** `Option.isCorrect` no se selecciona hacia el cliente antes del cierre de la evaluación (RN-06).
-- **`Session` es soporte técnico.** Se mantiene según la decisión D1 ([Technical justification, D1](../../technical-justification.md#d1-session-mechanism), aprobada por Agustín el 2026-11-02): el refresh token se guarda hasheado y rotado; el JWT de acceso lleva el identificador de sesión y el servidor lo contrasta con esta fila en cada request. El logout marca `revokedAt` y no borra la fila (RF-AUT-002, RN-04).
+- **`Session` es soporte técnico.** Se mantiene según la decisión D1 ([Technical justification, D1](../../technical-justification.md#d1-session-mechanism), aprobada por Agustín el 2026-11-02): el refresh token se guarda hasheado en `RefreshToken` y se rota (los tokens rotados se conservan con `rotatedAt` para detectar su reutilización); el JWT de acceso lleva el identificador de sesión y el servidor lo contrasta con esta fila en cada request. El logout marca `revokedAt` y no borra la fila (RF-AUT-002, RN-04).
 - **`Desk` y los campos exactos de `AvatarConfiguration` son propuestos.** `Desk` figura en la ERS (RF-ESP-002, RN-10) pero no en la lista de [Data](../../../rules/data.md#entities); su forma queda abierta.
 
 **Enums propuestos.** Por una limitación de la sintaxis `erDiagram`, cada enum se escribe como un único token de tipo `enum_Nombre`. Los conjuntos de valores son propuestos y se confirman en el diseño final.

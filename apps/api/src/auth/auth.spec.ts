@@ -8,8 +8,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { configureHttp } from '../http/configure-http';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuthController } from './auth.controller';
+import { ApiConfigModule } from '../config/config.module';
+import { AuthModule } from './auth.module';
 import { AuthService } from './auth.service';
+import { authTestConfig } from './testing/auth-test-config';
 
 describe('Auth / Registration (HU-AUT-001)', () => {
   let app: INestApplication;
@@ -17,9 +19,7 @@ describe('Auth / Registration (HU-AUT-001)', () => {
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [PrismaModule],
-      controllers: [AuthController],
-      providers: [AuthService],
+      imports: [ApiConfigModule.forRoot(authTestConfig()), PrismaModule, AuthModule],
     }).compile();
 
     app = moduleRef.createNestApplication();

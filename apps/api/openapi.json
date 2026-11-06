@@ -54,6 +54,41 @@
         "summary": "Register account and select organizational path",
         "tags": ["auth"]
       }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Opens a session and returns a short-lived access token (JWT) plus an opaque refresh token. Send the access token in the Authorization header as a Bearer credential.",
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequestDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session opened.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/LoginResponseDto" } }
+            }
+          },
+          "400": {
+            "description": "Validation failed (malformed email or missing password).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials. The response is identical for an unknown email and a wrong password.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Log in with email and password",
+        "tags": ["auth"]
+      }
     }
   },
   "info": {
@@ -65,6 +100,7 @@
   "tags": [],
   "servers": [],
   "components": {
+    "securitySchemes": { "bearer": { "scheme": "bearer", "bearerFormat": "JWT", "type": "http" } },
     "schemas": {
       "HealthStatus": {
         "type": "object",
@@ -235,6 +271,51 @@
         "type": "object",
         "properties": { "error": { "$ref": "#/components/schemas/ErrorBody" } },
         "required": ["error"]
+      },
+      "LoginRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "Account email address, normalized to lowercase and trimmed",
+            "maxLength": 255
+          },
+          "password": {
+            "type": "string",
+            "example": "passwordSegura123",
+            "description": "Account password (at most 72 UTF-8 bytes, the bcrypt input limit)",
+            "maxLength": 72
+          }
+        },
+        "required": ["email", "password"]
+      },
+      "LoginResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4ifQ.signature",
+            "description": "Short-lived JWT (HS256). Send it as `Authorization: Bearer <accessToken>`."
+          },
+          "refreshToken": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "Opaque refresh token. Stored server-side only as a SHA-256 digest; keep it secret."
+          },
+          "tokenType": {
+            "type": "string",
+            "example": "Bearer",
+            "enum": ["Bearer"],
+            "description": "Authorization scheme."
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 900,
+            "description": "Access token lifetime in seconds."
+          }
+        },
+        "required": ["accessToken", "refreshToken", "tokenType", "expiresIn"]
       }
     }
   }

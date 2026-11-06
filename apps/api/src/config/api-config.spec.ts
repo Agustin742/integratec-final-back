@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { ConfigValidationError, loadApiConfig } from './api-config';
 
 const SECRET = 's3cr3t-value-that-is-at-least-32-chars-long!';
+const JWT_SECRET_VALUE = 'jwt-signing-key-synthetic-for-tests-0000';
 
 const validEnv = (): Record<string, string | undefined> => ({
   DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula?schema=public',
   INTERNAL_SERVICE_SECRET: SECRET,
+  JWT_SECRET: JWT_SECRET_VALUE,
   ALLOWED_ORIGINS: 'http://localhost:5173',
   S3_BUCKET: 'aula-virtual-dev',
 });
@@ -32,6 +34,7 @@ describe('loadApiConfig', () => {
       outboxPollIntervalSeconds: 5,
       outboxMaxAttempts: 5,
       internalServiceSecret: SECRET,
+      jwtSecret: JWT_SECRET_VALUE,
       allowedOrigins: ['http://localhost:5173'],
       s3Bucket: 'aula-virtual-dev',
       s3Region: 'sa-east-1',
@@ -67,16 +70,19 @@ describe('loadApiConfig', () => {
     });
   });
 
-  it.each(['DATABASE_URL', 'INTERNAL_SERVICE_SECRET', 'ALLOWED_ORIGINS', 'S3_BUCKET'])(
-    'names %s when it is missing',
-    (name) => {
-      const env = validEnv();
-      delete env[name];
-      const message = messageOf(env);
-      expect(message).toContain(name);
-      expect(message).toContain('required');
-    },
-  );
+  it.each([
+    'DATABASE_URL',
+    'INTERNAL_SERVICE_SECRET',
+    'JWT_SECRET',
+    'ALLOWED_ORIGINS',
+    'S3_BUCKET',
+  ])('names %s when it is missing', (name) => {
+    const env = validEnv();
+    delete env[name];
+    const message = messageOf(env);
+    expect(message).toContain(name);
+    expect(message).toContain('required');
+  });
 
   it('treats blank values as missing', () => {
     expect(messageOf({ ...validEnv(), DATABASE_URL: '   ' })).toContain('DATABASE_URL');
@@ -87,6 +93,7 @@ describe('loadApiConfig', () => {
     for (const name of [
       'DATABASE_URL',
       'INTERNAL_SERVICE_SECRET',
+      'JWT_SECRET',
       'ALLOWED_ORIGINS',
       'S3_BUCKET',
     ]) {
@@ -104,6 +111,7 @@ describe('loadApiConfig', () => {
         'ALLOWED_ORIGINS',
         'DATABASE_URL',
         'INTERNAL_SERVICE_SECRET',
+        'JWT_SECRET',
         'PORT',
         'S3_BUCKET',
       ]);
@@ -144,6 +152,13 @@ describe('loadApiConfig', () => {
     const message = messageOf({ ...validEnv(), INTERNAL_SERVICE_SECRET: 'too-short' });
     expect(message).toContain('INTERNAL_SERVICE_SECRET');
     expect(message).toContain('32');
+  });
+
+  it('rejects a short JWT_SECRET without echoing its value', () => {
+    const message = messageOf({ ...validEnv(), JWT_SECRET: 'short-jwt-key' });
+    expect(message).toContain('JWT_SECRET');
+    expect(message).toContain('32');
+    expect(message).not.toContain('short-jwt-key');
   });
 
   it.each(['localhost:5173', 'ftp://example.com', 'http://a.com/path', 'http://a.com/', ','])(

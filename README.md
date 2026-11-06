@@ -113,10 +113,11 @@ The server health check uses the bundled `mc ready local`, and `minio-init` runs
 
 Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
 
-The application services require `INTERNAL_SERVICE_SECRET`, and the compose file deliberately provides no default for it. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with a generated secret:
+The application services require `INTERNAL_SERVICE_SECRET` (and the API also `JWT_SECRET`), and the compose file deliberately provides no default for them. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with generated secrets:
 
 ```bash
 echo "INTERNAL_SERVICE_SECRET=<generated-secret>" > .env
+echo "JWT_SECRET=<another-generated-secret>" >> .env
 ```
 
 If the secret is missing or shorter than 32 characters, the services exit at startup with the configuration diagnostic described in [Configuration](#configuration). `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `ALLOWED_ORIGINS` can be overridden in the same file; the password is embedded in `DATABASE_URL`, so avoid URL-reserved characters such as `@`, `:`, `/` or `#`.
@@ -175,6 +176,7 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+| `JWT_SECRET`              | Required; at least 32 characters                  | HS256 signing key of access tokens (API only; never shared with the realtime server) | Private | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
 | `S3_BUCKET`               | Required; 3-63 lowercase letters, digits, dots or hyphens | Object storage bucket (local default in Compose: `aula-virtual-dev`) | Public         | Yes     |
 | `S3_REGION`               | Default `sa-east-1`; AWS region name              | Region used to sign storage requests                                     | Public         | Yes     |

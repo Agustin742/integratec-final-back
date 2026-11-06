@@ -27,6 +27,7 @@ const EXPORT_CONFIG: ApiConfig = {
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: 1,
   internalServiceSecret: 'openapi-export-placeholder-not-a-secret',
+  jwtSecret: 'export-jwt-placeholder-not-a-secret-000000',
   allowedOrigins: ['http://localhost'],
   s3Bucket: 'openapi-export-placeholder',
   s3Region: 'sa-east-1',

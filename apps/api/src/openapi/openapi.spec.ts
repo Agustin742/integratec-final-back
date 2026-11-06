@@ -24,6 +24,7 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
+  jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
   allowedOrigins: ['http://localhost:5173'],
   s3Bucket: 'synthetic-bucket',
   s3Region: 'sa-east-1',

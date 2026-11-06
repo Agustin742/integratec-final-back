@@ -28,6 +28,7 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
         'clients branch on error.code.',
     )
     .setVersion(API_VERSION)
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();
   return SwaggerModule.createDocument(app, options, {
     extraModels: [ErrorEnvelopeDto, ErrorBodyDto, ErrorDetailDto],
