@@ -21,6 +21,49 @@ services:
       retries: 5
       start_period: 10s
 
+  # Local S3-compatible object store for development and tests. Upstream
+  # minio/minio images are no longer published and the Bitnami images are
+  # unmaintained, so this uses the Chainguard images. Their free tier only
+  # publishes `latest`, so each image is pinned by digest (see the README for how
+  # to bump it). It is a local stand-in only; production uses AWS S3.
+  minio:
+    image: cgr.dev/chainguard/minio:latest@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
+    container_name: aula-minio
+    restart: unless-stopped
+    # The image entrypoint is the minio binary, so only its arguments go here.
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      # Lets the health check below reach this container without credentials.
+      MC_HOST_local: http://localhost:9000
+    ports:
+      - '127.0.0.1:${MINIO_PORT:-9000}:9000'
+      - '127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      # The image has no curl; its bundled `mc` probes the cluster health endpoint.
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # One-shot bootstrap: creates the bucket if it does not exist, then exits.
+  # The client image has no shell, so the alias comes from MC_HOST_local and the
+  # command is a single `mc` call; readiness is guaranteed by the minio health check.
+  minio-init:
+    image: cgr.dev/chainguard/minio-client:latest@sha256:ac75abc3947742b7d5d11e145eb0759c5b59ae697956fda325e91f6fd742b005
+    container_name: aula-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: 'no'
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD:-minioadmin}@minio:9000
+    command: ['mb', '--ignore-existing', 'local/${S3_BUCKET:-aula-virtual-dev}']
+
   api:
     build:
       context: .
@@ -29,6 +72,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -38,6 +83,13 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-7d}
       INVITATION_TTL: ${INVITATION_TTL:-7d}
+      S3_BUCKET: ${S3_BUCKET:-aula-virtual-dev}
+      S3_REGION: ${S3_REGION:-sa-east-1}
+      S3_ENDPOINT: http://minio:9000
+      S3_FORCE_PATH_STYLE: 'true'
+      S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      STORAGE_SIGNED_URL_TTL: ${STORAGE_SIGNED_URL_TTL:-5m}
     ports:
       - '127.0.0.1:3000:3000'
     profiles:
@@ -64,3 +116,5 @@ services:
 volumes:
   postgres_data:
     name: aula_postgres_data
+  minio_data:
+    name: aula_minio_data

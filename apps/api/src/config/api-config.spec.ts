@@ -7,6 +7,7 @@ const validEnv = (): Record<string, string | undefined> => ({
   DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula?schema=public',
   INTERNAL_SERVICE_SECRET: SECRET,
   ALLOWED_ORIGINS: 'http://localhost:5173',
+  S3_BUCKET: 'aula-virtual-dev',
 });
 
 const messageOf = (env: Record<string, string | undefined>): string => {
@@ -28,8 +29,16 @@ describe('loadApiConfig', () => {
       accessTokenTtlSeconds: 900,
       refreshTokenTtlSeconds: 604800,
       invitationTtlSeconds: 604800,
+      outboxPollIntervalSeconds: 5,
+      outboxMaxAttempts: 5,
       internalServiceSecret: SECRET,
       allowedOrigins: ['http://localhost:5173'],
+      s3Bucket: 'aula-virtual-dev',
+      s3Region: 'sa-east-1',
+      s3Endpoint: undefined,
+      s3ForcePathStyle: false,
+      s3Credentials: undefined,
+      storageSignedUrlTtlSeconds: 300,
     });
   });
 
@@ -42,6 +51,8 @@ describe('loadApiConfig', () => {
       JWT_ACCESS_TTL: '30s',
       REFRESH_TOKEN_TTL: '2h',
       INVITATION_TTL: '3d',
+      OUTBOX_POLL_INTERVAL: '30s',
+      OUTBOX_MAX_ATTEMPTS: '8',
       ALLOWED_ORIGINS: ' https://a.example.com , https://b.example.com:8443 ',
     });
     expect(config).toMatchObject({
@@ -50,11 +61,13 @@ describe('loadApiConfig', () => {
       accessTokenTtlSeconds: 30,
       refreshTokenTtlSeconds: 7200,
       invitationTtlSeconds: 259200,
+      outboxPollIntervalSeconds: 30,
+      outboxMaxAttempts: 8,
       allowedOrigins: ['https://a.example.com', 'https://b.example.com:8443'],
     });
   });
 
-  it.each(['DATABASE_URL', 'INTERNAL_SERVICE_SECRET', 'ALLOWED_ORIGINS'])(
+  it.each(['DATABASE_URL', 'INTERNAL_SERVICE_SECRET', 'ALLOWED_ORIGINS', 'S3_BUCKET'])(
     'names %s when it is missing',
     (name) => {
       const env = validEnv();
@@ -71,7 +84,12 @@ describe('loadApiConfig', () => {
 
   it('reports every problem together', () => {
     const message = messageOf({});
-    for (const name of ['DATABASE_URL', 'INTERNAL_SERVICE_SECRET', 'ALLOWED_ORIGINS']) {
+    for (const name of [
+      'DATABASE_URL',
+      'INTERNAL_SERVICE_SECRET',
+      'ALLOWED_ORIGINS',
+      'S3_BUCKET',
+    ]) {
       expect(message).toContain(name);
     }
   });
@@ -87,6 +105,7 @@ describe('loadApiConfig', () => {
         'DATABASE_URL',
         'INTERNAL_SERVICE_SECRET',
         'PORT',
+        'S3_BUCKET',
       ]);
     }
   });
@@ -99,7 +118,13 @@ describe('loadApiConfig', () => {
     expect(messageOf({ ...validEnv(), NODE_ENV: 'staging' })).toContain('NODE_ENV');
   });
 
-  it.each(['JWT_ACCESS_TTL', 'REFRESH_TOKEN_TTL', 'INVITATION_TTL'])(
+  it.each(['0', '21', 'abc', '1.5', '-1'])('rejects OUTBOX_MAX_ATTEMPTS=%s', (value) => {
+    expect(messageOf({ ...validEnv(), OUTBOX_MAX_ATTEMPTS: value })).toContain(
+      'OUTBOX_MAX_ATTEMPTS',
+    );
+  });
+
+  it.each(['JWT_ACCESS_TTL', 'REFRESH_TOKEN_TTL', 'INVITATION_TTL', 'OUTBOX_POLL_INTERVAL'])(
     'rejects a malformed %s',
     (name) => {
       for (const value of ['15', '15x', 'm', '-5m', '1.5h', '0m']) {
@@ -127,6 +152,88 @@ describe('loadApiConfig', () => {
       expect(messageOf({ ...validEnv(), ALLOWED_ORIGINS: origins })).toContain('ALLOWED_ORIGINS');
     },
   );
+
+  describe('object storage', () => {
+    it('parses explicit values', () => {
+      const config = loadApiConfig({
+        ...validEnv(),
+        S3_BUCKET: 'my.bucket-1',
+        S3_REGION: 'us-east-1',
+        S3_ENDPOINT: 'http://localhost:9000',
+        S3_FORCE_PATH_STYLE: 'true',
+        S3_ACCESS_KEY_ID: 'example-access-key',
+        S3_SECRET_ACCESS_KEY: 'example-secret-key',
+        STORAGE_SIGNED_URL_TTL: '10m',
+      });
+      expect(config).toMatchObject({
+        s3Bucket: 'my.bucket-1',
+        s3Region: 'us-east-1',
+        s3Endpoint: 'http://localhost:9000',
+        s3ForcePathStyle: true,
+        s3Credentials: { accessKeyId: 'example-access-key', secretAccessKey: 'example-secret-key' },
+        storageSignedUrlTtlSeconds: 600,
+      });
+    });
+
+    it.each(['AB', 'Upper', 'under_score', '-leading', 'trailing-', 'a'.repeat(64)])(
+      'rejects S3_BUCKET=%s',
+      (bucket) => {
+        expect(messageOf({ ...validEnv(), S3_BUCKET: bucket })).toContain('S3_BUCKET');
+      },
+    );
+
+    it.each(['sa_east_1', 'SA-EAST-1', 'region', '1-east-sa'])('rejects S3_REGION=%s', (region) => {
+      expect(messageOf({ ...validEnv(), S3_REGION: region })).toContain('S3_REGION');
+    });
+
+    it.each([
+      'localhost:9000',
+      'ftp://minio:9000',
+      'http://minio:9000/bucket',
+      'http://minio:9000/',
+    ])('rejects S3_ENDPOINT=%s', (endpoint) => {
+      expect(messageOf({ ...validEnv(), S3_ENDPOINT: endpoint })).toContain('S3_ENDPOINT');
+    });
+
+    it.each(['yes', '1', 'TRUE'])('rejects S3_FORCE_PATH_STYLE=%s', (value) => {
+      expect(messageOf({ ...validEnv(), S3_FORCE_PATH_STYLE: value })).toContain(
+        'S3_FORCE_PATH_STYLE',
+      );
+    });
+
+    it('requires both credentials or neither', () => {
+      expect(messageOf({ ...validEnv(), S3_ACCESS_KEY_ID: 'only-id' })).toContain(
+        'S3_SECRET_ACCESS_KEY',
+      );
+      expect(messageOf({ ...validEnv(), S3_SECRET_ACCESS_KEY: 'only-secret' })).toContain(
+        'S3_ACCESS_KEY_ID',
+      );
+    });
+
+    it('never echoes credentials in the error message', () => {
+      const message = messageOf({
+        ...validEnv(),
+        S3_ACCESS_KEY_ID: 'leaky-access-key',
+        S3_ENDPOINT: 'nope',
+      });
+      expect(message).not.toContain('leaky-access-key');
+    });
+
+    it('accepts a signed URL TTL up to one hour', () => {
+      expect(
+        loadApiConfig({ ...validEnv(), STORAGE_SIGNED_URL_TTL: '1h' }).storageSignedUrlTtlSeconds,
+      ).toBe(3600);
+      expect(
+        loadApiConfig({ ...validEnv(), STORAGE_SIGNED_URL_TTL: '1s' }).storageSignedUrlTtlSeconds,
+      ).toBe(1);
+    });
+
+    it.each(['61m', '2h', '1d', '0s', '5', 'abc'])('rejects STORAGE_SIGNED_URL_TTL=%s', (ttl) => {
+      expect(messageOf({ ...validEnv(), STORAGE_SIGNED_URL_TTL: ttl })).toContain(
+        'STORAGE_SIGNED_URL_TTL',
+      );
+    });
+  });
 
   it('never echoes secret values in the error message', () => {
     const shortSecret = 'hunter2-short';

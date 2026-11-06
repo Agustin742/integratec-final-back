@@ -92,6 +92,23 @@ The database credentials and configuration match `apps/api/.env.example` (`user:
 
 If another PostgreSQL instance already occupies port `5432`, set `POSTGRES_PORT=5433` in the repository-root Compose `.env` before starting the container. When running the API outside Docker with `pnpm --filter @aula/api start:dev`, also update `DATABASE_URL` in `apps/api/.env` to use the chosen host port, for example `postgresql://postgres:postgres@localhost:5433/aula_virtual?schema=public` with the default local credentials. Export that updated value into the API process environment as described in [Configuration](#configuration); `start:dev` does not load `.env` automatically. The containerized API continues to use `postgres:5432` on the Compose network, regardless of `POSTGRES_PORT`.
 
+### Local object storage (MinIO)
+
+Start the S3-compatible object store and create the development bucket (the one-shot `minio-init` container exits when done):
+
+```bash
+docker compose up -d minio minio-init
+```
+
+The API talks to it with `S3_ENDPOINT=http://localhost:9000`, `S3_FORCE_PATH_STYLE=true`, `S3_BUCKET=aula-virtual-dev` and the local-only credentials `minioadmin` / `minioadmin` (override with `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` in the Compose `.env`, and keep `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` equal to them). The API and console ports are published on `127.0.0.1` only (`MINIO_PORT`, `MINIO_CONSOLE_PORT`). Data persists in the volume `aula_minio_data`. Upstream MinIO images are no longer available (`minio/minio` on Docker Hub denies access and `quay.io/minio/minio` is gone) and the Bitnami images are unmaintained, so Compose uses `cgr.dev/chainguard/minio` and `cgr.dev/chainguard/minio-client`. Chainguard's free tier only publishes `latest`, so both are pinned by index digest (`image:latest@sha256:...`) in `docker-compose.yml`. To bump them, resolve the new digests and replace them in that file:
+
+```bash
+docker buildx imagetools inspect cgr.dev/chainguard/minio:latest        # use the top-level "Digest"
+docker buildx imagetools inspect cgr.dev/chainguard/minio-client:latest
+```
+
+The server health check uses the bundled `mc ready local`, and `minio-init` runs a single idempotent `mc mb --ignore-existing` (the client image has no shell; URL-encode special characters if you set a custom `MINIO_ROOT_PASSWORD`). It is a development stand-in only and production uses AWS S3 with the instance role. The `StoragePort` integration spec runs against this container, locally and in CI.
+
 ### Running services in containers
 
 Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
@@ -155,8 +172,17 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `JWT_ACCESS_TTL`          | Default `15m`; `<integer>` + `s`, `m`, `h` or `d` | Access token lifetime                                                    | Public         | Yes     |
 | `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
+| `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
+| `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
+| `S3_BUCKET`               | Required; 3-63 lowercase letters, digits, dots or hyphens | Object storage bucket (local default in Compose: `aula-virtual-dev`) | Public         | Yes     |
+| `S3_REGION`               | Default `sa-east-1`; AWS region name              | Region used to sign storage requests                                     | Public         | Yes     |
+| `S3_ENDPOINT`             | Optional; `http(s)` origin without path           | Set only for an S3-compatible service such as MinIO (`http://localhost:9000`); unset means AWS S3 | Public | Yes |
+| `S3_FORCE_PATH_STYLE`     | Default `false`; `true` or `false`                | Path-style bucket addressing; `true` for MinIO                           | Public         | Yes     |
+| `S3_ACCESS_KEY_ID`        | Optional; set together with `S3_SECRET_ACCESS_KEY` | Static storage credential for local MinIO; leave both unset in AWS so the EC2 instance role is used | Private | Yes |
+| `S3_SECRET_ACCESS_KEY`    | Optional; set together with `S3_ACCESS_KEY_ID`    | Static storage credential for local MinIO; never commit a real value     | Private        | Yes     |
+| `STORAGE_SIGNED_URL_TTL`  | Default `5m`; same format, 1s to 1h               | Default lifetime of signed download URLs                                 | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 
@@ -168,6 +194,60 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
+
+## Platform ports
+
+Shared infrastructure that stories consume through a port (an interface plus an injection token), never through a provider. Code lives in `apps/api/src/platform`. None of the modules is imported in `AppModule`: the first feature module that needs one imports it.
+
+### Email
+
+Port in [`email`](./apps/api/src/platform/email/email.port.ts). Only an in-memory stub exists: it records messages and logs without the body or recipient, and makes no network call. The provider, digest, opt-out and bounce policy are open (gap 7).
+
+```ts
+@Module({ imports: [EmailModule] /* ... */ })
+export class PasswordResetModule {}
+
+constructor(@Inject(EMAIL_PORT) private readonly email: EmailPort) {}
+await this.email.send({ to, subject, text });
+```
+
+### Transactional outbox
+
+Port in [`outbox`](./apps/api/src/platform/outbox/outbox.writer.ts). Use it for domain events that must exist if and only if the business change commits. Importing `OutboxModule` also starts the dispatcher polling (`OUTBOX_POLL_INTERVAL`).
+
+```ts
+// Producer: record inside the same transaction as the change.
+await this.prisma.$transaction(async (tx) => {
+  await tx.announcement.create({ data });
+  await this.outbox.record(tx, { type: 'classroom.announcement.created', payload: { id } });
+});
+
+// Consumer: register in onModuleInit; event.id is stable across redeliveries.
+onModuleInit() {
+  this.registry.register('classroom.announcement.created', async (event) => { /* ... */ });
+}
+```
+
+- Delivery is **at-least-once**: handlers **must be idempotent** (deduplicate on `event.id`). Throw to request a retry; never put personal data in the error, it is stored in `lastError`.
+- Retries back off 5s, 10s, 20s... up to 1h, for `OUTBOX_MAX_ATTEMPTS` attempts. An exhausted event keeps `failedAt` and stays in the table for inspection.
+- An event type with no registered handler counts as a failed attempt (it is not dropped), so a missing registration never loses events silently.
+- Handlers run outside any transaction with a 30s timeout; a timeout is a failed attempt. A claimed row is leased for 5 minutes, so a crashed process only delays redelivery.
+- Polling is off when `NODE_ENV=test`; tests call `OutboxDispatcher.dispatchPending()` explicitly.
+
+### Object storage
+
+Port in [`storage`](./apps/api/src/platform/storage/storage.port.ts) with an S3 adapter. Import `StorageModule` and inject `STORAGE_PORT`.
+
+```ts
+constructor(@Inject(STORAGE_PORT) private readonly storage: StoragePort) {}
+await this.storage.put(`materials/${classroomId}/${fileId}`, bytes, { contentType: 'application/pdf' });
+const url = await this.storage.getSignedDownloadUrl(key); // default TTL: STORAGE_SIGNED_URL_TTL
+```
+
+- Keys are opaque strings chosen by the caller and validated: non-empty, at most 1024 bytes, no leading `/`, no `\`, no control characters, no empty, `.` or `..` segments (`InvalidStorageKeyError`). Reading a missing key throws `StorageObjectNotFoundError`; deleting one succeeds.
+- Content validation (type allow-list, size, count) belongs to the calling story, not to the port.
+- Signed URLs are short-lived bearer credentials: hand them to the client, never log or persist them.
+- In production credentials come from the instance role (leave `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` unset). Locally use MinIO: `docker compose up -d minio minio-init` (see [Local object storage](#local-object-storage-minio)). MinIO was chosen over LocalStack because only S3 is needed and it is lighter.
 
 ## Documentation
 
@@ -193,7 +273,7 @@ git diff --check
 
 The local whitespace command checks uncommitted changes; CI checks the proposed committed diff against the PR base or push's previous SHA. Workflow validation also requires actionlint 1.7.7: `actionlint .github/workflows/ci.yml`.
 
-When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22 with `pnpm` store caching, provisions an active PostgreSQL 16 service container (`localhost:5432` with healthcheck for upcoming Prisma database and integration testing), installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Each step is guarded against missing scripts and reports a GitHub notice and step summary when absent. Otherwise, CI explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
+When a `package.json` is present, CI requires `pnpm-lock.yaml`, sets up Node.js 22 with `pnpm` store caching, provisions an active PostgreSQL 16 service container (`localhost:5432` with healthcheck for upcoming Prisma database and integration testing), starts MinIO and its bucket bootstrap from `docker-compose.yml` for the object storage integration spec, installs dependencies with `pnpm install --frozen-lockfile`, and runs `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build`. Each step is guarded against missing scripts and reports a GitHub notice and step summary when absent. Otherwise, CI explicitly reports that no **application** tests were configured or run in both a GitHub notice and the job summary. CI-tooling tests are separate; planned application checks and deployment are not evidence of a running backend.
 
 ## Shared contracts
 

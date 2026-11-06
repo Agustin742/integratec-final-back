@@ -24,8 +24,16 @@ const EXPORT_CONFIG: ApiConfig = {
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
   invitationTtlSeconds: 1,
+  outboxPollIntervalSeconds: 1,
+  outboxMaxAttempts: 1,
   internalServiceSecret: 'openapi-export-placeholder-not-a-secret',
   allowedOrigins: ['http://localhost'],
+  s3Bucket: 'openapi-export-placeholder',
+  s3Region: 'sa-east-1',
+  s3Endpoint: undefined,
+  s3ForcePathStyle: false,
+  s3Credentials: undefined,
+  storageSignedUrlTtlSeconds: 1,
 };
 
 /** Returns the OpenAPI document as repository-formatted JSON ending with a newline. */

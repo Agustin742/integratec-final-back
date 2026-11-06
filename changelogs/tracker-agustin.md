@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-05 — Platform ports: email, transactional outbox, object storage (#45)
+
+- **Status:** in-progress (implementation and docs done; PR pending)
+- **Area / files:** `apps/api/src/platform/` (`email`, `outbox`, `storage`), `apps/api/prisma/` (`OutboxEvent` model and migration), `apps/api/src/config/api-config.ts`, `docker-compose.yml`, `.github/workflows/ci.yml`, `README.md`
+- **Change:** Added the shared ports that later stories consume. Email: `EmailPort` with an in-memory stub (no provider, gap 7). Transactional outbox: `OutboxWriter.record(tx, ...)` inside the caller's transaction, handler registry and a dispatcher with at-least-once delivery, backoff, per-handler timeout and lease, and `failedAt` on exhaustion. Storage: `StoragePort` with an S3 adapter, key validation, short-lived signed URLs and S3 settings validated in `api-config.ts`. Local MinIO and bucket bootstrap in Compose using Chainguard images pinned by digest, also started in CI. Documented how stories consume each port in the README. MinIO was chosen over LocalStack (S3 only, lighter); the outbox was chosen over direct in-process events (user decision 2026-11-05). Commits: `fa073d0`, `7f966e4`, `2dcfe1b`, `0d8b14b`, `5ed3ed3`.
+- **Reason:** #18, #22, #37, #23, #27, #28, #30 and #46 depend on email, domain events and storage; stories depend on interfaces so the provider and the real bucket can be chosen later.
+- **Verification:** Tests written first (RED) then GREEN per commit: outbox spec 16/16, storage spec 18/18 against local MinIO, API suite 187 passed with Postgres and MinIO; `pnpm lint`, `pnpm format:check`, `pnpm typecheck`, `pnpm build`, `check_docs.py` and actionlint pass. `scripts/ci` has 13 failures that already exist on the base branch (WSL relay, environment). The MinIO CI step has not run on GitHub Actions yet. `.env.example` lines for the new variables are pending (not editable by the agent).
+- **Next step:** Open the PR into `develop`, request review, and add the `.env.example` placeholders for the outbox and S3 variables.
+
 ## 2026-11-05 — PR #65 review fixes: seed allowlist and Prisma client in the runtime image
 
 - **Status:** completed

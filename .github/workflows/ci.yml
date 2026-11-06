@@ -71,6 +71,13 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/aula_virtual_test?schema=public
+      # Local MinIO started by the "Start MinIO" step; placeholder credentials, not secrets.
+      S3_BUCKET: aula-virtual-dev
+      S3_REGION: sa-east-1
+      S3_ENDPOINT: http://127.0.0.1:9000
+      S3_FORCE_PATH_STYLE: 'true'
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
 
     steps:
       - name: Enforce promotion source branch
@@ -213,6 +220,16 @@ jobs:
               echo "No \`typecheck\` script is configured in \`package.json\`."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # A service container cannot take a command, so MinIO comes from the same
+      # Compose definitions used locally: `--wait` blocks until the health check
+      # passes and `run minio-init` creates the bucket (idempotently).
+      - name: Start MinIO and create the test bucket
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          docker compose up -d --wait minio
+          docker compose run --rm minio-init
 
       - name: Run tests
         if: steps.package.outputs.present == 'true'
