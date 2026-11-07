@@ -1,12 +1,20 @@
 # Tracker — Luis
 
+## 2026-11-07 — Resource isolation and server-side access verification (Issue #19)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/auth/`, `apps/api/src/access/`, `apps/api/src/app.module.ts`, `apps/api/src/health.controller.ts`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #19 (HU-AUL-005): introduced global authentication guard (`SessionAuthGuard`) enforcing session validity by default, `@Public()` metadata decorator, `@CurrentUser()` / `@CurrentSession()` parameter decorator extracting validated session identity, and protected `/auth/logout` via the guard. Created `AccessModule` and `AccessVerificationService` enforcing server-side persisted state per request: `verifySchoolAccess` (active school membership, role checks, 404 on unknown school/stranger), `verifyClassroomAccess` (exact hierarchy: School Owner/Admin authority over all classrooms in their school without per-classroom membership, teacher on own classroom with 404 for another teacher's classroom in the same school, enrolled active student, active linked parent unless adult mode is active, 403 on insufficient role, 404 for stranger/cross-school isolation without existence leakage), and `verifyStudentResourceAccess` (own resource, staff, linked parent, 403 for classmate, 404 for stranger/unlinked parent). Added capabilities computation helper deriving exact permission matrix from `rules/classrooms-and-roles.md`. Added unit test suites for `SessionAuthGuard`, `CurrentUser`/`CurrentSession`, and `AccessVerificationService` including permission matrix, isolation, adult mode, and concurrency tests.
+- **Reason:** Provide foundational security boundary and contextual authorization required by all virtual classroom endpoints (#21, #22, #23, etc.).
+- **Next step:** Open pull request into `develop`, request review, and update GitHub Project board.
+
 ## 2026-11-05 — Account registration and organizational path selection (Issue #17)
 
-- **Status:** in-progress
+- **Status:** completed
 - **Area / files:** `packages/contracts/src/index.ts`, `apps/api/package.json`, `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261105230000_add_user_registration_path/`, `apps/api/src/auth/`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
 - **Change:** Implemented Issue #17 (HU-AUT-001): added `POST /auth/register` endpoint with atomic account creation supporting independent teacher and school paths. Exported `RegistrationPath` enum and constant array in `@aula/contracts`. Added new Prisma migration creating `registration_path` enum and column on `User` to persist the chosen organizational path. Implemented salted password hashing via bcrypt (10 rounds) and enforced password boundary limit of 72 UTF-8 bytes to prevent silent truncation. Handled school path atomically by creating `School`, automatic collision-resilient slug generation, and assigning `SchoolMember` with `OWNER` role. Created default empty `AvatarConfiguration`. Handled race conditions and uniqueness constraints returning 409 Conflict. Added comprehensive Vitest tests verifying DTO validation, UTF-8 byte boundary, transactional atomicity, persistence of registration path, and concurrent duplicate registrations (`Promise.all`). Updated OpenAPI spec.
 - **Reason:** Implement account registration and path selection fulfilling HU-AUT-001, address PR #66 code review feedback, and enforce strict Definition of Done (DoD).
-- **Next step:** Complete review on PR #66, obtain approval, and merge into develop.
+- **Next step:** Completed and merged into develop via PR #66.
 
 ## 2026-11-04 — Baseline Prisma schema and relational migrations (Issue #14)
 
