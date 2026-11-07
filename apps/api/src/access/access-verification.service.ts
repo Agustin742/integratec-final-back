@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type ClassroomAccessRole = 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
 
 export type ClassroomCapability =
@@ -121,6 +123,10 @@ export class AccessVerificationService {
     schoolId: string,
     options?: VerifySchoolAccessOptions,
   ): Promise<SchoolAccessResult> {
+    if (!UUID_PATTERN.test(actorUserId) || !UUID_PATTERN.test(schoolId)) {
+      throw new NotFoundException('School not found');
+    }
+
     const school = await this.prisma.school.findFirst({
       where: { id: schoolId, deletedAt: null },
       select: { id: true },
@@ -186,6 +192,10 @@ export class AccessVerificationService {
     classroomId: string,
     options?: VerifyClassroomAccessOptions,
   ): Promise<ClassroomAccessResult> {
+    if (!UUID_PATTERN.test(actorUserId) || !UUID_PATTERN.test(classroomId)) {
+      throw new NotFoundException('Classroom not found');
+    }
+
     const classroom = await this.prisma.classroom.findFirst({
       where: { id: classroomId, deletedAt: null },
       select: {
@@ -203,6 +213,7 @@ export class AccessVerificationService {
 
     let derivedRole: ClassroomAccessRole | null = null;
     let linkedChildIds: string[] | undefined;
+    let activeSchoolMember: { role: SchoolRole } | null = null;
 
     // Hierarchy step a: School classroom check
     if (classroom.schoolId !== null) {
@@ -214,7 +225,7 @@ export class AccessVerificationService {
         throw new NotFoundException('Classroom not found');
       }
 
-      const schoolMember = await this.prisma.schoolMember.findFirst({
+      activeSchoolMember = await this.prisma.schoolMember.findFirst({
         where: {
           schoolId: classroom.schoolId,
           userId: actorUserId,
@@ -223,10 +234,10 @@ export class AccessVerificationService {
         select: { role: true },
       });
 
-      if (schoolMember) {
-        if (schoolMember.role === SchoolRole.OWNER) {
+      if (activeSchoolMember) {
+        if (activeSchoolMember.role === SchoolRole.OWNER) {
           derivedRole = 'OWNER';
-        } else if (schoolMember.role === SchoolRole.ADMIN) {
+        } else if (activeSchoolMember.role === SchoolRole.ADMIN) {
           derivedRole = 'ADMIN';
         }
         // Note: A teacher in the school does NOT get authority over this classroom
@@ -254,7 +265,15 @@ export class AccessVerificationService {
 
         if (membership) {
           if (membership.role === ClassroomRole.TEACHER) {
-            derivedRole = 'TEACHER';
+            // When classroom.schoolId !== null, verify that the teacher has an ACTIVE membership in the school.
+            // If not active in school, teacher has lost school authority; do not grant TEACHER role (yields 404).
+            if (classroom.schoolId !== null) {
+              if (activeSchoolMember) {
+                derivedRole = 'TEACHER';
+              }
+            } else {
+              derivedRole = 'TEACHER';
+            }
           } else if (membership.role === ClassroomRole.STUDENT) {
             derivedRole = 'STUDENT';
           }
@@ -324,6 +343,14 @@ export class AccessVerificationService {
     targetStudentId: string,
     classroomId: string,
   ): Promise<ClassroomAccessResult> {
+    if (
+      !UUID_PATTERN.test(actorUserId) ||
+      !UUID_PATTERN.test(targetStudentId) ||
+      !UUID_PATTERN.test(classroomId)
+    ) {
+      throw new NotFoundException('Student resource not found in this classroom');
+    }
+
     const access = await this.verifyClassroomAccess(actorUserId, classroomId, {
       requiredRole: 'ANY',
     });

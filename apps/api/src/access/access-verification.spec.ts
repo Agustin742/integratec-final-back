@@ -59,6 +59,21 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       expect(capabilities).not.toContain<ClassroomCapability>('participate_activities');
     });
 
+    it('derives exact capability list for ADMIN', () => {
+      const capabilities = computeClassroomCapabilities('ADMIN');
+      expect(capabilities).not.toContain<ClassroomCapability>('manage_school');
+      expect(capabilities).toContain<ClassroomCapability>('configure_classroom');
+      expect(capabilities).toContain<ClassroomCapability>('invite_members');
+      expect(capabilities).toContain<ClassroomCapability>('publish_content');
+      expect(capabilities).toContain<ClassroomCapability>('moderate_chat');
+      expect(capabilities).toContain<ClassroomCapability>('configure_bot');
+      expect(capabilities).toContain<ClassroomCapability>('view_metrics');
+      expect(capabilities).toContain<ClassroomCapability>('chat_classmates');
+      expect(capabilities).toContain<ClassroomCapability>('list_directory');
+      expect(capabilities).toContain<ClassroomCapability>('message_teacher');
+      expect(capabilities).not.toContain<ClassroomCapability>('participate_activities');
+    });
+
     it('derives exact capability list for TEACHER', () => {
       const capabilities = computeClassroomCapabilities('TEACHER');
       expect(capabilities).not.toContain<ClassroomCapability>('manage_school');
@@ -85,6 +100,16 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
   });
 
   describe('verifySchoolAccess', () => {
+    it('throws 404 immediately for malformed non-UUID actorUserId or schoolId without querying database', async () => {
+      await expect(service.verifySchoolAccess('not-a-valid-uuid', SCHOOL_A_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      await expect(service.verifySchoolAccess(OWNER_USER_ID, 'not-a-valid-uuid')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prismaMock.school.findFirst).not.toHaveBeenCalled();
+    });
+
     it('throws 404 when school is not found or soft-deleted', async () => {
       prismaMock.school.findFirst.mockResolvedValue(null);
 
@@ -135,6 +160,16 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
   });
 
   describe('verifyClassroomAccess (Hierarchy & Isolation)', () => {
+    it('throws 404 immediately for malformed non-UUID actorUserId or classroomId without querying database', async () => {
+      await expect(
+        service.verifyClassroomAccess('not-a-valid-uuid', CLASSROOM_A1_ID),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.verifyClassroomAccess(OWNER_USER_ID, 'not-a-valid-uuid'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prismaMock.classroom.findFirst).not.toHaveBeenCalled();
+    });
+
     it('throws 404 when classroom does not exist or is soft-deleted', async () => {
       prismaMock.classroom.findFirst.mockResolvedValue(null);
 
@@ -222,6 +257,28 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       });
 
       expect(result.myRole).toBe('TEACHER');
+    });
+
+    it('throws 404 when Teacher has classroom membership but is INACTIVE or removed from the school', async () => {
+      prismaMock.classroom.findFirst.mockResolvedValue({
+        id: CLASSROOM_A1_ID,
+        schoolId: SCHOOL_A_ID,
+        independentTeacherId: null,
+        name: 'Classroom 1',
+        adultMode: false,
+      });
+      prismaMock.school.findFirst.mockResolvedValue({ id: SCHOOL_A_ID });
+      // Inactive/removed in school -> active member query returns null
+      prismaMock.schoolMember.findFirst.mockResolvedValue(null);
+      prismaMock.classroomMembership.findFirst.mockResolvedValue({
+        id: 'mem-1',
+        role: ClassroomRole.TEACHER,
+      });
+      prismaMock.parentLink.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.verifyClassroomAccess(TEACHER_1_USER_ID, CLASSROOM_A1_ID),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('throws 404 when Teacher attempts to act on another teacher classroom in the SAME school', async () => {
@@ -404,6 +461,19 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
         adultMode: false,
       });
       prismaMock.school.findFirst.mockResolvedValue({ id: SCHOOL_A_ID });
+    });
+
+    it('throws 404 immediately for malformed non-UUID IDs without querying database', async () => {
+      await expect(
+        service.verifyStudentResourceAccess('not-a-uuid', STUDENT_1_USER_ID, CLASSROOM_A1_ID),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.verifyStudentResourceAccess(STUDENT_1_USER_ID, 'not-a-uuid', CLASSROOM_A1_ID),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.verifyStudentResourceAccess(STUDENT_1_USER_ID, STUDENT_1_USER_ID, 'not-a-uuid'),
+      ).rejects.toThrow(NotFoundException);
+      expect(prismaMock.classroom.findFirst).not.toHaveBeenCalled();
     });
 
     it('allows student to access their own resource', async () => {

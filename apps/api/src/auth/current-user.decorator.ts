@@ -7,7 +7,10 @@ import type { VerifiedSession } from './session-verifier.service';
  * Can extract the full `VerifiedSession` object or a specific field (`userId` or `sessionId`).
  */
 export const CurrentUser = createParamDecorator(
-  (data: keyof VerifiedSession | undefined, ctx: ExecutionContext): unknown => {
+  (
+    data: keyof VerifiedSession | undefined,
+    ctx: ExecutionContext,
+  ): VerifiedSession | string | undefined => {
     const request = ctx.switchToHttp().getRequest<Request>();
     const user = request.user as VerifiedSession | undefined;
     return data ? user?.[data] : user;
