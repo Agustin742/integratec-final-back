@@ -7,6 +7,7 @@ import { PasswordResetRequestedResponseDto } from './dto/password-reset-requeste
 import { hashPassword } from './password-hash';
 import { PASSWORD_RESET_REQUESTED_EVENT } from './password-reset-events';
 import { hashOpaqueToken } from './session-tokens';
+import { lockCredentialUser } from './credential-lock';
 
 /** Same text for every email, registered or not. */
 export const PASSWORD_RESET_ACKNOWLEDGEMENT =
@@ -60,6 +61,9 @@ export class PasswordResetService {
     const passwordHash = await hashPassword(dto.newPassword);
 
     await this.prisma.$transaction(async (tx) => {
+      // Always lock user -> reset tokens -> sessions. Login holds the same user
+      // lock through session creation; concurrent reset links cannot invert it.
+      await lockCredentialUser(tx, stored.userId);
       const now = new Date();
       const { count } = await tx.passwordResetToken.updateMany({
         where: { id: stored.id, usedAt: null, expiresAt: { gt: now } },
