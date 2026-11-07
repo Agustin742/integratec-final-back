@@ -1,41 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RegistrationPath } from '@aula/contracts';
 import { Transform } from 'class-transformer';
-import {
-  IsEmail,
-  IsEnum,
-  IsNotEmpty,
-  IsString,
-  MaxLength,
-  MinLength,
-  ValidateIf,
-  ValidationArguments,
-  ValidationOptions,
-  registerDecorator,
-} from 'class-validator';
-
-export function MaxUtf8Bytes(maxBytes: number, validationOptions?: ValidationOptions) {
-  return function (object: object, propertyName: string) {
-    registerDecorator({
-      name: 'maxUtf8Bytes',
-      target: object.constructor,
-      propertyName,
-      constraints: [maxBytes],
-      options: validationOptions,
-      validator: {
-        validate(value: unknown, args: ValidationArguments) {
-          if (typeof value !== 'string') return false;
-          const [limit] = args.constraints as [number];
-          return Buffer.byteLength(value, 'utf8') <= limit;
-        },
-        defaultMessage(args: ValidationArguments) {
-          const [limit] = args.constraints as [number];
-          return `${args.property} must not exceed ${limit} UTF-8 bytes`;
-        },
-      },
-    });
-  };
-}
+import { IsEmail, IsEnum, IsNotEmpty, IsString, MaxLength, ValidateIf } from 'class-validator';
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, PasswordPolicy } from './password-policy';
 
 export class RegisterRequestDto {
   @ApiProperty({
@@ -53,13 +20,10 @@ export class RegisterRequestDto {
   @ApiProperty({
     example: 'passwordSegura123',
     description: 'User password (between 8 characters and 72 UTF-8 bytes)',
-    minLength: 8,
-    maxLength: 72,
+    minLength: PASSWORD_MIN_LENGTH,
+    maxLength: PASSWORD_MAX_LENGTH,
   })
-  @IsString({ message: 'password must be a string' })
-  @MinLength(8, { message: 'password must be at least 8 characters long' })
-  @MaxLength(72, { message: 'password must not exceed 72 characters' })
-  @MaxUtf8Bytes(72, { message: 'password must not exceed 72 UTF-8 bytes' })
+  @PasswordPolicy()
   password!: string;
 
   @ApiProperty({

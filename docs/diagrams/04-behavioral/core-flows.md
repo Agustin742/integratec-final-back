@@ -55,7 +55,7 @@ sequenceDiagram
     alt credenciales inválidas
         api-->>web: 401 con mensaje genérico
     else credenciales válidas
-        svc->>db: INSERT Session con refreshTokenHash y expiración
+        svc->>db: INSERT Session y RefreshToken (solo hash) con expiración
         db-->>svc: sesión creada
         svc-->>api: TokenPair y AccessClaims con sessionId
         api-->>web: JWT de acceso y refresh token (D1)

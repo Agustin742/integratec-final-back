@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { ConfigValidationError, loadApiConfig } from './api-config';
 
 const SECRET = 's3cr3t-value-that-is-at-least-32-chars-long!';
+const JWT_SECRET_VALUE = 'jwt-signing-key-synthetic-for-tests-0000';
 
 const validEnv = (): Record<string, string | undefined> => ({
   DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula?schema=public',
   INTERNAL_SERVICE_SECRET: SECRET,
+  JWT_SECRET: JWT_SECRET_VALUE,
   ALLOWED_ORIGINS: 'http://localhost:5173',
   S3_BUCKET: 'aula-virtual-dev',
 });
@@ -28,10 +30,14 @@ describe('loadApiConfig', () => {
       databaseUrl: 'postgresql://user:pw@localhost:5432/aula?schema=public',
       accessTokenTtlSeconds: 900,
       refreshTokenTtlSeconds: 604800,
+      refreshReuseGraceSeconds: 30,
+      passwordResetTtlSeconds: 3600,
+      passwordResetUrlBase: 'http://localhost:5173/reset-password',
       invitationTtlSeconds: 604800,
       outboxPollIntervalSeconds: 5,
       outboxMaxAttempts: 5,
       internalServiceSecret: SECRET,
+      jwtSecret: JWT_SECRET_VALUE,
       allowedOrigins: ['http://localhost:5173'],
       s3Bucket: 'aula-virtual-dev',
       s3Region: 'sa-east-1',
@@ -50,6 +56,9 @@ describe('loadApiConfig', () => {
       DATABASE_URL: 'postgres://db.internal/aula',
       JWT_ACCESS_TTL: '30s',
       REFRESH_TOKEN_TTL: '2h',
+      REFRESH_REUSE_GRACE: '2m',
+      PASSWORD_RESET_TTL: '30m',
+      PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
       INVITATION_TTL: '3d',
       OUTBOX_POLL_INTERVAL: '30s',
       OUTBOX_MAX_ATTEMPTS: '8',
@@ -60,6 +69,9 @@ describe('loadApiConfig', () => {
       port: 8080,
       accessTokenTtlSeconds: 30,
       refreshTokenTtlSeconds: 7200,
+      refreshReuseGraceSeconds: 120,
+      passwordResetTtlSeconds: 1800,
+      passwordResetUrlBase: 'https://app.example.com/reset-password',
       invitationTtlSeconds: 259200,
       outboxPollIntervalSeconds: 30,
       outboxMaxAttempts: 8,
@@ -67,16 +79,19 @@ describe('loadApiConfig', () => {
     });
   });
 
-  it.each(['DATABASE_URL', 'INTERNAL_SERVICE_SECRET', 'ALLOWED_ORIGINS', 'S3_BUCKET'])(
-    'names %s when it is missing',
-    (name) => {
-      const env = validEnv();
-      delete env[name];
-      const message = messageOf(env);
-      expect(message).toContain(name);
-      expect(message).toContain('required');
-    },
-  );
+  it.each([
+    'DATABASE_URL',
+    'INTERNAL_SERVICE_SECRET',
+    'JWT_SECRET',
+    'ALLOWED_ORIGINS',
+    'S3_BUCKET',
+  ])('names %s when it is missing', (name) => {
+    const env = validEnv();
+    delete env[name];
+    const message = messageOf(env);
+    expect(message).toContain(name);
+    expect(message).toContain('required');
+  });
 
   it('treats blank values as missing', () => {
     expect(messageOf({ ...validEnv(), DATABASE_URL: '   ' })).toContain('DATABASE_URL');
@@ -87,6 +102,7 @@ describe('loadApiConfig', () => {
     for (const name of [
       'DATABASE_URL',
       'INTERNAL_SERVICE_SECRET',
+      'JWT_SECRET',
       'ALLOWED_ORIGINS',
       'S3_BUCKET',
     ]) {
@@ -104,6 +120,7 @@ describe('loadApiConfig', () => {
         'ALLOWED_ORIGINS',
         'DATABASE_URL',
         'INTERNAL_SERVICE_SECRET',
+        'JWT_SECRET',
         'PORT',
         'S3_BUCKET',
       ]);
@@ -133,6 +150,103 @@ describe('loadApiConfig', () => {
     },
   );
 
+  describe('REFRESH_REUSE_GRACE', () => {
+    it('accepts 0s to disable the grace window', () => {
+      expect(loadApiConfig({ ...validEnv(), REFRESH_REUSE_GRACE: '0s' })).toMatchObject({
+        refreshReuseGraceSeconds: 0,
+      });
+    });
+
+    it.each(['30', '30x', 's', '-5s', '1.5m'])('rejects REFRESH_REUSE_GRACE=%s', (value) => {
+      expect(messageOf({ ...validEnv(), REFRESH_REUSE_GRACE: value })).toContain(
+        'REFRESH_REUSE_GRACE',
+      );
+    });
+
+    it('rejects a window longer than 5 minutes', () => {
+      expect(messageOf({ ...validEnv(), REFRESH_REUSE_GRACE: '6m' })).toContain(
+        'REFRESH_REUSE_GRACE',
+      );
+    });
+  });
+
+  describe('password reset', () => {
+    it('rejects an invalid PASSWORD_RESET_TTL', () => {
+      for (const value of ['1', '1x', 'h', '0m', '-1h']) {
+        expect(messageOf({ ...validEnv(), PASSWORD_RESET_TTL: value })).toContain(
+          'PASSWORD_RESET_TTL',
+        );
+      }
+    });
+
+    it('rejects a PASSWORD_RESET_TTL longer than 24h', () => {
+      expect(messageOf({ ...validEnv(), PASSWORD_RESET_TTL: '2d' })).toContain(
+        'PASSWORD_RESET_TTL',
+      );
+    });
+
+    it.each([
+      'not a url',
+      'ftp://app.example.com/reset',
+      'https://app.example.com/reset?token=x',
+      'https://app.example.com/reset#frag',
+      'https://user:pw@app.example.com/reset',
+    ])('rejects PASSWORD_RESET_URL_BASE=%s', (value) => {
+      for (const nodeEnv of ['development', 'test', 'production']) {
+        const message = messageOf({
+          ...validEnv(),
+          NODE_ENV: nodeEnv,
+          PASSWORD_RESET_URL_BASE: value,
+        });
+        expect(message).toContain('PASSWORD_RESET_URL_BASE');
+        expect(message).toContain('must be an absolute http(s) URL');
+        expect(message).not.toContain(value);
+        expect(message).not.toContain('pw@');
+      }
+    });
+
+    it('requires PASSWORD_RESET_URL_BASE in production', () => {
+      const message = messageOf({ ...validEnv(), NODE_ENV: 'production' });
+      expect(message).toContain('PASSWORD_RESET_URL_BASE');
+      expect(message).toContain('required');
+    });
+
+    it('rejects an HTTP PASSWORD_RESET_URL_BASE in production without echoing values', () => {
+      const url = 'http://app.example.com/reset-password';
+      const message = messageOf({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: url,
+      });
+      expect(message).toContain('PASSWORD_RESET_URL_BASE');
+      expect(message).toContain('must use HTTPS in production');
+      expect(message).not.toContain(url);
+      expect(message).not.toContain(SECRET);
+      expect(message).not.toContain(JWT_SECRET_VALUE);
+    });
+
+    it.each(['development', 'test'])('accepts an HTTP reset URL in %s', (nodeEnv) => {
+      const url = 'http://localhost:5173/reset-password';
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          NODE_ENV: nodeEnv,
+          PASSWORD_RESET_URL_BASE: url,
+        }).passwordResetUrlBase,
+      ).toBe(url);
+    });
+
+    it('accepts an explicit PASSWORD_RESET_URL_BASE in production', () => {
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          NODE_ENV: 'production',
+          PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
+        }).passwordResetUrlBase,
+      ).toBe('https://app.example.com/reset-password');
+    });
+  });
+
   it.each(['mysql://localhost/db', 'not a url', 'http://localhost'])(
     'rejects DATABASE_URL=%s',
     (url) => {
@@ -144,6 +258,13 @@ describe('loadApiConfig', () => {
     const message = messageOf({ ...validEnv(), INTERNAL_SERVICE_SECRET: 'too-short' });
     expect(message).toContain('INTERNAL_SERVICE_SECRET');
     expect(message).toContain('32');
+  });
+
+  it('rejects a short JWT_SECRET without echoing its value', () => {
+    const message = messageOf({ ...validEnv(), JWT_SECRET: 'short-jwt-key' });
+    expect(message).toContain('JWT_SECRET');
+    expect(message).toContain('32');
+    expect(message).not.toContain('short-jwt-key');
   });
 
   it.each(['localhost:5173', 'ftp://example.com', 'http://a.com/path', 'http://a.com/', ','])(

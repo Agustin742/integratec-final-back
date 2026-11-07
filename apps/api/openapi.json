@@ -54,6 +54,158 @@
         "summary": "Register account and select organizational path",
         "tags": ["auth"]
       }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Opens a session and returns a short-lived access token (JWT) plus an opaque refresh token. Send the access token in the Authorization header as a Bearer credential.",
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequestDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session opened.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPairResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (malformed email or missing password).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials. The response is identical for an unknown email and a wrong password.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Log in with email and password",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Exchanges a refresh token for a new access token and a new refresh token for the same session. The presented refresh token becomes invalid; presenting an already rotated token revokes the whole session, except within a short reuse window after its rotation (REFRESH_REUSE_GRACE, default 30s) where a new pair is issued for the same session. The session keeps its original expiry.",
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/RefreshRequestDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "New token pair issued.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPairResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (missing or malformed refreshToken).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Unknown, already rotated, or expired refresh token, or a revoked or expired session. The response is the same generic error in every case.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Rotate the refresh token",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Revokes the session of the Bearer access token. Afterwards that access token and the session's refresh tokens are rejected with 401.",
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": { "description": "Session revoked." },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Log out and revoke the current session",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/password-reset/request": {
+      "post": {
+        "description": "Always answers 202 with the same body, whether or not the email belongs to an account, so it cannot be used to discover registered emails. For a registered email a link (`<PASSWORD_RESET_URL_BASE>?token=<token>`) is emailed asynchronously; it is single-use and expires after PASSWORD_RESET_TTL (default 1h). Public endpoint.",
+        "operationId": "AuthController_requestPasswordReset",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasswordResetRequestDto" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Request accepted. Identical for registered and unregistered emails.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PasswordResetRequestedResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (missing or malformed email).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Request a password reset email",
+        "tags": ["auth"]
+      }
+    },
+    "/auth/password-reset/confirm": {
+      "post": {
+        "description": "Spends the token from the emailed link: sets the new password and revokes every session of the account, so previous access and refresh tokens stop working. The token works once. Public endpoint.",
+        "operationId": "AuthController_confirmPasswordReset",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PasswordResetConfirmRequestDto" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Password changed and previous sessions revoked." },
+          "400": {
+            "description": "Validation failed (missing token, password outside the policy), or the token is unknown, already used or expired (BAD_REQUEST, the same generic error in every case).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "summary": "Set a new password with a reset token",
+        "tags": ["auth"]
+      }
     }
   },
   "info": {
@@ -65,6 +217,7 @@
   "tags": [],
   "servers": [],
   "components": {
+    "securitySchemes": { "bearer": { "scheme": "bearer", "bearerFormat": "JWT", "type": "http" } },
     "schemas": {
       "HealthStatus": {
         "type": "object",
@@ -235,6 +388,105 @@
         "type": "object",
         "properties": { "error": { "$ref": "#/components/schemas/ErrorBody" } },
         "required": ["error"]
+      },
+      "LoginRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "Account email address, normalized to lowercase and trimmed",
+            "maxLength": 255
+          },
+          "password": {
+            "type": "string",
+            "example": "passwordSegura123",
+            "description": "Account password (at most 72 UTF-8 bytes, the bcrypt input limit)",
+            "maxLength": 72
+          }
+        },
+        "required": ["email", "password"]
+      },
+      "TokenPairResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4ifQ.signature",
+            "description": "Short-lived JWT (HS256). Send it as `Authorization: Bearer <accessToken>`."
+          },
+          "refreshToken": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "Opaque refresh token. Stored server-side only as a SHA-256 digest; keep it secret."
+          },
+          "tokenType": {
+            "type": "string",
+            "example": "Bearer",
+            "enum": ["Bearer"],
+            "description": "Authorization scheme."
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 900,
+            "description": "Access token lifetime in seconds."
+          }
+        },
+        "required": ["accessToken", "refreshToken", "tokenType", "expiresIn"]
+      },
+      "RefreshRequestDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "The current opaque refresh token. It is single-use: the response carries its replacement.",
+            "maxLength": 512
+          }
+        },
+        "required": ["refreshToken"]
+      },
+      "PasswordResetRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "profesora.ana@example.com",
+            "description": "Email of the account to reset, normalized to lowercase and trimmed",
+            "maxLength": 255
+          }
+        },
+        "required": ["email"]
+      },
+      "PasswordResetRequestedResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "If the email belongs to an account, a reset link has been sent.",
+            "description": "Constant message; it never reveals whether the email is registered."
+          }
+        },
+        "required": ["message"]
+      },
+      "PasswordResetConfirmRequestDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "The opaque token from the emailed link (`?token=`). It works once.",
+            "maxLength": 512
+          },
+          "newPassword": {
+            "type": "string",
+            "example": "passwordSegura123",
+            "description": "The new password, under the same policy as registration",
+            "minLength": 8,
+            "maxLength": 72
+          }
+        },
+        "required": ["token", "newPassword"]
       }
     }
   }

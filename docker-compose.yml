@@ -79,9 +79,13 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-aula_virtual}?schema=public
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-7d}
+      REFRESH_REUSE_GRACE: ${REFRESH_REUSE_GRACE:-30s}
+      PASSWORD_RESET_TTL: ${PASSWORD_RESET_TTL:-1h}
+      PASSWORD_RESET_URL_BASE: ${PASSWORD_RESET_URL_BASE:-http://localhost:5173/reset-password}
       INVITATION_TTL: ${INVITATION_TTL:-7d}
       S3_BUCKET: ${S3_BUCKET:-aula-virtual-dev}
       S3_REGION: ${S3_REGION:-sa-east-1}
