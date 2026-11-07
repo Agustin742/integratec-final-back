@@ -206,6 +206,77 @@
         "summary": "Set a new password with a reset token",
         "tags": ["auth"]
       }
+    },
+    "/users/me": {
+      "get": {
+        "description": "Identity comes only from the verified session. Missing/empty avatar returns base defaults without a write.",
+        "operationId": "UsersController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OwnProfileDto" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "500": {
+            "description": "Unsupported nonempty stored appearance. No stored value is exposed or changed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read own profile and base avatar",
+        "tags": ["users"]
+      }
+    },
+    "/users/me/profile": {
+      "patch": {
+        "operationId": "UsersController_updateProfile",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/UpdateProfileDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OwnProfileDto" } }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_FAILED with per-field details; unknown fields rejected.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "500": {
+            "description": "Unsupported nonempty stored appearance. Profile is not changed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Update own display name",
+        "tags": ["users"]
+      }
     }
   },
   "info": {
@@ -487,6 +558,60 @@
           }
         },
         "required": ["token", "newPassword"]
+      },
+      "AvatarDto": {
+        "type": "object",
+        "properties": {
+          "bodyId": { "type": "string", "enum": ["male", "female"], "example": "male" },
+          "hairId": {
+            "type": "string",
+            "enum": ["afro", "dreads", "original"],
+            "example": "afro",
+            "description": "male: afro/dreads; female: afro/original."
+          },
+          "topId": {
+            "type": "string",
+            "enum": ["hoodie", "tank", "tshirt"],
+            "example": "hoodie",
+            "description": "male: hoodie/tank; female: hoodie/tank/tshirt. Uniforms excluded."
+          },
+          "hairColor": {
+            "type": "string",
+            "enum": ["#6C4D48", "#AF6D63", "#E5AD58", "#353849", "#C77DAA"],
+            "example": "#6C4D48",
+            "description": "Case-insensitive; returned uppercase."
+          },
+          "clothingColor": {
+            "type": "string",
+            "enum": ["#5B4F96", "#75B7DA", "#F2C85C", "#EFA5AE", "#7EBA8B", "#F4E6D2"],
+            "example": "#5B4F96",
+            "description": "Case-insensitive; returned uppercase."
+          }
+        },
+        "required": ["bodyId", "hairId", "topId", "hairColor", "clothingColor"]
+      },
+      "OwnProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "example": "teacher@example.test" },
+          "displayName": { "type": "string", "example": "Prof. Ana" },
+          "avatar": { "$ref": "#/components/schemas/AvatarDto" }
+        },
+        "required": ["id", "email", "displayName", "avatar"]
+      },
+      "UpdateProfileDto": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "example": "Prof. Ana",
+            "description": "Trimmed before validation."
+          }
+        },
+        "required": ["displayName"]
       }
     }
   }
