@@ -1,4 +1,4 @@
-import { Body, Controller, Headers, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
   ApiAcceptedResponse,
   ApiBadRequestResponse,
@@ -13,6 +13,7 @@ import {
 } from '@nestjs/swagger';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { AuthService } from './auth.service';
+import { CurrentSession } from './current-user.decorator';
 import { PasswordResetConfirmRequestDto } from './dto/password-reset-confirm-request.dto';
 import { PasswordResetRequestDto } from './dto/password-reset-request.dto';
 import { PasswordResetRequestedResponseDto } from './dto/password-reset-requested-response.dto';
@@ -22,7 +23,8 @@ import { RegisterRequestDto } from './dto/register-request.dto';
 import { RegisterResponseDto } from './dto/register-response.dto';
 import { TokenPairResponseDto } from './dto/token-pair-response.dto';
 import { PasswordResetService } from './password-reset.service';
-import { SessionVerifier } from './session-verifier.service';
+import { Public } from './public.decorator';
+import { SessionVerifier, type VerifiedSession } from './session-verifier.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -33,6 +35,7 @@ export class AuthController {
     private readonly passwordReset: PasswordResetService,
   ) {}
 
+  @Public()
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -57,6 +60,7 @@ export class AuthController {
     return this.authService.register(dto);
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -79,6 +83,7 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -119,11 +124,11 @@ export class AuthController {
     type: ErrorEnvelopeDto,
     description: 'Missing, malformed, expired, or revoked access token.',
   })
-  async logout(@Headers('authorization') authorization: string | undefined): Promise<void> {
-    const { sessionId } = await this.sessionVerifier.verifyAuthorizationHeader(authorization);
-    await this.authService.logout(sessionId);
+  async logout(@CurrentSession() session: VerifiedSession): Promise<void> {
+    await this.authService.logout(session.sessionId);
   }
 
+  @Public()
   @Post('password-reset/request')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
@@ -148,6 +153,7 @@ export class AuthController {
     return this.passwordReset.request(dto);
   }
 
+  @Public()
   @Post('password-reset/confirm')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
