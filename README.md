@@ -179,7 +179,7 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
 | `AUTH_DATA_RETENTION`     | Default `30d`; same format; not shorter than `REFRESH_TOKEN_TTL` | How long past expiry (or rotation/use) sessions, rotated refresh tokens and reset tokens are kept before cleanup | Public | Yes |
-| `AUTH_CLEANUP_INTERVAL`   | Default `24h`; same format                        | Pause between auth data cleanup runs (not scheduled when `NODE_ENV=test`) | Public         | Yes     |
+| `AUTH_CLEANUP_INTERVAL`   | Default `24h`, max `7d`; same format              | Pause between auth data cleanup runs (not scheduled when `NODE_ENV=test`) | Public         | Yes     |
 | `AUTH_CLEANUP_BATCH_SIZE` | Default `1000`; integer 1-10000                   | Maximum rows removed by one cleanup `DELETE` statement                   | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `JWT_SECRET`              | Required; at least 32 characters                  | HS256 signing key of access tokens (API only; never shared with the realtime server) | Private | Yes     |

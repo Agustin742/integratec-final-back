@@ -64,6 +64,12 @@ export const MAX_PASSWORD_RESET_TTL_SECONDS = 86400;
 /** Upper bound for the cleanup batch size: keeps each DELETE statement short. */
 export const MAX_AUTH_CLEANUP_BATCH_SIZE = 10000;
 
+/**
+ * Upper bound for the cleanup interval. Well below Node's 2^31-1 ms timer limit (~24.8d),
+ * beyond which `setInterval` clamps the delay to 1 ms and would loop the cleanup.
+ */
+export const MAX_AUTH_CLEANUP_INTERVAL_SECONDS = 7 * 86400;
+
 /** Defaults of the auth cleanup settings, in seconds (the env schema spells them as durations). */
 export const DEFAULT_AUTH_DATA_RETENTION_SECONDS = 30 * 86400;
 export const DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS = 86400;
@@ -109,6 +115,7 @@ const PASSWORD_RESET_URL_MESSAGE =
   'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/reset-password';
 const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
 
+const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, such as 24h';
 const BATCH_SIZE_MESSAGE = `must be an integer between 1 and ${MAX_AUTH_CLEANUP_BATCH_SIZE}`;
 
 const required = { error: 'is required' };
@@ -221,7 +228,11 @@ const envSchema = z
           ),
       ),
     AUTH_DATA_RETENTION: duration('30d'),
-    AUTH_CLEANUP_INTERVAL: duration('24h'),
+    AUTH_CLEANUP_INTERVAL: duration(
+      '24h',
+      MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+      AUTH_CLEANUP_INTERVAL_MESSAGE,
+    ),
     AUTH_CLEANUP_BATCH_SIZE: z
       .string()
       .default('1000')

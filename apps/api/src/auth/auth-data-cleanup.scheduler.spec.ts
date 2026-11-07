@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiConfig } from '../config/api-config';
 import type { AuthDataCleanupResult, AuthDataCleanupService } from './auth-data-cleanup.service';
@@ -93,6 +94,27 @@ describe('AuthDataCleanupScheduler', () => {
 
     await vi.advanceTimersByTimeAsync(INTERVAL_MS);
     expect(run).toHaveBeenCalledTimes(2);
+    await scheduler.onModuleDestroy();
+  });
+
+  it('logs the Prisma error code but never the message', async () => {
+    run.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('msg with token abc', {
+        code: 'P1001',
+        clientVersion: 'x',
+      }),
+    );
+    const scheduler = build();
+    scheduler.onModuleInit();
+
+    await vi.advanceTimersByTimeAsync(AUTH_CLEANUP_STARTUP_DELAY_MS);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error.mock.calls[0][0]).toMatchObject({
+      operation: 'auth.cleanup',
+      errorName: 'PrismaClientKnownRequestError',
+      errorCode: 'P1001',
+    });
+    expect(JSON.stringify(error.mock.calls)).not.toContain('token abc');
     await scheduler.onModuleDestroy();
   });
 

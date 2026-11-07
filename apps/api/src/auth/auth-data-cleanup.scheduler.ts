@@ -5,13 +5,14 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { AuthDataCleanupService } from './auth-data-cleanup.service';
 
 /**
- * Pause before the first run after boot. Without it a host that restarts more often than
- * `AUTH_CLEANUP_INTERVAL` (frequent deploys) would never reach its first interval tick.
+ * Pause before the first run after boot, so a host that restarts often still gets cleaned
+ * instead of waiting a full `AUTH_CLEANUP_INTERVAL` after every restart.
  */
 export const AUTH_CLEANUP_STARTUP_DELAY_MS = 60_000;
 
@@ -63,7 +64,7 @@ export class AuthDataCleanupScheduler implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Never rejects: counts and duration on success, only the error class on failure. */
+  /** Never rejects: counts and duration on success, the error class and Prisma code on failure. */
   private async execute(): Promise<void> {
     const startedAt = Date.now();
     try {
@@ -73,8 +74,16 @@ export class AuthDataCleanupScheduler implements OnModuleInit, OnModuleDestroy {
       this.logger.error({
         operation: 'auth.cleanup',
         errorName: error instanceof Error ? error.name : 'unknown',
+        errorCode: prismaErrorCode(error),
         durationMs: Date.now() - startedAt,
       });
     }
   }
+}
+
+/** Prisma's own error code (such as P1001) is a fixed identifier, safe to log unlike the message. */
+function prismaErrorCode(error: unknown): string | undefined {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) return error.code;
+  if (error instanceof Prisma.PrismaClientInitializationError) return error.errorCode;
+  return undefined;
 }

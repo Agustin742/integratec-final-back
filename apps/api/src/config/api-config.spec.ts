@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ConfigValidationError, loadApiConfig } from './api-config';
+import {
+  ConfigValidationError,
+  DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+  DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+  DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+  MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+  loadApiConfig,
+} from './api-config';
 
 const SECRET = 's3cr3t-value-that-is-at-least-32-chars-long!';
 const JWT_SECRET_VALUE = 'jwt-signing-key-synthetic-for-tests-0000';
@@ -49,6 +56,24 @@ describe('loadApiConfig', () => {
       authCleanupIntervalSeconds: 86400,
       authCleanupBatchSize: 1000,
     });
+  });
+
+  it('keeps the exported auth cleanup defaults equal to the schema defaults', () => {
+    expect(loadApiConfig(validEnv())).toMatchObject({
+      authDataRetentionSeconds: DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+      authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+      authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+    });
+  });
+
+  it('accepts an AUTH_CLEANUP_INTERVAL of 7d and rejects 8d', () => {
+    expect(loadApiConfig({ ...validEnv(), AUTH_CLEANUP_INTERVAL: '7d' })).toMatchObject({
+      authCleanupIntervalSeconds: MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+    });
+    expect(MAX_AUTH_CLEANUP_INTERVAL_SECONDS).toBe(604800);
+    const message = messageOf({ ...validEnv(), AUTH_CLEANUP_INTERVAL: '8d' });
+    expect(message).toContain('AUTH_CLEANUP_INTERVAL');
+    expect(message).toContain('between 1s and 7d');
   });
 
   it('parses explicit auth cleanup values', () => {
