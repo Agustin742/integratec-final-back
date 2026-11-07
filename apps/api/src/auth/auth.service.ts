@@ -26,6 +26,7 @@ import {
 } from './session-tokens';
 import { BCRYPT_SALT_ROUNDS, hashPassword } from './password-hash';
 import { slugify } from './slugify';
+import { lockCredentialUser } from './credential-lock';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -83,14 +84,21 @@ export class AuthService implements OnModuleInit {
     }
 
     const refreshToken = generateRefreshToken();
-    // One nested write: the session and its first refresh token commit together or not at all.
-    const session = await this.prisma.session.create({
-      data: {
-        userId: user.id,
-        expiresAt: new Date(Date.now() + this.config.refreshTokenTtlSeconds * 1000),
-        refreshTokens: { create: { tokenHash: hashRefreshToken(refreshToken) } },
-      },
-      select: { id: true },
+    const session = await this.prisma.$transaction(async (tx) => {
+      // Bcrypt stays outside the lock. Reject a credential snapshot invalidated by
+      // reset, and hold the row until the session and its first token commit.
+      const current = await lockCredentialUser(tx, user.id);
+      if (current === undefined || current.passwordHash !== user.passwordHash) {
+        throw new UnauthorizedException();
+      }
+      return tx.session.create({
+        data: {
+          userId: user.id,
+          expiresAt: new Date(Date.now() + this.config.refreshTokenTtlSeconds * 1000),
+          refreshTokens: { create: { tokenHash: hashRefreshToken(refreshToken) } },
+        },
+        select: { id: true },
+      });
     });
 
     return this.tokenPair({ sub: user.id, sid: session.id }, refreshToken);

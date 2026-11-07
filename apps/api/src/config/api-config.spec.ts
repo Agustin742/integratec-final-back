@@ -192,15 +192,48 @@ describe('loadApiConfig', () => {
       'https://app.example.com/reset#frag',
       'https://user:pw@app.example.com/reset',
     ])('rejects PASSWORD_RESET_URL_BASE=%s', (value) => {
-      const message = messageOf({ ...validEnv(), PASSWORD_RESET_URL_BASE: value });
-      expect(message).toContain('PASSWORD_RESET_URL_BASE');
-      expect(message).not.toContain('pw@');
+      for (const nodeEnv of ['development', 'test', 'production']) {
+        const message = messageOf({
+          ...validEnv(),
+          NODE_ENV: nodeEnv,
+          PASSWORD_RESET_URL_BASE: value,
+        });
+        expect(message).toContain('PASSWORD_RESET_URL_BASE');
+        expect(message).toContain('must be an absolute http(s) URL');
+        expect(message).not.toContain(value);
+        expect(message).not.toContain('pw@');
+      }
     });
 
     it('requires PASSWORD_RESET_URL_BASE in production', () => {
       const message = messageOf({ ...validEnv(), NODE_ENV: 'production' });
       expect(message).toContain('PASSWORD_RESET_URL_BASE');
       expect(message).toContain('required');
+    });
+
+    it('rejects an HTTP PASSWORD_RESET_URL_BASE in production without echoing values', () => {
+      const url = 'http://app.example.com/reset-password';
+      const message = messageOf({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: url,
+      });
+      expect(message).toContain('PASSWORD_RESET_URL_BASE');
+      expect(message).toContain('must use HTTPS in production');
+      expect(message).not.toContain(url);
+      expect(message).not.toContain(SECRET);
+      expect(message).not.toContain(JWT_SECRET_VALUE);
+    });
+
+    it.each(['development', 'test'])('accepts an HTTP reset URL in %s', (nodeEnv) => {
+      const url = 'http://localhost:5173/reset-password';
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          NODE_ENV: nodeEnv,
+          PASSWORD_RESET_URL_BASE: url,
+        }).passwordResetUrlBase,
+      ).toBe(url);
     });
 
     it('accepts an explicit PASSWORD_RESET_URL_BASE in production', () => {
