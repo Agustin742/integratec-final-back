@@ -29,9 +29,9 @@ export class AuthDataCleanupService {
   /**
    * Deletes rows older than the retention window counted back from `now`.
    *
-   * Counts are rows removed by an explicit rule: `sessions` counts expired sessions (their
-   * refresh tokens go with them through the cascade and are not counted), `refreshTokens`
-   * counts rotated tokens pruned from sessions that are still stored.
+   * Counts are rows removed by an explicit rule: `sessions` counts expired sessions deleted,
+   * and `refreshTokens` counts only rotated tokens deleted by the rotated rule. Tokens removed
+   * together with their session through the foreign key cascade are not counted.
    */
   async run(now: Date = new Date()): Promise<AuthDataCleanupResult> {
     const cutoff = new Date(now.getTime() - this.config.authDataRetentionSeconds * 1000);

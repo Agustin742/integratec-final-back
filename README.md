@@ -178,6 +178,9 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
+| `AUTH_DATA_RETENTION`     | Default `30d`; same format; not shorter than `REFRESH_TOKEN_TTL` | How long past expiry (or rotation/use) sessions, rotated refresh tokens and reset tokens are kept before cleanup | Public | Yes |
+| `AUTH_CLEANUP_INTERVAL`   | Default `24h`; same format                        | Pause between auth data cleanup runs (not scheduled when `NODE_ENV=test`) | Public         | Yes     |
+| `AUTH_CLEANUP_BATCH_SIZE` | Default `1000`; integer 1-10000                   | Maximum rows removed by one cleanup `DELETE` statement                   | Public         | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `JWT_SECRET`              | Required; at least 32 characters                  | HS256 signing key of access tokens (API only; never shared with the realtime server) | Private | Yes     |
 | `ALLOWED_ORIGINS`         | Required; comma-separated `http(s)` origins       | CORS allowlist (scheme, host and optional port; no path or trailing `/`) | Public         | Yes     |
@@ -262,8 +265,9 @@ Endpoints live under `/auth` (`register`, `login`, `refresh`, `logout`, `passwor
 - **Refresh:** rotates the refresh token on every use. Presenting an already-rotated token is treated as reuse and revokes the whole session, except inside the `REFRESH_REUSE_GRACE` window (default 30s, `0s` disables), which tolerates a client retrying after a lost response.
 - **Logout:** revokes the current session.
 - **Password reset:** `request` always answers `202` whether or not the account exists (no enumeration) and records a transactional outbox event; a handler sends the email through `EmailPort` with the link `PASSWORD_RESET_URL_BASE?token=<token>`. The token is random, stored hashed, single-use and expires after `PASSWORD_RESET_TTL`. `confirm` sets the new password and revokes all of the user's sessions.
+- **Data cleanup:** an in-process job (`AuthDataCleanupScheduler`) prunes auth rows nobody can use any more, so the tables do not grow without bound. It runs about a minute after startup and then every `AUTH_CLEANUP_INTERVAL` (default 24h), and deletes in bounded batches of `AUTH_CLEANUP_BATCH_SIZE` rows. It removes sessions that expired more than `AUTH_DATA_RETENTION` ago (their refresh tokens go with them), rotated refresh tokens rotated more than that ago, and password reset tokens used or expired more than that ago. `AUTH_DATA_RETENTION` (default 30d) must not be shorter than `REFRESH_TOKEN_TTL`, so a live session never loses the rotated tokens that reuse detection relies on. Each run logs only counts per table and its duration, never tokens or user data; a failed run is logged and retried at the next interval.
 
-Known limitations: login and reset requests are not throttled yet (planned for #19 or later), expired refresh-token rows are not cleaned up yet, and `EmailPort` is still the in-memory stub, so no real email is sent.
+Known limitations: login and reset requests are not throttled yet (planned for #19 or later), and `EmailPort` is still the in-memory stub, so no real email is sent.
 
 ## Documentation
 

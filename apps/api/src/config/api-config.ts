@@ -64,6 +64,11 @@ export const MAX_PASSWORD_RESET_TTL_SECONDS = 86400;
 /** Upper bound for the cleanup batch size: keeps each DELETE statement short. */
 export const MAX_AUTH_CLEANUP_BATCH_SIZE = 10000;
 
+/** Defaults of the auth cleanup settings, in seconds (the env schema spells them as durations). */
+export const DEFAULT_AUTH_DATA_RETENTION_SECONDS = 30 * 86400;
+export const DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS = 86400;
+export const DEFAULT_AUTH_CLEANUP_BATCH_SIZE = 1000;
+
 /** Local frontend reset page, used when `PASSWORD_RESET_URL_BASE` is unset outside production. */
 export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/reset-password';
 
@@ -271,6 +276,19 @@ const envSchema = z
         code: 'custom',
         path: ['PASSWORD_RESET_URL_BASE'],
         message: 'must use HTTPS in production',
+      });
+    }
+    // Pruning rotated tokens of a still-live session would break refresh reuse detection.
+    if (
+      typeof env.AUTH_DATA_RETENTION === 'number' &&
+      typeof env.REFRESH_TOKEN_TTL === 'number' &&
+      env.AUTH_DATA_RETENTION < env.REFRESH_TOKEN_TTL
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_DATA_RETENTION'],
+        message:
+          'must not be shorter than REFRESH_TOKEN_TTL, or rotated tokens of live sessions would be pruned',
       });
     }
     // Both keys or neither: with neither, the SDK resolves the instance role.

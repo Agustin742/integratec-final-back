@@ -72,6 +72,22 @@ describe('loadApiConfig', () => {
     }
   });
 
+  it('accepts a retention equal to the refresh token lifetime', () => {
+    expect(
+      loadApiConfig({ ...validEnv(), REFRESH_TOKEN_TTL: '10d', AUTH_DATA_RETENTION: '10d' }),
+    ).toMatchObject({ authDataRetentionSeconds: 864000, refreshTokenTtlSeconds: 864000 });
+  });
+
+  it('rejects a retention shorter than the refresh token lifetime', () => {
+    const message = messageOf({
+      ...validEnv(),
+      REFRESH_TOKEN_TTL: '10d',
+      AUTH_DATA_RETENTION: '9d',
+    });
+    expect(message).toContain('AUTH_DATA_RETENTION');
+    expect(message).toContain('REFRESH_TOKEN_TTL');
+  });
+
   it.each(['0', '10001', 'abc', '1.5', '-1'])('rejects AUTH_CLEANUP_BATCH_SIZE=%s', (value) => {
     expect(messageOf({ ...validEnv(), AUTH_CLEANUP_BATCH_SIZE: value })).toContain(
       'AUTH_CLEANUP_BATCH_SIZE',
