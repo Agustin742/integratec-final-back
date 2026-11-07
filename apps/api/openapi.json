@@ -277,6 +277,48 @@
         "summary": "Update own display name",
         "tags": ["users"]
       }
+    },
+    "/users/me/avatar": {
+      "patch": {
+        "description": "All five fields required, not a partial merge. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.",
+        "operationId": "UsersController_updateAvatar",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AvatarDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AvatarDto" } }
+            }
+          },
+          "400": {
+            "description": "VALIDATION_FAILED with per-field details; unknown fields, incompatible choices and non-palette colors rejected.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Avatar access adapter denied use.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Replace own base avatar",
+        "tags": ["users"]
+      }
     }
   },
   "info": {

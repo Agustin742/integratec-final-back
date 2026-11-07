@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-07 — Own profile and base avatar (#20)
+
+- **Status:** completed (local implementation; publication pending)
+- **Area / files:** `apps/api/src/users/`, `apps/api/src/app.module.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`, `README.md`
+- **Change:** Implemented authenticated `GET /users/me`, `PATCH /users/me/profile` and `PATCH /users/me/avatar` with verified-session identity, safe response projections, finite body-compatible free options, palette validation and persistent complete appearance snapshots. Missing/empty legacy appearance is defaulted only in the response, without a GET write. Documented the contract and future ownership-port boundary; shop, frontend and realtime remain out of scope. AI-assisted work directed by Alejo.
+- **Reason:** Complete backend #20 after merged #18 while preventing cross-user changes and sensitive-data disclosure. The human approved free body/hairstyle/base clothes and reserved accessories for shop work.
+- **Verification:** RED reproduced absent endpoints (404); final focused44/44 and full workspace378/378 passed. Lint, typecheck, build, docs62files, changed-file formatting and whitespace passed. Independent verification passed78/78 plus API typecheck in a fresh scratch snapshot/separate database, with no blocking finding. Optional extra public-endpoint probes could not be created and were not retried; visual acceptance is not claimed. Both local slices passed tests (24/44), typecheck, generated-contract equality and formatting. Corrected an initial local-port test assumption; runner-supplied isolated DATABASE_URL is portable. Native assessment of the implementation and first committed unit reported reviewDuefalse; no native review or approval is claimed.
+- **Delivery:** Human selected a feature-branch chain: `feat/20-own-profile` (commit `d4c1cb7`) targets tracker branch `feat/20-profile-avatar`; `feat/20-base-avatar` builds on that profile branch. One slicing pass retained606 authored lines in the first coherent security/read unit rather than omit tests; the avatar-write unit is smaller. Generated OpenAPI is counted separately. Local plan/artifacts stay ignored.
+- **Next step:** Publish the selected chain and request teammate review only after explicit authorization. No push, PR creation, merge or deployment was performed.
+
 ## 2026-11-07 — Security corrections for Agustin's authentication PR #68
 
 - **Status:** completed

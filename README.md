@@ -202,7 +202,7 @@ Blank values are treated as unset. "Public" means the value is not a credential;
 
 ## Own profile and base avatar
 
-Authenticated users can read `GET /users/me` and change their display name with `PATCH /users/me/profile`. Appearance is read-only in this slice; base-avatar writes follow in the next slice. Accessories/shop equip and realtime broadcasts are out of scope. See the [profile/avatar integration guide](./docs/profile-avatar.md) for supported IDs, defaults, examples and error semantics. The contract is included in the committed [OpenAPI document](./apps/api/openapi.json).
+Authenticated users can read `GET /users/me`, change their display name with `PATCH /users/me/profile`, and replace their complete base appearance with `PATCH /users/me/avatar`. Body, hair and ordinary base tops are free; accessories/shop equip and realtime broadcasts are out of scope. See the [profile/avatar integration guide](./docs/profile-avatar.md) for supported IDs, defaults, examples and error semantics. The contract is included in the committed [OpenAPI document](./apps/api/openapi.json).
 
 ## Platform ports
 

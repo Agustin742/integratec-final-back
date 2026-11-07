@@ -3,7 +3,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { compatibilityErrors } from './avatar-access.port';
+import { AvatarAccessPort, compatibilityErrors } from './avatar-access.port';
 import { AvatarDto, avatarSnapshot, DEFAULT_AVATAR } from './avatar.dto';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 
@@ -17,7 +17,10 @@ type ProfileRecord = Prisma.UserGetPayload<{ select: typeof profileSelection }>;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: AvatarAccessPort,
+  ) {}
 
   async getMe(userId: string): Promise<OwnProfileDto> {
     const user = await this.prisma.user.findUnique({
@@ -37,6 +40,18 @@ export class UsersService {
       select: profileSelection,
     });
     return this.toProfile(user);
+  }
+
+  async updateAvatar(userId: string, dto: AvatarDto): Promise<AvatarDto> {
+    await this.access.assertCanUse(userId, dto);
+    const snapshot = avatarSnapshot(dto);
+    await this.prisma.avatarConfiguration.upsert({
+      where: { userId },
+      create: { userId, appearance: { ...snapshot } },
+      update: { appearance: { ...snapshot } },
+      select: { userId: true },
+    });
+    return snapshot;
   }
 
   private toProfile(user: ProfileRecord): OwnProfileDto {

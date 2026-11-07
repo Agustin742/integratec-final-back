@@ -2,6 +2,7 @@ import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiForbiddenResponse,
   ApiInternalServerErrorResponse,
   ApiOkResponse,
   ApiOperation,
@@ -9,6 +10,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
+import { AvatarDto } from './avatar.dto';
 import { OwnSessionGuard, type OwnUserRequest } from './own-session.guard';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 import { UsersService } from './users.service';
@@ -52,5 +54,25 @@ export class UsersController {
   })
   updateProfile(@Req() req: OwnUserRequest, @Body() dto: UpdateProfileDto): Promise<OwnProfileDto> {
     return this.users.updateProfile(req.verifiedUserId, dto);
+  }
+
+  @Patch('avatar')
+  @ApiOperation({
+    summary: 'Replace own base avatar',
+    description:
+      'All five fields required, not a partial merge. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.',
+  })
+  @ApiOkResponse({ type: AvatarDto })
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'VALIDATION_FAILED with per-field details; unknown fields, incompatible choices and non-palette colors rejected.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Avatar access adapter denied use.',
+  })
+  updateAvatar(@Req() req: OwnUserRequest, @Body() dto: AvatarDto): Promise<AvatarDto> {
+    return this.users.updateAvatar(req.verifiedUserId, dto);
   }
 }
