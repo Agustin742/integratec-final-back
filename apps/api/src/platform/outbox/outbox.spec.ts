@@ -44,6 +44,9 @@ const config: ApiConfig = {
   s3ForcePathStyle: false,
   s3Credentials: undefined,
   storageSignedUrlTtlSeconds: 1,
+  authDataRetentionSeconds: 2592000,
+  authCleanupIntervalSeconds: 86400,
+  authCleanupBatchSize: 1000,
 };
 
 describe('transactional outbox (integration, real Postgres)', () => {

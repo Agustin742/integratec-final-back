@@ -38,6 +38,9 @@ const EXPORT_CONFIG: ApiConfig = {
   s3ForcePathStyle: false,
   s3Credentials: undefined,
   storageSignedUrlTtlSeconds: 1,
+  authDataRetentionSeconds: 2592000,
+  authCleanupIntervalSeconds: 86400,
+  authCleanupBatchSize: 1000,
 };
 
 /** Returns the OpenAPI document as repository-formatted JSON ending with a newline. */

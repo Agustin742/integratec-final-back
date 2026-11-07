@@ -30,5 +30,8 @@ export const authTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =>
   s3ForcePathStyle: false,
   s3Credentials: undefined,
   storageSignedUrlTtlSeconds: 300,
+  authDataRetentionSeconds: 2592000,
+  authCleanupIntervalSeconds: 86400,
+  authCleanupBatchSize: 1000,
   ...overrides,
 });

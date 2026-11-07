@@ -44,6 +44,9 @@ const config: ApiConfig = {
     secretAccessKey: env('S3_SECRET_ACCESS_KEY', 'minioadmin'),
   },
   storageSignedUrlTtlSeconds: 60,
+  authDataRetentionSeconds: 2592000,
+  authCleanupIntervalSeconds: 86400,
+  authCleanupBatchSize: 1000,
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

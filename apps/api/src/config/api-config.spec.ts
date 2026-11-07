@@ -45,7 +45,37 @@ describe('loadApiConfig', () => {
       s3ForcePathStyle: false,
       s3Credentials: undefined,
       storageSignedUrlTtlSeconds: 300,
+      authDataRetentionSeconds: 2592000,
+      authCleanupIntervalSeconds: 86400,
+      authCleanupBatchSize: 1000,
     });
+  });
+
+  it('parses explicit auth cleanup values', () => {
+    expect(
+      loadApiConfig({
+        ...validEnv(),
+        AUTH_DATA_RETENTION: '45d',
+        AUTH_CLEANUP_INTERVAL: '6h',
+        AUTH_CLEANUP_BATCH_SIZE: '250',
+      }),
+    ).toMatchObject({
+      authDataRetentionSeconds: 3888000,
+      authCleanupIntervalSeconds: 21600,
+      authCleanupBatchSize: 250,
+    });
+  });
+
+  it.each(['AUTH_DATA_RETENTION', 'AUTH_CLEANUP_INTERVAL'])('rejects a malformed %s', (name) => {
+    for (const value of ['30', '30x', 'd', '-5d', '1.5h', '0d']) {
+      expect(messageOf({ ...validEnv(), [name]: value })).toContain(name);
+    }
+  });
+
+  it.each(['0', '10001', 'abc', '1.5', '-1'])('rejects AUTH_CLEANUP_BATCH_SIZE=%s', (value) => {
+    expect(messageOf({ ...validEnv(), AUTH_CLEANUP_BATCH_SIZE: value })).toContain(
+      'AUTH_CLEANUP_BATCH_SIZE',
+    );
   });
 
   it('parses explicit values', () => {

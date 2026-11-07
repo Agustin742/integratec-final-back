@@ -35,6 +35,9 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   s3ForcePathStyle: false,
   s3Credentials: undefined,
   storageSignedUrlTtlSeconds: 300,
+  authDataRetentionSeconds: 2592000,
+  authCleanupIntervalSeconds: 86400,
+  authCleanupBatchSize: 1000,
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {
