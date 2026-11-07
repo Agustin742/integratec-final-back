@@ -24,8 +24,8 @@ export interface ApiConfig {
   passwordResetTtlSeconds: number;
   /**
    * Frontend page that completes a reset. The emailed link is `<base>?token=<token>`, so
-   * the base has no query string or fragment. Required in production; elsewhere it
-   * defaults to the local frontend.
+   * the base has no query string or fragment. Required with HTTPS in production;
+   * elsewhere it defaults to the local frontend.
    */
   passwordResetUrlBase: string;
   invitationTtlSeconds: number;
@@ -231,6 +231,18 @@ const envSchema = z
         code: 'custom',
         path: ['PASSWORD_RESET_URL_BASE'],
         message: 'is required in production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.PASSWORD_RESET_URL_BASE !== undefined &&
+      isResetUrlBase(env.PASSWORD_RESET_URL_BASE) &&
+      new URL(env.PASSWORD_RESET_URL_BASE).protocol !== 'https:'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PASSWORD_RESET_URL_BASE'],
+        message: 'must use HTTPS in production',
       });
     }
     // Both keys or neither: with neither, the SDK resolves the instance role.

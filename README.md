@@ -174,7 +174,7 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 | `REFRESH_TOKEN_TTL`       | Default `7d`; same format                         | Refresh token lifetime                                                   | Public         | Yes     |
 | `REFRESH_REUSE_GRACE`     | Default `30s`, max `5m`; `0s` disables            | Window in which a rotated refresh token is retried without revoking      | Public         | Yes     |
 | `PASSWORD_RESET_TTL`      | Default `1h`, max `24h`; same format              | Lifetime of an emailed password reset link (single-use)                  | Public         | Yes     |
-| `PASSWORD_RESET_URL_BASE` | Required in production; default `http://localhost:5173/reset-password`; absolute `http(s)` URL without query or fragment | Frontend page that finishes a reset; the emailed link is `<base>?token=<token>` | Public | Yes |
+| `PASSWORD_RESET_URL_BASE` | Required with HTTPS in production; default `http://localhost:5173/reset-password` outside production; absolute `http(s)` URL without query or fragment | Frontend page that finishes a reset; the emailed link is `<base>?token=<token>` | Public | Yes |
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
