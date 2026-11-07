@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-07 — Security corrections for Agustin's authentication PR #68
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/auth/`, `apps/api/src/config/`, `README.md`
+- **Change:** On `fix/auth-session-security`, synchronized login credential revalidation/session creation with password reset using a parameterized PostgreSQL user-row lock; bcrypt remains outside the lock. Added deterministic HTTP regression tests covering reset-first and login-first orderings. Observed RED (stale login returned 200 instead of 401), then 36/36 focused tests and 107/107 auth tests pass on isolated PostgreSQL; parent API typecheck and whitespace checks pass. Production reset URLs now require HTTPS; local/test HTTP remains valid. Configuration RED reproduced production HTTP acceptance, then 82/82 config tests passed, including parent rerun. README reflects the requirement. Intentional refresh reuse grace remains unchanged. AI-assisted work coordinated by Alejo.
+- **Reason:** Address the two remaining security findings without changing Agustin's intentional refresh behavior or modifying his branch directly.
+- **Verification:** Full workspace tests pass (334), as do lint, typecheck, build, docs (61 files) and formatting for all changed files. Global formatting fails only on three unrelated local cache/old-plan files, left unchanged. Independent verification passes 189 tests and API typecheck in a fresh isolated snapshot, with no blocking finding. Coverage advisory: barriers establish ordering but do not force lock contention or injected rollback. Auth commit `b9c0523` received approved native risk/resilience/reliability review and completed acknowledgement; its test-coverage warning is informational. HTTPS commit `ae10be2` was assessed medium with no further native review due; independent verification covered it. All owned test containers/storage were removed; setup failures were corrected without dependency version or approval changes.
+- **Next step:** Publish the verified corrections as a PR into `feat/18-auth-session`, as authorized, for Agustin to review and decide whether to incorporate. No merge is authorized.
+
 ## 2026-11-04 — Address blocking feedback on PR #56
 
 - **Status:** blocked
