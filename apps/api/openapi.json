@@ -206,6 +206,258 @@
         "summary": "Set a new password with a reset token",
         "tags": ["auth"]
       }
+    },
+    "/classrooms": {
+      "post": {
+        "description": "Atomically creates a persistent classroom together with its default classroom pet, initial desk layout, and school teacher membership when applicable. Allowed for independent teachers and school staff (Owner, Admin, Teacher).",
+        "operationId": "ClassroomsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateClassroomDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Classroom, pet, and initial desks created atomically.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassroomDetailResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (missing or invalid fields).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a student or parent and is not allowed to create classrooms.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Specified school does not exist or is outside the caller scope.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Create a virtual classroom",
+        "tags": ["classrooms"]
+      },
+      "get": {
+        "description": "Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).",
+        "operationId": "ClassroomsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of classrooms returned per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort direction by classroom creation timestamp (createdAt).",
+            "schema": { "default": "desc", "type": "string", "enum": ["asc", "desc"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of accessible classrooms.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedClassroomsResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or ordering parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List accessible classrooms",
+        "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}": {
+      "get": {
+        "description": "Returns the persistent state of a virtual classroom, its pet, desk count, and the server-derived role and capabilities for the authenticated caller.",
+        "operationId": "ClassroomsController_findOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "example": "4e5f6a7b-0000-4000-8000-000000000002", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classroom details and caller capabilities.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassroomDetailResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get classroom details and caller capabilities",
+        "tags": ["classrooms"]
+      },
+      "patch": {
+        "description": "Updates classroom name, subject, adultMode, or live control flags (chatMuted, collaborationLocked, gamesDisabled). Restricted to staff of the classroom (School Owner/Admin or the classroom Teacher).",
+        "operationId": "ClassroomsController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "example": "4e5f6a7b-0000-4000-8000-000000000002", "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/UpdateClassroomDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated classroom details.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassroomDetailResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed (invalid fields or unknown properties).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a member (student or parent) with insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Update classroom configuration and control flags",
+        "tags": ["classrooms"]
+      }
+    },
+    "/me/classrooms": {
+      "get": {
+        "description": "Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false) with derived role and capabilities.",
+        "operationId": "MeClassroomsController_listMyClassrooms",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of classrooms returned per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "order",
+            "required": false,
+            "in": "query",
+            "description": "Sort direction by classroom creation timestamp (createdAt).",
+            "schema": { "default": "desc", "type": "string", "enum": ["asc", "desc"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of accessible classrooms for the current user.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginatedClassroomsResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or ordering parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List classrooms accessible to the authenticated user",
+        "tags": ["classrooms"]
+      }
     }
   },
   "info": {
@@ -487,6 +739,370 @@
           }
         },
         "required": ["token", "newPassword"]
+      },
+      "CreateClassroomDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática",
+            "description": "Display name of the virtual classroom",
+            "maxLength": 120
+          },
+          "subject": {
+            "type": "string",
+            "example": "Matemática y Geometría",
+            "description": "Optional subject or course description for the classroom",
+            "maxLength": 200
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "default": false,
+            "description": "Whether the classroom runs in adult education mode (disables parent links and parent actions)"
+          },
+          "schoolId": {
+            "type": "string",
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Optional target school UUID when the actor belongs to a school; omitted for independent teachers or resolved automatically from active school membership"
+          }
+        },
+        "required": ["name"]
+      },
+      "ClassroomPetSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "9a1b2c3d-0000-4000-8000-000000000001",
+            "description": "Unique identifier of the classroom pet (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "Michi",
+            "description": "Display name of the classroom pet"
+          },
+          "species": {
+            "type": "string",
+            "example": "cat",
+            "description": "Species identifier of the classroom pet"
+          },
+          "level": {
+            "type": "number",
+            "example": 1,
+            "description": "Current level of the classroom pet"
+          },
+          "experience": {
+            "type": "number",
+            "example": 0,
+            "description": "Accumulated experience points of the classroom pet"
+          }
+        },
+        "required": ["id", "name", "species", "level", "experience"]
+      },
+      "ClassroomDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "4e5f6a7b-0000-4000-8000-000000000002",
+            "description": "Unique classroom identifier (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática",
+            "description": "Display name of the virtual classroom"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true,
+            "example": "Matemática y Geometría",
+            "description": "Optional subject or course description"
+          },
+          "schoolId": {
+            "type": "string",
+            "nullable": true,
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Owning school UUID when the classroom belongs to a school, or null"
+          },
+          "independentTeacherId": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Owning independent teacher user UUID when the classroom belongs to an independent teacher, or null"
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom runs in adult education mode"
+          },
+          "chatMuted": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom student chat is muted"
+          },
+          "collaborationLocked": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether collaborative editing is locked"
+          },
+          "gamesDisabled": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether interactive classroom games are disabled"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
+            "example": "TEACHER",
+            "description": "Resolved role of the authenticated caller in this classroom"
+          },
+          "capabilities": {
+            "type": "array",
+            "example": [
+              "configure_classroom",
+              "invite_members",
+              "publish_content",
+              "moderate_chat",
+              "configure_bot",
+              "view_metrics",
+              "chat_classmates",
+              "list_directory",
+              "message_teacher"
+            ],
+            "description": "Server-derived capabilities granted to the caller in this classroom",
+            "items": {
+              "type": "string",
+              "enum": [
+                "manage_school",
+                "configure_classroom",
+                "invite_members",
+                "publish_content",
+                "moderate_chat",
+                "configure_bot",
+                "view_metrics",
+                "participate_activities",
+                "chat_classmates",
+                "list_directory",
+                "message_teacher"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom creation timestamp in UTC (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom last update timestamp in UTC (ISO 8601)"
+          },
+          "deskCount": {
+            "type": "number",
+            "example": 12,
+            "description": "Total number of desks provisioned in the classroom"
+          },
+          "pet": {
+            "nullable": true,
+            "description": "The classroom pet state",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ClassroomPetSummaryDto" }]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subject",
+          "schoolId",
+          "independentTeacherId",
+          "adultMode",
+          "chatMuted",
+          "collaborationLocked",
+          "gamesDisabled",
+          "myRole",
+          "capabilities",
+          "createdAt",
+          "updatedAt",
+          "deskCount",
+          "pet"
+        ]
+      },
+      "ClassroomListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "4e5f6a7b-0000-4000-8000-000000000002",
+            "description": "Unique classroom identifier (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática",
+            "description": "Display name of the virtual classroom"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true,
+            "example": "Matemática y Geometría",
+            "description": "Optional subject or course description"
+          },
+          "schoolId": {
+            "type": "string",
+            "nullable": true,
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Owning school UUID when the classroom belongs to a school, or null"
+          },
+          "independentTeacherId": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Owning independent teacher user UUID when the classroom belongs to an independent teacher, or null"
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom runs in adult education mode"
+          },
+          "chatMuted": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom student chat is muted"
+          },
+          "collaborationLocked": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether collaborative editing is locked"
+          },
+          "gamesDisabled": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether interactive classroom games are disabled"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
+            "example": "TEACHER",
+            "description": "Resolved role of the authenticated caller in this classroom"
+          },
+          "capabilities": {
+            "type": "array",
+            "example": [
+              "configure_classroom",
+              "invite_members",
+              "publish_content",
+              "moderate_chat",
+              "configure_bot",
+              "view_metrics",
+              "chat_classmates",
+              "list_directory",
+              "message_teacher"
+            ],
+            "description": "Server-derived capabilities granted to the caller in this classroom",
+            "items": {
+              "type": "string",
+              "enum": [
+                "manage_school",
+                "configure_classroom",
+                "invite_members",
+                "publish_content",
+                "moderate_chat",
+                "configure_bot",
+                "view_metrics",
+                "participate_activities",
+                "chat_classmates",
+                "list_directory",
+                "message_teacher"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom creation timestamp in UTC (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom last update timestamp in UTC (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subject",
+          "schoolId",
+          "independentTeacherId",
+          "adultMode",
+          "chatMuted",
+          "collaborationLocked",
+          "gamesDisabled",
+          "myRole",
+          "capabilities",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginatedClassroomsResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Classrooms accessible to the authenticated user for the current page",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassroomListItemDto" }
+          },
+          "page": { "type": "number", "example": 1, "description": "Current 1-based page number" },
+          "limit": { "type": "number", "example": 20, "description": "Maximum items per page" },
+          "total": {
+            "type": "number",
+            "example": 1,
+            "description": "Total count of accessible classrooms across all pages"
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 1,
+            "description": "Total number of pages available"
+          }
+        },
+        "required": ["items", "page", "limit", "total", "totalPages"]
+      },
+      "UpdateClassroomDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática Avanzada",
+            "description": "Updated display name of the virtual classroom",
+            "maxLength": 120
+          },
+          "subject": {
+            "type": "object",
+            "example": "Álgebra y Análisis",
+            "description": "Updated subject or course description for the classroom",
+            "maxLength": 200,
+            "nullable": true
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom runs in adult education mode (preserves existing parent links in DB while disabling parent access)"
+          },
+          "chatMuted": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom student chat channel is muted"
+          },
+          "collaborationLocked": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether collaborative editing in the classroom is locked"
+          },
+          "gamesDisabled": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether interactive classroom games are disabled"
+          }
+        }
       }
     }
   }
