@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import type { Prisma } from '@prisma/client';
@@ -17,6 +17,8 @@ type ProfileRecord = Prisma.UserGetPayload<{ select: typeof profileSelection }>;
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async getMe(userId: string): Promise<OwnProfileDto> {
@@ -29,8 +31,7 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto): Promise<OwnProfileDto> {
-    // Ensure an unsupported stored avatar does not turn a profile write into an uncertain success.
-    await this.getMe(userId);
+    // The global guard already verified this user; update and project in one query.
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { displayName: dto.displayName },
@@ -59,12 +60,18 @@ export class UsersService {
       return { ...DEFAULT_AVATAR };
     }
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      throw new InternalServerErrorException();
+      return this.unsupportedAppearance();
     }
     const appearance = plainToInstance(AvatarDto, avatarSnapshot(value as unknown as AvatarDto));
     if (validateSync(appearance).length || compatibilityErrors(appearance).length) {
-      throw new InternalServerErrorException();
+      return this.unsupportedAppearance();
     }
     return avatarSnapshot(appearance);
+  }
+
+  private unsupportedAppearance(): AvatarDto {
+    // Constant diagnostic only: stored JSON and identity must never enter this warning.
+    this.logger.warn('Unsupported stored base appearance; using default avatar.');
+    return { ...DEFAULT_AVATAR };
   }
 }

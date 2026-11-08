@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { type INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
 import { RegistrationPath } from '@aula/contracts';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../app.module';
 import { authTestConfig } from '../auth/testing/auth-test-config';
+import { SessionVerifier } from '../auth/session-verifier.service';
 import { configureHttp } from '../http/configure-http';
 import { buildOpenApiDocument } from '../openapi/openapi-document';
 import { PrismaService } from '../prisma/prisma.service';
@@ -110,6 +112,16 @@ describe('Own profile and base avatar (#20)', () => {
     );
   });
 
+  beforeEach(async () => {
+    // Each test owns a clean baseline; unsupported appearance fixtures stay intact within a test.
+    await prisma.avatarConfiguration.deleteMany({ where: { userId: { in: ids } } });
+    await prisma.avatarConfiguration.create({ data: { userId: ids[1], appearance: {} } });
+    await prisma.user.updateMany({
+      where: { id: { in: ids } },
+      data: { displayName: 'Profile Tester' },
+    });
+  });
+
   afterAll(async () => {
     if (prisma) {
       await prisma.session.deleteMany({ where: { userId: { in: ids } } });
@@ -154,11 +166,19 @@ describe('Own profile and base avatar (#20)', () => {
   it('reads absent and empty legacy configurations without creating or updating rows', async () => {
     expect(await prisma.avatarConfiguration.findUnique({ where: { userId: ids[0] } })).toBeNull();
     await me();
+    expect(
+      (await patch('profile', { displayName: 'No avatar row' }).expect(200)).body.avatar,
+    ).toEqual(base);
     expect(await prisma.avatarConfiguration.findUnique({ where: { userId: ids[0] } })).toBeNull();
     const before = await prisma.avatarConfiguration.findUniqueOrThrow({
       where: { userId: ids[1] },
     });
     expect((await me(otherToken)).body.avatar).toEqual(base);
+    await request(app.getHttpServer())
+      .patch('/users/me/profile')
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ displayName: 'Empty appearance' })
+      .expect(200);
     expect(
       await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[1] } }),
     ).toEqual(before);
@@ -178,21 +198,77 @@ describe('Own profile and base avatar (#20)', () => {
     expect((await me(otherToken)).body.displayName).toBe('Profile Tester');
   });
 
+  it.each(routes)('verifies the session once for %s %s', async (method, path, body) => {
+    const verify = vi.spyOn(app.get(SessionVerifier), 'verifyAuthorizationHeader');
+    try {
+      let req = request(app.getHttpServer())[method](path).set('Authorization', `Bearer ${token}`);
+      if (body) req = req.send(body);
+      await req.expect(200);
+      expect(verify).toHaveBeenCalledExactlyOnceWith(`Bearer ${token}`);
+    } finally {
+      verify.mockRestore();
+    }
+  });
+
+  it.each([
+    'José 李',
+    'أحمد',
+    'अनुजा',
+    'علی\u200cرضا',
+    '👩\u200d🏫 Teacher',
+    'O’Connor-Smith',
+    'A\u0301',
+  ])('preserves ordinary Unicode names and joiners: %s', async (displayName) => {
+    const res = await patch('profile', { displayName: `  ${displayName}  ` }).expect(200);
+    expect(res.body.displayName).toBe(displayName);
+    expect((await me()).body.displayName).toBe(displayName);
+  });
+
   const invalidProfiles = [
     [{}, 'displayName'],
     [{ displayName: '   ' }, 'displayName'],
     [{ displayName: 'x'.repeat(101) }, 'displayName'],
     [{ displayName: null }, 'displayName'],
     [{ displayName: 3 }, 'displayName'],
+    ...[
+      '\u200b',
+      '\u200c\u200d',
+      '\u00ad\u034f\u061c\ufeff',
+      '\u3164\uffa0',
+      '\u115f\u1160',
+      '\u2028',
+      '\u2029',
+      '\u0301\u2800',
+      '\u2028Ana',
+      'Ana\u2029',
+      'A\u2028na',
+    ].map((displayName) => [{ displayName }, 'displayName'] as const),
+    // Exhaust both control ranges, including trim-removable controls at either edge.
+    ...Array.from({ length: 65 }, (_, index) =>
+      String.fromCharCode(index < 32 ? index : index + 95),
+    )
+      .flatMap((control) => [control + 'Ana', 'Ana' + control, 'A' + control + 'na'])
+      .map((displayName) => [{ displayName }, 'displayName'] as const),
     [{ displayName: 'Hack', userId: ids[1] }, 'userId'],
     [{ displayName: 'Hack', email: 'hack@example.test' }, 'email'],
   ] as const;
   it.each(invalidProfiles)('rejects invalid profile %j atomically', async (input, field) => {
-    const before = (await me()).body;
+    const before = await prisma.user.findMany({
+      where: { id: { in: ids } },
+      orderBy: { id: 'asc' },
+    });
+    const appearances = await prisma.avatarConfiguration.findMany({
+      where: { userId: { in: ids } },
+    });
     const other = (await me(otherToken)).body;
     const res = await patch('profile', input).expect(400);
     envelope(res.body, 'VALIDATION_FAILED', field);
-    expect((await me()).body).toEqual(before);
+    expect(
+      await prisma.user.findMany({ where: { id: { in: ids } }, orderBy: { id: 'asc' } }),
+    ).toEqual(before);
+    expect(await prisma.avatarConfiguration.findMany({ where: { userId: { in: ids } } })).toEqual(
+      appearances,
+    );
     expect((await me(otherToken)).body).toEqual(other);
   });
 
@@ -211,7 +287,7 @@ describe('Own profile and base avatar (#20)', () => {
     expect((await me(otherToken)).body).toEqual(before);
   });
 
-  it('sanitizes supported stored JSON and fails safely on unsupported nonempty data without a write', async () => {
+  it('projects valid stored JSON to five fields without writing on GET or name PATCH', async () => {
     await prisma.avatarConfiguration.create({
       data: {
         userId: ids[2],
@@ -220,22 +296,69 @@ describe('Own profile and base avatar (#20)', () => {
     });
     const credential = await login(2);
     expect((await me(credential)).body.avatar).toEqual(base);
-    await prisma.avatarConfiguration.update({
-      where: { userId: ids[2] },
-      data: { appearance: { accessoryId: 'synthetic-internal-do-not-expose' } },
-    });
     const before = await prisma.avatarConfiguration.findUniqueOrThrow({
       where: { userId: ids[2] },
     });
     const res = await request(app.getHttpServer())
-      .get('/users/me')
+      .patch('/users/me/profile')
       .set('Authorization', `Bearer ${credential}`)
-      .expect(500);
-    envelope(res.body, 'INTERNAL_ERROR');
+      .send({ displayName: 'Supported' })
+      .expect(200);
+    expect(res.body.avatar).toEqual(base);
     expect(
       await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[2] } }),
     ).toEqual(before);
   });
+
+  it.each(
+    [
+      Prisma.JsonNull,
+      [],
+      'synthetic-private-json',
+      7,
+      { accessoryId: 'synthetic-private-json' },
+      { ...base, bodyId: 'unknown' },
+      { ...base, hairId: 'original' },
+      { ...base, hairColor: null },
+      { ...base, clothingColor: ['#5B4F96'] },
+    ].map((appearance) => ({ appearance })),
+  )(
+    'defaults unsupported stored appearance $appearance without changing it on GET or name PATCH',
+    async ({ appearance }) => {
+      await prisma.avatarConfiguration.create({ data: { userId: ids[2], appearance } });
+      const credential = await login(2);
+      const before = await prisma.avatarConfiguration.findUniqueOrThrow({
+        where: { userId: ids[2] },
+      });
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        expect((await me(credential)).body.avatar).toEqual(base);
+        const res = await request(app.getHttpServer())
+          .patch('/users/me/profile')
+          .set('Authorization', `Bearer ${credential}`)
+          .send({ displayName: 'Recovered Profile' })
+          .expect(200);
+        expect(res.body).toEqual({
+          id: ids[2],
+          email: emails[2],
+          displayName: 'Recovered Profile',
+          avatar: base,
+        });
+        expect((await me(credential)).body).toEqual(res.body);
+        expect(warn.mock.calls).toEqual(
+          Array.from({ length: 3 }, () => [
+            'Unsupported stored base appearance; using default avatar.',
+          ]),
+        );
+        expect(
+          await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[2] } }),
+        ).toEqual(before);
+        expect((await me(otherToken)).body.displayName).toBe('Profile Tester');
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
 
   it('publishes the authenticated routes, response DTOs and required snapshot fields', () => {
     const doc = buildOpenApiDocument(app);
