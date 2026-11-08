@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { type ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
@@ -8,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PasswordResetRequestedHandler } from './password-reset-requested.handler';
 import { PasswordResetService } from './password-reset.service';
+import { SessionAuthGuard } from './session-auth.guard';
 import { SessionVerifier } from './session-verifier.service';
 
 @Module({
@@ -25,7 +27,17 @@ import { SessionVerifier } from './session-verifier.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, SessionVerifier, PasswordResetService, PasswordResetRequestedHandler],
-  exports: [AuthService, SessionVerifier],
+  providers: [
+    AuthService,
+    SessionVerifier,
+    PasswordResetService,
+    PasswordResetRequestedHandler,
+    SessionAuthGuard,
+    {
+      provide: APP_GUARD,
+      useClass: SessionAuthGuard,
+    },
+  ],
+  exports: [AuthService, SessionVerifier, SessionAuthGuard],
 })
 export class AuthModule {}

@@ -1,17 +1,16 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
-  ApiInternalServerErrorResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { AvatarDto } from './avatar.dto';
-import { OwnSessionGuard, type OwnUserRequest } from './own-session.guard';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 import { UsersService } from './users.service';
 
@@ -21,7 +20,6 @@ import { UsersService } from './users.service';
   type: ErrorEnvelopeDto,
   description: 'Missing, malformed, expired or revoked session.',
 })
-@UseGuards(OwnSessionGuard)
 @Controller('users/me')
 export class UsersController {
   constructor(private readonly users: UsersService) {}
@@ -30,37 +28,36 @@ export class UsersController {
   @ApiOperation({
     summary: 'Read own profile and base avatar',
     description:
-      'Identity comes only from the verified session. Missing/empty avatar returns base defaults without a write.',
+      'The global SessionAuthGuard verifies the session once; identity comes from CurrentUser. Missing, empty or unsupported stored appearance returns base defaults without changing stored appearance.',
   })
   @ApiOkResponse({ type: OwnProfileDto })
-  @ApiInternalServerErrorResponse({
-    type: ErrorEnvelopeDto,
-    description: 'Unsupported nonempty stored appearance. No stored value is exposed or changed.',
-  })
-  getMe(@Req() req: OwnUserRequest): Promise<OwnProfileDto> {
-    return this.users.getMe(req.verifiedUserId);
+  getMe(@CurrentUser('userId') userId: string): Promise<OwnProfileDto> {
+    return this.users.getMe(userId);
   }
 
   @Patch('profile')
-  @ApiOperation({ summary: 'Update own display name' })
+  @ApiOperation({
+    summary: 'Update own display name',
+    description:
+      'Uses the global SessionAuthGuard identity. Changes only displayName; unsupported stored appearance returns base defaults and a privacy-safe warning without repairing stored appearance.',
+  })
   @ApiOkResponse({ type: OwnProfileDto })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
     description: 'VALIDATION_FAILED with per-field details; unknown fields rejected.',
   })
-  @ApiInternalServerErrorResponse({
-    type: ErrorEnvelopeDto,
-    description: 'Unsupported nonempty stored appearance. Profile is not changed.',
-  })
-  updateProfile(@Req() req: OwnUserRequest, @Body() dto: UpdateProfileDto): Promise<OwnProfileDto> {
-    return this.users.updateProfile(req.verifiedUserId, dto);
+  updateProfile(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<OwnProfileDto> {
+    return this.users.updateProfile(userId, dto);
   }
 
   @Patch('avatar')
   @ApiOperation({
     summary: 'Replace own base avatar',
     description:
-      'All five fields required, not a partial merge. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.',
+      'Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.',
   })
   @ApiOkResponse({ type: AvatarDto })
   @ApiBadRequestResponse({
@@ -72,7 +69,7 @@ export class UsersController {
     type: ErrorEnvelopeDto,
     description: 'Avatar access adapter denied use.',
   })
-  updateAvatar(@Req() req: OwnUserRequest, @Body() dto: AvatarDto): Promise<AvatarDto> {
-    return this.users.updateAvatar(req.verifiedUserId, dto);
+  updateAvatar(@CurrentUser('userId') userId: string, @Body() dto: AvatarDto): Promise<AvatarDto> {
+    return this.users.updateAvatar(userId, dto);
   }
 }

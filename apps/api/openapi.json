@@ -209,7 +209,7 @@
     },
     "/users/me": {
       "get": {
-        "description": "Identity comes only from the verified session. Missing/empty avatar returns base defaults without a write.",
+        "description": "The global SessionAuthGuard verifies the session once; identity comes from CurrentUser. Missing, empty or unsupported stored appearance returns base defaults without changing stored appearance.",
         "operationId": "UsersController_getMe",
         "parameters": [],
         "responses": {
@@ -224,12 +224,6 @@
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
-          },
-          "500": {
-            "description": "Unsupported nonempty stored appearance. No stored value is exposed or changed.",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
-            }
           }
         },
         "security": [{ "bearer": [] }],
@@ -239,6 +233,7 @@
     },
     "/users/me/profile": {
       "patch": {
+        "description": "Uses the global SessionAuthGuard identity. Changes only displayName; unsupported stored appearance returns base defaults and a privacy-safe warning without repairing stored appearance.",
         "operationId": "UsersController_updateProfile",
         "parameters": [],
         "requestBody": {
@@ -265,12 +260,6 @@
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
-          },
-          "500": {
-            "description": "Unsupported nonempty stored appearance. Profile is not changed.",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
-            }
           }
         },
         "security": [{ "bearer": [] }],
@@ -280,7 +269,7 @@
     },
     "/users/me/avatar": {
       "patch": {
-        "description": "All five fields required, not a partial merge. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.",
+        "description": "Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.",
         "operationId": "UsersController_updateAvatar",
         "parameters": [],
         "requestBody": {
@@ -650,7 +639,7 @@
             "minLength": 1,
             "maxLength": 100,
             "example": "Prof. Ana",
-            "description": "Trimmed before validation."
+            "description": "1–100 characters after surrounding-space trimming. C0/C1 controls and Unicode line/paragraph separators are rejected before trimming; requires a character other than whitespace, default-ignorables, combining marks or braille blank. Unicode names, punctuation and joiners within visible names are preserved."
           }
         },
         "required": ["displayName"]

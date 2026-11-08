@@ -16,7 +16,7 @@ The committed [OpenAPI document](../apps/api/openapi.json) is the REST contract 
 | `PATCH /users/me/profile` | `{ "displayName": "Prof. Ana" }` | Same safe profile shape as GET |
 | `PATCH /users/me/avatar` | All five fields below | Appearance snapshot only |
 
-`displayName` is separate from appearance, trimmed before validation, and must contain 1–100 characters (same policy as registration). Email is read-only here. User IDs are never accepted as mutation fields; query parameters cannot change the acting user. Password hashes, sessions and avatar persistence metadata are never response fields.
+`displayName` is separate from appearance and must contain 1–100 characters after ordinary surrounding-space trimming. Profile validation rejects C0/C1 controls (U+0000–001F and U+007F–009F), including tabs/newlines even at the edges, and Unicode line/paragraph separators (U+2028/U+2029) **before trim can erase them**. A name must contain at least one character other than Unicode whitespace, default-ignorable code points, combining marks or braille blank (U+2800). This rejects invisible-only names without imposing an ASCII/letters-only allowlist: accents, non-Latin scripts, punctuation, emoji, combining marks and joiners within visible names are preserved, not normalized or stripped. This is profile-specific; registration validation is unchanged. Email is read-only here. User IDs are never accepted as mutation fields; query parameters cannot change the acting user. Password hashes, sessions and avatar persistence metadata are never response fields.
 
 ## Free base catalogue
 
@@ -64,12 +64,17 @@ An absent configuration row or empty JSON object yields this base response **wit
 }
 ```
 
-Valid existing appearance JSON is projected to these five fields only. Unsupported nonempty stored values produce a generic `500 INTERNAL_ERROR`; GET never exposes or overwrites them. A complete valid avatar PATCH explicitly replaces the prior appearance. No migration or automatic GET repair exists.
+Valid existing appearance JSON is projected to these five fields only. Malformed or incompatible stored values also return the default avatar with `200`, plus the constant warning `Unsupported stored base appearance; using default avatar.` The warning contains no user IDs, raw JSON or credentials. Absent/empty values are normal defaults and do not warn. Neither GET nor a display-name PATCH creates, repairs or overwrites stored appearance; a name PATCH can succeed even with unsupported appearance. No migration or automatic read/name-update repair exists. A complete valid avatar PATCH intentionally replaces the stored base-only appearance, including unsupported legacy values; this explicit write returns the validated five-field snapshot.
+
+### Future shop boundary
+
+`AvatarConfiguration.appearance` stores the **base-only** configuration. Extra legacy keys are excluded by response projection; they are not an equipped-shop contract. Future equipped shop state requires separately modeled, validated storage and ownership checks. No keys, schema or shop APIs for that future state are assumed or implemented here.
 
 ## Rejections and ownership boundary
 
-- Missing, malformed, expired or revoked credentials: `401 UNAUTHENTICATED`, using the shared `SessionVerifier` before DTO validation.
-- Missing/invalid fields, unknown fields (including `userId` or accessories), unsupported palette values or incompatible options: `400 VALIDATION_FAILED`, with `error.details` entries containing `field` and `messages`. Rejected input does not change either user's data.
+- Missing, malformed, expired or revoked credentials: `401 UNAUTHENTICATED`. The merged `AuthModule` global `SessionAuthGuard` protects all three routes before DTO validation; `@CurrentUser('userId')` consumes its verified identity. UsersModule adds no second guard/session verification and changes no shared auth behavior.
+- Missing/invalid fields, unknown fields (including `userId`, email or accessories), unsupported palette values or incompatible options: `400 VALIDATION_FAILED`, with `error.details` entries containing `field` and `messages`. Rejected input does not change either user's data.
+- Unsupported stored appearance is a response fallback, not a rejected profile operation. Name updates use the verified identity directly without an appearance pre-read.
 - `AvatarAccessPort.assertCanUse(verifiedUserId, snapshot)` runs before avatar persistence. Its current adapter admits only compatible free base options. It does **not** simulate purchases or verify shop ownership. Future paid options require a persisted-ownership adapter and an explicitly extended contract; unknown choices remain denied until then. An adapter denial must prevent the write (`403 FORBIDDEN`).
 
 Example validation envelope (synthetic correlation ID):
@@ -87,4 +92,6 @@ Example validation envelope (synthetic correlation ID):
 
 ## Verification boundary
 
-The focused HTTP integration spec is [`users.spec.ts`](../apps/api/src/users/users.spec.ts). The runner must supply an isolated `DATABASE_URL`; fixtures and cleanup are UUID-scoped. Verification here used the task databases `profile_test` and `profile_verify` on port `55420`; these local names and ports are not test requirements. It covers authentication on each route, isolation/tampering, exact response envelopes, validation without writes, fresh-login persistence, legacy read behavior and the access-port denial seam. This is backend evidence only; asset rendering, global guards (#19), shop persistence and realtime behavior are not implemented or claimed here.
+The focused HTTP integration spec is [`users.spec.ts`](../apps/api/src/users/users.spec.ts). The runner must supply an isolated `DATABASE_URL`; fixtures and cleanup are UUID-scoped. Original verification used `profile_test` and `profile_verify` on port `55420`; these historical local names and ports are not test requirements. Current corrections use parent-provisioned task infrastructure, not shared data.
+
+Coverage includes authentication on all three routes, one session verification per authenticated request, isolation/tampering, exact response envelopes, validation without writes, exhaustive C0/C1 rejection at edges/interior, normal Unicode names/joiners, fresh-login persistence, default/fallback without appearance writes, constant privacy-safe warnings, explicit complete avatar replacement, all free options/palette colors and the access-port denial seam. Each test resets only its UUID-scoped fixtures to avoid order dependence. Integrated full-suite checks and independent verification remain parent-owned. This is backend evidence only; asset rendering, shop persistence and realtime behavior are not claimed here. The global guard is reused from merged #19, not implemented or modified by these corrections.
