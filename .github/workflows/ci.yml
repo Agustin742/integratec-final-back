@@ -179,6 +179,16 @@ jobs:
             exit 1
           fi
 
+      - name: Check committed realtime state types are up to date
+        if: steps.package.outputs.present == 'true'
+        shell: bash
+        run: |
+          pnpm realtime:codegen
+          if ! git diff --exit-code -- packages/contracts/src/realtime/generated; then
+            echo "::error title=Realtime state types are stale::packages/contracts/src/realtime/generated does not match the room state. Run 'pnpm realtime:codegen' and commit the result." >&2
+            exit 1
+          fi
+
       - name: Code formatting
         if: steps.package.outputs.present == 'true'
         shell: bash

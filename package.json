@@ -18,7 +18,9 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "openapi:export": "pnpm --filter @aula/api openapi:export"
+    "openapi:export": "pnpm --filter @aula/api openapi:export",
+    "realtime:codegen": "pnpm --filter @aula/realtime codegen && prettier --write packages/contracts/src/realtime/generated",
+    "realtime:codegen:check": "pnpm realtime:codegen && git diff --exit-code -- packages/contracts/src/realtime/generated"
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",

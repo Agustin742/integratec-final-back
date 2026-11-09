@@ -48,4 +48,25 @@ describe('createClassroomRoom', () => {
 
     expect(() => room.onJoin({} as never)).toThrow(ServerError);
   });
+
+  describe('onCreate', () => {
+    const makeRoom = () => new (createClassroomRoom({ verify: vi.fn() }))();
+
+    it.each([
+      ['missing options', undefined],
+      ['missing classroomId', {}],
+      ['non-UUID classroomId', { classroomId: 'not-a-uuid' }],
+      ['non-string classroomId', { classroomId: 42 }],
+    ])('rejects %s', (_label, options) => {
+      expect(() => makeRoom().onCreate(options)).toThrow(ServerError);
+    });
+
+    it('binds the room to a valid classroomId and mirrors it in the state', () => {
+      const room = makeRoom();
+      room.onCreate({ classroomId: CLASSROOM_ID });
+
+      expect(room.classroomId).toBe(CLASSROOM_ID);
+      expect(room.state.classroomId).toBe(CLASSROOM_ID);
+    });
+  });
 });

@@ -2,7 +2,8 @@ import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
-import { createAppConfig, CLASSROOM_ROOM_NAME } from '../app.config';
+import { CLASSROOM_ROOM_NAME } from '@aula/contracts';
+import { createAppConfig } from '../app.config';
 import { ApiJoinVerifier } from '../join/api-join-verifier';
 
 const SECRET = 'test-only-secret-with-at-least-32-characters';

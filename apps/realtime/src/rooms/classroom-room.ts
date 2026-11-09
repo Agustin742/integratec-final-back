@@ -1,12 +1,7 @@
 import { Room, ServerError, type AuthContext, type Client } from '@colyseus/core';
-import { Schema, type } from '@colyseus/schema';
 import type { JoinVerifier, VerifiedJoin } from '../join/join-verifier';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-
-/** Minimal synchronized state; presence and movement arrive with #25. */
-export class ClassroomState extends Schema {
-  @type('string') classroomId = '';
-}
+import { ClassroomState } from './classroom-state';
 
 /** Room logic that does not depend on the verifier. */
 export class ClassroomRoom extends Room<{ state: ClassroomState }> {

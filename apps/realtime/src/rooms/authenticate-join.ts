@@ -1,3 +1,4 @@
+import type { ClassroomJoinOptions } from '@aula/contracts';
 import { ServerError } from '@colyseus/core';
 import { z } from 'zod';
 import type { JoinVerifier, VerifiedJoin } from '../join/join-verifier';
@@ -5,7 +6,8 @@ import type { JoinVerifier, VerifiedJoin } from '../join/join-verifier';
 const UNAUTHORIZED = 401;
 const BAD_REQUEST = 400;
 
-const joinOptionsSchema = z.object({ classroomId: z.uuid() });
+// Compile-time check that the runtime schema and the shared contract describe the same shape.
+const joinOptionsSchema: z.ZodType<ClassroomJoinOptions> = z.object({ classroomId: z.uuid() });
 
 /** Reads the classroom a client asks for; undefined when absent or not a UUID. */
 export function parseClassroomId(options: unknown): string | undefined {
