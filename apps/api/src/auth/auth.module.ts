@@ -5,6 +5,8 @@ import { type ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { EmailModule } from '../platform/email/email.module';
 import { OutboxModule } from '../platform/outbox/outbox.module';
+import { AuthDataCleanupScheduler } from './auth-data-cleanup.scheduler';
+import { AuthDataCleanupService } from './auth-data-cleanup.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PasswordResetRequestedHandler } from './password-reset-requested.handler';
@@ -32,6 +34,8 @@ import { SessionVerifier } from './session-verifier.service';
     SessionVerifier,
     PasswordResetService,
     PasswordResetRequestedHandler,
+    AuthDataCleanupService,
+    AuthDataCleanupScheduler,
     SessionAuthGuard,
     {
       provide: APP_GUARD,

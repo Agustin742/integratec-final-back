@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-07 — Periodic cleanup of expired auth sessions and tokens (#70)
+
+- **Status:** completed (pending PR review)
+- **Area / files:** `apps/api/src/auth/` (`auth-data-cleanup.service.ts`, `auth-data-cleanup.scheduler.ts`), `apps/api/prisma/` (cleanup indexes migration), `apps/api/src/config/api-config.ts`, `apps/api/src/openapi/export.ts`, `apps/api/.env.example`, `docker-compose.yml`, `README.md`
+- **Change:** Added `AuthDataCleanupService`, which deletes expired sessions (their refresh tokens first, in batches, so the foreign key cascade removes nothing unbounded), rotated refresh tokens older than a retention window unless their session is still live by stored state (so reuse detection survives a shortened `REFRESH_TOKEN_TTL`), and used or expired password reset tokens, in bounded batches without a long transaction, and `AuthDataCleanupScheduler`, an in-process job that runs shortly after startup and then at a fixed interval (skips overlapping runs, never throws out of the timer, not scheduled when `NODE_ENV=test`). Each run logs only counts and duration; a failed run logs the error class and Prisma code, never the message. New variables `AUTH_DATA_RETENTION` (30d), `AUTH_CLEANUP_INTERVAL` (24h, max 7d) and `AUTH_CLEANUP_BATCH_SIZE` (1000), passed through Compose; retention must not be shorter than `REFRESH_TOKEN_TTL`. Added indexes on the filtered timestamp columns.
+- **Reason:** Sessions, rotated refresh tokens and reset tokens were never deleted, so the tables grew without bound; rotated tokens are kept for the retention window to preserve reuse detection.
+- **Next step:** Open the PR into `develop`. Follow-up: throttling for login and reset request.
+
 ## 2026-11-06 — Authentication and session lifecycle (#18)
 
 - **Status:** completed (pending PR review)

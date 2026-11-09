@@ -1,0 +1,243 @@
+import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { RegistrationPath } from '@aula/contracts';
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiConfigModule } from '../config/config.module';
+import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuthDataCleanupService } from './auth-data-cleanup.service';
+import { AuthModule } from './auth.module';
+import { AuthService } from './auth.service';
+import { generateRefreshToken, hashRefreshToken } from './session-tokens';
+import { authTestConfig } from './testing/auth-test-config';
+
+const DAY_MS = 86_400_000;
+
+describe('Auth / Data cleanup (issue #70)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let service: AuthDataCleanupService;
+  const config = authTestConfig({
+    authDataRetentionSeconds: 30 * 86400,
+    authCleanupBatchSize: 1000,
+  });
+  const email = `cleanup.${Date.now()}@example.com`;
+  let userId: string;
+
+  // A fixed instant far in the past: every row seeded here is older than anything another
+  // spec creates, so counts stay exact even though the service prunes whole tables.
+  const now = new Date('2020-06-01T00:00:00.000Z');
+  const ago = (days: number) => new Date(now.getTime() - days * DAY_MS);
+  const ahead = (days: number) => new Date(now.getTime() + days * DAY_MS);
+
+  const seedSession = (expiresAt: Date, revokedAt: Date | null = null) =>
+    prisma.session.create({ data: { userId, expiresAt, revokedAt } });
+
+  const seedToken = (sessionId: string, rotatedAt: Date | null) =>
+    prisma.refreshToken.create({
+      data: { sessionId, tokenHash: randomUUID().replaceAll('-', '').padEnd(64, '0'), rotatedAt },
+    });
+
+  const seedReset = (expiresAt: Date, usedAt: Date | null = null) =>
+    prisma.passwordResetToken.create({
+      data: {
+        userId,
+        expiresAt,
+        usedAt,
+        tokenHash: randomUUID().replaceAll('-', '').padEnd(64, '0'),
+      },
+    });
+
+  const existingIds = async () => ({
+    sessions: new Set((await prisma.session.findMany({ where: { userId } })).map((r) => r.id)),
+    tokens: new Set(
+      (await prisma.refreshToken.findMany({ where: { session: { userId } } })).map((r) => r.id),
+    ),
+    resets: new Set(
+      (await prisma.passwordResetToken.findMany({ where: { userId } })).map((r) => r.id),
+    ),
+  });
+
+  const clean = async () => {
+    await prisma.passwordResetToken.deleteMany({ where: { userId } });
+    await prisma.session.deleteMany({ where: { userId } });
+  };
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [ApiConfigModule.forRoot(config), PrismaModule, AuthModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+    prisma = app.get(PrismaService);
+    service = app.get(AuthDataCleanupService);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: 'unused-hash',
+        displayName: 'Cleanup Tester',
+        registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+      },
+    });
+    userId = user.id;
+  });
+
+  beforeEach(clean);
+
+  afterAll(async () => {
+    await clean();
+    await prisma?.user.deleteMany({ where: { id: userId } });
+    await app?.close();
+  });
+
+  it('deletes sessions expired before the retention cutoff together with their tokens', async () => {
+    const old = await seedSession(ago(31));
+    const oldToken = await seedToken(old.id, null);
+    const recentlyExpired = await seedSession(ago(5));
+    const recentToken = await seedToken(recentlyExpired.id, null);
+    const live = await seedSession(ahead(7));
+    const liveToken = await seedToken(live.id, null);
+
+    const result = await service.run(now);
+
+    expect(result.sessions).toBe(1);
+    const kept = await existingIds();
+    expect(kept.sessions).toEqual(new Set([recentlyExpired.id, live.id]));
+    expect(kept.tokens).toEqual(new Set([recentToken.id, liveToken.id]));
+    expect(kept.tokens.has(oldToken.id)).toBe(false);
+  });
+
+  it('deletes tokens rotated before the cutoff on a revoked session and keeps recent and never-rotated ones', async () => {
+    const revoked = await seedSession(ahead(7), ago(1));
+    const oldRotated = await seedToken(revoked.id, ago(31));
+    const recentRotated = await seedToken(revoked.id, ago(2));
+    const current = await seedToken(revoked.id, null);
+
+    const result = await service.run(now);
+
+    expect(result.refreshTokens).toBe(1);
+    expect((await existingIds()).tokens).toEqual(new Set([recentRotated.id, current.id]));
+    expect((await existingIds()).tokens.has(oldRotated.id)).toBe(false);
+    expect((await existingIds()).sessions.has(revoked.id)).toBe(true);
+  });
+
+  it('keeps old rotated tokens of a still-live session so reuse is still detected', async () => {
+    // A session created under an older, longer TTL: it expires long after `now`, yet its
+    // token was rotated before the cutoff. Deleting that token would turn a replay into a
+    // plain unknown-token 401 without revoking the session.
+    const live = await seedSession(new Date('2099-01-01T00:00:00.000Z'));
+    const raw = generateRefreshToken();
+    const rotated = await prisma.refreshToken.create({
+      data: { sessionId: live.id, tokenHash: hashRefreshToken(raw), rotatedAt: ago(400) },
+    });
+
+    const result = await service.run(now);
+
+    expect(result.refreshTokens).toBe(0);
+    expect((await existingIds()).tokens.has(rotated.id)).toBe(true);
+    await expect(app.get(AuthService).refresh({ refreshToken: raw })).rejects.toThrow();
+    const after = await prisma.session.findUniqueOrThrow({ where: { id: live.id } });
+    expect(after.revokedAt).not.toBeNull();
+  });
+
+  it('still deletes old rotated tokens of revoked or expired sessions', async () => {
+    const revoked = await seedSession(ahead(30), ago(1));
+    const revokedToken = await seedToken(revoked.id, ago(31));
+    const expired = await seedSession(ago(5));
+    const expiredToken = await seedToken(expired.id, ago(31));
+    const live = await seedSession(ahead(30));
+    const liveToken = await seedToken(live.id, ago(31));
+
+    const result = await service.run(now);
+
+    expect(result.refreshTokens).toBe(2);
+    const { tokens } = await existingIds();
+    expect(tokens.has(revokedToken.id)).toBe(false);
+    expect(tokens.has(expiredToken.id)).toBe(false);
+    expect(tokens.has(liveToken.id)).toBe(true);
+  });
+
+  it('deletes the child tokens of expired sessions in batches before the sessions', async () => {
+    const small = new AuthDataCleanupService(
+      prisma,
+      authTestConfig({ authDataRetentionSeconds: 30 * 86400, authCleanupBatchSize: 2 }),
+    );
+    const old = await seedSession(ago(40));
+    for (let i = 0; i < 5; i++) {
+      await seedToken(old.id, i % 2 === 0 ? null : ago(1));
+    }
+    const live = await seedSession(ahead(7));
+    const liveToken = await seedToken(live.id, null);
+    const spy = vi.spyOn(prisma, '$executeRaw');
+    let result: Awaited<ReturnType<AuthDataCleanupService['run']>>;
+    let statements: number;
+    try {
+      result = await small.run(now);
+      statements = spy.mock.calls.length;
+    } finally {
+      // Restore before asserting so a failure never leaks the spy into later tests.
+      spy.mockRestore();
+    }
+
+    // 5 tokens at batch size 2 take 3 statements (2+2+1) instead of one cascade; the
+    // session is then removed by a single statement with nothing left to cascade.
+    // Total refresh-token statements: 3 (child pass) + 1 (rotated pass, nothing left).
+    // Total: those 4 + 1 (sessions) + 1 (reset tokens).
+    expect(statements).toBe(6);
+    expect(result).toEqual({ sessions: 1, refreshTokens: 5, passwordResetTokens: 0 });
+    const kept = await existingIds();
+    expect(kept.sessions).toEqual(new Set([live.id]));
+    expect(kept.tokens).toEqual(new Set([liveToken.id]));
+  });
+
+  it('deletes reset tokens used or expired before the cutoff and keeps the rest', async () => {
+    const usedOld = await seedReset(ago(40), ago(35));
+    const expiredOld = await seedReset(ago(31));
+    const pending = await seedReset(ahead(1));
+    const usedRecently = await seedReset(ahead(1), ago(3));
+    const expiredRecently = await seedReset(ago(2));
+
+    const result = await service.run(now);
+
+    expect(result.passwordResetTokens).toBe(2);
+    const { resets } = await existingIds();
+    expect(resets).toEqual(new Set([pending.id, usedRecently.id, expiredRecently.id]));
+    expect(resets.has(usedOld.id) || resets.has(expiredOld.id)).toBe(false);
+  });
+
+  it('still deletes everything when the batch size is smaller than the matching rows', async () => {
+    const small = new AuthDataCleanupService(
+      prisma,
+      authTestConfig({ authDataRetentionSeconds: 30 * 86400, authCleanupBatchSize: 2 }),
+    );
+    const revoked = await seedSession(ahead(7), ago(1));
+    for (let i = 0; i < 5; i++) {
+      await seedToken(revoked.id, ago(40));
+      await seedSession(ago(40));
+      await seedReset(ago(40));
+    }
+    const keptToken = await seedToken(revoked.id, null);
+
+    const result = await small.run(now);
+
+    expect(result).toEqual({ sessions: 5, refreshTokens: 5, passwordResetTokens: 5 });
+    const kept = await existingIds();
+    expect(kept.sessions).toEqual(new Set([revoked.id]));
+    expect(kept.tokens).toEqual(new Set([keptToken.id]));
+    expect(kept.resets.size).toBe(0);
+  });
+
+  it('is idempotent: a second run finds nothing to delete', async () => {
+    const old = await seedSession(ago(60));
+    await seedToken(old.id, ago(60));
+    await seedReset(ago(60), ago(60));
+
+    const first = await service.run(now);
+    const second = await service.run(now);
+
+    expect(first.sessions + first.refreshTokens + first.passwordResetTokens).toBeGreaterThan(0);
+    expect(second).toEqual({ sessions: 0, refreshTokens: 0, passwordResetTokens: 0 });
+  });
+});

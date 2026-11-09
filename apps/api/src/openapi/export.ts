@@ -2,7 +2,12 @@ import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { format, resolveConfig } from 'prettier';
 import { AppModule } from '../app.module';
-import type { ApiConfig } from '../config/api-config';
+import {
+  DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+  DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+  DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+  type ApiConfig,
+} from '../config/api-config';
 import { buildOpenApiDocument } from './openapi-document';
 
 /**
@@ -38,6 +43,9 @@ const EXPORT_CONFIG: ApiConfig = {
   s3ForcePathStyle: false,
   s3Credentials: undefined,
   storageSignedUrlTtlSeconds: 1,
+  authDataRetentionSeconds: DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+  authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+  authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
 };
 
 /** Returns the OpenAPI document as repository-formatted JSON ending with a newline. */
