@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ConfigValidationError, loadApiConfig } from './api-config';
+import {
+  ConfigValidationError,
+  DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+  DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+  DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+  MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+  loadApiConfig,
+} from './api-config';
 
 const SECRET = 's3cr3t-value-that-is-at-least-32-chars-long!';
 const JWT_SECRET_VALUE = 'jwt-signing-key-synthetic-for-tests-0000';
@@ -45,7 +52,71 @@ describe('loadApiConfig', () => {
       s3ForcePathStyle: false,
       s3Credentials: undefined,
       storageSignedUrlTtlSeconds: 300,
+      authDataRetentionSeconds: 2592000,
+      authCleanupIntervalSeconds: 86400,
+      authCleanupBatchSize: 1000,
     });
+  });
+
+  it('keeps the exported auth cleanup defaults equal to the schema defaults', () => {
+    expect(loadApiConfig(validEnv())).toMatchObject({
+      authDataRetentionSeconds: DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+      authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
+      authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+    });
+  });
+
+  it('accepts an AUTH_CLEANUP_INTERVAL of 7d and rejects 8d', () => {
+    expect(loadApiConfig({ ...validEnv(), AUTH_CLEANUP_INTERVAL: '7d' })).toMatchObject({
+      authCleanupIntervalSeconds: MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+    });
+    expect(MAX_AUTH_CLEANUP_INTERVAL_SECONDS).toBe(604800);
+    const message = messageOf({ ...validEnv(), AUTH_CLEANUP_INTERVAL: '8d' });
+    expect(message).toContain('AUTH_CLEANUP_INTERVAL');
+    expect(message).toContain('between 1s and 7d');
+  });
+
+  it('parses explicit auth cleanup values', () => {
+    expect(
+      loadApiConfig({
+        ...validEnv(),
+        AUTH_DATA_RETENTION: '45d',
+        AUTH_CLEANUP_INTERVAL: '6h',
+        AUTH_CLEANUP_BATCH_SIZE: '250',
+      }),
+    ).toMatchObject({
+      authDataRetentionSeconds: 3888000,
+      authCleanupIntervalSeconds: 21600,
+      authCleanupBatchSize: 250,
+    });
+  });
+
+  it.each(['AUTH_DATA_RETENTION', 'AUTH_CLEANUP_INTERVAL'])('rejects a malformed %s', (name) => {
+    for (const value of ['30', '30x', 'd', '-5d', '1.5h', '0d']) {
+      expect(messageOf({ ...validEnv(), [name]: value })).toContain(name);
+    }
+  });
+
+  it('accepts a retention equal to the refresh token lifetime', () => {
+    expect(
+      loadApiConfig({ ...validEnv(), REFRESH_TOKEN_TTL: '10d', AUTH_DATA_RETENTION: '10d' }),
+    ).toMatchObject({ authDataRetentionSeconds: 864000, refreshTokenTtlSeconds: 864000 });
+  });
+
+  it('rejects a retention shorter than the refresh token lifetime', () => {
+    const message = messageOf({
+      ...validEnv(),
+      REFRESH_TOKEN_TTL: '10d',
+      AUTH_DATA_RETENTION: '9d',
+    });
+    expect(message).toContain('AUTH_DATA_RETENTION');
+    expect(message).toContain('REFRESH_TOKEN_TTL');
+  });
+
+  it.each(['0', '10001', 'abc', '1.5', '-1'])('rejects AUTH_CLEANUP_BATCH_SIZE=%s', (value) => {
+    expect(messageOf({ ...validEnv(), AUTH_CLEANUP_BATCH_SIZE: value })).toContain(
+      'AUTH_CLEANUP_BATCH_SIZE',
+    );
   });
 
   it('parses explicit values', () => {

@@ -2,11 +2,19 @@
 
 ## 2026-11-08 — PR #76 review fixes: classroom authorization and list contract (#21)
 
-- **Status:** in-progress (fixes committed on `feat/21-virtual-classroom`; pending push and review)
+- **Status:** in-progress (fixes pushed to `feat/21-virtual-classroom`; PR #76 awaiting review)
 - **Area / files:** `apps/api/src/access/access-verification.service.ts`, `apps/api/src/classrooms/`, `apps/api/src/http/visible-text.ts`, `apps/api/src/users/profile.dto.ts`, `apps/api/src/app.module.ts`, `apps/api/openapi.json`
 - **Change:** Merged `develop` into the branch (kept `UsersModule` and `ClassroomsModule`, regenerated OpenAPI). Moved classroom creation and listing authorization into `AccessVerificationService` (`resolveClassroomCreationTarget`, `listAccessibleClassrooms`, shared `deriveClassroomAccessRole`), so detail and list resolve the same role and nothing falls open. Unrelated and nonexistent schools now return the same `404`; `403` only for a student or parent related to that school; a user with several schools must send `schoolId` (`400`); independent teachers can always create their own classroom. Adopted the shared pagination contract on `GET /classrooms` and `GET /me/classrooms` (`page`, `pageSize`, `sort`; `{items,page,pageSize,total}`). Extracted a shared `@VisibleText` validator and applied it to classroom name and subject; an empty `PATCH` body is now `400`. Rejection tests assert that nothing is written. Commits: `19c9acc`, `6bd34b5`, `0b36fef`.
 - **Reason:** Review of PR #76 found an existence leak between `403` and `404` (reported by Alejo), authorization duplicated outside the shared service, an arbitrary school picked for multi-school users, and a list contract that diverged from `docs/api-conventions.md`.
-- **Next step:** Push to the branch and comment on PR #76. Team decisions: initial desk count (12), default pet and control states, PR size. Follow-up for the invitation flow: invited learners must not get the `INDEPENDENT_TEACHER` registration path.
+- **Next step:** Re-review of PR #76. Team decisions: initial desk count (12), default pet and control states, PR size. Follow-up for the invitation flow: invited learners must not get the `INDEPENDENT_TEACHER` registration path.
+
+## 2026-11-07 — Periodic cleanup of expired auth sessions and tokens (#70)
+
+- **Status:** completed (merged in PR #72)
+- **Area / files:** `apps/api/src/auth/` (`auth-data-cleanup.service.ts`, `auth-data-cleanup.scheduler.ts`), `apps/api/prisma/` (cleanup indexes migration), `apps/api/src/config/api-config.ts`, `apps/api/src/openapi/export.ts`, `apps/api/.env.example`, `docker-compose.yml`, `README.md`
+- **Change:** Added `AuthDataCleanupService`, which deletes expired sessions (their refresh tokens first, in batches, so the foreign key cascade removes nothing unbounded), rotated refresh tokens older than a retention window unless their session is still live by stored state (so reuse detection survives a shortened `REFRESH_TOKEN_TTL`), and used or expired password reset tokens, in bounded batches without a long transaction, and `AuthDataCleanupScheduler`, an in-process job that runs shortly after startup and then at a fixed interval (skips overlapping runs, never throws out of the timer, not scheduled when `NODE_ENV=test`). Each run logs only counts and duration; a failed run logs the error class and Prisma code, never the message. New variables `AUTH_DATA_RETENTION` (30d), `AUTH_CLEANUP_INTERVAL` (24h, max 7d) and `AUTH_CLEANUP_BATCH_SIZE` (1000), passed through Compose; retention must not be shorter than `REFRESH_TOKEN_TTL`. Added indexes on the filtered timestamp columns.
+- **Reason:** Sessions, rotated refresh tokens and reset tokens were never deleted, so the tables grew without bound; rotated tokens are kept for the retention window to preserve reuse detection.
+- **Next step:** Open the PR into `develop`. Follow-up: throttling for login and reset request.
 
 ## 2026-11-06 — Authentication and session lifecycle (#18)
 

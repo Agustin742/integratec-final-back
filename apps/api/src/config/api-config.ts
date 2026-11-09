@@ -44,6 +44,12 @@ export interface ApiConfig {
   s3Credentials: { accessKeyId: string; secretAccessKey: string } | undefined;
   /** Default lifetime of signed download URLs. */
   storageSignedUrlTtlSeconds: number;
+  /** How long past its expiry (or rotation/use) an auth row is kept before it is pruned. */
+  authDataRetentionSeconds: number;
+  /** Pause between two auth data cleanup runs. */
+  authCleanupIntervalSeconds: number;
+  /** Maximum rows removed by one cleanup DELETE statement. */
+  authCleanupBatchSize: number;
 }
 
 /** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
@@ -54,6 +60,20 @@ export const MAX_SIGNED_URL_TTL_SECONDS = 3600;
 
 /** Upper bound for the password reset link lifetime: a reset link is a bearer credential. */
 export const MAX_PASSWORD_RESET_TTL_SECONDS = 86400;
+
+/** Upper bound for the cleanup batch size: keeps each DELETE statement short. */
+export const MAX_AUTH_CLEANUP_BATCH_SIZE = 10000;
+
+/**
+ * Upper bound for the cleanup interval. Well below Node's 2^31-1 ms timer limit (~24.8d),
+ * beyond which `setInterval` clamps the delay to 1 ms and would loop the cleanup.
+ */
+export const MAX_AUTH_CLEANUP_INTERVAL_SECONDS = 7 * 86400;
+
+/** Defaults of the auth cleanup settings, in seconds (the env schema spells them as durations). */
+export const DEFAULT_AUTH_DATA_RETENTION_SECONDS = 30 * 86400;
+export const DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS = 86400;
+export const DEFAULT_AUTH_CLEANUP_BATCH_SIZE = 1000;
 
 /** Local frontend reset page, used when `PASSWORD_RESET_URL_BASE` is unset outside production. */
 export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/reset-password';
@@ -94,6 +114,9 @@ const PASSWORD_RESET_TTL_MESSAGE = 'must be a duration between 1s and 24h, such 
 const PASSWORD_RESET_URL_MESSAGE =
   'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/reset-password';
 const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
+
+const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, such as 24h';
+const BATCH_SIZE_MESSAGE = `must be an integer between 1 and ${MAX_AUTH_CLEANUP_BATCH_SIZE}`;
 
 const required = { error: 'is required' };
 
@@ -204,6 +227,27 @@ const envSchema = z
               .max(20, 'must be an integer between 1 and 20'),
           ),
       ),
+    AUTH_DATA_RETENTION: duration('30d'),
+    AUTH_CLEANUP_INTERVAL: duration(
+      '24h',
+      MAX_AUTH_CLEANUP_INTERVAL_SECONDS,
+      AUTH_CLEANUP_INTERVAL_MESSAGE,
+    ),
+    AUTH_CLEANUP_BATCH_SIZE: z
+      .string()
+      .default('1000')
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, BATCH_SIZE_MESSAGE)
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, BATCH_SIZE_MESSAGE)
+              .max(MAX_AUTH_CLEANUP_BATCH_SIZE, BATCH_SIZE_MESSAGE),
+          ),
+      ),
     INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
     JWT_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
     ALLOWED_ORIGINS: z
@@ -243,6 +287,19 @@ const envSchema = z
         code: 'custom',
         path: ['PASSWORD_RESET_URL_BASE'],
         message: 'must use HTTPS in production',
+      });
+    }
+    // Pruning rotated tokens of a still-live session would break refresh reuse detection.
+    if (
+      typeof env.AUTH_DATA_RETENTION === 'number' &&
+      typeof env.REFRESH_TOKEN_TTL === 'number' &&
+      env.AUTH_DATA_RETENTION < env.REFRESH_TOKEN_TTL
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_DATA_RETENTION'],
+        message:
+          'must not be shorter than REFRESH_TOKEN_TTL, or rotated tokens of live sessions would be pruned',
       });
     }
     // Both keys or neither: with neither, the SDK resolves the instance role.
@@ -309,5 +366,8 @@ export function loadApiConfig(env: Env): ApiConfig {
         ? { accessKeyId: values.S3_ACCESS_KEY_ID, secretAccessKey: values.S3_SECRET_ACCESS_KEY }
         : undefined,
     storageSignedUrlTtlSeconds: values.STORAGE_SIGNED_URL_TTL,
+    authDataRetentionSeconds: values.AUTH_DATA_RETENTION,
+    authCleanupIntervalSeconds: values.AUTH_CLEANUP_INTERVAL,
+    authCleanupBatchSize: values.AUTH_CLEANUP_BATCH_SIZE,
   };
 }

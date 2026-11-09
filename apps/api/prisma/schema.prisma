@@ -95,6 +95,7 @@ model Session {
   refreshTokens RefreshToken[]
 
   @@index([userId])
+  @@index([expiresAt])
   @@map("sessions")
 }
 
@@ -111,6 +112,7 @@ model RefreshToken {
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId])
+  @@index([rotatedAt])
   @@map("refresh_tokens")
 }
 
@@ -131,6 +133,7 @@ model PasswordResetToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt])
   @@map("password_reset_tokens")
 }
 
