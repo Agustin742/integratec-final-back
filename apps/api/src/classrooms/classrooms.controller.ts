@@ -82,7 +82,7 @@ export class ClassroomsController {
     description:
       'Returns a paginated list (page, pageSize, sort=createdAt|name, default -createdAt) of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).',
   })
-  @ApiPaginatedResponse(ClassroomListItemDto)
+  @ApiPaginatedResponse(ClassroomListItemDto, 'Paginated list of accessible classrooms.')
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
     description: 'Invalid pagination or sort parameters (page, pageSize, sort).',

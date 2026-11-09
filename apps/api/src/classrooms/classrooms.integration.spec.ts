@@ -895,7 +895,8 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
           expect(detail.body.capabilities).toEqual(item.capabilities);
         }
       }
-    });
+      // Many sequential HTTP round trips; the default 5 s timeout flakes under full-suite load.
+    }, 20_000);
 
     it('never lists a classroom for which no role resolves (no fall-open to STUDENT) and the detail agrees with 404', async () => {
       // Active TEACHER classroom membership but the school membership is INACTIVE: no authority.

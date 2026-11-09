@@ -386,7 +386,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "Paginated list of accessible classrooms.",
             "content": {
               "application/json": {
                 "schema": {
@@ -553,7 +553,7 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "Paginated list of accessible classrooms.",
             "content": {
               "application/json": {
                 "schema": {
