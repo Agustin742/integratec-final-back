@@ -1,5 +1,25 @@
 # Tracker — Luis
 
+## 2026-11-09 — Classroom invitations, join codes, and desk assignment (Issue #22)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/classrooms/`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #22 (HU-AUL-002: Join a classroom through email invitation or access code/link):
+  - Created `ClassroomInvitationsService`, `InvitationsController`, and extended `ClassroomsController` and `ClassroomsModule` with seven endpoints:
+    - `POST /classrooms/:id/invitations`: issues single-use email invitation with SHA-256 hashed secret, target email, expiration, and outbox event dispatch (`classroom.invitation-created`) for asynchronous email delivery via `EmailPort`. Preserves complete non-disclosure of existing users.
+    - `GET /classrooms/:id/invitations`: paginated list of email invitations filtered by status.
+    - `DELETE /classrooms/:id/invitations/:invitationId`: revokes active email invitation.
+    - `POST /classrooms/:id/join-code`: generates/regenerates shareable uppercase alphanumeric join code (7 Crockford Base32 characters); automatically revokes previous active join code; stores only SHA-256 hash and exposes raw code once upon generation.
+    - `DELETE /classrooms/:id/join-code`: revokes active join code.
+    - `POST /invitations/accept`: accepts opaque token from email invitation, binds authenticated account to classroom membership, and assigns available desk.
+    - `POST /classrooms/join`: redeems join code, enforces sliding-window in-memory rate limiting against brute-force guessing (`429 TOO_MANY_REQUESTS`), creates membership atomically, assigns lowest available desk, and auto-expands desks dynamically (`(maxDeskIndex ?? 0) + 1`) when all default 12 desks are occupied.
+  - Enforced idempotency: re-joining by an already enrolled student returns existing membership and desk without consuming extra uses.
+  - Implemented transactional concurrency safety and tested with `Promise.all` for max-uses race conditions, duplicate user joins, and desk allocation.
+  - Added unit test suites and PostgreSQL integration test battery (`*.spec.ts` and `*.integration.spec.ts`).
+  - Exported updated OpenAPI specification to `apps/api/openapi.json`.
+- **Reason:** Enable teachers and school administrators to invite students via email or shareable join codes, allocate 3D desks automatically with dynamic auto-expansion, and protect joining endpoints against brute force attacks.
+- **Next step:** Open PR targeting `develop` and move card #22 to `In review` on GitHub Project 3.
+
 ## 2026-11-08 — Create and configure virtual classrooms (Issue #21)
 
 - **Status:** in-progress
