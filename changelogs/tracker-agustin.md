@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-08 — PR #76 review fixes: classroom authorization and list contract (#21)
+
+- **Status:** in-progress (fixes committed on `feat/21-virtual-classroom`; pending push and review)
+- **Area / files:** `apps/api/src/access/access-verification.service.ts`, `apps/api/src/classrooms/`, `apps/api/src/http/visible-text.ts`, `apps/api/src/users/profile.dto.ts`, `apps/api/src/app.module.ts`, `apps/api/openapi.json`
+- **Change:** Merged `develop` into the branch (kept `UsersModule` and `ClassroomsModule`, regenerated OpenAPI). Moved classroom creation and listing authorization into `AccessVerificationService` (`resolveClassroomCreationTarget`, `listAccessibleClassrooms`, shared `deriveClassroomAccessRole`), so detail and list resolve the same role and nothing falls open. Unrelated and nonexistent schools now return the same `404`; `403` only for a student or parent related to that school; a user with several schools must send `schoolId` (`400`); independent teachers can always create their own classroom. Adopted the shared pagination contract on `GET /classrooms` and `GET /me/classrooms` (`page`, `pageSize`, `sort`; `{items,page,pageSize,total}`). Extracted a shared `@VisibleText` validator and applied it to classroom name and subject; an empty `PATCH` body is now `400`. Rejection tests assert that nothing is written. Commits: `19c9acc`, `6bd34b5`, `0b36fef`.
+- **Reason:** Review of PR #76 found an existence leak between `403` and `404` (reported by Alejo), authorization duplicated outside the shared service, an arbitrary school picked for multi-school users, and a list contract that diverged from `docs/api-conventions.md`.
+- **Next step:** Push to the branch and comment on PR #76. Team decisions: initial desk count (12), default pet and control states, PR size. Follow-up for the invitation flow: invited learners must not get the `INDEPENDENT_TEACHER` registration path.
+
 ## 2026-11-06 — Authentication and session lifecycle (#18)
 
 - **Status:** completed (pending PR review)
