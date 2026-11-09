@@ -110,17 +110,17 @@ describe('Auth / Data cleanup (issue #70)', () => {
   });
 
   it('deletes tokens rotated before the cutoff on a revoked session and keeps recent and never-rotated ones', async () => {
-    const live = await seedSession(ahead(7), ago(1));
-    const oldRotated = await seedToken(live.id, ago(31));
-    const recentRotated = await seedToken(live.id, ago(2));
-    const current = await seedToken(live.id, null);
+    const revoked = await seedSession(ahead(7), ago(1));
+    const oldRotated = await seedToken(revoked.id, ago(31));
+    const recentRotated = await seedToken(revoked.id, ago(2));
+    const current = await seedToken(revoked.id, null);
 
     const result = await service.run(now);
 
     expect(result.refreshTokens).toBe(1);
     expect((await existingIds()).tokens).toEqual(new Set([recentRotated.id, current.id]));
     expect((await existingIds()).tokens.has(oldRotated.id)).toBe(false);
-    expect((await existingIds()).sessions.has(live.id)).toBe(true);
+    expect((await existingIds()).sessions.has(revoked.id)).toBe(true);
   });
 
   it('keeps old rotated tokens of a still-live session so reuse is still detected', async () => {
@@ -205,19 +205,19 @@ describe('Auth / Data cleanup (issue #70)', () => {
       prisma,
       authTestConfig({ authDataRetentionSeconds: 30 * 86400, authCleanupBatchSize: 2 }),
     );
-    const live = await seedSession(ahead(7), ago(1));
+    const revoked = await seedSession(ahead(7), ago(1));
     for (let i = 0; i < 5; i++) {
-      await seedToken(live.id, ago(40));
+      await seedToken(revoked.id, ago(40));
       await seedSession(ago(40));
       await seedReset(ago(40));
     }
-    const keptToken = await seedToken(live.id, null);
+    const keptToken = await seedToken(revoked.id, null);
 
     const result = await small.run(now);
 
     expect(result).toEqual({ sessions: 5, refreshTokens: 5, passwordResetTokens: 5 });
     const kept = await existingIds();
-    expect(kept.sessions).toEqual(new Set([live.id]));
+    expect(kept.sessions).toEqual(new Set([revoked.id]));
     expect(kept.tokens).toEqual(new Set([keptToken.id]));
     expect(kept.resets.size).toBe(0);
   });
