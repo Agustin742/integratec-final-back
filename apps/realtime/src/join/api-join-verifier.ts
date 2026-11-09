@@ -9,6 +9,15 @@ import {
 export const SERVICE_SECRET_HEADER = 'x-internal-service-secret';
 export const DEFAULT_VERIFICATION_TIMEOUT_MS = 3000;
 
+const VERIFICATION_PATH = '/internal/realtime/join-verification';
+
+/** Appends `path` to `baseUrl` keeping any base path prefix and avoiding duplicate slashes. */
+function joinPath(baseUrl: string, path: string): string {
+  const url = new URL(baseUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}${path}`;
+  return url.toString();
+}
+
 const verifiedJoinSchema = z.object({
   userId: z.uuid(),
   sessionId: z.uuid(),
@@ -37,7 +46,7 @@ export class ApiJoinVerifier implements JoinVerifier {
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ApiJoinVerifierOptions) {
-    this.url = new URL('/internal/realtime/join-verification', options.baseUrl).toString();
+    this.url = joinPath(options.baseUrl, VERIFICATION_PATH);
     this.serviceSecret = options.serviceSecret;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_VERIFICATION_TIMEOUT_MS;
     this.fetchImpl = options.fetchImpl ?? fetch;

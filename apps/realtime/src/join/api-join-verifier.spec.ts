@@ -109,4 +109,41 @@ describe('ApiJoinVerifier', () => {
     expect(String(error.message)).not.toContain(SECRET);
     expect(error.cause).toBeUndefined();
   });
+
+  describe('verification URL', () => {
+    const urlFor = async (baseUrl: string): Promise<string> => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(200, IDENTITY));
+      await new ApiJoinVerifier({ baseUrl, serviceSecret: SECRET, fetchImpl }).verify(
+        TOKEN,
+        CLASSROOM_ID,
+      );
+      return (fetchImpl.mock.calls[0] as [string])[0];
+    };
+
+    it.each([
+      ['a bare origin', 'http://api:3000', 'http://api:3000/internal/realtime/join-verification'],
+      [
+        'a trailing slash',
+        'http://api:3000/',
+        'http://api:3000/internal/realtime/join-verification',
+      ],
+      [
+        'a path prefix',
+        'http://api:3000/prefix',
+        'http://api:3000/prefix/internal/realtime/join-verification',
+      ],
+      [
+        'a path prefix with a trailing slash',
+        'http://api:3000/prefix/',
+        'http://api:3000/prefix/internal/realtime/join-verification',
+      ],
+      [
+        'a nested path prefix',
+        'http://api:3000/a/b//',
+        'http://api:3000/a/b/internal/realtime/join-verification',
+      ],
+    ])('keeps the base path for %s', async (_label, baseUrl, expected) => {
+      await expect(urlFor(baseUrl)).resolves.toBe(expected);
+    });
+  });
 });
