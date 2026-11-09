@@ -163,6 +163,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate, so a service cannot start with it. Use the same value in the API and the realtime server.
 
+Service-to-service calls to the API send it in the `x-internal-service-secret` header. The only internal route today is `POST /internal/realtime/join-verification` (body `{ accessToken, classroomId }`), which the realtime server calls from `onAuth`; it is excluded from the public OpenAPI document and must not be routed by the reverse proxy.
+
 ### API (`apps/api`)
 
 | Variable                  | Required / default                                | Purpose                                                                  | Classification | Restart |
