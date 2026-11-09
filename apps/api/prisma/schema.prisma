@@ -188,6 +188,7 @@ model Classroom {
   schoolId              String?   @map("school_id") @db.Uuid
   independentTeacherId  String?   @map("independent_teacher_id") @db.Uuid
   name                  String    @db.VarChar(120)
+  subject               String?   @db.VarChar(200)
   adultMode             Boolean   @default(false) @map("adult_mode")
   chatMuted             Boolean   @default(false) @map("chat_muted")
   collaborationLocked   Boolean   @default(false) @map("collaboration_locked")

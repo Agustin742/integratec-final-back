@@ -1,11 +1,14 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ClassroomRole, SchoolRole } from '@prisma/client';
+import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ClassroomRole, RegistrationPath, SchoolRole } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { RequestValidationException } from '../http/validation';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
   AccessVerificationService,
   computeClassroomCapabilities,
+  deriveClassroomAccessRole,
   type ClassroomCapability,
+  type ClassroomRoleFacts,
 } from './access-verification.service';
 
 describe('AccessVerificationService (HU-AUL-005)', () => {
@@ -40,7 +43,7 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       schoolMember: { findFirst: vi.fn() },
       classroom: { findFirst: vi.fn() },
       classroomMembership: { findFirst: vi.fn() },
-      parentLink: { findMany: vi.fn() },
+      parentLink: { findMany: vi.fn().mockResolvedValue([]) },
     };
 
     service = new AccessVerificationService(prismaMock as unknown as PrismaService);
@@ -597,6 +600,321 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
         expect(res.myRole).toBe('OWNER');
         expect(res.capabilities).toContain('manage_school');
       }
+    });
+  });
+  describe('resolveClassroomCreationTarget', () => {
+    let db: {
+      user: { findUnique: ReturnType<typeof vi.fn> };
+      school: { findFirst: ReturnType<typeof vi.fn> };
+      schoolMember: { findFirst: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
+      classroomMembership: { findFirst: ReturnType<typeof vi.fn> };
+      parentLink: { findFirst: ReturnType<typeof vi.fn> };
+    };
+    let creation: AccessVerificationService;
+
+    beforeEach(() => {
+      db = {
+        user: { findUnique: vi.fn() },
+        school: { findFirst: vi.fn().mockResolvedValue(null) },
+        schoolMember: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn() },
+        classroomMembership: { findFirst: vi.fn().mockResolvedValue(null) },
+        parentLink: { findFirst: vi.fn().mockResolvedValue(null) },
+      };
+      creation = new AccessVerificationService(db as unknown as PrismaService);
+    });
+
+    it('answers a nonexistent school and an unrelated existing school identically with 404', async () => {
+      db.school.findFirst.mockResolvedValueOnce(null);
+      const missing = await creation
+        .resolveClassroomCreationTarget(STUDENT_1_USER_ID, SCHOOL_B_ID)
+        .catch((e: unknown) => e);
+
+      db.school.findFirst.mockResolvedValueOnce({ id: SCHOOL_A_ID });
+      db.schoolMember.findFirst.mockResolvedValueOnce(null);
+      const unrelated = await creation
+        .resolveClassroomCreationTarget(STUDENT_1_USER_ID, SCHOOL_A_ID)
+        .catch((e: unknown) => e);
+
+      expect(missing).toBeInstanceOf(NotFoundException);
+      expect(unrelated).toBeInstanceOf(NotFoundException);
+      expect((unrelated as NotFoundException).getResponse()).toEqual(
+        (missing as NotFoundException).getResponse(),
+      );
+    });
+
+    it('answers 403 only when the caller is an enrolled student or linked parent of that school', async () => {
+      db.school.findFirst.mockResolvedValue({ id: SCHOOL_A_ID });
+      db.classroomMembership.findFirst.mockResolvedValueOnce({ id: 'enrollment' });
+      await expect(
+        creation.resolveClassroomCreationTarget(STUDENT_1_USER_ID, SCHOOL_A_ID),
+      ).rejects.toThrow(ForbiddenException);
+
+      db.parentLink.findFirst.mockResolvedValueOnce({ id: 'link' });
+      await expect(
+        creation.resolveClassroomCreationTarget(PARENT_1_USER_ID, SCHOOL_A_ID),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('answers 404 for a malformed schoolId without touching the database', async () => {
+      await expect(
+        creation.resolveClassroomCreationTarget(OWNER_USER_ID, 'not-a-uuid'),
+      ).rejects.toThrow(NotFoundException);
+      expect(db.school.findFirst).not.toHaveBeenCalled();
+      expect(db.classroomMembership.findFirst).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [SchoolRole.OWNER, 'OWNER'],
+      [SchoolRole.ADMIN, 'ADMIN'],
+      [SchoolRole.TEACHER, 'TEACHER'],
+    ] as const)('resolves an explicit school target for a school %s', async (role, expected) => {
+      db.school.findFirst.mockResolvedValue({ id: SCHOOL_A_ID });
+      db.schoolMember.findFirst.mockResolvedValue({ role });
+
+      const target = await creation.resolveClassroomCreationTarget(OWNER_USER_ID, SCHOOL_A_ID);
+
+      expect(target).toMatchObject({
+        schoolId: SCHOOL_A_ID,
+        independentTeacherId: null,
+        schoolRole: role,
+        myRole: expected,
+      });
+      expect(target.capabilities).toEqual(computeClassroomCapabilities(expected));
+    });
+
+    it('denies staff of one school in another school with 404', async () => {
+      db.school.findFirst.mockResolvedValue({ id: SCHOOL_B_ID });
+      db.schoolMember.findFirst.mockResolvedValue(null);
+
+      await expect(
+        creation.resolveClassroomCreationTarget(OWNER_USER_ID, SCHOOL_B_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('lets an INDEPENDENT_TEACHER-path user create their own classroom even if enrolled as a student', async () => {
+      db.user.findUnique.mockResolvedValue({
+        registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+      });
+      db.classroomMembership.findFirst.mockResolvedValue({ id: 'enrollment' });
+
+      const target = await creation.resolveClassroomCreationTarget(IND_TEACHER_USER_ID);
+
+      expect(target).toMatchObject({
+        schoolId: null,
+        independentTeacherId: IND_TEACHER_USER_ID,
+        schoolRole: null,
+        myRole: 'TEACHER',
+      });
+    });
+
+    it('uses the single active school membership of a SCHOOL-path user when schoolId is omitted', async () => {
+      db.user.findUnique.mockResolvedValue({ registrationPath: RegistrationPath.SCHOOL });
+      db.schoolMember.findMany.mockResolvedValue([
+        { schoolId: SCHOOL_A_ID, role: SchoolRole.ADMIN },
+      ]);
+
+      const target = await creation.resolveClassroomCreationTarget(ADMIN_USER_ID);
+
+      expect(target).toMatchObject({
+        schoolId: SCHOOL_A_ID,
+        schoolRole: 'ADMIN',
+        myRole: 'ADMIN',
+      });
+    });
+
+    it('requires an explicit schoolId (400 on schoolId) when a SCHOOL-path user has several memberships', async () => {
+      db.user.findUnique.mockResolvedValue({ registrationPath: RegistrationPath.SCHOOL });
+      db.schoolMember.findMany.mockResolvedValue([
+        { schoolId: SCHOOL_A_ID, role: SchoolRole.TEACHER },
+        { schoolId: SCHOOL_B_ID, role: SchoolRole.TEACHER },
+      ]);
+
+      const error = await creation
+        .resolveClassroomCreationTarget(TEACHER_1_USER_ID)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(RequestValidationException);
+      expect((error as RequestValidationException).details).toEqual([
+        { field: 'schoolId', messages: [expect.stringContaining('schoolId')] },
+      ]);
+    });
+
+    it('answers a SCHOOL-path user with no active membership and no learner relation with 404', async () => {
+      db.user.findUnique.mockResolvedValue({ registrationPath: RegistrationPath.SCHOOL });
+      db.schoolMember.findMany.mockResolvedValue([]);
+
+      await expect(creation.resolveClassroomCreationTarget(STRANGER_USER_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('answers a SCHOOL-path learner without school membership with 403', async () => {
+      db.user.findUnique.mockResolvedValue({ registrationPath: RegistrationPath.SCHOOL });
+      db.schoolMember.findMany.mockResolvedValue([]);
+      db.classroomMembership.findFirst.mockResolvedValue({ id: 'enrollment' });
+
+      await expect(creation.resolveClassroomCreationTarget(STUDENT_1_USER_ID)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('answers 401 for an unknown actor', async () => {
+      db.user.findUnique.mockResolvedValue(null);
+
+      await expect(creation.resolveClassroomCreationTarget(STRANGER_USER_ID)).rejects.toThrow(
+        UnauthorizedException,
+      );
+    });
+  });
+
+  describe('deriveClassroomAccessRole', () => {
+    const facts = (over: Partial<ClassroomRoleFacts>): ClassroomRoleFacts => ({
+      actorUserId: STUDENT_1_USER_ID,
+      classroom: { schoolId: SCHOOL_A_ID, independentTeacherId: null, adultMode: false },
+      schoolRole: null,
+      membershipRole: null,
+      hasActiveParentLink: false,
+      ...over,
+    });
+
+    it('returns null when no relation resolves (fail closed, never defaults to STUDENT)', () => {
+      expect(deriveClassroomAccessRole(facts({}))).toBeNull();
+    });
+
+    it('gives school Owner and Admin authority over the school classroom regardless of enrollment', () => {
+      expect(
+        deriveClassroomAccessRole(
+          facts({ schoolRole: SchoolRole.OWNER, membershipRole: ClassroomRole.STUDENT }),
+        ),
+      ).toBe('OWNER');
+      expect(deriveClassroomAccessRole(facts({ schoolRole: SchoolRole.ADMIN }))).toBe('ADMIN');
+    });
+
+    it('requires an active school membership for a school classroom teacher', () => {
+      expect(
+        deriveClassroomAccessRole(facts({ membershipRole: ClassroomRole.TEACHER })),
+      ).toBeNull();
+      expect(
+        deriveClassroomAccessRole(
+          facts({ membershipRole: ClassroomRole.TEACHER, schoolRole: SchoolRole.TEACHER }),
+        ),
+      ).toBe('TEACHER');
+    });
+
+    it('resolves independent teacher, student and parent, hiding the parent in adult mode', () => {
+      const independent = {
+        schoolId: null,
+        independentTeacherId: STUDENT_1_USER_ID,
+        adultMode: false,
+      };
+      expect(deriveClassroomAccessRole(facts({ classroom: independent }))).toBe('TEACHER');
+      expect(deriveClassroomAccessRole(facts({ membershipRole: ClassroomRole.STUDENT }))).toBe(
+        'STUDENT',
+      );
+      expect(deriveClassroomAccessRole(facts({ hasActiveParentLink: true }))).toBe('PARENT');
+      expect(
+        deriveClassroomAccessRole(
+          facts({
+            hasActiveParentLink: true,
+            classroom: { schoolId: SCHOOL_A_ID, independentTeacherId: null, adultMode: true },
+          }),
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe('listAccessibleClassrooms', () => {
+    const row = (over: Record<string, unknown>) => ({
+      id: CLASSROOM_A1_ID,
+      name: 'Aula',
+      subject: null,
+      schoolId: SCHOOL_A_ID,
+      independentTeacherId: null,
+      adultMode: false,
+      chatMuted: false,
+      collaborationLocked: false,
+      gamesDisabled: false,
+      deletedAt: null,
+      createdAt: new Date('2026-11-07T20:00:00.000Z'),
+      updatedAt: new Date('2026-11-07T20:00:00.000Z'),
+      school: { deletedAt: null, members: [] },
+      memberships: [],
+      parentLinks: [],
+      ...over,
+    });
+
+    it('derives role and capabilities per row with the same hierarchy as verifyClassroomAccess', async () => {
+      const findMany = vi.fn().mockResolvedValue([
+        row({
+          id: CLASSROOM_A1_ID,
+          school: { deletedAt: null, members: [{ role: SchoolRole.OWNER }] },
+        }),
+        row({ id: CLASSROOM_A2_ID, memberships: [{ role: ClassroomRole.STUDENT }] }),
+        row({ id: CLASSROOM_IND_ID, schoolId: null, school: null, parentLinks: [{ id: 'link' }] }),
+      ]);
+      const db = { classroom: { findMany, count: vi.fn().mockResolvedValue(3) } };
+      const listing = new AccessVerificationService(db as unknown as PrismaService);
+
+      const result = await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, {
+        skip: 0,
+        take: 20,
+        sort: { field: 'createdAt', direction: 'desc' },
+      });
+
+      expect(result.total).toBe(3);
+      expect(result.items.map((i) => [i.classroom.id, i.myRole])).toEqual([
+        [CLASSROOM_A1_ID, 'OWNER'],
+        [CLASSROOM_A2_ID, 'STUDENT'],
+        [CLASSROOM_IND_ID, 'PARENT'],
+      ]);
+      expect(result.items[1].capabilities).toEqual(computeClassroomCapabilities('STUDENT'));
+    });
+
+    it.each([
+      [{ field: 'createdAt', direction: 'desc' }, [{ createdAt: 'desc' }, { id: 'asc' }]],
+      [{ field: 'createdAt', direction: 'asc' }, [{ createdAt: 'asc' }, { id: 'asc' }]],
+      [{ field: 'name', direction: 'asc' }, [{ name: 'asc' }, { id: 'asc' }]],
+      [{ field: 'name', direction: 'desc' }, [{ name: 'desc' }, { id: 'asc' }]],
+    ] as const)('orders by %j with a stable id tiebreaker', async (sort, expectedOrderBy) => {
+      const findMany = vi.fn().mockResolvedValue([]);
+      const db = { classroom: { findMany, count: vi.fn().mockResolvedValue(0) } };
+      const listing = new AccessVerificationService(db as unknown as PrismaService);
+
+      await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, { skip: 0, take: 20, sort });
+
+      expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: expectedOrderBy }));
+    });
+
+    it('excludes a row for which no role resolves instead of defaulting to STUDENT', async () => {
+      const db = {
+        classroom: {
+          findMany: vi.fn().mockResolvedValue([row({})]),
+          count: vi.fn().mockResolvedValue(1),
+        },
+      };
+      const listing = new AccessVerificationService(db as unknown as PrismaService);
+
+      const result = await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, {
+        skip: 0,
+        take: 20,
+        sort: { field: 'createdAt', direction: 'asc' },
+      });
+
+      expect(result.items).toEqual([]);
+    });
+
+    it('returns an empty page without querying for a malformed actor id', async () => {
+      const db = { classroom: { findMany: vi.fn(), count: vi.fn() } };
+      const listing = new AccessVerificationService(db as unknown as PrismaService);
+
+      const result = await listing.listAccessibleClassrooms('nope', {
+        skip: 0,
+        take: 5,
+        sort: { field: 'createdAt', direction: 'asc' },
+      });
+
+      expect(result).toEqual({ total: 0, items: [] });
+      expect(db.classroom.findMany).not.toHaveBeenCalled();
     });
   });
 });
