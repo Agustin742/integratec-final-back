@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-08 — Profile/avatar review followup (#74, #75)
+
+- **Status:** in-progress (profile-only implementation checked; avatar propagation and independent verification pending)
+- **Area / files:** `apps/api/src/users/` profile DTO/controller/service/module/HTTP tests and retired local guard, `apps/api/openapi.json`, `docs/profile-avatar.md`. Parent owns the develop merge and `app.module.ts`; this writer did not modify shared authentication.
+- **Change:** Reused merged #71 global guard through `@CurrentUser('userId')`, removed the second verifier/provider/import, rejected raw C0/C1 controls and invisible-only names while preserving ordinary Unicode/joiners, and returned default appearance with a constant privacy-safe warning for unsupported storage. Name PATCH no longer pre-reads appearance; neither route repairs appearance. Documented base-only storage and separately modeled future shop state. UUID-scoped per-test resets remove order dependence. AI-assisted work directed by Alejo.
+- **Reason:** Cover S4–S5 profile validation/recovery and secrecy gaps without rewriting published history or implementing dependent #75 avatar writes.
+- **Verification:** On parent-provisioned task-only PostgreSQL at `127.0.0.1:55420/profile_review`, `pnpm --filter @aula/api exec vitest run src/users/users.spec.ts` with the supplied `DATABASE_URL`: RED exit 1, 211 failed/33 passed (duplicate verifier calls, invalid names accepted, unsupported storage returned 500); first implementation run exit 1 before collection because `NotMatches` is unavailable; corrected GREEN exit 0, 244/244; final alternate-case/fixture refinement exit 0, 248/248. The final cases cover all 65 C0/C1 controls at start/end/interior, Unicode separators, invisible names, ordinary multilingual names/joiners, stored JSON null/array/scalar/incompatible fields, exact warning arguments, no appearance writes, and retained auth/isolation checks. Array-valued fixtures are wrapped as named cases to avoid Vitest argument spreading. `pnpm --filter @aula/api openapi:export` exit 0; scoped `git diff --check` exit 0. Earlier feature/CI counts elsewhere in the local plan are historical, not current integrated evidence.
+- **Next step:** Parent formatting, focused 248/248 tests, API typecheck, documentation checks (62 files) and whitespace passed (job 5, exit 0). Propagate corrections to #75 and obtain integrated checks plus independent verification/review before any separately authorized publication. Differential sibling-command execution is not applicable: only the two requested users routes consume changed production code; shared AuthModule/SessionAuthGuard/SessionVerifier remain unchanged. The retired guard file contains only an empty module (worker safety forbids file deletion); parent may remove that inert file. No leaf/verifier/publication completion, PR merge or deployment is claimed.
+
+
 ## 2026-11-07 — Security corrections for Agustin's authentication PR #68
 
 - **Status:** completed
