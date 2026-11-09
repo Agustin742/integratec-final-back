@@ -7,10 +7,11 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './pagination-query.dto';
  * The envelope is inlined (not a generic class) because Swagger cannot name
  * generics; only the item schema is a reusable component.
  */
-export function ApiPaginatedResponse<T extends Type<unknown>>(itemDto: T) {
+export function ApiPaginatedResponse<T extends Type<unknown>>(itemDto: T, description?: string) {
   return applyDecorators(
     ApiExtraModels(itemDto),
     ApiOkResponse({
+      ...(description === undefined ? {} : { description }),
       schema: {
         type: 'object',
         required: ['items', 'page', 'pageSize', 'total'],
