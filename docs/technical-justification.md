@@ -77,6 +77,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** Signed short-lived join ticket verified offline (B); Colyseus reading sessions from the database directly (C), rejected because it breaks the single authorization service rule.
 - **Affected contracts:** [Architecture](../rules/architecture.md), [Realtime and presence](../rules/realtime-and-presence.md), [AWS infrastructure](../rules/aws-infrastructure.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-02.
+- **Update 2026-11-09 (join credential transport, approved by Agustin):** the client sets `client.auth.token` (Colyseus SDK), which is sent as `Authorization: Bearer <access token>` on the matchmake HTTP request and reaches `static onAuth(token, options, context)`; join options carry only `classroomId`. Rationale: it is the framework-native path (Colyseus docs, auth/room), it has the same Bearer shape as REST, it keeps credentials out of room options (lower log exposure), and the token never travels in URLs. Alternative rejected: access token in the join options, for those reasons. The internal call is `POST /internal/realtime/join-verification` with the `x-internal-service-secret` header and fails closed.
 
 ### D3. Repository layout
 

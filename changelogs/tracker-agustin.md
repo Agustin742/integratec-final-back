@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-09 — Colyseus skeleton with join authorization through an internal API endpoint (#24)
+
+- **Status:** completed (pending PR review)
+- **Area / files:** `apps/api/src/internal/realtime/` (controller, `InternalServiceGuard`, DTO, module), `apps/realtime/src/` (`rooms/classroom-room.ts`, `rooms/authenticate-join.ts`, `join/api-join-verifier.ts`, `app.config.ts`), `packages/contracts/` (join options, generated room state), `scripts/check-generated-clean.mjs`, `.github/workflows/ci.yml`, `package.json`, `rules/realtime-and-presence.md`, `rules/authentication-and-session.md`, `docs/technical-justification.md` (D2), `docs/diagrams/`, `README.md`
+- **Change:** Added `POST /internal/realtime/join-verification`, which checks the access token and classroom access through the existing session and access services, is authenticated by `x-internal-service-secret` (constant-time compare), is hidden from the public OpenAPI document, and returns the verified identity. Added `ClassroomRoom` (one room per `classroomId`) whose static `onAuth` takes the token from the Colyseus `client.auth.token` (`Authorization: Bearer` on the matchmake request), re-checks `classroomId` on every join path, and rejects with a generic error on a missing token, API denial, error, timeout, or malformed response. Added the `@colyseus/schema` state codegen (`pnpm realtime:codegen`, `realtime:codegen:check`) with a CI step that now fails on modified and on new untracked generated files. Documented the credential transport as an update of D2 (2026-11-09).
+- **Reason:** NestJS must be the single authorization service (D2); without the gate a stolen, expired, revoked, or foreign-classroom token could enter a live room. The header path was chosen over join options because it is framework-native, has the same Bearer shape as REST, and keeps credentials out of room options and URLs. Unblocks #25, #48, and #59.
+- **Verification:** Tests written first (RED then GREEN) including end-to-end joins against a real Colyseus server; realtime suite 67/67, contracts 3/3. Known flakes: `src/auth/refresh.spec.ts` concurrent reuse-grace test failed once under full-suite load and passes alone 3/3 (auth untouched by this branch); `python -m unittest discover -s scripts/ci` fails on Windows because of the WSL relay and also fails on the base branch.
+- **Next step:** Open the PR into `develop`. Frontend follow-up: `api:sync` must fetch the `packages/contracts` realtime contracts and generated state, and a frontend docs PR must update FD3 and its realtime rule. Infra follow-up: Caddy must never route `/internal/*`.
+
 ## 2026-11-07 — Periodic cleanup of expired auth sessions and tokens (#70)
 
 - **Status:** completed (pending PR review)

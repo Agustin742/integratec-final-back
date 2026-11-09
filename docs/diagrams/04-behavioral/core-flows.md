@@ -67,7 +67,7 @@ Cliente y servidor validan entradas, pero el servidor es la autoridad (RN-02, RN
 
 ### 1.2 S2 — Ingreso al aula
 
-RF-AUL-005 y RF-ESP-001 (Must · MVP Core, HU-AUL-005 y HU-ESP-001; RN-01, RN-04). Ingresar no es abrir un socket: el cliente se une a la `Room` de Colyseus y esta, en `onAuth`, consulta a NestJS con un endpoint interno autenticado con un secreto de servicio guardado en AWS Secrets Manager (D2). Si NestJS no puede verificar, Colyseus rechaza el ingreso. NestJS sigue siendo el único servicio de autorización y responde desde el estado persistido actual. Un `Classroom` persistente no equivale a la instancia `Room` de Colyseus.
+RF-AUL-005 y RF-ESP-001 (Must · MVP Core, HU-AUL-005 y HU-ESP-001; RN-01, RN-04). Ingresar no es abrir un socket: el cliente se une a la `Room` de Colyseus y esta, en `onAuth`, consulta a NestJS con un endpoint interno autenticado con un secreto de servicio guardado en AWS Secrets Manager (D2). Si NestJS no puede verificar, Colyseus rechaza el ingreso. NestJS sigue siendo el único servicio de autorización y responde desde el estado persistido actual. El token viaja como `Authorization: Bearer` en la petición de matchmaking (`client.auth.token`), no en las opciones de ingreso, y el endpoint interno es `POST /internal/realtime/join-verification` con el encabezado `x-internal-service-secret` (D2, actualización del 2026-11-09). Un `Classroom` persistente no equivale a la instancia `Room` de Colyseus.
 
 ```mermaid
 sequenceDiagram

@@ -21,6 +21,8 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - A user **MUST NOT** hold more simultaneous live presences than the product allows; the duplicate-connection policy is **open**.
 - Access can change while connected. When a user is removed from the classroom, loses the session, or the classroom becomes unavailable, the server **MUST** remove them from the live room promptly and **MUST** reject reconnection. The propagation mechanism is **open** and is part of the [Architecture](./architecture.md) integration contract.
 - Join credentials **MUST NOT** be written to logs.
+- **Credential transport (D2 update, approved by Agustin on 2026-11-09):** the client sets the access token with the Colyseus SDK (`client.auth.token`), which sends it as `Authorization: Bearer <access token>` on the matchmake HTTP request; it reaches `static onAuth(token, options, context)` as `token`. Join options carry only `classroomId`. The server **MUST NOT** read the token from join options or URLs, and **MUST** re-check `options.classroomId` on every join path (`joinById` ignores `filterBy`). This supersedes the frontend wording "access token in the join options"; see [Technical justification, D2](../docs/technical-justification.md#d2-nestjs-and-colyseus-integration).
+- `onAuth` calls `POST /internal/realtime/join-verification` on the API with the header `x-internal-service-secret`. Any failure (no token, bad or foreign classroom, API denial, error, timeout, or malformed response) **MUST** reject the join with a generic error (fail closed). The endpoint **MUST NOT** be routed by the reverse proxy.
 
 ## Ephemeral state
 
