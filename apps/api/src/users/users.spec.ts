@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Logger, type INestApplication } from '@nestjs/common';
+import { ForbiddenException, Logger, type INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -13,6 +13,7 @@ import { SessionVerifier } from '../auth/session-verifier.service';
 import { configureHttp } from '../http/configure-http';
 import { buildOpenApiDocument } from '../openapi/openapi-document';
 import { PrismaService } from '../prisma/prisma.service';
+import { AvatarAccessPort } from './avatar-access.port';
 
 const base = {
   bodyId: 'male',
@@ -21,6 +22,14 @@ const base = {
   hairColor: '#6C4D48',
   clothingColor: '#5B4F96',
 };
+const alternate = {
+  bodyId: 'female',
+  hairId: 'original',
+  topId: 'tshirt',
+  hairColor: '#AF6D63',
+  clothingColor: '#F4E6D2',
+};
+
 describe('Own profile and base avatar (#20)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -36,6 +45,7 @@ describe('Own profile and base avatar (#20)', () => {
   const routes = [
     ['get', '/users/me', undefined],
     ['patch', '/users/me/profile', { displayName: 'Changed' }],
+    ['patch', '/users/me/avatar', alternate],
   ] as const;
 
   const me = (credential = token) =>
@@ -270,6 +280,120 @@ describe('Own profile and base avatar (#20)', () => {
       appearances,
     );
     expect((await me(otherToken)).body).toEqual(other);
+  });
+
+  it('persists complete base appearance, normalizes palette case and isolates users', async () => {
+    const res = await patch('avatar', {
+      ...alternate,
+      hairColor: '#af6d63',
+      clothingColor: '#f4e6d2',
+    }).expect(200);
+    expect(res.body).toEqual(alternate);
+    expect((await me(await login())).body.avatar).toEqual(alternate);
+    expect((await me(otherToken)).body.avatar).toEqual(base);
+  });
+
+  it('replaces unsupported base-only storage on explicit avatar PATCH without changing profile or peers', async () => {
+    await prisma.avatarConfiguration.create({
+      data: { userId: ids[0], appearance: { legacy: 'synthetic-unsupported-base' } },
+    });
+    const profileBefore = await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } });
+    const peerBefore = await prisma.avatarConfiguration.findUniqueOrThrow({
+      where: { userId: ids[1] },
+    });
+    expect((await patch('avatar', alternate).expect(200)).body).toEqual(alternate);
+    expect((await me(await login())).body.avatar).toEqual(alternate);
+    expect(
+      (await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[0] } }))
+        .appearance,
+    ).toEqual(alternate);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } })).toEqual(profileBefore);
+    expect(
+      await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[1] } }),
+    ).toEqual(peerBefore);
+  });
+
+  const invalidAvatars = [
+    [{ ...base, bodyId: 'robot' }, 'bodyId'],
+    [{ ...base, hairId: 'original' }, 'hairId'],
+    [{ ...base, topId: 'tshirt' }, 'topId'],
+    [{ ...alternate, hairId: 'dreads' }, 'hairId'],
+    [{ ...base, topId: 'uniform' }, 'topId'],
+    [{ ...base, hairColor: '#000000' }, 'hairColor'],
+    [{ ...base, clothingColor: 'https://example.test/color' }, 'clothingColor'],
+    [{ ...base, accessoryId: 'crown' }, 'accessoryId'],
+    [{ ...base, userId: ids[1] }, 'userId'],
+    [{ bodyId: 'female' }, 'hairId'],
+    [{ ...base, hairId: null }, 'hairId'],
+    [{ ...base, bodyId: {} }, 'bodyId'],
+  ] as const;
+  it.each(invalidAvatars)('rejects invalid avatar %j atomically', async (input, field) => {
+    const storedBefore = await prisma.avatarConfiguration.findMany({
+      where: { userId: { in: ids } },
+    });
+    const before = (await me()).body;
+    const other = (await me(otherToken)).body;
+    const res = await patch('avatar', input).expect(400);
+    envelope(res.body, 'VALIDATION_FAILED', field);
+    expect((await me()).body).toEqual(before);
+    expect((await me(otherToken)).body).toEqual(other);
+    expect(await prisma.avatarConfiguration.findMany({ where: { userId: { in: ids } } })).toEqual(
+      storedBefore,
+    );
+  });
+
+  it('checks the access port before persistence and respects an ownership denial', async () => {
+    const storedBefore = await prisma.avatarConfiguration.findMany({
+      where: { userId: { in: ids } },
+    });
+    const before = (await me()).body;
+    const access = vi
+      .spyOn(app.get(AvatarAccessPort), 'assertCanUse')
+      .mockRejectedValueOnce(new ForbiddenException());
+    try {
+      const res = await patch('avatar', base).expect(403);
+      envelope(res.body, 'FORBIDDEN');
+      expect(access).toHaveBeenCalledWith(ids[0], base);
+      expect((await me()).body).toEqual(before);
+      expect(await prisma.avatarConfiguration.findMany({ where: { userId: { in: ids } } })).toEqual(
+        storedBefore,
+      );
+    } finally {
+      access.mockRestore();
+    }
+  });
+
+  it('accepts every body-compatible free hairstyle/top and each palette color', async () => {
+    const choices = [
+      { bodyId: 'male', hairs: ['afro', 'dreads'], tops: ['hoodie', 'tank'] },
+      { bodyId: 'female', hairs: ['afro', 'original'], tops: ['hoodie', 'tank', 'tshirt'] },
+    ];
+    for (const { bodyId, hairs, tops } of choices) {
+      for (const hairId of hairs) {
+        for (const topId of tops) {
+          const value = { ...base, bodyId, hairId, topId };
+          expect((await patch('avatar', value).expect(200)).body).toEqual(value);
+          expect((await me()).body.avatar).toEqual(value);
+        }
+      }
+    }
+    for (const hairColor of ['#6C4D48', '#AF6D63', '#E5AD58', '#353849', '#C77DAA']) {
+      expect((await patch('avatar', { ...base, hairColor }).expect(200)).body.hairColor).toBe(
+        hairColor,
+      );
+    }
+    for (const clothingColor of [
+      '#5B4F96',
+      '#75B7DA',
+      '#F2C85C',
+      '#EFA5AE',
+      '#7EBA8B',
+      '#F4E6D2',
+    ]) {
+      expect(
+        (await patch('avatar', { ...base, clothingColor }).expect(200)).body.clothingColor,
+      ).toBe(clothingColor);
+    }
   });
 
   it('does not expose or target another user through path or query tampering', async () => {
