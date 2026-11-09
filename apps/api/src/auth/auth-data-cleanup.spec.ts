@@ -154,7 +154,8 @@ describe('Auth / Data cleanup (issue #70)', () => {
 
     expect(result.refreshTokens).toBe(2);
     const { tokens } = await existingIds();
-    expect(tokens.has(revokedToken.id) || tokens.has(expiredToken.id)).toBe(false);
+    expect(tokens.has(revokedToken.id)).toBe(false);
+    expect(tokens.has(expiredToken.id)).toBe(false);
     expect(tokens.has(liveToken.id)).toBe(true);
   });
 
@@ -170,15 +171,21 @@ describe('Auth / Data cleanup (issue #70)', () => {
     const live = await seedSession(ahead(7));
     const liveToken = await seedToken(live.id, null);
     const spy = vi.spyOn(prisma, '$executeRaw');
-
-    const result = await small.run(now);
+    let result: Awaited<ReturnType<AuthDataCleanupService['run']>>;
+    let statements: number;
+    try {
+      result = await small.run(now);
+      statements = spy.mock.calls.length;
+    } finally {
+      // Restore before asserting so a failure never leaks the spy into later tests.
+      spy.mockRestore();
+    }
 
     // 5 tokens at batch size 2 take 3 statements (2+2+1) instead of one cascade; the
     // session is then removed by a single statement with nothing left to cascade.
     // Total refresh-token statements: 3 (child pass) + 1 (rotated pass, nothing left).
     // Total: those 4 + 1 (sessions) + 1 (reset tokens).
-    expect(spy.mock.calls.length).toBe(6);
-    spy.mockRestore();
+    expect(statements).toBe(6);
     expect(result).toEqual({ sessions: 1, refreshTokens: 5, passwordResetTokens: 0 });
     const kept = await existingIds();
     expect(kept.sessions).toEqual(new Set([live.id]));
