@@ -151,35 +151,3 @@ export class ClassroomDetailResponseDto extends ClassroomListItemDto {
   })
   pet!: ClassroomPetSummaryDto | null;
 }
-
-export class PaginatedClassroomsResponseDto {
-  @ApiProperty({
-    type: [ClassroomListItemDto],
-    description: 'Classrooms accessible to the authenticated user for the current page',
-  })
-  items!: ClassroomListItemDto[];
-
-  @ApiProperty({
-    example: 1,
-    description: 'Current 1-based page number',
-  })
-  page!: number;
-
-  @ApiProperty({
-    example: 20,
-    description: 'Maximum items per page',
-  })
-  limit!: number;
-
-  @ApiProperty({
-    example: 1,
-    description: 'Total count of accessible classrooms across all pages',
-  })
-  total!: number;
-
-  @ApiProperty({
-    example: 1,
-    description: 'Total number of pages available',
-  })
-  totalPages!: number;
-}

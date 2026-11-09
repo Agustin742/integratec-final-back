@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { VisibleText } from '../../http/visible-text';
 
 export class UpdateClassroomDto {
   @ApiPropertyOptional({
@@ -9,7 +9,7 @@ export class UpdateClassroomDto {
     maxLength: 120,
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @VisibleText('name')
   @IsString({ message: 'name must be a string' })
   @IsNotEmpty({ message: 'name must not be empty' })
   @MaxLength(120, { message: 'name must not exceed 120 characters' })
@@ -22,7 +22,7 @@ export class UpdateClassroomDto {
     nullable: true,
   })
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @VisibleText('subject')
   @IsString({ message: 'subject must be a string' })
   @IsNotEmpty({ message: 'subject must not be empty when provided' })
   @MaxLength(200, { message: 'subject must not exceed 200 characters' })

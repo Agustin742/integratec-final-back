@@ -11,6 +11,9 @@ import {
   type ClassroomCapability,
   UUID_PATTERN,
 } from '../access/access-verification.service';
+import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
+import type { Sort } from '../http/pagination/sort';
+import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_CLASSROOM_CONTROL_STATES,
@@ -21,14 +24,9 @@ import {
 import type {
   ClassroomDetailResponseDto,
   ClassroomListItemDto,
-  PaginatedClassroomsResponseDto,
 } from './dto/classroom-response.dto';
+import type { ClassroomSortField } from './dto/list-classrooms-query.dto';
 import type { CreateClassroomDto } from './dto/create-classroom.dto';
-import {
-  DEFAULT_CLASSROOMS_LIMIT,
-  DEFAULT_CLASSROOMS_PAGE,
-  type ListClassroomsQueryDto,
-} from './dto/list-classrooms-query.dto';
 import type { UpdateClassroomDto } from './dto/update-classroom.dto';
 
 interface ClassroomWithDetails {
@@ -186,6 +184,12 @@ export class ClassroomsService {
       throw new NotFoundException('Classroom not found');
     }
 
+    if (Object.values(dto).every((value) => value === undefined)) {
+      throw new RequestValidationException([
+        { field: 'body', messages: ['Provide at least one field to update'] },
+      ]);
+    }
+
     const access = await this.accessService.verifyClassroomAccess(actorUserId, classroomId, {
       requiredRole: 'STAFF',
     });
@@ -229,19 +233,16 @@ export class ClassroomsService {
    */
   async listForActor(
     actorUserId: string,
-    query: ListClassroomsQueryDto,
-  ): Promise<PaginatedClassroomsResponseDto> {
+    query: { page: number; pageSize: number; sort: Sort<ClassroomSortField> },
+  ): Promise<Paginated<ClassroomListItemDto>> {
     if (!UUID_PATTERN.test(actorUserId)) {
       throw new UnauthorizedException('Authentication is required');
     }
 
-    const page = query.page ?? DEFAULT_CLASSROOMS_PAGE;
-    const limit = query.limit ?? DEFAULT_CLASSROOMS_LIMIT;
-    const order = query.order ?? 'desc';
-
+    const { skip, take } = toSkipTake(query);
     const { total, items: accessible } = await this.accessService.listAccessibleClassrooms(
       actorUserId,
-      { skip: (page - 1) * limit, take: limit, order },
+      { skip, take, sort: query.sort },
     );
 
     const items: ClassroomListItemDto[] = accessible.map(({ classroom, myRole, capabilities }) => ({
@@ -260,15 +261,7 @@ export class ClassroomsService {
       updatedAt: classroom.updatedAt.toISOString(),
     }));
 
-    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
-
-    return {
-      items,
-      page,
-      limit,
-      total,
-      totalPages,
-    };
+    return paginated(items, total, query);
   }
 
   private toDetailResponse(

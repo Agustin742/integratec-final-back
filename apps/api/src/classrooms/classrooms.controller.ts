@@ -23,13 +23,13 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
+import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
+import { parseSort } from '../http/pagination/sort';
+import type { Paginated } from '../http/pagination/paginated';
 import { ClassroomsService } from './classrooms.service';
-import {
-  ClassroomDetailResponseDto,
-  PaginatedClassroomsResponseDto,
-} from './dto/classroom-response.dto';
+import { ClassroomDetailResponseDto, ClassroomListItemDto } from './dto/classroom-response.dto';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
-import { ListClassroomsQueryDto } from './dto/list-classrooms-query.dto';
+import { CLASSROOM_SORT_OPTIONS, ListClassroomsQueryDto } from './dto/list-classrooms-query.dto';
 import { UpdateClassroomDto } from './dto/update-classroom.dto';
 
 @ApiTags('classrooms')
@@ -80,15 +80,12 @@ export class ClassroomsController {
   @ApiOperation({
     summary: 'List accessible classrooms',
     description:
-      'Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).',
+      'Returns a paginated list (page, pageSize, sort=createdAt|name, default -createdAt) of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).',
   })
-  @ApiOkResponse({
-    type: PaginatedClassroomsResponseDto,
-    description: 'Paginated list of accessible classrooms.',
-  })
+  @ApiPaginatedResponse(ClassroomListItemDto)
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Invalid pagination or ordering parameters.',
+    description: 'Invalid pagination or sort parameters (page, pageSize, sort).',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -97,8 +94,12 @@ export class ClassroomsController {
   async list(
     @CurrentUser('userId') actorUserId: string,
     @Query() query: ListClassroomsQueryDto,
-  ): Promise<PaginatedClassroomsResponseDto> {
-    return this.classroomsService.listForActor(actorUserId, query);
+  ): Promise<Paginated<ClassroomListItemDto>> {
+    return this.classroomsService.listForActor(actorUserId, {
+      page: query.page,
+      pageSize: query.pageSize,
+      sort: parseSort(query.sort, CLASSROOM_SORT_OPTIONS),
+    });
   }
 
   @Get(':id')
@@ -150,7 +151,8 @@ export class ClassroomsController {
   })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Validation failed (invalid fields or unknown properties).',
+    description:
+      'Validation failed: invalid or unknown fields, invisible or control characters in name or subject, or an empty body (at least one field is required).',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,

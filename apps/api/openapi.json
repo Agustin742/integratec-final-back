@@ -359,7 +359,7 @@
         "tags": ["classrooms"]
       },
       "get": {
-        "description": "Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).",
+        "description": "Returns a paginated list (page, pageSize, sort=createdAt|name, default -createdAt) of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false).",
         "operationId": "ClassroomsController_list",
         "parameters": [
           {
@@ -370,31 +370,48 @@
             "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
           },
           {
-            "name": "limit",
+            "name": "pageSize",
             "required": false,
             "in": "query",
-            "description": "Maximum number of classrooms returned per page.",
+            "description": "Items per page.",
             "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
           },
           {
-            "name": "order",
+            "name": "sort",
             "required": false,
             "in": "query",
-            "description": "Sort direction by classroom creation timestamp (createdAt).",
-            "schema": { "default": "desc", "type": "string", "enum": ["asc", "desc"] }
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated list of accessible classrooms.",
+            "description": "",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PaginatedClassroomsResponseDto" }
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ClassroomListItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
               }
             }
           },
           "400": {
-            "description": "Invalid pagination or ordering parameters.",
+            "description": "Invalid pagination or sort parameters (page, pageSize, sort).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -478,7 +495,7 @@
             }
           },
           "400": {
-            "description": "Validation failed (invalid fields or unknown properties).",
+            "description": "Validation failed: invalid or unknown fields, invisible or control characters in name or subject, or an empty body (at least one field is required).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -520,31 +537,48 @@
             "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
           },
           {
-            "name": "limit",
+            "name": "pageSize",
             "required": false,
             "in": "query",
-            "description": "Maximum number of classrooms returned per page.",
+            "description": "Items per page.",
             "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
           },
           {
-            "name": "order",
+            "name": "sort",
             "required": false,
             "in": "query",
-            "description": "Sort direction by classroom creation timestamp (createdAt).",
-            "schema": { "default": "desc", "type": "string", "enum": ["asc", "desc"] }
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated list of accessible classrooms for the current user.",
+            "description": "",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PaginatedClassroomsResponseDto" }
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ClassroomListItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
               }
             }
           },
           "400": {
-            "description": "Invalid pagination or ordering parameters.",
+            "description": "Invalid pagination or sort parameters (page, pageSize, sort).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1198,29 +1232,6 @@
           "createdAt",
           "updatedAt"
         ]
-      },
-      "PaginatedClassroomsResponseDto": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "description": "Classrooms accessible to the authenticated user for the current page",
-            "type": "array",
-            "items": { "$ref": "#/components/schemas/ClassroomListItemDto" }
-          },
-          "page": { "type": "number", "example": 1, "description": "Current 1-based page number" },
-          "limit": { "type": "number", "example": 20, "description": "Maximum items per page" },
-          "total": {
-            "type": "number",
-            "example": 1,
-            "description": "Total count of accessible classrooms across all pages"
-          },
-          "totalPages": {
-            "type": "number",
-            "example": 1,
-            "description": "Total number of pages available"
-          }
-        },
-        "required": ["items", "page", "limit", "total", "totalPages"]
       },
       "UpdateClassroomDto": {
         "type": "object",

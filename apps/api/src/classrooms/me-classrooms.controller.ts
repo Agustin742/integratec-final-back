@@ -2,16 +2,18 @@ import { Controller, Get, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
-  ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
+import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
+import { parseSort } from '../http/pagination/sort';
+import type { Paginated } from '../http/pagination/paginated';
 import { ClassroomsService } from './classrooms.service';
-import { PaginatedClassroomsResponseDto } from './dto/classroom-response.dto';
-import { ListClassroomsQueryDto } from './dto/list-classrooms-query.dto';
+import { ClassroomListItemDto } from './dto/classroom-response.dto';
+import { CLASSROOM_SORT_OPTIONS, ListClassroomsQueryDto } from './dto/list-classrooms-query.dto';
 
 @ApiTags('classrooms')
 @ApiBearerAuth()
@@ -26,13 +28,10 @@ export class MeClassroomsController {
     description:
       'Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false) with derived role and capabilities.',
   })
-  @ApiOkResponse({
-    type: PaginatedClassroomsResponseDto,
-    description: 'Paginated list of accessible classrooms for the current user.',
-  })
+  @ApiPaginatedResponse(ClassroomListItemDto)
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Invalid pagination or ordering parameters.',
+    description: 'Invalid pagination or sort parameters (page, pageSize, sort).',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -41,7 +40,11 @@ export class MeClassroomsController {
   async listMyClassrooms(
     @CurrentUser('userId') actorUserId: string,
     @Query() query: ListClassroomsQueryDto,
-  ): Promise<PaginatedClassroomsResponseDto> {
-    return this.classroomsService.listForActor(actorUserId, query);
+  ): Promise<Paginated<ClassroomListItemDto>> {
+    return this.classroomsService.listForActor(actorUserId, {
+      page: query.page,
+      pageSize: query.pageSize,
+      sort: parseSort(query.sort, CLASSROOM_SORT_OPTIONS),
+    });
   }
 }

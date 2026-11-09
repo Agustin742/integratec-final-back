@@ -18,6 +18,7 @@ import { SessionVerifier, type VerifiedSession } from '../auth/session-verifier.
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../config/config.module';
 import { configureHttp } from '../http/configure-http';
+import { RequestValidationException } from '../http/validation';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -219,18 +220,21 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         expect(unknownField.body.error.code).toBe('VALIDATION_FAILED');
       });
 
-      it.each([
-        ['page=0', 'page'],
-        ['page=-2', 'page'],
-        ['page=abc', 'page'],
-        ['limit=0', 'limit'],
-        ['limit=101', 'limit'],
-        ['order=random', 'order'],
-      ])(
-        'rejects GET /me/classrooms?%s with 400 VALIDATION_FAILED on %s',
-        async (queryStr, field) => {
+      describe.each(['/me/classrooms', '/classrooms'])('GET %s query contract', (path) => {
+        it.each([
+          ['page=0', 'page'],
+          ['page=-2', 'page'],
+          ['page=abc', 'page'],
+          ['page=10001', 'page'],
+          ['pageSize=0', 'pageSize'],
+          ['pageSize=101', 'pageSize'],
+          ['sort=role', 'sort'],
+          ['sort=-secret', 'sort'],
+          ['limit=5', 'limit'],
+          ['order=asc', 'order'],
+        ])('rejects ?%s with 400 VALIDATION_FAILED on %s', async (queryStr, field) => {
           const res = await request(app.getHttpServer())
-            .get(`/me/classrooms?${queryStr}`)
+            .get(`${path}?${queryStr}`)
             .set('Authorization', 'Bearer valid-token')
             .expect(400);
 
@@ -238,8 +242,162 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
           expect(res.body.error.details).toEqual(
             expect.arrayContaining([expect.objectContaining({ field })]),
           );
-        },
-      );
+          expect(mockClassroomsService.listForActor).not.toHaveBeenCalled();
+        });
+
+        it('defaults to page 1, pageSize 20 and createdAt descending', async () => {
+          mockClassroomsService.listForActor.mockResolvedValue({
+            items: [],
+            page: 1,
+            pageSize: 20,
+            total: 0,
+          });
+
+          const res = await request(app.getHttpServer())
+            .get(path)
+            .set('Authorization', 'Bearer valid-token')
+            .expect(200);
+
+          expect(res.body).toEqual({ items: [], page: 1, pageSize: 20, total: 0 });
+          expect(mockClassroomsService.listForActor).toHaveBeenCalledWith(ACTOR_TEACHER_ID, {
+            page: 1,
+            pageSize: 20,
+            sort: { field: 'createdAt', direction: 'desc' },
+          });
+        });
+
+        it.each([
+          ['name', { field: 'name', direction: 'asc' }],
+          ['-name', { field: 'name', direction: 'desc' }],
+          ['createdAt', { field: 'createdAt', direction: 'asc' }],
+        ])('maps ?sort=%s to the service', async (sort, expected) => {
+          mockClassroomsService.listForActor.mockResolvedValue({
+            items: [],
+            page: 3,
+            pageSize: 5,
+            total: 0,
+          });
+
+          await request(app.getHttpServer())
+            .get(`${path}?page=3&pageSize=5&sort=${sort}`)
+            .set('Authorization', 'Bearer valid-token')
+            .expect(200);
+
+          expect(mockClassroomsService.listForActor).toHaveBeenCalledWith(ACTOR_TEACHER_ID, {
+            page: 3,
+            pageSize: 5,
+            sort: expected,
+          });
+        });
+      });
+
+      describe('classroom name and subject hygiene', () => {
+        const INVISIBLE_OR_CONTROL: [string, string][] = [
+          ['zero-width space', '\u200B'],
+          ['ZWNJ only', '\u200C'],
+          ['ZWJ only', '\u200D'],
+          ['soft hyphen', '\u00AD'],
+          ['BOM', '\uFEFF'],
+          ['line separator', 'Aula\u2028B'],
+          ['paragraph separator', 'Aula\u2029B'],
+          ['embedded newline', 'Aula\nB'],
+          ['NUL', 'Aula\u0000'],
+        ];
+
+        it.each(INVISIBLE_OR_CONTROL)(
+          'rejects POST /classrooms with %s as name',
+          async (_label, name) => {
+            const res = await request(app.getHttpServer())
+              .post('/classrooms')
+              .set('Authorization', 'Bearer valid-token')
+              .send({ name })
+              .expect(400);
+
+            expect(res.body.error.code).toBe('VALIDATION_FAILED');
+            expect(res.body.error.details).toEqual(
+              expect.arrayContaining([expect.objectContaining({ field: 'name' })]),
+            );
+            expect(mockClassroomsService.create).not.toHaveBeenCalled();
+          },
+        );
+
+        it.each(INVISIBLE_OR_CONTROL)(
+          'rejects POST /classrooms with %s as subject',
+          async (_label, subject) => {
+            const res = await request(app.getHttpServer())
+              .post('/classrooms')
+              .set('Authorization', 'Bearer valid-token')
+              .send({ name: 'Aula valida', subject })
+              .expect(400);
+
+            expect(res.body.error.details).toEqual(
+              expect.arrayContaining([expect.objectContaining({ field: 'subject' })]),
+            );
+            expect(mockClassroomsService.create).not.toHaveBeenCalled();
+          },
+        );
+
+        it.each(INVISIBLE_OR_CONTROL)(
+          'rejects PATCH /classrooms/:id with %s as name or subject',
+          async (_label, value) => {
+            for (const field of ['name', 'subject']) {
+              const res = await request(app.getHttpServer())
+                .patch(`/classrooms/${CLASSROOM_ID}`)
+                .set('Authorization', 'Bearer valid-token')
+                .send({ [field]: value })
+                .expect(400);
+
+              expect(res.body.error.code).toBe('VALIDATION_FAILED');
+              expect(res.body.error.details).toEqual(
+                expect.arrayContaining([expect.objectContaining({ field })]),
+              );
+            }
+            expect(mockClassroomsService.update).not.toHaveBeenCalled();
+          },
+        );
+
+        it('keeps ordinary Unicode names and subjects valid', async () => {
+          mockClassroomsService.create.mockResolvedValue({ id: CLASSROOM_ID });
+          mockClassroomsService.update.mockResolvedValue({ id: CLASSROOM_ID });
+
+          await request(app.getHttpServer())
+            .post('/classrooms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({
+              name: '  3\u00B0 A\u00F1o B \u2013 \u6570\u5B66  ',
+              subject: 'Matem\u00E1tica y Geometr\u00EDa',
+            })
+            .expect(201);
+          expect(mockClassroomsService.create).toHaveBeenCalledWith(
+            ACTOR_TEACHER_ID,
+            expect.objectContaining({
+              name: '3\u00B0 A\u00F1o B \u2013 \u6570\u5B66',
+              subject: 'Matem\u00E1tica y Geometr\u00EDa',
+            }),
+          );
+
+          await request(app.getHttpServer())
+            .patch(`/classrooms/${CLASSROOM_ID}`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({ name: '\u00C1lgebra', subject: null })
+            .expect(200);
+        });
+
+        it('rejects an empty-after-trim subject on create and update (never treated as absent)', async () => {
+          await request(app.getHttpServer())
+            .post('/classrooms')
+            .set('Authorization', 'Bearer valid-token')
+            .send({ name: 'Aula', subject: '  ' })
+            .expect(400);
+          await request(app.getHttpServer())
+            .patch(`/classrooms/${CLASSROOM_ID}`)
+            .set('Authorization', 'Bearer valid-token')
+            .send({ subject: '  ' })
+            .expect(400);
+          expect(mockClassroomsService.create).not.toHaveBeenCalled();
+          expect(mockClassroomsService.update).not.toHaveBeenCalled();
+        });
+      });
     });
   });
 
@@ -517,12 +675,18 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
 
         const result = await service.listForActor(ACTOR_ADMIN_ID, {
           page: 2,
-          limit: 5,
-          order: 'asc',
+          pageSize: 5,
+          sort: { field: 'name', direction: 'asc' },
         });
 
-        expect(list).toHaveBeenCalledWith(ACTOR_ADMIN_ID, { skip: 5, take: 5, order: 'asc' });
-        expect(result).toMatchObject({ page: 2, limit: 5, total: 1, totalPages: 1 });
+        expect(list).toHaveBeenCalledWith(ACTOR_ADMIN_ID, {
+          skip: 5,
+          take: 5,
+          sort: { field: 'name', direction: 'asc' },
+        });
+        expect(result).toMatchObject({ page: 2, pageSize: 5, total: 1 });
+        expect(result).not.toHaveProperty('limit');
+        expect(result).not.toHaveProperty('totalPages');
         expect(result.items[0]).toMatchObject({
           id: CLASSROOM_ID,
           myRole: 'ADMIN',
@@ -541,6 +705,17 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         await expect(
           service.update(ACTOR_TEACHER_ID, 'not-a-uuid', { name: 'Updated' }),
         ).rejects.toThrow(NotFoundException);
+      });
+
+      it('rejects an empty update with 400 VALIDATION_FAILED and performs no lookup or write', async () => {
+        const failure = await service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, {}).catch((e) => e);
+
+        expect(failure).toBeInstanceOf(RequestValidationException);
+        expect((failure as RequestValidationException).details).toEqual([
+          { field: 'body', messages: [expect.stringContaining('at least one')] },
+        ]);
+        expect(mockPrisma.classroom.findFirst).not.toHaveBeenCalled();
+        expect(mockPrisma.classroom.update).not.toHaveBeenCalled();
       });
 
       it('returns 403 Forbidden when a student or parent attempts to update classroom settings', async () => {

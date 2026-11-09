@@ -581,28 +581,28 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
     it('lists only accessible classrooms on GET /me/classrooms and GET /classrooms with pagination and ordering', async () => {
       // Independent teacher has 3 classrooms created in this suite
       const page1Desc = await request(app.getHttpServer())
-        .get('/me/classrooms?page=1&limit=2&order=desc')
+        .get('/me/classrooms?page=1&pageSize=2&sort=-createdAt')
         .set('Authorization', tokenForUser(independentTeacher.id))
         .expect(200);
 
       expect(page1Desc.body.page).toBe(1);
-      expect(page1Desc.body.limit).toBe(2);
+      expect(page1Desc.body.pageSize).toBe(2);
       expect(page1Desc.body.total).toBe(3);
-      expect(page1Desc.body.totalPages).toBe(2);
+      expect(page1Desc.body).not.toHaveProperty('totalPages');
       expect(page1Desc.body.items).toHaveLength(2);
       expect(page1Desc.body.items.every((c: { myRole: string }) => c.myRole === 'TEACHER')).toBe(
         true,
       );
 
       const page2Desc = await request(app.getHttpServer())
-        .get('/classrooms?page=2&limit=2&order=desc')
+        .get('/classrooms?page=2&pageSize=2&sort=-createdAt')
         .set('Authorization', tokenForUser(independentTeacher.id))
         .expect(200);
 
       expect(page2Desc.body.items).toHaveLength(1);
 
       const allAsc = await request(app.getHttpServer())
-        .get('/me/classrooms?page=1&limit=10&order=asc')
+        .get('/me/classrooms?page=1&pageSize=10&sort=createdAt')
         .set('Authorization', tokenForUser(independentTeacher.id))
         .expect(200);
 
@@ -873,11 +873,11 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
 
       for (const actor of actors) {
         const listed = await request(app.getHttpServer())
-          .get('/me/classrooms?limit=100')
+          .get('/me/classrooms?pageSize=100')
           .set('Authorization', tokenForUser(actor.id))
           .expect(200);
         const listedAlias = await request(app.getHttpServer())
-          .get('/classrooms?limit=100')
+          .get('/classrooms?pageSize=100')
           .set('Authorization', tokenForUser(actor.id))
           .expect(200);
         expect(listedAlias.body.items).toEqual(listed.body.items);
@@ -910,6 +910,197 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
         .get(`/classrooms/${schoolBClassroomId}`)
         .set('Authorization', tokenForUser(lostSchoolTeacher.id))
         .expect(404);
+    });
+  });
+
+  describe('Shared pagination contract and classroom text hygiene', () => {
+    let pager: { id: string };
+    const pagerClassroomIds: string[] = [];
+    const TIE_CREATED_AT = new Date('2026-01-01T10:00:00.000Z');
+
+    const auth = () => tokenForUser(pager.id);
+
+    const classroomRows = async () =>
+      prisma.classroom.findMany({ where: { independentTeacherId: pager.id } });
+
+    beforeAll(async () => {
+      pager = await prisma.user.create({
+        data: {
+          email: `cls.pager.${Date.now()}@example.edu.ar`,
+          passwordHash: 'dummy-hash-for-integration-tests',
+          displayName: 'pager User',
+          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+        },
+      });
+      createdUserIds.push(pager.id);
+
+      // Two rows share createdAt and name so only the id tiebreaker keeps their order stable.
+      const specs = [
+        { name: 'Bravo', createdAt: new Date('2026-01-01T09:00:00.000Z') },
+        { name: 'Alfa', createdAt: TIE_CREATED_AT },
+        { name: 'Alfa', createdAt: TIE_CREATED_AT },
+        { name: 'Charlie', createdAt: TIE_CREATED_AT },
+        { name: 'Delta', createdAt: new Date('2026-01-01T11:00:00.000Z') },
+      ];
+      for (const spec of specs) {
+        const row = await prisma.classroom.create({
+          data: { ...spec, independentTeacherId: pager.id },
+        });
+        pagerClassroomIds.push(row.id);
+        createdClassroomIds.push(row.id);
+      }
+    });
+
+    describe.each(['/me/classrooms', '/classrooms'])('GET %s', (path) => {
+      const get = (query: string) =>
+        request(app.getHttpServer()).get(`${path}${query}`).set('Authorization', auth());
+
+      it('returns the shared envelope with default createdAt descending order', async () => {
+        const res = await get('').expect(200);
+
+        expect(Object.keys(res.body).sort()).toEqual(['items', 'page', 'pageSize', 'total']);
+        expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 5 });
+        expect(res.body.items.map((i: { name: string }) => i.name)[0]).toBe('Delta');
+        expect(res.body.items.at(-1).name).toBe('Bravo');
+      });
+
+      it.each([
+        ['name', ['Alfa', 'Alfa', 'Bravo', 'Charlie', 'Delta']],
+        ['-name', ['Delta', 'Charlie', 'Bravo', 'Alfa', 'Alfa']],
+      ])('orders by ?sort=%s', async (sort, expected) => {
+        const res = await get(`?sort=${sort}`).expect(200);
+        expect(res.body.items.map((i: { name: string }) => i.name)).toEqual(expected);
+      });
+
+      it('keeps rows with equal sort keys stable across pages (id tiebreaker)', async () => {
+        const seen: string[] = [];
+        for (const page of [1, 2, 3]) {
+          const res = await get(`?sort=name&page=${page}&pageSize=2`).expect(200);
+          expect(res.body).toMatchObject({ page, pageSize: 2, total: 5 });
+          seen.push(...res.body.items.map((i: { id: string }) => i.id));
+        }
+        expect(new Set(seen).size).toBe(5);
+        const full = await get('?sort=name&pageSize=100').expect(200);
+        expect(seen).toEqual(full.body.items.map((i: { id: string }) => i.id));
+      });
+
+      it('returns an empty page past the end with the real total', async () => {
+        const res = await get('?page=9&pageSize=2').expect(200);
+        expect(res.body).toEqual({ items: [], page: 9, pageSize: 2, total: 5 });
+      });
+
+      it.each([
+        'page=0',
+        'page=10001',
+        'pageSize=0',
+        'pageSize=101',
+        'sort=myRole',
+        'sort=-schoolId',
+        'limit=2',
+        'order=asc',
+      ])('rejects ?%s with 400 VALIDATION_FAILED', async (query) => {
+        const res = await get(`?${query}`).expect(400);
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      });
+    });
+
+    describe('name and subject hygiene (no writes on rejection)', () => {
+      const BAD: [string, string][] = [
+        ['zero-width space', '\u200B'],
+        ['ZWNJ/ZWJ only', '\u200C\u200D'],
+        ['soft hyphen', '\u00AD'],
+        ['BOM', '\uFEFF'],
+        ['newline inside', 'Aula\nB'],
+        ['line separator', 'Aula\u2028B'],
+        ['paragraph separator', 'Aula\u2029B'],
+      ];
+
+      it.each(BAD)('rejects %s as name or subject on create, writing nothing', async (_l, bad) => {
+        const before = (await classroomRows()).length;
+        await request(app.getHttpServer())
+          .post('/classrooms')
+          .set('Authorization', auth())
+          .send({ name: bad })
+          .expect(400);
+        await request(app.getHttpServer())
+          .post('/classrooms')
+          .set('Authorization', auth())
+          .send({ name: 'Aula visible', subject: bad })
+          .expect(400);
+        expect(await classroomRows()).toHaveLength(before);
+      });
+
+      it.each(BAD)(
+        'rejects %s as name or subject on PATCH, leaving the row untouched',
+        async (_l, bad) => {
+          const target = pagerClassroomIds[0];
+          const before = await prisma.classroom.findUniqueOrThrow({ where: { id: target } });
+          for (const field of ['name', 'subject']) {
+            await request(app.getHttpServer())
+              .patch(`/classrooms/${target}`)
+              .set('Authorization', auth())
+              .send({ [field]: bad })
+              .expect(400);
+          }
+          const after = await prisma.classroom.findUniqueOrThrow({ where: { id: target } });
+          expect(after).toEqual(before);
+        },
+      );
+
+      it('rejects an empty PATCH body with 400 VALIDATION_FAILED and does not bump updatedAt', async () => {
+        const target = pagerClassroomIds[1];
+        const before = await prisma.classroom.findUniqueOrThrow({ where: { id: target } });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/classrooms/${target}`)
+          .set('Authorization', auth())
+          .send({})
+          .expect(400);
+
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+        const after = await prisma.classroom.findUniqueOrThrow({ where: { id: target } });
+        expect(after.updatedAt).toEqual(before.updatedAt);
+      });
+
+      it('rejects an empty subject after trimming on create and PATCH, writing nothing', async () => {
+        const target = pagerClassroomIds[2];
+        const before = await prisma.classroom.findUniqueOrThrow({ where: { id: target } });
+        const count = (await classroomRows()).length;
+        await request(app.getHttpServer())
+          .post('/classrooms')
+          .set('Authorization', auth())
+          .send({ name: 'Aula visible', subject: '   ' })
+          .expect(400);
+        await request(app.getHttpServer())
+          .patch(`/classrooms/${target}`)
+          .set('Authorization', auth())
+          .send({ subject: '   ' })
+          .expect(400);
+        expect(await classroomRows()).toHaveLength(count);
+        expect(await prisma.classroom.findUniqueOrThrow({ where: { id: target } })).toEqual(before);
+      });
+
+      it('accepts ordinary Unicode names and clears subject with null', async () => {
+        const created = await request(app.getHttpServer())
+          .post('/classrooms')
+          .set('Authorization', auth())
+          .send({
+            name: '3\u00B0 A\u00F1o B \u2013 \u6570\u5B66 \uD83D\uDC69\u200D\uD83C\uDFEB',
+            subject: 'Matem\u00E1tica',
+          })
+          .expect(201);
+        createdClassroomIds.push(created.body.id);
+        expect(created.body.name).toBe(
+          '3\u00B0 A\u00F1o B \u2013 \u6570\u5B66 \uD83D\uDC69\u200D\uD83C\uDFEB',
+        );
+
+        const patched = await request(app.getHttpServer())
+          .patch(`/classrooms/${created.body.id}`)
+          .set('Authorization', auth())
+          .send({ name: '\u00C1lgebra', subject: null })
+          .expect(200);
+        expect(patched.body).toMatchObject({ name: '\u00C1lgebra', subject: null });
+      });
     });
   });
 });

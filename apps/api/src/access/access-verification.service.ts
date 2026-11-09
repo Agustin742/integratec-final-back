@@ -12,6 +12,7 @@ import {
   RegistrationPath,
   SchoolRole,
 } from '@prisma/client';
+import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -95,7 +96,7 @@ export interface AccessibleClassroom {
 export interface ListAccessibleClassroomsOptions {
   skip: number;
   take: number;
-  order: 'asc' | 'desc';
+  sort: Sort<'createdAt' | 'name'>;
 }
 
 /**
@@ -527,7 +528,7 @@ export class AccessVerificationService {
       this.prisma.classroom.count({ where }),
       this.prisma.classroom.findMany({
         where,
-        orderBy: [{ createdAt: options.order }, { id: 'asc' }],
+        orderBy: [{ [options.sort.field]: options.sort.direction }, { id: 'asc' }],
         skip: options.skip,
         take: options.take,
         include: {

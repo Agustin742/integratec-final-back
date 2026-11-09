@@ -858,7 +858,7 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       const result = await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, {
         skip: 0,
         take: 20,
-        order: 'desc',
+        sort: { field: 'createdAt', direction: 'desc' },
       });
 
       expect(result.total).toBe(3);
@@ -868,6 +868,21 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
         [CLASSROOM_IND_ID, 'PARENT'],
       ]);
       expect(result.items[1].capabilities).toEqual(computeClassroomCapabilities('STUDENT'));
+    });
+
+    it.each([
+      [{ field: 'createdAt', direction: 'desc' }, [{ createdAt: 'desc' }, { id: 'asc' }]],
+      [{ field: 'createdAt', direction: 'asc' }, [{ createdAt: 'asc' }, { id: 'asc' }]],
+      [{ field: 'name', direction: 'asc' }, [{ name: 'asc' }, { id: 'asc' }]],
+      [{ field: 'name', direction: 'desc' }, [{ name: 'desc' }, { id: 'asc' }]],
+    ] as const)('orders by %j with a stable id tiebreaker', async (sort, expectedOrderBy) => {
+      const findMany = vi.fn().mockResolvedValue([]);
+      const db = { classroom: { findMany, count: vi.fn().mockResolvedValue(0) } };
+      const listing = new AccessVerificationService(db as unknown as PrismaService);
+
+      await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, { skip: 0, take: 20, sort });
+
+      expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ orderBy: expectedOrderBy }));
     });
 
     it('excludes a row for which no role resolves instead of defaulting to STUDENT', async () => {
@@ -882,7 +897,7 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       const result = await listing.listAccessibleClassrooms(STUDENT_1_USER_ID, {
         skip: 0,
         take: 20,
-        order: 'asc',
+        sort: { field: 'createdAt', direction: 'asc' },
       });
 
       expect(result.items).toEqual([]);
@@ -895,7 +910,7 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
       const result = await listing.listAccessibleClassrooms('nope', {
         skip: 0,
         take: 5,
-        order: 'asc',
+        sort: { field: 'createdAt', direction: 'asc' },
       });
 
       expect(result).toEqual({ total: 0, items: [] });
