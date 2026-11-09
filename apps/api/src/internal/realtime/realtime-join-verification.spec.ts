@@ -128,9 +128,14 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
         state: MembershipState.ACTIVE,
       },
     });
-    const res = await post({ accessToken: memberToken, classroomId: otherClassroomId }).expect(200);
-    expect(res.body).toMatchObject({ userId: memberId, role: 'STUDENT' });
-    await prisma.classroomMembership.deleteMany({ where: { classroomId: otherClassroomId } });
+    try {
+      const res = await post({ accessToken: memberToken, classroomId: otherClassroomId }).expect(
+        200,
+      );
+      expect(res.body).toMatchObject({ userId: memberId, role: 'STUDENT' });
+    } finally {
+      await prisma.classroomMembership.deleteMany({ where: { classroomId: otherClassroomId } });
+    }
   });
 
   describe('service authentication', () => {
@@ -213,6 +218,10 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
 
     it('answers 400 for a missing accessToken', async () => {
       await post({ classroomId }).expect(400);
+    });
+
+    it('answers 400 for an accessToken longer than 4096 characters', async () => {
+      await post({ accessToken: 'a'.repeat(4097), classroomId }).expect(400);
     });
 
     it('answers 400 for unexpected fields', async () => {
