@@ -1,4 +1,5 @@
-export const CLASSROOM_ROLES = ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT'] as const;
+/** Roles allowed in a live room. Parents have no live access (rules/realtime-and-presence.md). */
+export const CLASSROOM_ROLES = ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] as const;
 export type ClassroomRole = (typeof CLASSROOM_ROLES)[number];
 
 /** Identity the API confirmed for a join: who, through which session, in which classroom. */

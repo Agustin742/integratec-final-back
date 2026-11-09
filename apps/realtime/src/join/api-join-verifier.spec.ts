@@ -84,6 +84,7 @@ describe('ApiJoinVerifier', () => {
     ['an empty object', json(200, {})],
     ['a non-uuid userId', json(200, { ...IDENTITY, userId: 'x' })],
     ['an unknown role', json(200, { ...IDENTITY, role: 'ROOT' })],
+    ['a parent role (no live access)', json(200, { ...IDENTITY, role: 'PARENT' })],
     ['a missing sessionId', json(200, { ...IDENTITY, sessionId: undefined })],
   ])('denies a 200 response with %s', async (_label, response) => {
     const fetchImpl = vi.fn().mockResolvedValue(response);

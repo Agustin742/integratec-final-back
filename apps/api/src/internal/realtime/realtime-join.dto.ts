@@ -28,6 +28,7 @@ export class JoinVerificationResponseDto {
   @ApiProperty({ format: 'uuid' })
   classroomId!: string;
 
-  @ApiProperty({ enum: ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT'] })
-  role!: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
+  /** Parents never receive a live join (rules/realtime-and-presence.md). */
+  @ApiProperty({ enum: ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] })
+  role!: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT';
 }

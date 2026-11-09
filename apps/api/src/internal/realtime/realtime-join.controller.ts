@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { AccessVerificationService } from '../../access/access-verification.service';
 import { Public } from '../../auth/public.decorator';
@@ -29,6 +37,10 @@ export class RealtimeJoinController {
     const { classroom, myRole } = await this.access.verifyClassroomAccess(userId, dto.classroomId, {
       requiredRole: 'ANY',
     });
+    // Parents have no live classroom access (rules/realtime-and-presence.md, Join authorization).
+    if (myRole === 'PARENT') {
+      throw new ForbiddenException('Live classroom access is not available for this role');
+    }
     return { userId, sessionId, classroomId: classroom.id, role: myRole };
   }
 }

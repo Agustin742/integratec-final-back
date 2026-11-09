@@ -205,6 +205,22 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
         classroomId: '99999999-9999-4999-8999-999999999999',
       }).expect(404);
     });
+
+    it('denies a linked parent a live join with 403 (parents do not enter the 3D classroom)', async () => {
+      const parentId = await makeUser('rt-parent');
+      const childId = await makeUser('rt-child');
+      const link = await prisma.parentLink.create({
+        data: { parentId, childId, classroomId, state: MembershipState.ACTIVE },
+      });
+      try {
+        const { token } = await makeSession(parentId);
+        const res = await post({ accessToken: token, classroomId }).expect(403);
+        expect(res.body).not.toHaveProperty('role');
+        expect(res.body).not.toHaveProperty('userId');
+      } finally {
+        await prisma.parentLink.delete({ where: { id: link.id } });
+      }
+    });
   });
 
   describe('body validation', () => {
