@@ -86,7 +86,11 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
     app = moduleRef.createNestApplication();
     configureHttp(app, { logSink: () => undefined });
     await app.init();
-    await app.get(PrismaService).$connect();
+    const appPrisma = app.get(PrismaService);
+    await appPrisma.$connect();
+    // Open several pooled connections up front: establishing them is slow on some hosts and
+    // the concurrent-creation test would otherwise spend its transaction wait budget on it.
+    await Promise.all(Array.from({ length: 6 }, () => appPrisma.$queryRaw`SELECT 1`));
 
     const ts = Date.now();
 
@@ -109,8 +113,8 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
     schoolTeacher1 = await createUser('school.t1', RegistrationPath.SCHOOL);
     schoolTeacher2 = await createUser('school.t2', RegistrationPath.SCHOOL);
     otherSchoolOwner = await createUser('other.owner', RegistrationPath.SCHOOL);
-    studentUser = await createUser('student', RegistrationPath.INDEPENDENT_TEACHER);
-    parentUser = await createUser('parent', RegistrationPath.INDEPENDENT_TEACHER);
+    studentUser = await createUser('student', RegistrationPath.SCHOOL);
+    parentUser = await createUser('parent', RegistrationPath.SCHOOL);
     strangerUser = await createUser('stranger', RegistrationPath.INDEPENDENT_TEACHER);
 
     schoolA = await prisma.school.create({
@@ -425,31 +429,6 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
       });
     });
 
-    it('rejects Student and Parent attempting POST /classrooms with 403 FORBIDDEN', async () => {
-      const studentRes = await request(app.getHttpServer())
-        .post('/classrooms')
-        .set('Authorization', tokenForUser(studentUser.id))
-        .send({ name: 'Aula Estudiante Prohibida' })
-        .expect(403);
-      expect(studentRes.body.error.code).toBe('FORBIDDEN');
-
-      const parentRes = await request(app.getHttpServer())
-        .post('/classrooms')
-        .set('Authorization', tokenForUser(parentUser.id))
-        .send({ name: 'Aula Padre Prohibida', schoolId: schoolA.id })
-        .expect(403);
-      expect(parentRes.body.error.code).toBe('FORBIDDEN');
-    });
-
-    it('rejects staff of School A attempting to create a classroom in School B with 404 NOT_FOUND', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/classrooms')
-        .set('Authorization', tokenForUser(schoolOwner.id))
-        .send({ name: 'Intrusión Escuela B', schoolId: schoolB.id })
-        .expect(404);
-      expect(res.body.error.code).toBe('NOT_FOUND');
-    });
-
     it('returns 404 NOT_FOUND on non-UUID :id for GET /classrooms/:id and PATCH /classrooms/:id', async () => {
       const getRes = await request(app.getHttpServer())
         .get('/classrooms/not-a-valid-uuid')
@@ -656,6 +635,281 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
             i.schoolId === schoolA.id && i.myRole === 'OWNER',
         ),
       ).toBe(true);
+    });
+  });
+
+  describe('Create authorization through the shared access service (no existence leak, no partial writes)', () => {
+    let multiSchoolTeacher: { id: string };
+    let schoolPathWithoutMembership: { id: string };
+    let independentTeacherAlsoStudent: { id: string };
+    let lostSchoolTeacher: { id: string };
+    let schoolBClassroomId: string;
+
+    const NONEXISTENT_SCHOOL_ID = '00000000-0000-4000-8000-00000000dead';
+
+    const makeUser = async (prefix: string, path: RegistrationPath) => {
+      const user = await prisma.user.create({
+        data: {
+          email: `cls.${prefix}.${Date.now()}.${Math.round(Math.random() * 1e6)}@example.edu.ar`,
+          passwordHash: 'dummy-hash-for-integration-tests',
+          displayName: `${prefix} User`,
+          registrationPath: path,
+        },
+      });
+      createdUserIds.push(user.id);
+      return user;
+    };
+
+    const writeSnapshot = async (actorId: string, probeName: string) => ({
+      probeClassrooms: await prisma.classroom.count({ where: { name: probeName } }),
+      actorIndependentClassrooms: await prisma.classroom.count({
+        where: { independentTeacherId: actorId },
+      }),
+      schoolClassrooms: await prisma.classroom.count({
+        where: { schoolId: { in: [schoolA.id, schoolB.id] } },
+      }),
+      actorMemberships: await prisma.classroomMembership.count({ where: { userId: actorId } }),
+      probePets: await prisma.classroomPet.count({ where: { classroom: { name: probeName } } }),
+      probeDesks: await prisma.desk.count({ where: { classroom: { name: probeName } } }),
+    });
+
+    const postExpectingRejection = async (
+      actorId: string,
+      body: Record<string, unknown>,
+      status: number,
+    ) => {
+      const before = await writeSnapshot(actorId, body.name as string);
+      const res = await request(app.getHttpServer())
+        .post('/classrooms')
+        .set('Authorization', tokenForUser(actorId))
+        .send(body)
+        .expect(status);
+      const after = await writeSnapshot(actorId, body.name as string);
+      expect(after).toEqual(before);
+      return res;
+    };
+
+    const envelopeWithoutCorrelation = (body: { error: Record<string, unknown> }) => {
+      return { ...body.error, correlationId: undefined };
+    };
+
+    beforeAll(async () => {
+      multiSchoolTeacher = await makeUser('multi.teacher', RegistrationPath.SCHOOL);
+      schoolPathWithoutMembership = await makeUser('school.nomember', RegistrationPath.SCHOOL);
+      independentTeacherAlsoStudent = await makeUser(
+        'ind.also.student',
+        RegistrationPath.INDEPENDENT_TEACHER,
+      );
+      lostSchoolTeacher = await makeUser('lost.teacher', RegistrationPath.SCHOOL);
+
+      await prisma.schoolMember.createMany({
+        data: [
+          {
+            schoolId: schoolA.id,
+            userId: multiSchoolTeacher.id,
+            role: SchoolRole.TEACHER,
+            state: MembershipState.ACTIVE,
+          },
+          {
+            schoolId: schoolB.id,
+            userId: multiSchoolTeacher.id,
+            role: SchoolRole.TEACHER,
+            state: MembershipState.ACTIVE,
+          },
+          {
+            schoolId: schoolB.id,
+            userId: lostSchoolTeacher.id,
+            role: SchoolRole.TEACHER,
+            state: MembershipState.INACTIVE,
+          },
+        ],
+      });
+
+      const schoolBClassroom = await prisma.classroom.create({
+        data: { name: `Aula Escuela B ${Date.now()}`, schoolId: schoolB.id },
+      });
+      schoolBClassroomId = schoolBClassroom.id;
+      createdClassroomIds.push(schoolBClassroomId);
+
+      await prisma.classroomMembership.createMany({
+        data: [
+          {
+            classroomId: schoolBClassroomId,
+            userId: independentTeacherAlsoStudent.id,
+            role: ClassroomRole.STUDENT,
+            state: MembershipState.ACTIVE,
+          },
+          {
+            classroomId: schoolBClassroomId,
+            userId: lostSchoolTeacher.id,
+            role: ClassroomRole.TEACHER,
+            state: MembershipState.ACTIVE,
+          },
+        ],
+      });
+    });
+
+    it('answers an unrelated existing school and a nonexistent school identically (404) for students and parents, writing nothing', async () => {
+      // studentUser / parentUser are only related to school A; school B is existing but unrelated.
+      for (const actor of [studentUser, parentUser]) {
+        const unrelated = await postExpectingRejection(
+          actor.id,
+          { name: `Leak probe unrelated ${actor.id}`, schoolId: schoolB.id },
+          404,
+        );
+        const missing = await postExpectingRejection(
+          actor.id,
+          { name: `Leak probe missing ${actor.id}`, schoolId: NONEXISTENT_SCHOOL_ID },
+          404,
+        );
+
+        expect(unrelated.body.error.code).toBe('NOT_FOUND');
+        expect(envelopeWithoutCorrelation(unrelated.body)).toEqual(
+          envelopeWithoutCorrelation(missing.body),
+        );
+      }
+    });
+
+    it('answers 403 and writes nothing only for a student or parent related to that school', async () => {
+      const student = await postExpectingRejection(
+        studentUser.id,
+        { name: 'Related student probe', schoolId: schoolA.id },
+        403,
+      );
+      expect(student.body.error.code).toBe('FORBIDDEN');
+
+      const parent = await postExpectingRejection(
+        parentUser.id,
+        { name: 'Related parent probe', schoolId: schoolA.id },
+        403,
+      );
+      expect(parent.body.error.code).toBe('FORBIDDEN');
+    });
+
+    it('rejects a student and a parent omitting schoolId with 403 and writes nothing', async () => {
+      await postExpectingRejection(studentUser.id, { name: 'Student omitted probe' }, 403);
+      await postExpectingRejection(parentUser.id, { name: 'Parent omitted probe' }, 403);
+    });
+
+    it('lets an independent teacher who is also enrolled as a student elsewhere create their own classroom', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/classrooms')
+        .set('Authorization', tokenForUser(independentTeacherAlsoStudent.id))
+        .send({ name: 'Taller del docente-estudiante' })
+        .expect(201);
+      createdClassroomIds.push(res.body.id);
+
+      expect(res.body).toMatchObject({
+        schoolId: null,
+        independentTeacherId: independentTeacherAlsoStudent.id,
+        myRole: 'TEACHER',
+      });
+    });
+
+    it('answers a SCHOOL-path user without any active membership with 404 (not the students-and-parents message) and writes nothing', async () => {
+      const res = await postExpectingRejection(
+        schoolPathWithoutMembership.id,
+        { name: 'No membership probe' },
+        404,
+      );
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    });
+
+    it('requires an explicit schoolId (400 VALIDATION_FAILED on schoolId) when the user belongs to several schools, writing nothing', async () => {
+      const res = await postExpectingRejection(
+        multiSchoolTeacher.id,
+        { name: 'Ambiguous school probe' },
+        400,
+      );
+
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual([
+        { field: 'schoolId', messages: [expect.any(String)] },
+      ]);
+    });
+
+    it('creates in the explicitly selected school for a multi-membership user and records a TEACHER membership there', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/classrooms')
+        .set('Authorization', tokenForUser(multiSchoolTeacher.id))
+        .send({ name: 'Aula explícita Escuela B', schoolId: schoolB.id })
+        .expect(201);
+      createdClassroomIds.push(res.body.id);
+
+      expect(res.body).toMatchObject({
+        schoolId: schoolB.id,
+        independentTeacherId: null,
+        myRole: 'TEACHER',
+      });
+      const membership = await prisma.classroomMembership.findFirst({
+        where: { classroomId: res.body.id, userId: multiSchoolTeacher.id },
+      });
+      expect(membership?.role).toBe(ClassroomRole.TEACHER);
+    });
+
+    it('denies a school Teacher of A, and the Owner and Admin of A, creating in school B with 404 and no writes', async () => {
+      for (const actor of [schoolTeacher1, schoolOwner, schoolAdmin]) {
+        const res = await postExpectingRejection(
+          actor.id,
+          { name: `Cross school probe ${actor.id}`, schoolId: schoolB.id },
+          404,
+        );
+        expect(res.body.error.code).toBe('NOT_FOUND');
+      }
+    });
+
+    it('keeps list and detail in agreement on myRole and capabilities for every visible classroom', async () => {
+      const actors = [
+        schoolOwner,
+        schoolAdmin,
+        schoolTeacher1,
+        studentUser,
+        parentUser,
+        independentTeacher,
+        independentTeacherAlsoStudent,
+        multiSchoolTeacher,
+        otherSchoolOwner,
+      ];
+
+      for (const actor of actors) {
+        const listed = await request(app.getHttpServer())
+          .get('/me/classrooms?limit=100')
+          .set('Authorization', tokenForUser(actor.id))
+          .expect(200);
+        const listedAlias = await request(app.getHttpServer())
+          .get('/classrooms?limit=100')
+          .set('Authorization', tokenForUser(actor.id))
+          .expect(200);
+        expect(listedAlias.body.items).toEqual(listed.body.items);
+
+        for (const item of listed.body.items as {
+          id: string;
+          myRole: string;
+          capabilities: string[];
+        }[]) {
+          const detail = await request(app.getHttpServer())
+            .get(`/classrooms/${item.id}`)
+            .set('Authorization', tokenForUser(actor.id))
+            .expect(200);
+          expect(detail.body.myRole).toBe(item.myRole);
+          expect(detail.body.capabilities).toEqual(item.capabilities);
+        }
+      }
+    });
+
+    it('never lists a classroom for which no role resolves (no fall-open to STUDENT) and the detail agrees with 404', async () => {
+      // Active TEACHER classroom membership but the school membership is INACTIVE: no authority.
+      const listed = await request(app.getHttpServer())
+        .get('/me/classrooms')
+        .set('Authorization', tokenForUser(lostSchoolTeacher.id))
+        .expect(200);
+      expect(listed.body.items).toEqual([]);
+      expect(listed.body.total).toBe(0);
+
+      await request(app.getHttpServer())
+        .get(`/classrooms/${schoolBClassroomId}`)
+        .set('Authorization', tokenForUser(lostSchoolTeacher.id))
+        .expect(404);
     });
   });
 });

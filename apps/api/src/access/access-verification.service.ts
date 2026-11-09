@@ -1,5 +1,18 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  type Classroom,
+  ClassroomRole,
+  MembershipState,
+  type Prisma,
+  RegistrationPath,
+  SchoolRole,
+} from '@prisma/client';
+import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -44,6 +57,77 @@ export interface VerifyClassroomAccessOptions {
 
 export interface VerifySchoolAccessOptions {
   requiredRole?: 'OWNER' | 'ADMIN' | 'STAFF' | 'ANY';
+}
+
+/** Where a new classroom goes and the actor's resulting authority over it. */
+export interface ClassroomCreationTarget {
+  /** Exactly one of `schoolId` and `independentTeacherId` is set. */
+  schoolId: string | null;
+  independentTeacherId: string | null;
+  /** The actor's school role when the target is a school; `null` for an independent classroom. */
+  schoolRole: SchoolRole | null;
+  myRole: 'OWNER' | 'ADMIN' | 'TEACHER';
+  capabilities: ClassroomCapability[];
+}
+
+/** Persisted facts the hierarchy is derived from; see {@link deriveClassroomAccessRole}. */
+export interface ClassroomRoleFacts {
+  actorUserId: string;
+  classroom: {
+    schoolId: string | null;
+    independentTeacherId: string | null;
+    adultMode: boolean;
+  };
+  /** The actor's ACTIVE role in the classroom's school, if any. */
+  schoolRole: SchoolRole | null;
+  /** The actor's ACTIVE, non-deleted membership role in this classroom, if any. */
+  membershipRole: ClassroomRole | null;
+  /** The actor has an ACTIVE parent link in this classroom. */
+  hasActiveParentLink: boolean;
+}
+
+export interface AccessibleClassroom {
+  classroom: Classroom;
+  myRole: ClassroomAccessRole;
+  capabilities: ClassroomCapability[];
+}
+
+export interface ListAccessibleClassroomsOptions {
+  skip: number;
+  take: number;
+  order: 'asc' | 'desc';
+}
+
+/**
+ * The single place that turns persisted facts into the actor's classroom role, in
+ * the hierarchy of `rules/classrooms-and-roles.md`: school Owner/Admin, then the
+ * classroom's teacher, then an enrolled student, then a linked parent (never in
+ * adult mode). Returns `null` when no relation resolves: callers must fail closed.
+ * Detail, list and any later authorization share this function so they cannot
+ * disagree.
+ */
+export function deriveClassroomAccessRole(facts: ClassroomRoleFacts): ClassroomAccessRole | null {
+  const { classroom, schoolRole, membershipRole, actorUserId } = facts;
+
+  if (classroom.schoolId !== null) {
+    if (schoolRole === SchoolRole.OWNER) return 'OWNER';
+    if (schoolRole === SchoolRole.ADMIN) return 'ADMIN';
+  }
+
+  if (classroom.independentTeacherId !== null && classroom.independentTeacherId === actorUserId) {
+    return 'TEACHER';
+  }
+
+  if (membershipRole === ClassroomRole.TEACHER) {
+    // A school classroom teacher keeps authority only while active in that school.
+    if (classroom.schoolId === null || schoolRole !== null) return 'TEACHER';
+  } else if (membershipRole === ClassroomRole.STUDENT) {
+    return 'STUDENT';
+  }
+
+  if (!classroom.adultMode && facts.hasActiveParentLink) return 'PARENT';
+
+  return null;
 }
 
 /**
@@ -211,11 +295,6 @@ export class AccessVerificationService {
       throw new NotFoundException('Classroom not found');
     }
 
-    let derivedRole: ClassroomAccessRole | null = null;
-    let linkedChildIds: string[] | undefined;
-    let activeSchoolMember: { role: SchoolRole } | null = null;
-
-    // Hierarchy step a: School classroom check
     if (classroom.schoolId !== null) {
       const school = await this.prisma.school.findFirst({
         where: { id: classroom.schoolId, deletedAt: null },
@@ -224,83 +303,54 @@ export class AccessVerificationService {
       if (!school) {
         throw new NotFoundException('Classroom not found');
       }
-
-      activeSchoolMember = await this.prisma.schoolMember.findFirst({
-        where: {
-          schoolId: classroom.schoolId,
-          userId: actorUserId,
-          state: MembershipState.ACTIVE,
-        },
-        select: { role: true },
-      });
-
-      if (activeSchoolMember) {
-        if (activeSchoolMember.role === SchoolRole.OWNER) {
-          derivedRole = 'OWNER';
-        } else if (activeSchoolMember.role === SchoolRole.ADMIN) {
-          derivedRole = 'ADMIN';
-        }
-        // Note: A teacher in the school does NOT get authority over this classroom
-        // unless they are explicitly assigned to teach this classroom (handled below in step b).
-      }
     }
 
-    // Hierarchy step b & c: Classroom membership (Teacher or Student)
-    if (!derivedRole) {
-      if (
-        classroom.independentTeacherId !== null &&
-        classroom.independentTeacherId === actorUserId
-      ) {
-        derivedRole = 'TEACHER';
-      } else {
-        const membership = await this.prisma.classroomMembership.findFirst({
-          where: {
-            classroomId: classroom.id,
-            userId: actorUserId,
-            state: MembershipState.ACTIVE,
-            deletedAt: null,
-          },
-          select: { role: true },
-        });
-
-        if (membership) {
-          if (membership.role === ClassroomRole.TEACHER) {
-            // When classroom.schoolId !== null, verify that the teacher has an ACTIVE membership in the school.
-            // If not active in school, teacher has lost school authority; do not grant TEACHER role (yields 404).
-            if (classroom.schoolId !== null) {
-              if (activeSchoolMember) {
-                derivedRole = 'TEACHER';
-              }
-            } else {
-              derivedRole = 'TEACHER';
-            }
-          } else if (membership.role === ClassroomRole.STUDENT) {
-            derivedRole = 'STUDENT';
-          }
-        }
-      }
-    }
-
-    // Hierarchy step d: Parent linked to a child in that classroom (disabled in adult mode)
-    if (!derivedRole && !classroom.adultMode) {
-      const parentLinks = await this.prisma.parentLink.findMany({
+    const [schoolMember, membership, parentLinks] = await Promise.all([
+      classroom.schoolId === null
+        ? Promise.resolve(null)
+        : this.prisma.schoolMember.findFirst({
+            where: {
+              schoolId: classroom.schoolId,
+              userId: actorUserId,
+              state: MembershipState.ACTIVE,
+            },
+            select: { role: true },
+          }),
+      this.prisma.classroomMembership.findFirst({
         where: {
           classroomId: classroom.id,
-          parentId: actorUserId,
+          userId: actorUserId,
           state: MembershipState.ACTIVE,
+          deletedAt: null,
         },
-        select: { childId: true },
-      });
-      if (parentLinks.length > 0) {
-        derivedRole = 'PARENT';
-        linkedChildIds = parentLinks.map((p) => p.childId);
-      }
-    }
+        select: { role: true },
+      }),
+      classroom.adultMode
+        ? Promise.resolve([])
+        : this.prisma.parentLink.findMany({
+            where: {
+              classroomId: classroom.id,
+              parentId: actorUserId,
+              state: MembershipState.ACTIVE,
+            },
+            select: { childId: true },
+          }),
+    ]);
+
+    const derivedRole = deriveClassroomAccessRole({
+      actorUserId,
+      classroom,
+      schoolRole: schoolMember?.role ?? null,
+      membershipRole: membership?.role ?? null,
+      hasActiveParentLink: parentLinks.length > 0,
+    });
 
     // If no relationship was found, return 404 to avoid leaking existence
     if (!derivedRole) {
       throw new NotFoundException('Classroom not found');
     }
+
+    const linkedChildIds = derivedRole === 'PARENT' ? parentLinks.map((p) => p.childId) : undefined;
 
     // Enforce role constraints if requested
     const required = options?.requiredRole ?? 'ANY';
@@ -326,6 +376,248 @@ export class AccessVerificationService {
       capabilities,
       ...(linkedChildIds ? { linkedChildIds } : {}),
     };
+  }
+
+  /**
+   * Decides where a new classroom goes and whether the actor may create it there.
+   *
+   * With an explicit `schoolId`: the actor must be an ACTIVE member of that school
+   * (Owner, Admin and Teacher all create; see the permission matrix). A school the
+   * actor has no relation to answers 404 exactly like a school that does not
+   * exist. 403 is reserved for a student or parent who can see that school, so the
+   * two cases never reveal whether an unrelated school exists.
+   *
+   * Without `schoolId`: an INDEPENDENT_TEACHER-path account creates its own
+   * classroom (enrollments elsewhere do not matter). A SCHOOL-path account uses its
+   * only active school; with several it must choose one (400 on `schoolId`), and
+   * with none it answers 404, or 403 when it is a student or parent.
+   */
+  async resolveClassroomCreationTarget(
+    actorUserId: string,
+    requestedSchoolId?: string,
+  ): Promise<ClassroomCreationTarget> {
+    if (!UUID_PATTERN.test(actorUserId)) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    if (requestedSchoolId !== undefined) {
+      if (!UUID_PATTERN.test(requestedSchoolId)) {
+        throw new NotFoundException('School not found');
+      }
+      try {
+        const access = await this.verifySchoolAccess(actorUserId, requestedSchoolId, {
+          requiredRole: 'STAFF',
+        });
+        return this.schoolCreationTarget(access.schoolId, access.role);
+      } catch (error) {
+        if (
+          error instanceof NotFoundException &&
+          (await this.hasLearnerRelation(actorUserId, requestedSchoolId))
+        ) {
+          throw new ForbiddenException('Students and parents cannot create classrooms');
+        }
+        throw error;
+      }
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: actorUserId },
+      select: { registrationPath: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    if (user.registrationPath === RegistrationPath.INDEPENDENT_TEACHER) {
+      return {
+        schoolId: null,
+        independentTeacherId: actorUserId,
+        schoolRole: null,
+        myRole: 'TEACHER',
+        capabilities: computeClassroomCapabilities('TEACHER'),
+      };
+    }
+
+    const memberships = await this.prisma.schoolMember.findMany({
+      where: {
+        userId: actorUserId,
+        state: MembershipState.ACTIVE,
+        school: { deletedAt: null },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { schoolId: true, role: true },
+    });
+
+    if (memberships.length === 1) {
+      return this.schoolCreationTarget(memberships[0].schoolId, memberships[0].role);
+    }
+
+    if (memberships.length > 1) {
+      throw new RequestValidationException([
+        {
+          field: 'schoolId',
+          messages: ['schoolId is required because you belong to more than one school'],
+        },
+      ]);
+    }
+
+    if (await this.hasLearnerRelation(actorUserId)) {
+      throw new ForbiddenException('Students and parents cannot create classrooms');
+    }
+    throw new NotFoundException('School not found');
+  }
+
+  /**
+   * Lists the classrooms the actor can access together with the role and
+   * capabilities derived by the same hierarchy as {@link verifyClassroomAccess}.
+   * The query only preselects candidates; the role of every row is derived with
+   * {@link deriveClassroomAccessRole} and a row without a resolved role is dropped
+   * (fail closed).
+   */
+  async listAccessibleClassrooms(
+    actorUserId: string,
+    options: ListAccessibleClassroomsOptions,
+  ): Promise<{ total: number; items: AccessibleClassroom[] }> {
+    if (!UUID_PATTERN.test(actorUserId)) {
+      return { total: 0, items: [] };
+    }
+
+    const activeMembership = (
+      role: ClassroomRole,
+    ): Prisma.ClassroomMembershipListRelationFilter => ({
+      some: { userId: actorUserId, role, state: MembershipState.ACTIVE, deletedAt: null },
+    });
+
+    const where: Prisma.ClassroomWhereInput = {
+      deletedAt: null,
+      AND: [{ OR: [{ schoolId: null }, { school: { deletedAt: null } }] }],
+      OR: [
+        {
+          school: {
+            members: {
+              some: {
+                userId: actorUserId,
+                state: MembershipState.ACTIVE,
+                role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
+              },
+            },
+          },
+        },
+        { independentTeacherId: actorUserId },
+        {
+          memberships: activeMembership(ClassroomRole.TEACHER),
+          OR: [
+            { schoolId: null },
+            {
+              school: {
+                members: { some: { userId: actorUserId, state: MembershipState.ACTIVE } },
+              },
+            },
+          ],
+        },
+        { memberships: activeMembership(ClassroomRole.STUDENT) },
+        {
+          adultMode: false,
+          parentLinks: { some: { parentId: actorUserId, state: MembershipState.ACTIVE } },
+        },
+      ],
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.classroom.count({ where }),
+      this.prisma.classroom.findMany({
+        where,
+        orderBy: [{ createdAt: options.order }, { id: 'asc' }],
+        skip: options.skip,
+        take: options.take,
+        include: {
+          school: {
+            select: {
+              deletedAt: true,
+              members: {
+                where: { userId: actorUserId, state: MembershipState.ACTIVE },
+                select: { role: true },
+              },
+            },
+          },
+          memberships: {
+            where: { userId: actorUserId, state: MembershipState.ACTIVE, deletedAt: null },
+            select: { role: true },
+          },
+          parentLinks: {
+            where: { parentId: actorUserId, state: MembershipState.ACTIVE },
+            select: { id: true },
+          },
+        },
+      }),
+    ]);
+
+    const items: AccessibleClassroom[] = [];
+    for (const { school, memberships, parentLinks, ...classroom } of rows) {
+      if (classroom.schoolId !== null && (school === null || school.deletedAt !== null)) {
+        continue;
+      }
+      const myRole = deriveClassroomAccessRole({
+        actorUserId,
+        classroom,
+        schoolRole: school?.members[0]?.role ?? null,
+        membershipRole: memberships[0]?.role ?? null,
+        hasActiveParentLink: parentLinks.length > 0,
+      });
+      if (myRole === null) continue;
+      items.push({ classroom, myRole, capabilities: computeClassroomCapabilities(myRole) });
+    }
+
+    return { total, items };
+  }
+
+  private schoolCreationTarget(schoolId: string, schoolRole: SchoolRole): ClassroomCreationTarget {
+    const myRole = schoolRole === SchoolRole.TEACHER ? 'TEACHER' : schoolRole;
+    return {
+      schoolId,
+      independentTeacherId: null,
+      schoolRole,
+      myRole,
+      capabilities: computeClassroomCapabilities(myRole),
+    };
+  }
+
+  /**
+   * Whether the actor is an enrolled student or a linked parent (outside adult
+   * mode, where the parent cannot see the classroom) in a live classroom, in the
+   * given school or in any when `schoolId` is omitted. Only a visible relation
+   * justifies a 403 instead of a 404.
+   */
+  private async hasLearnerRelation(actorUserId: string, schoolId?: string): Promise<boolean> {
+    const classroomScope: Prisma.ClassroomWhereInput = {
+      deletedAt: null,
+      ...(schoolId === undefined
+        ? { OR: [{ schoolId: null }, { school: { deletedAt: null } }] }
+        : { schoolId, school: { deletedAt: null } }),
+    };
+
+    const [enrollment, parentLink] = await Promise.all([
+      this.prisma.classroomMembership.findFirst({
+        where: {
+          userId: actorUserId,
+          role: ClassroomRole.STUDENT,
+          state: MembershipState.ACTIVE,
+          deletedAt: null,
+          classroom: classroomScope,
+        },
+        select: { id: true },
+      }),
+      this.prisma.parentLink.findFirst({
+        where: {
+          parentId: actorUserId,
+          state: MembershipState.ACTIVE,
+          classroom: { ...classroomScope, adultMode: false },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    return enrollment !== null || parentLink !== null;
   }
 
   /**

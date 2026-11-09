@@ -330,7 +330,7 @@
             }
           },
           "400": {
-            "description": "Validation failed (missing or invalid fields).",
+            "description": "Validation failed (missing or invalid fields), or schoolId is missing for a caller who belongs to several schools.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -342,13 +342,13 @@
             }
           },
           "403": {
-            "description": "Caller is a student or parent and is not allowed to create classrooms.",
+            "description": "Caller is a student or parent related to the target school and is not allowed to create classrooms.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
           },
           "404": {
-            "description": "Specified school does not exist or is outside the caller scope.",
+            "description": "Specified school does not exist or the caller has no relation to it (indistinguishable by design).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }

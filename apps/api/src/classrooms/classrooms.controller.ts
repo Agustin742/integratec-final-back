@@ -51,7 +51,8 @@ export class ClassroomsController {
   })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Validation failed (missing or invalid fields).',
+    description:
+      'Validation failed (missing or invalid fields), or schoolId is missing for a caller who belongs to several schools.',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -59,11 +60,13 @@ export class ClassroomsController {
   })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,
-    description: 'Caller is a student or parent and is not allowed to create classrooms.',
+    description:
+      'Caller is a student or parent related to the target school and is not allowed to create classrooms.',
   })
   @ApiNotFoundResponse({
     type: ErrorEnvelopeDto,
-    description: 'Specified school does not exist or is outside the caller scope.',
+    description:
+      'Specified school does not exist or the caller has no relation to it (indistinguishable by design).',
   })
   async create(
     @CurrentUser('userId') actorUserId: string,

@@ -1,14 +1,18 @@
 import {
+  BadRequestException,
   ForbiddenException,
   type INestApplication,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { ClassroomRole, MembershipState, RegistrationPath, SchoolRole } from '@prisma/client';
+import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AccessVerificationService } from '../access/access-verification.service';
+import {
+  AccessVerificationService,
+  computeClassroomCapabilities,
+} from '../access/access-verification.service';
 import { AuthModule } from '../auth/auth.module';
 import { SessionVerifier, type VerifiedSession } from '../auth/session-verifier.service';
 import { authTestConfig } from '../auth/testing/auth-test-config';
@@ -29,9 +33,7 @@ const ACTOR_OWNER_ID = '22222222-2222-4222-8222-222222222222';
 const ACTOR_ADMIN_ID = '33333333-3333-4333-8333-333333333333';
 const ACTOR_SCHOOL_TEACHER_ID = '44444444-4444-4444-8444-444444444444';
 const ACTOR_STUDENT_ID = '55555555-5555-4555-8555-555555555555';
-const ACTOR_PARENT_ID = '66666666-6666-4666-8666-666666666666';
 const SCHOOL_ID = '77777777-7777-4777-8777-777777777777';
-const OTHER_SCHOOL_ID = '88888888-8888-4888-8888-888888888888';
 const CLASSROOM_ID = '99999999-9999-4999-8999-999999999999';
 const PET_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const SESSION_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -282,7 +284,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         classroomPet: { create: vi.fn() },
         desk: { createMany: vi.fn() },
         classroomMembership: { create: vi.fn(), findFirst: vi.fn() },
-        parentLink: { findMany: vi.fn() },
+        parentLink: { findMany: vi.fn().mockResolvedValue([]) },
         $transaction: vi.fn(async (cb: (tx: typeof mockPrisma) => Promise<unknown>) =>
           cb(mockPrisma),
         ),
@@ -293,42 +295,23 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
     });
 
     describe('create()', () => {
-      it('throws 401 Unauthorized when actorUserId is not a valid UUID', async () => {
-        await expect(service.create('not-a-uuid', { name: 'Aula' })).rejects.toThrow(
-          UnauthorizedException,
-        );
+      const classroomRow = (over: Record<string, unknown>) => ({
+        id: CLASSROOM_ID,
+        name: 'Aula',
+        subject: null,
+        schoolId: null,
+        independentTeacherId: null,
+        adultMode: false,
+        chatMuted: false,
+        collaborationLocked: false,
+        gamesDisabled: false,
+        createdAt: now,
+        updatedAt: now,
+        ...over,
       });
 
-      it('throws 404 NotFound when schoolId is not a valid UUID', async () => {
-        await expect(
-          service.create(ACTOR_OWNER_ID, { name: 'Aula', schoolId: 'invalid-uuid' }),
-        ).rejects.toThrow(NotFoundException);
-      });
-
-      it('creates an independent teacher classroom atomically with default pet, 12 desks (1..12), and default controls', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_TEACHER_ID,
-          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
-          schoolMemberships: [],
-          classroomMemberships: [],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
-        });
-
-        mockPrisma.classroom.create.mockResolvedValue({
-          id: CLASSROOM_ID,
-          name: 'Aula Particular Física',
-          subject: 'Física I',
-          schoolId: null,
-          independentTeacherId: ACTOR_TEACHER_ID,
-          adultMode: false,
-          chatMuted: false,
-          collaborationLocked: false,
-          gamesDisabled: false,
-          createdAt: now,
-          updatedAt: now,
-        });
-
+      const stubProvisioning = (row: Record<string, unknown>) => {
+        mockPrisma.classroom.create.mockResolvedValue(row);
         mockPrisma.classroomPet.create.mockResolvedValue({
           id: PET_ID,
           classroomId: CLASSROOM_ID,
@@ -337,8 +320,64 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
           level: 1,
           experience: 0,
         });
-
         mockPrisma.desk.createMany.mockResolvedValue({ count: DEFAULT_INITIAL_DESK_COUNT });
+      };
+
+      const expectNoWrites = () => {
+        expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+        expect(mockPrisma.classroom.create).not.toHaveBeenCalled();
+        expect(mockPrisma.classroomPet.create).not.toHaveBeenCalled();
+        expect(mockPrisma.desk.createMany).not.toHaveBeenCalled();
+        expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+      };
+
+      it('throws 401 Unauthorized when actorUserId is not a valid UUID', async () => {
+        await expect(service.create('not-a-uuid', { name: 'Aula' })).rejects.toThrow(
+          UnauthorizedException,
+        );
+        expectNoWrites();
+      });
+
+      it('delegates the creation decision to the shared access service and writes nothing on 404', async () => {
+        const resolve = vi
+          .spyOn(accessService, 'resolveClassroomCreationTarget')
+          .mockRejectedValue(new NotFoundException('School not found'));
+
+        await expect(
+          service.create(ACTOR_OWNER_ID, { name: 'Aula', schoolId: 'invalid-uuid' }),
+        ).rejects.toThrow(NotFoundException);
+        expect(resolve).toHaveBeenCalledWith(ACTOR_OWNER_ID, 'invalid-uuid');
+        expectNoWrites();
+      });
+
+      it('does not query the school or the user directly: authorization lives in the access service', async () => {
+        vi.spyOn(accessService, 'resolveClassroomCreationTarget').mockRejectedValue(
+          new ForbiddenException('Students and parents cannot create classrooms'),
+        );
+
+        await expect(
+          service.create(ACTOR_STUDENT_ID, { name: 'Aula', schoolId: SCHOOL_ID }),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockPrisma.user.findUnique).not.toHaveBeenCalled();
+        expect(mockPrisma.school.findFirst).not.toHaveBeenCalled();
+        expectNoWrites();
+      });
+
+      it('creates an independent teacher classroom atomically with default pet, 12 desks (1..12), and default controls', async () => {
+        vi.spyOn(accessService, 'resolveClassroomCreationTarget').mockResolvedValue({
+          schoolId: null,
+          independentTeacherId: ACTOR_TEACHER_ID,
+          schoolRole: null,
+          myRole: 'TEACHER',
+          capabilities: computeClassroomCapabilities('TEACHER'),
+        });
+        stubProvisioning(
+          classroomRow({
+            name: 'Aula Particular Física',
+            subject: 'Física I',
+            independentTeacherId: ACTOR_TEACHER_ID,
+          }),
+        );
 
         const result = await service.create(ACTOR_TEACHER_ID, {
           name: 'Aula Particular Física',
@@ -382,126 +421,39 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
       });
 
-      it('creates a school classroom for School OWNER without creating a ClassroomMembership row', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_OWNER_ID,
-          registrationPath: RegistrationPath.SCHOOL,
-          schoolMemberships: [{ schoolId: SCHOOL_ID, role: SchoolRole.OWNER }],
-          classroomMemberships: [],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
-        });
+      it.each([
+        [SchoolRole.OWNER, 'OWNER'],
+        [SchoolRole.ADMIN, 'ADMIN'],
+      ] as const)(
+        'creates a school classroom for School %s without creating a ClassroomMembership row',
+        async (schoolRole, myRole) => {
+          vi.spyOn(accessService, 'resolveClassroomCreationTarget').mockResolvedValue({
+            schoolId: SCHOOL_ID,
+            independentTeacherId: null,
+            schoolRole,
+            myRole,
+            capabilities: computeClassroomCapabilities(myRole),
+          });
+          stubProvisioning(classroomRow({ schoolId: SCHOOL_ID }));
 
-        mockPrisma.classroom.create.mockResolvedValue({
-          id: CLASSROOM_ID,
-          name: '1° Año A',
-          subject: null,
-          schoolId: SCHOOL_ID,
-          independentTeacherId: null,
-          adultMode: false,
-          chatMuted: false,
-          collaborationLocked: false,
-          gamesDisabled: false,
-          createdAt: now,
-          updatedAt: now,
-        });
+          const result = await service.create(ACTOR_OWNER_ID, { name: '1° Año A' });
 
-        mockPrisma.classroomPet.create.mockResolvedValue({
-          id: PET_ID,
-          classroomId: CLASSROOM_ID,
-          name: DEFAULT_PET_NAME,
-          species: DEFAULT_PET_SPECIES,
-          level: 1,
-          experience: 0,
-        });
-
-        mockPrisma.desk.createMany.mockResolvedValue({ count: DEFAULT_INITIAL_DESK_COUNT });
-
-        const result = await service.create(ACTOR_OWNER_ID, { name: '1° Año A' });
-
-        expect(result.schoolId).toBe(SCHOOL_ID);
-        expect(result.independentTeacherId).toBeNull();
-        expect(result.myRole).toBe('OWNER');
-        expect(result.capabilities).toContain('manage_school');
-        expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
-      });
-
-      it('creates a school classroom for School ADMIN without creating a ClassroomMembership row', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_ADMIN_ID,
-          registrationPath: RegistrationPath.SCHOOL,
-          schoolMemberships: [{ schoolId: SCHOOL_ID, role: SchoolRole.ADMIN }],
-          classroomMemberships: [],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
-        });
-
-        mockPrisma.classroom.create.mockResolvedValue({
-          id: CLASSROOM_ID,
-          name: '2° Año A',
-          subject: null,
-          schoolId: SCHOOL_ID,
-          independentTeacherId: null,
-          adultMode: false,
-          chatMuted: false,
-          collaborationLocked: false,
-          gamesDisabled: false,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        mockPrisma.classroomPet.create.mockResolvedValue({
-          id: PET_ID,
-          classroomId: CLASSROOM_ID,
-          name: DEFAULT_PET_NAME,
-          species: DEFAULT_PET_SPECIES,
-          level: 1,
-          experience: 0,
-        });
-
-        mockPrisma.desk.createMany.mockResolvedValue({ count: DEFAULT_INITIAL_DESK_COUNT });
-
-        const result = await service.create(ACTOR_ADMIN_ID, { name: '2° Año A' });
-
-        expect(result.schoolId).toBe(SCHOOL_ID);
-        expect(result.myRole).toBe('ADMIN');
-        expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
-      });
+          expect(result.schoolId).toBe(SCHOOL_ID);
+          expect(result.independentTeacherId).toBeNull();
+          expect(result.myRole).toBe(myRole);
+          expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+        },
+      );
 
       it('creates a school classroom for School TEACHER and records ClassroomMembership(TEACHER)', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_SCHOOL_TEACHER_ID,
-          registrationPath: RegistrationPath.SCHOOL,
-          schoolMemberships: [{ schoolId: SCHOOL_ID, role: SchoolRole.TEACHER }],
-          classroomMemberships: [],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
-        });
-
-        mockPrisma.classroom.create.mockResolvedValue({
-          id: CLASSROOM_ID,
-          name: '3° Año C',
-          subject: 'Historia',
+        vi.spyOn(accessService, 'resolveClassroomCreationTarget').mockResolvedValue({
           schoolId: SCHOOL_ID,
           independentTeacherId: null,
-          adultMode: false,
-          chatMuted: false,
-          collaborationLocked: false,
-          gamesDisabled: false,
-          createdAt: now,
-          updatedAt: now,
+          schoolRole: SchoolRole.TEACHER,
+          myRole: 'TEACHER',
+          capabilities: computeClassroomCapabilities('TEACHER'),
         });
-
-        mockPrisma.classroomPet.create.mockResolvedValue({
-          id: PET_ID,
-          classroomId: CLASSROOM_ID,
-          name: DEFAULT_PET_NAME,
-          species: DEFAULT_PET_SPECIES,
-          level: 1,
-          experience: 0,
-        });
-
-        mockPrisma.desk.createMany.mockResolvedValue({ count: DEFAULT_INITIAL_DESK_COUNT });
+        stubProvisioning(classroomRow({ schoolId: SCHOOL_ID, subject: 'Historia' }));
         mockPrisma.classroomMembership.create.mockResolvedValue({ id: 'mem-1' });
 
         const result = await service.create(ACTOR_SCHOOL_TEACHER_ID, {
@@ -521,64 +473,63 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         });
       });
 
-      it('rejects a student attempting to create a classroom with 403 Forbidden', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_STUDENT_ID,
-          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
-          schoolMemberships: [],
-          classroomMemberships: [
+      it('rejects a target that violates the exactly-one-organization invariant before writing', async () => {
+        vi.spyOn(accessService, 'resolveClassroomCreationTarget').mockResolvedValue({
+          schoolId: SCHOOL_ID,
+          independentTeacherId: ACTOR_TEACHER_ID,
+          schoolRole: SchoolRole.OWNER,
+          myRole: 'OWNER',
+          capabilities: computeClassroomCapabilities('OWNER'),
+        });
+
+        await expect(service.create(ACTOR_OWNER_ID, { name: 'Aula' })).rejects.toThrow(
+          BadRequestException,
+        );
+        expectNoWrites();
+      });
+    });
+
+    describe('listForActor()', () => {
+      it('takes accessible classrooms, myRole and capabilities from the shared access service', async () => {
+        const list = vi.spyOn(accessService, 'listAccessibleClassrooms').mockResolvedValue({
+          total: 1,
+          items: [
             {
-              classroomId: CLASSROOM_ID,
-              role: ClassroomRole.STUDENT,
-              classroom: { schoolId: SCHOOL_ID },
+              classroom: {
+                id: CLASSROOM_ID,
+                name: 'Aula',
+                subject: null,
+                schoolId: SCHOOL_ID,
+                independentTeacherId: null,
+                adultMode: false,
+                chatMuted: false,
+                collaborationLocked: false,
+                gamesDisabled: false,
+                deletedAt: null,
+                createdAt: now,
+                updatedAt: now,
+              },
+              myRole: 'ADMIN',
+              capabilities: computeClassroomCapabilities('ADMIN'),
             },
           ],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
         });
 
-        await expect(service.create(ACTOR_STUDENT_ID, { name: 'Student Aula' })).rejects.toThrow(
-          ForbiddenException,
-        );
-        expect(mockPrisma.classroom.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects a parent attempting to create a classroom with 403 Forbidden', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_PARENT_ID,
-          registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
-          schoolMemberships: [],
-          classroomMemberships: [],
-          parentOfLinks: [
-            {
-              classroomId: CLASSROOM_ID,
-              classroom: { schoolId: SCHOOL_ID },
-            },
-          ],
-          _count: { independentClassrooms: 0 },
+        const result = await service.listForActor(ACTOR_ADMIN_ID, {
+          page: 2,
+          limit: 5,
+          order: 'asc',
         });
 
-        await expect(service.create(ACTOR_PARENT_ID, { name: 'Parent Aula' })).rejects.toThrow(
-          ForbiddenException,
-        );
-        expect(mockPrisma.classroom.create).not.toHaveBeenCalled();
-      });
-
-      it('rejects a staff member of School A attempting to create a classroom in School B with 404 NotFound', async () => {
-        mockPrisma.user.findUnique.mockResolvedValue({
-          id: ACTOR_OWNER_ID,
-          registrationPath: RegistrationPath.SCHOOL,
-          schoolMemberships: [{ schoolId: SCHOOL_ID, role: SchoolRole.OWNER }],
-          classroomMemberships: [],
-          parentOfLinks: [],
-          _count: { independentClassrooms: 0 },
+        expect(list).toHaveBeenCalledWith(ACTOR_ADMIN_ID, { skip: 5, take: 5, order: 'asc' });
+        expect(result).toMatchObject({ page: 2, limit: 5, total: 1, totalPages: 1 });
+        expect(result.items[0]).toMatchObject({
+          id: CLASSROOM_ID,
+          myRole: 'ADMIN',
+          capabilities: computeClassroomCapabilities('ADMIN'),
         });
-        mockPrisma.school.findFirst.mockResolvedValue({ id: OTHER_SCHOOL_ID });
-
-        await expect(
-          service.create(ACTOR_OWNER_ID, { name: 'Cross School Aula', schoolId: OTHER_SCHOOL_ID }),
-        ).rejects.toThrow(NotFoundException);
-        expect(mockPrisma.classroom.create).not.toHaveBeenCalled();
+        expect(mockPrisma.classroom.findMany).not.toHaveBeenCalled();
+        expect(mockPrisma.schoolMember.findMany).not.toHaveBeenCalled();
       });
     });
 
