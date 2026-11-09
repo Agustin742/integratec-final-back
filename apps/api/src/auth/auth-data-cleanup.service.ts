@@ -14,7 +14,8 @@ export interface AuthDataCleanupResult {
  * Prunes auth rows nobody can use any more, so the tables do not grow without bound.
  *
  * Rows are kept for `authDataRetentionSeconds` past their expiry (or rotation/use), which
- * preserves refresh reuse detection and a short audit trail. Each table is emptied with
+ * preserves refresh reuse detection and a short audit trail. Rotated tokens of a session that
+ * is still live are never pruned. Each table is emptied with
  * bounded batches, one short `DELETE` statement each and no surrounding transaction, so a
  * large backlog never holds long locks. The deletes are idempotent: running twice, or from
  * two instances at once, only removes what is still there.
@@ -29,24 +30,42 @@ export class AuthDataCleanupService {
   /**
    * Deletes rows older than the retention window counted back from `now`.
    *
-   * Counts are rows removed by an explicit rule: `sessions` counts expired sessions deleted,
-   * and `refreshTokens` counts only rotated tokens deleted by the rotated rule. Tokens removed
-   * together with their session through the foreign key cascade are not counted.
+   * `sessions` counts expired sessions deleted. `refreshTokens` counts every refresh token
+   * deleted by an explicit rule: the tokens of sessions about to be removed (deleted first,
+   * in batches, so the session delete cascades nothing), plus rotated tokens older than the
+   * cutoff whose session is no longer live. A session is live while it has not expired at
+   * `now` and is not revoked; its rotated tokens are kept however old they are, because
+   * session expiry is fixed at creation and may outlast today's `REFRESH_TOKEN_TTL`, and
+   * dropping them would turn a replay into an unknown-token 401 that revokes nothing.
    */
   async run(now: Date = new Date()): Promise<AuthDataCleanupResult> {
     const cutoff = new Date(now.getTime() - this.config.authDataRetentionSeconds * 1000);
     const batch = this.config.authCleanupBatchSize;
 
-    const refreshTokens = await this.deleteInBatches(
+    const expiredSessionTokens = await this.deleteInBatches(
       (limit) => Prisma.sql`
         DELETE FROM "refresh_tokens"
         WHERE "id" IN (
-          SELECT "id" FROM "refresh_tokens"
-          WHERE "rotated_at" IS NOT NULL AND "rotated_at" < ${cutoff}
+          SELECT rt."id" FROM "refresh_tokens" rt
+          JOIN "sessions" s ON s."id" = rt."session_id"
+          WHERE s."expires_at" < ${cutoff}
           LIMIT ${limit}
         )`,
       batch,
     );
+    const rotatedTokens = await this.deleteInBatches(
+      (limit) => Prisma.sql`
+        DELETE FROM "refresh_tokens"
+        WHERE "id" IN (
+          SELECT rt."id" FROM "refresh_tokens" rt
+          JOIN "sessions" s ON s."id" = rt."session_id"
+          WHERE rt."rotated_at" IS NOT NULL AND rt."rotated_at" < ${cutoff}
+            AND NOT (s."expires_at" > ${now} AND s."revoked_at" IS NULL)
+          LIMIT ${limit}
+        )`,
+      batch,
+    );
+    const refreshTokens = expiredSessionTokens + rotatedTokens;
     const sessions = await this.deleteInBatches(
       (limit) => Prisma.sql`
         DELETE FROM "sessions"

@@ -2,12 +2,14 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { RegistrationPath } from '@aula/contracts';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiConfigModule } from '../config/config.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthDataCleanupService } from './auth-data-cleanup.service';
 import { AuthModule } from './auth.module';
+import { AuthService } from './auth.service';
+import { generateRefreshToken, hashRefreshToken } from './session-tokens';
 import { authTestConfig } from './testing/auth-test-config';
 
 const DAY_MS = 86_400_000;
@@ -29,7 +31,8 @@ describe('Auth / Data cleanup (issue #70)', () => {
   const ago = (days: number) => new Date(now.getTime() - days * DAY_MS);
   const ahead = (days: number) => new Date(now.getTime() + days * DAY_MS);
 
-  const seedSession = (expiresAt: Date) => prisma.session.create({ data: { userId, expiresAt } });
+  const seedSession = (expiresAt: Date, revokedAt: Date | null = null) =>
+    prisma.session.create({ data: { userId, expiresAt, revokedAt } });
 
   const seedToken = (sessionId: string, rotatedAt: Date | null) =>
     prisma.refreshToken.create({
@@ -106,8 +109,8 @@ describe('Auth / Data cleanup (issue #70)', () => {
     expect(kept.tokens.has(oldToken.id)).toBe(false);
   });
 
-  it('deletes tokens rotated before the cutoff and keeps recent and never-rotated ones', async () => {
-    const live = await seedSession(ahead(7));
+  it('deletes tokens rotated before the cutoff on a revoked session and keeps recent and never-rotated ones', async () => {
+    const live = await seedSession(ahead(7), ago(1));
     const oldRotated = await seedToken(live.id, ago(31));
     const recentRotated = await seedToken(live.id, ago(2));
     const current = await seedToken(live.id, null);
@@ -118,6 +121,68 @@ describe('Auth / Data cleanup (issue #70)', () => {
     expect((await existingIds()).tokens).toEqual(new Set([recentRotated.id, current.id]));
     expect((await existingIds()).tokens.has(oldRotated.id)).toBe(false);
     expect((await existingIds()).sessions.has(live.id)).toBe(true);
+  });
+
+  it('keeps old rotated tokens of a still-live session so reuse is still detected', async () => {
+    // A session created under an older, longer TTL: it expires long after `now`, yet its
+    // token was rotated before the cutoff. Deleting that token would turn a replay into a
+    // plain unknown-token 401 without revoking the session.
+    const live = await seedSession(new Date('2099-01-01T00:00:00.000Z'));
+    const raw = generateRefreshToken();
+    const rotated = await prisma.refreshToken.create({
+      data: { sessionId: live.id, tokenHash: hashRefreshToken(raw), rotatedAt: ago(400) },
+    });
+
+    const result = await service.run(now);
+
+    expect(result.refreshTokens).toBe(0);
+    expect((await existingIds()).tokens.has(rotated.id)).toBe(true);
+    await expect(app.get(AuthService).refresh({ refreshToken: raw })).rejects.toThrow();
+    const after = await prisma.session.findUniqueOrThrow({ where: { id: live.id } });
+    expect(after.revokedAt).not.toBeNull();
+  });
+
+  it('still deletes old rotated tokens of revoked or expired sessions', async () => {
+    const revoked = await seedSession(ahead(30), ago(1));
+    const revokedToken = await seedToken(revoked.id, ago(31));
+    const expired = await seedSession(ago(5));
+    const expiredToken = await seedToken(expired.id, ago(31));
+    const live = await seedSession(ahead(30));
+    const liveToken = await seedToken(live.id, ago(31));
+
+    const result = await service.run(now);
+
+    expect(result.refreshTokens).toBe(2);
+    const { tokens } = await existingIds();
+    expect(tokens.has(revokedToken.id) || tokens.has(expiredToken.id)).toBe(false);
+    expect(tokens.has(liveToken.id)).toBe(true);
+  });
+
+  it('deletes the child tokens of expired sessions in batches before the sessions', async () => {
+    const small = new AuthDataCleanupService(
+      prisma,
+      authTestConfig({ authDataRetentionSeconds: 30 * 86400, authCleanupBatchSize: 2 }),
+    );
+    const old = await seedSession(ago(40));
+    for (let i = 0; i < 5; i++) {
+      await seedToken(old.id, i % 2 === 0 ? null : ago(1));
+    }
+    const live = await seedSession(ahead(7));
+    const liveToken = await seedToken(live.id, null);
+    const spy = vi.spyOn(prisma, '$executeRaw');
+
+    const result = await small.run(now);
+
+    // 5 tokens at batch size 2 take 3 statements (2+2+1) instead of one cascade; the
+    // session is then removed by a single statement with nothing left to cascade.
+    // Total refresh-token statements: 3 (child pass) + 1 (rotated pass, nothing left).
+    // Total: those 4 + 1 (sessions) + 1 (reset tokens).
+    expect(spy.mock.calls.length).toBe(6);
+    spy.mockRestore();
+    expect(result).toEqual({ sessions: 1, refreshTokens: 5, passwordResetTokens: 0 });
+    const kept = await existingIds();
+    expect(kept.sessions).toEqual(new Set([live.id]));
+    expect(kept.tokens).toEqual(new Set([liveToken.id]));
   });
 
   it('deletes reset tokens used or expired before the cutoff and keeps the rest', async () => {
@@ -140,7 +205,7 @@ describe('Auth / Data cleanup (issue #70)', () => {
       prisma,
       authTestConfig({ authDataRetentionSeconds: 30 * 86400, authCleanupBatchSize: 2 }),
     );
-    const live = await seedSession(ahead(7));
+    const live = await seedSession(ahead(7), ago(1));
     for (let i = 0; i < 5; i++) {
       await seedToken(live.id, ago(40));
       await seedSession(ago(40));
