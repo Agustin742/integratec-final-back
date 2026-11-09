@@ -6,6 +6,7 @@ import type { ApiConfig } from './config/api-config';
 import { ApiConfigModule } from './config/config.module';
 import { HealthController } from './health.controller';
 import { PrismaModule } from './prisma/prisma.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   controllers: [HealthController],
@@ -19,6 +20,7 @@ export class AppModule {
         PrismaModule,
         AuthModule,
         AccessModule,
+        UsersModule,
         ClassroomsModule,
       ],
     };

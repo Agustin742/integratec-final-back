@@ -200,6 +200,10 @@ The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate,
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 
+## Own profile and base avatar
+
+Authenticated users can read `GET /users/me`, change their display name with `PATCH /users/me/profile`, and replace their complete base appearance with `PATCH /users/me/avatar`. Body, hair and ordinary base tops are free; accessories/shop equip and realtime broadcasts are out of scope. See the [profile/avatar integration guide](./docs/profile-avatar.md) for supported IDs, defaults, examples and error semantics. The contract is included in the committed [OpenAPI document](./apps/api/openapi.json).
+
 ## Platform ports
 
 Shared infrastructure that stories consume through a port (an interface plus an injection token), never through a provider. Code lives in `apps/api/src/platform`. None of the modules is imported in `AppModule`: the first feature module that needs one imports it.
