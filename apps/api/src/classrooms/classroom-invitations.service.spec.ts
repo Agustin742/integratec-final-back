@@ -12,6 +12,7 @@ import {
   InvitationRole,
   InvitationState,
   MembershipState,
+  Prisma,
 } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
@@ -27,6 +28,7 @@ describe('ClassroomInvitationsService', () => {
     $transaction: ReturnType<typeof vi.fn>;
     invitation: Record<string, ReturnType<typeof vi.fn>>;
     classroomMembership: Record<string, ReturnType<typeof vi.fn>>;
+    schoolMember: Record<string, ReturnType<typeof vi.fn>>;
     desk: Record<string, ReturnType<typeof vi.fn>>;
     joinCodeUsage: Record<string, ReturnType<typeof vi.fn>>;
   };
@@ -85,18 +87,24 @@ describe('ClassroomInvitationsService', () => {
         findMany: vi.fn(),
         count: vi.fn(),
         update: vi.fn(),
-        updateMany: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       classroomMembership: {
         findUnique: vi.fn(),
         findFirst: vi.fn(),
         create: vi.fn(),
+        update: vi.fn().mockImplementation(async ({ data }) => ({ id: randomUUID(), ...data })),
+      },
+      schoolMember: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        upsert: vi.fn().mockResolvedValue({ id: randomUUID() }),
       },
       desk: {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       joinCodeUsage: {
         create: vi.fn(),
@@ -182,6 +190,64 @@ describe('ClassroomInvitationsService', () => {
       expect(res.targetEmail).toBe('newstudent@example.edu.ar');
     });
 
+    it('rejects teacher invitation when requester is regular teacher (CRIT-03)', async () => {
+      mockAccessService.verifyClassroomAccess.mockResolvedValueOnce({
+        classroom: {
+          id: CLASSROOM_ID,
+          schoolId: SCHOOL_ID,
+          independentTeacherId: null,
+          name: 'Ciencias',
+          adultMode: false,
+        },
+        myRole: 'TEACHER',
+        capabilities: ['invite_members'],
+      });
+
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'colleague@example.edu.ar',
+          role: InvitationRole.TEACHER,
+        }),
+      ).rejects.toThrow(
+        new ForbiddenException('Only school owners and administrators may invite teachers'),
+      );
+    });
+
+    it('allows teacher invitation when requester is school OWNER or ADMIN (CRIT-03)', async () => {
+      mockAccessService.verifyClassroomAccess.mockResolvedValueOnce({
+        classroom: {
+          id: CLASSROOM_ID,
+          schoolId: SCHOOL_ID,
+          independentTeacherId: null,
+          name: 'Ciencias',
+          adultMode: false,
+        },
+        myRole: 'OWNER',
+        capabilities: ['manage_school', 'invite_members'],
+      });
+
+      const invId = randomUUID();
+      mockPrisma.invitation.create.mockResolvedValueOnce({
+        id: invId,
+        kind: InvitationKind.EMAIL,
+        targetEmail: 'colleague@example.edu.ar',
+        role: InvitationRole.TEACHER,
+        maxUses: 1,
+        useCount: 0,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(),
+        createdAt: new Date(),
+      });
+
+      const res = await service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+        email: 'colleague@example.edu.ar',
+        role: InvitationRole.TEACHER,
+      });
+
+      expect(res.id).toBe(invId);
+      expect(res.role).toBe(InvitationRole.TEACHER);
+    });
+
     it('rejects unauthenticated callers with 401', async () => {
       await expect(
         service.createEmailInvitation('invalid-uuid', CLASSROOM_ID, {
@@ -251,6 +317,20 @@ describe('ClassroomInvitationsService', () => {
 
       expect(res.id).toBe(invitationId);
       expect(res.state).toBe(InvitationState.REVOKED);
+    });
+
+    it('throws BadRequestException when invitation is not PENDING (POL-02)', async () => {
+      const invitationId = randomUUID();
+      mockPrisma.invitation.findFirst.mockResolvedValue({
+        id: invitationId,
+        classroomId: CLASSROOM_ID,
+        kind: InvitationKind.EMAIL,
+        state: InvitationState.USED,
+      });
+
+      await expect(
+        service.revokeInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, invitationId),
+      ).rejects.toThrow(new BadRequestException('Only pending invitations can be revoked'));
     });
 
     it('throws 404 when invitation is not found', async () => {
@@ -343,7 +423,13 @@ describe('ClassroomInvitationsService', () => {
         expiresAt: new Date(Date.now() + 100000),
         maxUses: 5,
         useCount: 2,
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
       });
 
       mockPrisma.classroomMembership.findUnique.mockResolvedValue({
@@ -361,7 +447,7 @@ describe('ClassroomInvitationsService', () => {
       expect(res.alreadyMember).toBe(true);
       expect(res.membershipId).toBe(membershipId);
       expect(res.desk?.deskIndex).toBe(3);
-      expect(mockPrisma.invitation.update).not.toHaveBeenCalled();
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
       expect(mockPrisma.joinCodeUsage.create).not.toHaveBeenCalled();
     });
 
@@ -379,17 +465,16 @@ describe('ClassroomInvitationsService', () => {
         expiresAt: new Date(Date.now() + 100000),
         maxUses: 10,
         useCount: 0,
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
       });
 
       mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
-      mockPrisma.invitation.findUniqueOrThrow.mockResolvedValue({
-        id: invitationId,
-        state: InvitationState.PENDING,
-        expiresAt: new Date(Date.now() + 100000),
-        maxUses: 10,
-        useCount: 0,
-      });
 
       mockPrisma.classroomMembership.create.mockResolvedValue({
         id: membershipId,
@@ -405,10 +490,7 @@ describe('ClassroomInvitationsService', () => {
         membershipId: null,
       });
 
-      mockPrisma.desk.update.mockResolvedValue({
-        id: deskId,
-        deskIndex: 1,
-      });
+      mockPrisma.desk.updateMany.mockResolvedValueOnce({ count: 1 });
 
       const res = await service.joinWithCode(STUDENT_ID, { code: rawCode });
 
@@ -417,12 +499,61 @@ describe('ClassroomInvitationsService', () => {
       expect(mockPrisma.joinCodeUsage.create).toHaveBeenCalledWith({
         data: { invitationId, userId: STUDENT_ID },
       });
-      expect(mockPrisma.invitation.update).toHaveBeenCalledWith(
+      expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: invitationId },
+          where: expect.objectContaining({ id: invitationId }),
           data: expect.objectContaining({ useCount: { increment: 1 } }),
         }),
       );
+    });
+
+    it('retries desk assignment when first available desk was claimed concurrently (CRIT-01)', async () => {
+      const rawCode = 'ABC1234';
+      const invitationId = randomUUID();
+      const membershipId = randomUUID();
+      const deskId1 = randomUUID();
+      const deskId2 = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
+      });
+
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
+      mockPrisma.classroomMembership.create.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+      });
+
+      // Attempt 1: desk 1 found, but claimed.count === 0 (lost race)
+      // Attempt 2: desk 2 found, claimed.count === 1 (won race)
+      mockPrisma.desk.findFirst
+        .mockResolvedValueOnce({ id: deskId1, deskIndex: 1 })
+        .mockResolvedValueOnce({ id: deskId2, deskIndex: 2 });
+
+      mockPrisma.desk.updateMany
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 1 });
+
+      const res = await service.joinWithCode(STUDENT_ID, { code: rawCode });
+
+      expect(res.alreadyMember).toBe(false);
+      expect(res.desk?.id).toBe(deskId2);
+      expect(res.desk?.deskIndex).toBe(2);
     });
 
     it('dynamically provisions desk 13 when all 12 initial desks are occupied (desk auto-expansion)', async () => {
@@ -439,17 +570,16 @@ describe('ClassroomInvitationsService', () => {
         expiresAt: new Date(Date.now() + 100000),
         maxUses: null,
         useCount: 12,
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
       });
 
       mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
-      mockPrisma.invitation.findUniqueOrThrow.mockResolvedValue({
-        id: invitationId,
-        state: InvitationState.PENDING,
-        expiresAt: new Date(Date.now() + 100000),
-        maxUses: null,
-        useCount: 12,
-      });
 
       mockPrisma.classroomMembership.create.mockResolvedValue({
         id: membershipId,
@@ -482,6 +612,150 @@ describe('ClassroomInvitationsService', () => {
       });
     });
 
+    it('reactivates inactive or soft-deleted membership without creating duplicate (CRIT-05)', async () => {
+      const rawCode = 'ABC1234';
+      const invitationId = randomUUID();
+      const membershipId = randomUUID();
+      const deskId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
+      });
+
+      // Existing inactive membership with deletedAt timestamp
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.INACTIVE,
+        deletedAt: new Date(),
+        desk: { id: deskId, deskIndex: 5 },
+      });
+
+      mockPrisma.classroomMembership.update.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+      });
+
+      const res = await service.joinWithCode(STUDENT_ID, { code: rawCode });
+
+      expect(res.alreadyMember).toBe(false);
+      expect(res.membershipId).toBe(membershipId);
+      expect(res.desk?.deskIndex).toBe(5);
+      expect(mockPrisma.classroomMembership.update).toHaveBeenCalledWith({
+        where: { id: membershipId },
+        data: {
+          state: MembershipState.ACTIVE,
+          deletedAt: null,
+          role: ClassroomRole.STUDENT,
+        },
+      });
+      expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects classroom staff from joining as students (WARN-05)', async () => {
+      const rawCode = 'ABC1234';
+      const staffUserId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: staffUserId, // Caller is the independent teacher
+          schoolId: null,
+          school: null,
+        },
+      });
+
+      await expect(service.joinWithCode(staffUserId, { code: rawCode })).rejects.toThrow(
+        new ConflictException('Classroom staff cannot join as a student'),
+      );
+    });
+
+    it('rejects soft-deleted school with uniform 404 message (CRIT-04 / WARN-04)', async () => {
+      const rawCode = 'ABC1234';
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: { deletedAt: new Date() }, // School is soft-deleted
+        },
+      });
+
+      await expect(service.joinWithCode(STUDENT_ID, { code: rawCode })).rejects.toThrow(
+        new NotFoundException('Invalid or expired join code'),
+      );
+    });
+
+    it('catches P2004 database constraint error and throws ConflictException (CRIT-02)', async () => {
+      const rawCode = 'ABC1234';
+      const invitationId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
+      });
+
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
+
+      const p2004Error = new Prisma.PrismaClientKnownRequestError('Constraint failed', {
+        code: 'P2004',
+        clientVersion: '5.0.0',
+      });
+      mockPrisma.invitation.updateMany.mockRejectedValueOnce(p2004Error);
+
+      await expect(service.joinWithCode(STUDENT_ID, { code: rawCode })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+    });
+
     it('throws ConflictException when join code has reached maximum uses', async () => {
       const rawCode = 'ABC1234';
       mockPrisma.invitation.findUnique.mockResolvedValue({
@@ -492,7 +766,13 @@ describe('ClassroomInvitationsService', () => {
         expiresAt: new Date(Date.now() + 100000),
         maxUses: 5,
         useCount: 5,
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
       });
 
       await expect(service.joinWithCode(STUDENT_ID, { code: rawCode })).rejects.toBeInstanceOf(
@@ -530,15 +810,10 @@ describe('ClassroomInvitationsService', () => {
         role: InvitationRole.STUDENT,
         state: InvitationState.PENDING,
         expiresAt: new Date(Date.now() + 100000),
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
       });
 
       mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
-      mockPrisma.invitation.findUniqueOrThrow.mockResolvedValue({
-        id: invitationId,
-        state: InvitationState.PENDING,
-        expiresAt: new Date(Date.now() + 100000),
-      });
 
       mockPrisma.classroomMembership.create.mockResolvedValue({
         id: membershipId,
@@ -553,19 +828,104 @@ describe('ClassroomInvitationsService', () => {
         membershipId: null,
       });
 
-      mockPrisma.desk.update.mockResolvedValue({
-        id: deskId,
-        deskIndex: 1,
-      });
+      mockPrisma.desk.updateMany.mockResolvedValueOnce({ count: 1 });
 
       const res = await service.acceptEmailInvitation(STUDENT_ID, { token });
 
       expect(res.alreadyMember).toBe(false);
       expect(res.desk?.deskIndex).toBe(1);
-      expect(mockPrisma.invitation.update).toHaveBeenCalledWith({
-        where: { id: invitationId },
-        data: { state: InvitationState.USED, useCount: 1 },
+      expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: invitationId }),
+          data: { state: InvitationState.USED, useCount: 1 },
+        }),
+      );
+    });
+
+    it('upserts SchoolMember authority when accepting teacher invitation for a school classroom', async () => {
+      const token = 'token-teacher-123456';
+      const invitationId = randomUUID();
+      const membershipId = randomUUID();
+      const teacherUserId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.EMAIL,
+        classroomId: CLASSROOM_ID,
+        schoolId: SCHOOL_ID,
+        role: InvitationRole.TEACHER,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
       });
+
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
+      mockPrisma.classroomMembership.create.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: teacherUserId,
+        role: ClassroomRole.TEACHER,
+      });
+
+      const res = await service.acceptEmailInvitation(teacherUserId, { token });
+
+      expect(res.alreadyMember).toBe(false);
+      expect(res.role).toBe(ClassroomRole.TEACHER);
+      expect(res.desk).toBeNull();
+      expect(mockPrisma.schoolMember.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            schoolId_userId: {
+              schoolId: SCHOOL_ID,
+              userId: teacherUserId,
+            },
+          },
+        }),
+      );
+    });
+
+    it('reactivates inactive membership when accepting invitation (CRIT-05)', async () => {
+      const token = 'token-student-reactivate';
+      const invitationId = randomUUID();
+      const membershipId = randomUUID();
+      const deskId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.EMAIL,
+        classroomId: CLASSROOM_ID,
+        role: InvitationRole.STUDENT,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
+      });
+
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.INACTIVE,
+        deletedAt: new Date(),
+        desk: { id: deskId, deskIndex: 2 },
+      });
+
+      mockPrisma.classroomMembership.update.mockResolvedValue({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+      });
+
+      const res = await service.acceptEmailInvitation(STUDENT_ID, { token });
+
+      expect(res.alreadyMember).toBe(false);
+      expect(res.membershipId).toBe(membershipId);
+      expect(res.desk?.deskIndex).toBe(2);
+      expect(mockPrisma.classroomMembership.update).toHaveBeenCalled();
+      expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
     });
 
     it('rejects expired invitation with BadRequestException', async () => {
@@ -576,11 +936,31 @@ describe('ClassroomInvitationsService', () => {
         classroomId: CLASSROOM_ID,
         state: InvitationState.PENDING,
         expiresAt: new Date(Date.now() - 1000), // expired
-        classroom: { id: CLASSROOM_ID, deletedAt: null },
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
       });
 
       await expect(service.acceptEmailInvitation(STUDENT_ID, { token })).rejects.toBeInstanceOf(
         BadRequestException,
+      );
+    });
+
+    it('rejects soft-deleted school with uniform 404 message (CRIT-04 / WARN-04)', async () => {
+      const token = 'token-1234567890123456';
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: InvitationKind.EMAIL,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          school: { deletedAt: new Date() },
+        },
+      });
+
+      await expect(service.acceptEmailInvitation(STUDENT_ID, { token })).rejects.toThrow(
+        new NotFoundException('Invalid or expired invitation'),
       );
     });
   });

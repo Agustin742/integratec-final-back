@@ -23,10 +23,12 @@ describe('join-code.util', () => {
     expect(code8).toHaveLength(8);
   });
 
-  it('normalizes join codes by trimming and converting to uppercase', () => {
+  it('normalizes join codes by trimming, uppercasing, and mapping Crockford Base32 aliases', () => {
     expect(normalizeJoinCode('  k7p9x2m  ')).toBe('K7P9X2M');
     expect(normalizeJoinCode('abc1234')).toBe('ABC1234');
     expect(normalizeJoinCode('\tXY789Z\n')).toBe('XY789Z');
+    expect(normalizeJoinCode('oOlLiI')).toBe('001111');
+    expect(normalizeJoinCode('abco-il')).toBe('ABC0-11');
   });
 
   it('computes deterministic SHA-256 hash', () => {

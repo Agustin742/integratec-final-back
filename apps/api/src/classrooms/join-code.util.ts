@@ -19,10 +19,13 @@ export function generateJoinCode(length: number = DEFAULT_JOIN_CODE_LENGTH): str
 }
 
 /**
- * Normalizes user-supplied join codes (trims whitespace and converts to uppercase).
+ * Normalizes user-supplied join codes:
+ * - Trims whitespace
+ * - Converts to uppercase
+ * - Maps ambiguous Crockford Base32 characters: 'O' -> '0', 'I' and 'L' -> '1'
  */
 export function normalizeJoinCode(code: string): string {
-  return code.trim().toUpperCase();
+  return code.trim().toUpperCase().replace(/O/g, '0').replace(/[IL]/g, '1');
 }
 
 /**

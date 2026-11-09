@@ -1,6 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
-import { InvitationKind, InvitationState, PrismaClient, RegistrationPath } from '@prisma/client';
+import {
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  InvitationKind,
+  InvitationRole,
+  InvitationState,
+  PrismaClient,
+  RegistrationPath,
+} from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
@@ -60,13 +72,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     prisma = new PrismaClient({
       datasources: { db: { url: dbUrl } },
     });
-
-    try {
-      await prisma.$connect();
-    } catch {
-      // If database is not reachable, skip tests safely
-      return;
-    }
+    await prisma.$connect();
 
     accessService = new AccessVerificationService(prisma as unknown as PrismaService);
     outboxWriter = new OutboxWriter();
@@ -165,8 +171,6 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
   };
 
   it('creates an email invitation and persists outbox event atomically', async () => {
-    if (!testClassroom) return;
-
     const email = `unknown.student.${Date.now()}@example.edu.ar`;
     const inv = await service.createEmailInvitation(testTeacher.id, testClassroom.id, {
       email,
@@ -187,9 +191,19 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     expect(event).toBeDefined();
   });
 
-  it('generates a join code and marks previous active code as REVOKED', async () => {
-    if (!testClassroom) return;
+  it('rejects email invitation for teacher when invited by regular teacher (CRIT-03)', async () => {
+    const email = `colleague.${Date.now()}@example.edu.ar`;
+    await expect(
+      service.createEmailInvitation(testTeacher.id, testClassroom.id, {
+        email,
+        role: InvitationRole.TEACHER,
+      }),
+    ).rejects.toThrow(
+      new ForbiddenException('Only school owners and administrators may invite teachers'),
+    );
+  });
 
+  it('generates a join code and marks previous active code as REVOKED', async () => {
     const code1 = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
       maxUses: 10,
     });
@@ -211,8 +225,6 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
   });
 
   it('enforces idempotency when an enrolled student rejoins (does not consume uses or reassign desk)', async () => {
-    if (!testClassroom) return;
-
     const student = await createStudent('idempotent');
     const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
       maxUses: 5,
@@ -237,9 +249,44 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     expect(dbCode.useCount).toBe(1);
   });
 
-  it('dynamically auto-expands desks when > 12 students join', async () => {
-    if (!testClassroom) return;
+  it('reactivates inactive or soft-deleted membership without duplicate or crash (CRIT-05)', async () => {
+    const student = await createStudent('reactivate');
+    const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
+      maxUses: 5,
+    });
 
+    // Initial join
+    const res1 = await service.joinWithCode(student.id, { code: joinCode.code });
+    expect(res1.alreadyMember).toBe(false);
+
+    // Soft-delete the membership
+    await prisma.classroomMembership.update({
+      where: { id: res1.membershipId },
+      data: { deletedAt: new Date() },
+    });
+
+    // Re-join with code: must reactivate and NOT crash with P2002
+    const res2 = await service.joinWithCode(student.id, { code: joinCode.code });
+    expect(res2.alreadyMember).toBe(false);
+    expect(res2.membershipId).toBe(res1.membershipId);
+
+    const activeInDb = await prisma.classroomMembership.findUniqueOrThrow({
+      where: { id: res1.membershipId },
+    });
+    expect(activeInDb.deletedAt).toBeNull();
+  });
+
+  it('rejects classroom staff from joining with code (WARN-05)', async () => {
+    const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
+      maxUses: 5,
+    });
+
+    await expect(service.joinWithCode(testTeacher.id, { code: joinCode.code })).rejects.toThrow(
+      new ConflictException('Classroom staff cannot join as a student'),
+    );
+  });
+
+  it('dynamically auto-expands desks when > 12 students join', async () => {
     // Create a dedicated classroom with 12 desks
     const cr = await prisma.classroom.create({
       data: {
@@ -280,9 +327,44 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     expect(totalDesks).toBe(14);
   });
 
-  it('MANDATORY CONCURRENCY: handles maxUses race condition with Promise.all (exactly 1 succeeds, other gets 409 Conflict)', async () => {
-    if (!testClassroom) return;
+  it('MANDATORY CONCURRENCY: handles concurrent desk allocation cleanly with Promise.all without clobbering (CRIT-01)', async () => {
+    // Dedicated classroom with only 1 desk available
+    const cr = await prisma.classroom.create({
+      data: {
+        name: `Aula Concurrency Desk ${Date.now()}`,
+        independentTeacherId: testTeacher.id,
+      },
+    });
+    createdClassroomIds.push(cr.id);
 
+    await prisma.desk.create({
+      data: {
+        classroomId: cr.id,
+        deskIndex: 1,
+      },
+    });
+
+    const joinCode = await service.generateJoinCode(testTeacher.id, cr.id, { maxUses: 10 });
+    const student1 = await createStudent('desk-race-1');
+    const student2 = await createStudent('desk-race-2');
+
+    // Both join concurrently when only 1 desk is unassigned
+    const [res1, res2] = await Promise.all([
+      service.joinWithCode(student1.id, { code: joinCode.code }),
+      service.joinWithCode(student2.id, { code: joinCode.code }),
+    ]);
+
+    expect(res1.desk).toBeDefined();
+    expect(res2.desk).toBeDefined();
+    // One got desk 1, the other auto-expanded to desk 2 - NO desk clobbering!
+    expect(res1.desk!.id).not.toBe(res2.desk!.id);
+    expect(res1.desk!.deskIndex).not.toBe(res2.desk!.deskIndex);
+
+    const totalDesks = await prisma.desk.count({ where: { classroomId: cr.id } });
+    expect(totalDesks).toBe(2);
+  });
+
+  it('MANDATORY CONCURRENCY: handles maxUses race condition with Promise.all (exactly 1 succeeds, other gets 409 Conflict)', async () => {
     // Generate join code with maxUses = 1
     const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
       maxUses: 1,
@@ -316,8 +398,6 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
   });
 
   it('MANDATORY CONCURRENCY: handles duplicate user join race condition cleanly with Promise.all', async () => {
-    if (!testClassroom) return;
-
     const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {
       maxUses: 10,
     });
@@ -341,8 +421,6 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
   });
 
   it('enforces rate limiting on invalid join codes (returns 429 TOO_MANY_REQUESTS)', async () => {
-    if (!testClassroom) return;
-
     const studentId = randomUUID();
 
     for (let i = 0; i < 5; i++) {

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -14,6 +15,7 @@ import {
   InvitationState,
   MembershipState,
   Prisma,
+  SchoolRole,
 } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
@@ -64,11 +66,16 @@ export class ClassroomInvitationsService {
       requiredRole: 'STAFF',
     });
 
+    const role = dto.role ?? InvitationRole.STUDENT;
+
+    if (role === InvitationRole.TEACHER && access.myRole !== 'OWNER' && access.myRole !== 'ADMIN') {
+      throw new ForbiddenException('Only school owners and administrators may invite teachers');
+    }
+
     const token = randomBytes(32).toString('hex');
     const secretHash = hashSecret(token);
     const expiresAt = new Date(Date.now() + this.config.invitationTtlSeconds * 1000);
     const targetEmail = dto.email.trim().toLowerCase();
-    const role = dto.role ?? InvitationRole.STUDENT;
 
     const invitation = await this.prisma.$transaction(async (tx) => {
       const created = await tx.invitation.create({
@@ -171,6 +178,10 @@ export class ClassroomInvitationsService {
 
     if (!invitation) {
       throw new NotFoundException('Invitation not found');
+    }
+
+    if (invitation.state !== InvitationState.PENDING) {
+      throw new BadRequestException('Only pending invitations can be revoked');
     }
 
     const updated = await this.prisma.invitation.update({
@@ -310,19 +321,26 @@ export class ClassroomInvitationsService {
       where: { secretHash },
       include: {
         classroom: {
-          select: { id: true, deletedAt: true },
+          select: {
+            id: true,
+            deletedAt: true,
+            independentTeacherId: true,
+            schoolId: true,
+            school: { select: { deletedAt: true } },
+          },
         },
       },
     });
 
-    if (!invitation || invitation.kind !== InvitationKind.JOIN_CODE) {
+    if (
+      !invitation ||
+      invitation.kind !== InvitationKind.JOIN_CODE ||
+      !invitation.classroom ||
+      invitation.classroom.deletedAt ||
+      invitation.classroom.school?.deletedAt
+    ) {
       this.rateLimiter.recordFailure(actorUserId);
       throw new NotFoundException('Invalid or expired join code');
-    }
-
-    if (invitation.classroom?.deletedAt) {
-      this.rateLimiter.recordFailure(actorUserId);
-      throw new NotFoundException('Classroom not found');
     }
 
     if (invitation.state !== InvitationState.PENDING) {
@@ -346,7 +364,27 @@ export class ClassroomInvitationsService {
 
     const classroomId = invitation.classroomId!;
 
-    // 2. Check idempotency: already enrolled student
+    // Prevent classroom staff from enrolling as students
+    if (invitation.classroom.independentTeacherId === actorUserId) {
+      throw new ConflictException('Classroom staff cannot join as a student');
+    }
+
+    if (invitation.classroom.schoolId) {
+      const staffMember = await this.prisma.schoolMember.findFirst({
+        where: {
+          schoolId: invitation.classroom.schoolId,
+          userId: actorUserId,
+          state: MembershipState.ACTIVE,
+          role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
+        },
+        select: { id: true },
+      });
+      if (staffMember) {
+        throw new ConflictException('Classroom staff cannot join as a student');
+      }
+    }
+
+    // 2. Check existing membership (idempotency, staff check, or reactivation)
     const existingMembership = await this.prisma.classroomMembership.findUnique({
       where: {
         classroomId_userId: {
@@ -364,6 +402,9 @@ export class ClassroomInvitationsService {
       existingMembership.state === MembershipState.ACTIVE &&
       !existingMembership.deletedAt
     ) {
+      if (existingMembership.role === ClassroomRole.TEACHER) {
+        throw new ConflictException('Classroom staff cannot join as a student');
+      }
       this.rateLimiter.recordSuccess(actorUserId);
       return {
         classroomId,
@@ -374,31 +415,44 @@ export class ClassroomInvitationsService {
       };
     }
 
-    // 3. Atomically consume code, enroll student, and allocate/expand desk
+    // 3. Atomically consume code, enroll/reactivate student, and allocate/expand desk
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        // Atomic max-uses validation under transaction lock
-        const current = await tx.invitation.findUniqueOrThrow({
-          where: { id: invitation.id },
+        // Atomic conditional update on useCount to prevent concurrent overconsumption
+        const whereClause: Prisma.InvitationWhereInput = {
+          id: invitation.id,
+          state: InvitationState.PENDING,
+          expiresAt: { gt: new Date() },
+        };
+        if (invitation.maxUses !== null) {
+          whereClause.useCount = { lt: invitation.maxUses };
+        }
+
+        const updated = await tx.invitation.updateMany({
+          where: whereClause,
+          data: {
+            useCount: { increment: 1 },
+          },
         });
 
-        if (current.state !== InvitationState.PENDING || current.expiresAt <= new Date()) {
+        if (updated.count === 0) {
+          const latest = await tx.invitation.findUnique({ where: { id: invitation.id } });
+          if (latest && latest.maxUses !== null && latest.useCount >= latest.maxUses) {
+            throw new ConflictException('Join code has reached maximum uses');
+          }
           throw new BadRequestException('Join code is no longer active');
         }
 
-        if (current.maxUses !== null && current.useCount >= current.maxUses) {
-          throw new ConflictException('Join code has reached maximum uses');
+        if (invitation.maxUses !== null) {
+          await tx.invitation.updateMany({
+            where: {
+              id: invitation.id,
+              useCount: { gte: invitation.maxUses },
+              state: InvitationState.PENDING,
+            },
+            data: { state: InvitationState.USED },
+          });
         }
-
-        const isExhausted = current.maxUses !== null && current.useCount + 1 >= current.maxUses;
-
-        await tx.invitation.update({
-          where: { id: invitation.id },
-          data: {
-            useCount: { increment: 1 },
-            state: isExhausted ? InvitationState.USED : InvitationState.PENDING,
-          },
-        });
 
         await tx.joinCodeUsage.create({
           data: {
@@ -407,21 +461,41 @@ export class ClassroomInvitationsService {
           },
         });
 
-        const membership = await tx.classroomMembership.create({
-          data: {
-            classroomId,
-            userId: actorUserId,
-            role: ClassroomRole.STUDENT,
-            state: MembershipState.ACTIVE,
-          },
-        });
+        let membershipId: string;
+        let desk: { id: string; deskIndex: number } | null = null;
 
-        const desk = await this.assignDesk(tx, classroomId, membership.id);
+        if (existingMembership) {
+          const reactivated = await tx.classroomMembership.update({
+            where: { id: existingMembership.id },
+            data: {
+              state: MembershipState.ACTIVE,
+              deletedAt: null,
+              role: ClassroomRole.STUDENT,
+            },
+          });
+          membershipId = reactivated.id;
+          if (existingMembership.desk) {
+            desk = existingMembership.desk;
+          } else {
+            desk = await this.assignDesk(tx, classroomId, membershipId);
+          }
+        } else {
+          const created = await tx.classroomMembership.create({
+            data: {
+              classroomId,
+              userId: actorUserId,
+              role: ClassroomRole.STUDENT,
+              state: MembershipState.ACTIVE,
+            },
+          });
+          membershipId = created.id;
+          desk = await this.assignDesk(tx, classroomId, membershipId);
+        }
 
         return {
           classroomId,
-          membershipId: membership.id,
-          role: membership.role,
+          membershipId,
+          role: ClassroomRole.STUDENT,
           desk,
           alreadyMember: false,
         };
@@ -431,8 +505,8 @@ export class ClassroomInvitationsService {
       return result;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          // Unique constraint violation (duplicate user join or unique desk collision)
+        if (error.code === 'P2002' || error.code === 'P2004') {
+          // Unique constraint violation or database constraint conflict
           throw new ConflictException('Concurrent join operation conflict, please retry');
         }
       }
@@ -458,17 +532,23 @@ export class ClassroomInvitationsService {
       where: { secretHash },
       include: {
         classroom: {
-          select: { id: true, deletedAt: true },
+          select: {
+            id: true,
+            deletedAt: true,
+            school: { select: { deletedAt: true } },
+          },
         },
       },
     });
 
-    if (!invitation || invitation.kind !== InvitationKind.EMAIL) {
+    if (
+      !invitation ||
+      invitation.kind !== InvitationKind.EMAIL ||
+      !invitation.classroom ||
+      invitation.classroom.deletedAt ||
+      invitation.classroom.school?.deletedAt
+    ) {
       throw new NotFoundException('Invalid or expired invitation');
-    }
-
-    if (invitation.classroom?.deletedAt) {
-      throw new NotFoundException('Classroom not found');
     }
 
     if (invitation.state !== InvitationState.PENDING) {
@@ -514,45 +594,92 @@ export class ClassroomInvitationsService {
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        const current = await tx.invitation.findUniqueOrThrow({
-          where: { id: invitation.id },
-        });
-
-        if (current.state !== InvitationState.PENDING || current.expiresAt <= new Date()) {
-          throw new BadRequestException('Invitation is no longer active');
-        }
-
-        await tx.invitation.update({
-          where: { id: invitation.id },
+        const updated = await tx.invitation.updateMany({
+          where: {
+            id: invitation.id,
+            state: InvitationState.PENDING,
+            expiresAt: { gt: new Date() },
+            useCount: 0,
+          },
           data: {
             state: InvitationState.USED,
             useCount: 1,
           },
         });
 
+        if (updated.count === 0) {
+          const latest = await tx.invitation.findUnique({ where: { id: invitation.id } });
+          if (latest && (latest.state === InvitationState.USED || latest.useCount > 0)) {
+            throw new ConflictException('Invitation has already been used');
+          }
+          throw new BadRequestException('Invitation is no longer active');
+        }
+
         const targetRole =
           invitation.role === InvitationRole.TEACHER
             ? ClassroomRole.TEACHER
             : ClassroomRole.STUDENT;
 
-        const membership = await tx.classroomMembership.create({
-          data: {
-            classroomId,
-            userId: actorUserId,
-            role: targetRole,
-            state: MembershipState.ACTIVE,
-          },
-        });
+        // If invited as a school classroom teacher, guarantee active SchoolMember authority
+        if (targetRole === ClassroomRole.TEACHER && invitation.schoolId) {
+          await tx.schoolMember.upsert({
+            where: {
+              schoolId_userId: {
+                schoolId: invitation.schoolId,
+                userId: actorUserId,
+              },
+            },
+            create: {
+              schoolId: invitation.schoolId,
+              userId: actorUserId,
+              role: SchoolRole.TEACHER,
+              state: MembershipState.ACTIVE,
+            },
+            update: {
+              state: MembershipState.ACTIVE,
+            },
+          });
+        }
 
+        let membershipId: string;
         let desk: { id: string; deskIndex: number } | null = null;
-        if (targetRole === ClassroomRole.STUDENT) {
-          desk = await this.assignDesk(tx, classroomId, membership.id);
+
+        if (existingMembership) {
+          const reactivated = await tx.classroomMembership.update({
+            where: { id: existingMembership.id },
+            data: {
+              state: MembershipState.ACTIVE,
+              deletedAt: null,
+              role: targetRole,
+            },
+          });
+          membershipId = reactivated.id;
+          if (targetRole === ClassroomRole.STUDENT) {
+            if (existingMembership.desk) {
+              desk = existingMembership.desk;
+            } else {
+              desk = await this.assignDesk(tx, classroomId, membershipId);
+            }
+          }
+        } else {
+          const created = await tx.classroomMembership.create({
+            data: {
+              classroomId,
+              userId: actorUserId,
+              role: targetRole,
+              state: MembershipState.ACTIVE,
+            },
+          });
+          membershipId = created.id;
+          if (targetRole === ClassroomRole.STUDENT) {
+            desk = await this.assignDesk(tx, classroomId, membershipId);
+          }
         }
 
         return {
           classroomId,
-          membershipId: membership.id,
-          role: membership.role,
+          membershipId,
+          role: targetRole,
           desk,
           alreadyMember: false,
         };
@@ -561,7 +688,7 @@ export class ClassroomInvitationsService {
       return result;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
+        if (error.code === 'P2002' || error.code === 'P2004') {
           throw new ConflictException('Concurrent invitation acceptance conflict, please retry');
         }
       }
@@ -571,48 +698,71 @@ export class ClassroomInvitationsService {
 
   /**
    * Assigns an available desk (lowest deskIndex with membershipId: null).
-   * Dynamically provisions a new desk (maxDeskIndex + 1) if all desks are occupied.
+   * Uses atomic conditional update (`membershipId: null`) to prevent race condition overwrites.
+   * Dynamically provisions a new desk (maxDeskIndex + 1) if all desks are occupied,
+   * retrying on transient deskIndex collision.
    */
   private async assignDesk(
     tx: Prisma.TransactionClient,
     classroomId: string,
     membershipId: string,
   ): Promise<{ id: string; deskIndex: number }> {
-    const availableDesk = await tx.desk.findFirst({
-      where: {
-        classroomId,
-        membershipId: null,
-      },
-      orderBy: { deskIndex: 'asc' },
-    });
+    const maxAttempts = 5;
 
-    if (availableDesk) {
-      try {
-        return await tx.desk.update({
-          where: { id: availableDesk.id },
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const availableDesk = await tx.desk.findFirst({
+        where: {
+          classroomId,
+          membershipId: null,
+        },
+        orderBy: { deskIndex: 'asc' },
+        select: { id: true, deskIndex: true },
+      });
+
+      if (availableDesk) {
+        const claimed = await tx.desk.updateMany({
+          where: { id: availableDesk.id, membershipId: null },
           data: { membershipId },
+        });
+
+        if (claimed.count === 1) {
+          return { id: availableDesk.id, deskIndex: availableDesk.deskIndex };
+        }
+        // Concurrent transaction claimed this desk, retry loop
+        continue;
+      }
+
+      // No unassigned desk found: auto-expand
+      const maxDesk = await tx.desk.findFirst({
+        where: { classroomId },
+        orderBy: { deskIndex: 'desc' },
+        select: { deskIndex: true },
+      });
+
+      const nextIndex = (maxDesk?.deskIndex ?? 0) + 1;
+      try {
+        const createdDesk = await tx.desk.create({
+          data: {
+            classroomId,
+            membershipId,
+            deskIndex: nextIndex,
+          },
           select: { id: true, deskIndex: true },
         });
-      } catch {
-        // If claimed concurrently, fall through to auto-expansion
+        return createdDesk;
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          (err.code === 'P2002' || err.code === 'P2004')
+        ) {
+          // Concurrent auto-expansion collided on (classroomId, deskIndex), retry loop
+          continue;
+        }
+        throw err;
       }
     }
 
-    const maxDesk = await tx.desk.findFirst({
-      where: { classroomId },
-      orderBy: { deskIndex: 'desc' },
-      select: { deskIndex: true },
-    });
-
-    const nextIndex = (maxDesk?.deskIndex ?? 0) + 1;
-    return tx.desk.create({
-      data: {
-        classroomId,
-        membershipId,
-        deskIndex: nextIndex,
-      },
-      select: { id: true, deskIndex: true },
-    });
+    throw new ConflictException('Unable to allocate a desk due to concurrent joins, please retry');
   }
 
   private toInvitationResponse(row: {
