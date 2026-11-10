@@ -1678,7 +1678,7 @@
           "id": { "type": "string", "description": "Desk UUID" },
           "deskIndex": {
             "type": "number",
-            "description": "1-based index of the assigned desk in the classroom"
+            "description": "1-based index of the assigned desk in the classroom. When every desk is taken, the server creates a new desk (highest index + 1) so each enrolled student has one; classrooms have no capacity limit"
           }
         },
         "required": ["id", "deskIndex"]

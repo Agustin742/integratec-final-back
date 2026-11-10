@@ -565,6 +565,8 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
   });
 
   it('dynamically auto-expands desks when > 12 students join', async () => {
+    // Policy (rules/classrooms-and-roles.md, Desk allocation): there is always one assignable desk
+    // per enrolled student, so the 13th student gets a new desk with index 13 (indexes are 1-based).
     // Create a dedicated classroom with 12 desks
     const cr = await prisma.classroom.create({
       data: {

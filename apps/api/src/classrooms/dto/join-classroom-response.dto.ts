@@ -5,7 +5,10 @@ export class AssignedDeskDto {
   @ApiProperty({ description: 'Desk UUID' })
   id!: string;
 
-  @ApiProperty({ description: '1-based index of the assigned desk in the classroom' })
+  @ApiProperty({
+    description:
+      '1-based index of the assigned desk in the classroom. When every desk is taken, the server creates a new desk (highest index + 1) so each enrolled student has one; classrooms have no capacity limit',
+  })
   deskIndex!: number;
 }
 
