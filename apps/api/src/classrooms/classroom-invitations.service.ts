@@ -444,6 +444,33 @@ export class ClassroomInvitationsService {
         });
 
         if (updated.count === 0) {
+          const concurrentMember = await tx.classroomMembership.findUnique({
+            where: {
+              classroomId_userId: {
+                classroomId,
+                userId: actorUserId,
+              },
+            },
+            include: {
+              desk: { select: { id: true, deskIndex: true } },
+            },
+          });
+
+          if (
+            concurrentMember &&
+            concurrentMember.state === MembershipState.ACTIVE &&
+            !concurrentMember.deletedAt &&
+            concurrentMember.role === ClassroomRole.STUDENT
+          ) {
+            return {
+              classroomId,
+              membershipId: concurrentMember.id,
+              role: concurrentMember.role,
+              desk: concurrentMember.desk,
+              alreadyMember: true,
+            };
+          }
+
           const latest = await tx.invitation.findUnique({ where: { id: invitation.id } });
           if (latest && latest.maxUses !== null && latest.useCount >= latest.maxUses) {
             throw new ConflictException('Join code has reached maximum uses');
@@ -462,17 +489,26 @@ export class ClassroomInvitationsService {
           });
         }
 
-        await tx.joinCodeUsage.create({
-          data: {
-            invitationId: invitation.id,
-            userId: actorUserId,
-          },
-        });
-
         let membershipId: string;
         let desk: { id: string; deskIndex: number } | null = null;
 
         if (existingMembership) {
+          await tx.joinCodeUsage.upsert({
+            where: {
+              invitationId_userId: {
+                invitationId: invitation.id,
+                userId: actorUserId,
+              },
+            },
+            create: {
+              invitationId: invitation.id,
+              userId: actorUserId,
+            },
+            update: {
+              usedAt: new Date(),
+            },
+          });
+
           const reactivated = await tx.classroomMembership.update({
             where: { id: existingMembership.id },
             data: {
@@ -488,6 +524,13 @@ export class ClassroomInvitationsService {
             desk = await this.assignDesk(tx, classroomId, membershipId);
           }
         } else {
+          await tx.joinCodeUsage.create({
+            data: {
+              invitationId: invitation.id,
+              userId: actorUserId,
+            },
+          });
+
           const created = await tx.classroomMembership.create({
             data: {
               classroomId,
@@ -513,6 +556,36 @@ export class ClassroomInvitationsService {
       return result;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          const concurrentMembership = await this.prisma.classroomMembership.findUnique({
+            where: {
+              classroomId_userId: {
+                classroomId,
+                userId: actorUserId,
+              },
+            },
+            include: {
+              desk: { select: { id: true, deskIndex: true } },
+            },
+          });
+
+          if (
+            concurrentMembership &&
+            concurrentMembership.state === MembershipState.ACTIVE &&
+            !concurrentMembership.deletedAt &&
+            concurrentMembership.role === ClassroomRole.STUDENT
+          ) {
+            this.rateLimiter.recordSuccess(actorUserId);
+            return {
+              classroomId,
+              membershipId: concurrentMembership.id,
+              role: concurrentMembership.role,
+              desk: concurrentMembership.desk,
+              alreadyMember: true,
+            };
+          }
+        }
+
         if (error.code === 'P2002' || error.code === 'P2004') {
           // Unique constraint violation or database constraint conflict
           throw new ConflictException('Concurrent join operation conflict, please retry');
@@ -616,6 +689,32 @@ export class ClassroomInvitationsService {
         });
 
         if (updated.count === 0) {
+          const concurrentMember = await tx.classroomMembership.findUnique({
+            where: {
+              classroomId_userId: {
+                classroomId,
+                userId: actorUserId,
+              },
+            },
+            include: {
+              desk: { select: { id: true, deskIndex: true } },
+            },
+          });
+
+          if (
+            concurrentMember &&
+            concurrentMember.state === MembershipState.ACTIVE &&
+            !concurrentMember.deletedAt
+          ) {
+            return {
+              classroomId,
+              membershipId: concurrentMember.id,
+              role: concurrentMember.role,
+              desk: concurrentMember.desk,
+              alreadyMember: true,
+            };
+          }
+
           const latest = await tx.invitation.findUnique({ where: { id: invitation.id } });
           if (latest && (latest.state === InvitationState.USED || latest.useCount > 0)) {
             throw new ConflictException('Invitation has already been used');

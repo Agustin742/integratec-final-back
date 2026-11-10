@@ -108,6 +108,7 @@ describe('ClassroomInvitationsService', () => {
       },
       joinCodeUsage: {
         create: vi.fn(),
+        upsert: vi.fn(),
       },
     };
 
@@ -690,7 +691,69 @@ describe('ClassroomInvitationsService', () => {
           role: ClassroomRole.STUDENT,
         },
       });
+      expect(mockPrisma.joinCodeUsage.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            invitationId_userId: {
+              invitationId,
+              userId: STUDENT_ID,
+            },
+          },
+        }),
+      );
+      expect(mockPrisma.joinCodeUsage.create).not.toHaveBeenCalled();
       expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+    });
+
+    it('returns alreadyMember: true when concurrent join triggers P2002 for the same newly active student', async () => {
+      const rawCode = 'ABC1234';
+      const invitationId = randomUUID();
+      const membershipId = randomUUID();
+      const deskId = randomUUID();
+
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.JOIN_CODE,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: 10,
+        useCount: 0,
+        classroom: {
+          id: CLASSROOM_ID,
+          deletedAt: null,
+          independentTeacherId: null,
+          schoolId: SCHOOL_ID,
+          school: null,
+        },
+      });
+
+      // First check before transaction returns null; second check in catch block returns active membership
+      mockPrisma.classroomMembership.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        id: membershipId,
+        classroomId: CLASSROOM_ID,
+        userId: STUDENT_ID,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+        desk: { id: deskId, deskIndex: 1 },
+      });
+
+      const p2002Error = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+      });
+      mockPrisma.joinCodeUsage.create.mockRejectedValueOnce(p2002Error);
+
+      const res = await service.joinWithCode(STUDENT_ID, { code: rawCode });
+
+      expect(res).toEqual({
+        classroomId: CLASSROOM_ID,
+        membershipId,
+        role: ClassroomRole.STUDENT,
+        desk: { id: deskId, deskIndex: 1 },
+        alreadyMember: true,
+      });
     });
 
     it('rejects classroom staff from joining as students (WARN-05)', async () => {
