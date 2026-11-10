@@ -10,6 +10,7 @@ import {
   InvitationKind,
   InvitationRole,
   InvitationState,
+  MembershipState,
   PrismaClient,
   RegistrationPath,
 } from '@prisma/client';
@@ -174,6 +175,25 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     return student;
   };
 
+  /** A classroom of its own, so desk indexes in a test never depend on other tests. */
+  const createClassroom = async (prefix: string, deskCount = 12) => {
+    const classroom = await prisma.classroom.create({
+      data: {
+        name: `Aula ${prefix} ${Date.now()}`,
+        independentTeacherId: testTeacher.id,
+        adultMode: false,
+      },
+    });
+    createdClassroomIds.push(classroom.id);
+    await prisma.desk.createMany({
+      data: Array.from({ length: deskCount }, (_, i) => ({
+        classroomId: classroom.id,
+        deskIndex: i + 1,
+      })),
+    });
+    return classroom;
+  };
+
   it('creates an email invitation and persists outbox event atomically', async () => {
     const email = `unknown.student.${Date.now()}@example.edu.ar`;
     const inv = await service.createEmailInvitation(testTeacher.id, testClassroom.id, {
@@ -312,6 +332,101 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
       where: { id: joinCode.id },
     });
     expect(dbCode.useCount).toBe(1);
+  });
+
+  it('keeps join-code retries idempotent after the code reaches maxUses', async () => {
+    const classroom = await createClassroom('exhausted-retry');
+    const student = await createStudent('exhausted-retry');
+    const stranger = await createStudent('exhausted-stranger');
+    const joinCode = await service.generateJoinCode(testTeacher.id, classroom.id, { maxUses: 1 });
+
+    const first = await service.joinWithCode(student.id, { code: joinCode.code });
+    expect(first.alreadyMember).toBe(false);
+    const exhausted = await prisma.invitation.findUniqueOrThrow({ where: { id: joinCode.id } });
+    expect(exhausted.state).toBe(InvitationState.USED);
+    expect(exhausted.useCount).toBe(1);
+
+    // The response was lost: the same student retries with the now-exhausted code.
+    const retry = await service.joinWithCode(student.id, { code: joinCode.code });
+    expect(retry.alreadyMember).toBe(true);
+    expect(retry.membershipId).toBe(first.membershipId);
+    expect(retry.desk).toEqual(first.desk);
+    const after = await prisma.invitation.findUniqueOrThrow({ where: { id: joinCode.id } });
+    expect(after.useCount).toBe(1);
+    expect(await prisma.classroomMembership.count({ where: { classroomId: classroom.id } })).toBe(
+      1,
+    );
+
+    // A different user is still rejected and does not enroll.
+    await expect(service.joinWithCode(stranger.id, { code: joinCode.code })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(
+      await prisma.classroomMembership.count({
+        where: { classroomId: classroom.id, userId: stranger.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('does not let a removed student rejoin through an exhausted join code', async () => {
+    const classroom = await createClassroom('exhausted-removed');
+    const student = await createStudent('exhausted-removed');
+    const joinCode = await service.generateJoinCode(testTeacher.id, classroom.id, { maxUses: 1 });
+    const first = await service.joinWithCode(student.id, { code: joinCode.code });
+    await prisma.classroomMembership.update({
+      where: { id: first.membershipId },
+      data: { state: MembershipState.INACTIVE },
+    });
+
+    await expect(service.joinWithCode(student.id, { code: joinCode.code })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    const membership = await prisma.classroomMembership.findUniqueOrThrow({
+      where: { id: first.membershipId },
+    });
+    expect(membership.state).toBe(MembershipState.INACTIVE);
+  });
+
+  it('keeps hiding a deleted classroom from an enrolled student retrying an exhausted code', async () => {
+    const classroom = await createClassroom('exhausted-deleted');
+    const student = await createStudent('exhausted-deleted');
+    const joinCode = await service.generateJoinCode(testTeacher.id, classroom.id, { maxUses: 1 });
+    await service.joinWithCode(student.id, { code: joinCode.code });
+    await prisma.classroom.update({ where: { id: classroom.id }, data: { deletedAt: new Date() } });
+
+    await expect(service.joinWithCode(student.id, { code: joinCode.code })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it('keeps email-invitation acceptance idempotent after the invitation is used', async () => {
+    const classroom = await createClassroom('email-retry');
+    const student = await createStudent('email-retry');
+    const stranger = await createStudent('email-stranger');
+    const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+      email: `email.retry.${Date.now()}@example.edu.ar`,
+    });
+
+    const first = await service.acceptEmailInvitation(student.id, { token: inv.token });
+    expect(first.alreadyMember).toBe(false);
+    expect((await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } })).state).toBe(
+      InvitationState.USED,
+    );
+
+    const retry = await service.acceptEmailInvitation(student.id, { token: inv.token });
+    expect(retry.alreadyMember).toBe(true);
+    expect(retry.membershipId).toBe(first.membershipId);
+    expect(retry.desk).toEqual(first.desk);
+    expect((await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } })).useCount).toBe(1);
+
+    await expect(
+      service.acceptEmailInvitation(stranger.id, { token: inv.token }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(
+      await prisma.classroomMembership.count({
+        where: { classroomId: classroom.id, userId: stranger.id },
+      }),
+    ).toBe(0);
   });
 
   it('reactivates inactive or soft-deleted membership without duplicate or crash (CRIT-05)', async () => {

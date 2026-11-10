@@ -349,6 +349,22 @@ export class ClassroomInvitationsService {
       throw new NotFoundException('Invalid or expired join code');
     }
 
+    // Idempotent retry: a student who is already enrolled gets their existing membership back
+    // even when their own join consumed the last use. It never admits a new user, and it only
+    // applies once the classroom and school were confirmed to exist above.
+    const isExhausted =
+      invitation.state === InvitationState.USED ||
+      (invitation.state === InvitationState.PENDING &&
+        invitation.maxUses !== null &&
+        invitation.useCount >= invitation.maxUses);
+    if (isExhausted) {
+      const enrolled = await this.findActiveStudentMembership(invitation.classroomId!, actorUserId);
+      if (enrolled) {
+        this.rateLimiter.recordSuccess(actorUserId);
+        return enrolled;
+      }
+    }
+
     if (invitation.state !== InvitationState.PENDING) {
       this.rateLimiter.recordFailure(actorUserId);
       throw new BadRequestException('Join code is no longer active');
@@ -631,6 +647,15 @@ export class ClassroomInvitationsService {
       throw new NotFoundException('Invalid or expired invitation');
     }
 
+    // Idempotent retry: the account that consumed this single-use invitation gets its
+    // existing membership back instead of an error. Other accounts are still rejected.
+    if (invitation.state === InvitationState.USED) {
+      const enrolled = await this.findActiveStudentMembership(invitation.classroomId!, actorUserId);
+      if (enrolled) {
+        return enrolled;
+      }
+    }
+
     if (invitation.state !== InvitationState.PENDING) {
       throw new BadRequestException('Invitation is no longer active');
     }
@@ -768,6 +793,36 @@ export class ClassroomInvitationsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Returns the caller's existing, active student enrollment in the classroom, or null.
+   * Used to answer retries idempotently; inactive or soft-deleted memberships and staff
+   * memberships never match.
+   */
+  private async findActiveStudentMembership(
+    classroomId: string,
+    userId: string,
+  ): Promise<JoinClassroomResponseDto | null> {
+    const membership = await this.prisma.classroomMembership.findUnique({
+      where: { classroomId_userId: { classroomId, userId } },
+      include: { desk: { select: { id: true, deskIndex: true } } },
+    });
+    if (
+      !membership ||
+      membership.state !== MembershipState.ACTIVE ||
+      membership.deletedAt ||
+      membership.role !== ClassroomRole.STUDENT
+    ) {
+      return null;
+    }
+    return {
+      classroomId,
+      membershipId: membership.id,
+      role: membership.role,
+      desk: membership.desk,
+      alreadyMember: true,
+    };
   }
 
   /**
