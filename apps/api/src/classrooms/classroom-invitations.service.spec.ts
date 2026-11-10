@@ -274,40 +274,57 @@ describe('ClassroomInvitationsService', () => {
   });
 
   describe('revokeInvitation', () => {
-    it('marks an active email invitation as REVOKED', async () => {
+    it('revokes a pending email invitation with an atomic conditional update', async () => {
       const invitationId = randomUUID();
-      mockPrisma.invitation.findFirst.mockResolvedValue({
-        id: invitationId,
-        classroomId: CLASSROOM_ID,
-        kind: InvitationKind.EMAIL,
-        state: InvitationState.PENDING,
-      });
-      mockPrisma.invitation.update.mockResolvedValue({
-        id: invitationId,
-        state: InvitationState.REVOKED,
-      });
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 1 });
 
       const res = await service.revokeInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, invitationId);
 
-      expect(res.id).toBe(invitationId);
-      expect(res.state).toBe(InvitationState.REVOKED);
+      expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: invitationId,
+          classroomId: CLASSROOM_ID,
+          kind: InvitationKind.EMAIL,
+          state: InvitationState.PENDING,
+        },
+        data: { state: InvitationState.REVOKED },
+      });
+      expect(mockPrisma.invitation.update).not.toHaveBeenCalled();
+      expect(res).toEqual({ id: invitationId, state: InvitationState.REVOKED });
     });
 
-    it('throws BadRequestException when invitation is not PENDING (POL-02)', async () => {
+    it('does not overwrite an invitation accepted after the caller looked at it (USED)', async () => {
       const invitationId = randomUUID();
+      // The conditional update matches nothing because acceptance committed first.
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.invitation.findFirst.mockResolvedValue({
         id: invitationId,
-        classroomId: CLASSROOM_ID,
-        kind: InvitationKind.EMAIL,
         state: InvitationState.USED,
       });
 
       await expect(
         service.revokeInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, invitationId),
-      ).rejects.toThrow(new BadRequestException('Only pending invitations can be revoked'));
+      ).rejects.toThrow(
+        new BadRequestException('Invitation has already been used and cannot be revoked'),
+      );
+      expect(mockPrisma.invitation.update).not.toHaveBeenCalled();
     });
 
+    it.each([InvitationState.REVOKED, InvitationState.EXPIRED])(
+      'throws BadRequestException when the invitation is %s (POL-02)',
+      async (state) => {
+        const invitationId = randomUUID();
+        mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
+        mockPrisma.invitation.findFirst.mockResolvedValue({ id: invitationId, state });
+
+        await expect(
+          service.revokeInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, invitationId),
+        ).rejects.toThrow(new BadRequestException('Only pending invitations can be revoked'));
+      },
+    );
+
     it('throws 404 when invitation is not found', async () => {
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
       mockPrisma.invitation.findFirst.mockResolvedValue(null);
 
       await expect(
@@ -355,26 +372,25 @@ describe('ClassroomInvitationsService', () => {
   });
 
   describe('revokeJoinCode', () => {
-    it('revokes active join code for the classroom', async () => {
-      const codeId = randomUUID();
-      mockPrisma.invitation.findFirst.mockResolvedValue({
-        id: codeId,
-        classroomId: CLASSROOM_ID,
-        kind: InvitationKind.JOIN_CODE,
-        state: InvitationState.PENDING,
-      });
+    it('revokes the active join code with an atomic conditional update', async () => {
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 1 });
 
       const res = await service.revokeJoinCode(ACTOR_TEACHER_ID, CLASSROOM_ID);
 
-      expect(mockPrisma.invitation.update).toHaveBeenCalledWith({
-        where: { id: codeId },
+      expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith({
+        where: {
+          classroomId: CLASSROOM_ID,
+          kind: InvitationKind.JOIN_CODE,
+          state: InvitationState.PENDING,
+        },
         data: { state: InvitationState.REVOKED },
       });
+      expect(mockPrisma.invitation.update).not.toHaveBeenCalled();
       expect(res.success).toBe(true);
     });
 
-    it('throws 404 if no active join code exists', async () => {
-      mockPrisma.invitation.findFirst.mockResolvedValue(null);
+    it('throws 404 if no active join code exists (including one that just became USED)', async () => {
+      mockPrisma.invitation.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(service.revokeJoinCode(ACTOR_TEACHER_ID, CLASSROOM_ID)).rejects.toBeInstanceOf(
         NotFoundException,

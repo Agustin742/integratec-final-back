@@ -429,6 +429,104 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     ).toBe(0);
   });
 
+  describe('revocation versus acceptance', () => {
+    const enrollmentCount = (classroomId: string, userId: string) =>
+      prisma.classroomMembership.count({ where: { classroomId, userId } });
+    const deskCount = (classroomId: string, membershipUserId: string) =>
+      prisma.desk.count({
+        where: { classroomId, membership: { userId: membershipUserId } },
+      });
+
+    it('keeps USED when acceptance wins and rejects the later revocation', async () => {
+      const classroom = await createClassroom('accept-first');
+      const student = await createStudent('accept-first');
+      const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: `accept.first.${Date.now()}@example.edu.ar`,
+      });
+
+      await service.acceptEmailInvitation(student.id, { token: inv.token });
+      await expect(
+        service.revokeInvitation(testTeacher.id, classroom.id, inv.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      const row = await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } });
+      expect(row.state).toBe(InvitationState.USED);
+      expect(await enrollmentCount(classroom.id, student.id)).toBe(1);
+      expect(await deskCount(classroom.id, student.id)).toBe(1);
+    });
+
+    it('rejects acceptance without membership or desk when revocation wins', async () => {
+      const classroom = await createClassroom('revoke-first');
+      const student = await createStudent('revoke-first');
+      const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: `revoke.first.${Date.now()}@example.edu.ar`,
+      });
+
+      const revoked = await service.revokeInvitation(testTeacher.id, classroom.id, inv.id);
+      expect(revoked.state).toBe(InvitationState.REVOKED);
+      await expect(
+        service.acceptEmailInvitation(student.id, { token: inv.token }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect((await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } })).state).toBe(
+        InvitationState.REVOKED,
+      );
+      expect(await enrollmentCount(classroom.id, student.id)).toBe(0);
+      expect(
+        await prisma.desk.count({
+          where: { classroomId: classroom.id, membershipId: { not: null } },
+        }),
+      ).toBe(0);
+    });
+
+    it('keeps the audit state consistent when acceptance and revocation race', async () => {
+      const classroom = await createClassroom('race');
+      for (let round = 0; round < 8; round++) {
+        const student = await createStudent(`race-${round}`);
+        const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: `race.${round}.${Date.now()}@example.edu.ar`,
+        });
+
+        const [accepted, revoked] = await Promise.allSettled([
+          service.acceptEmailInvitation(student.id, { token: inv.token }),
+          service.revokeInvitation(testTeacher.id, classroom.id, inv.id),
+        ]);
+
+        // Exactly one operation wins.
+        expect([accepted.status, revoked.status].sort()).toEqual(['fulfilled', 'rejected']);
+
+        const row = await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } });
+        const enrolled = await enrollmentCount(classroom.id, student.id);
+        const desks = await deskCount(classroom.id, student.id);
+        if (accepted.status === 'fulfilled') {
+          expect(row.state).toBe(InvitationState.USED);
+          expect(enrolled).toBe(1);
+          expect(desks).toBe(1);
+        } else {
+          expect(row.state).toBe(InvitationState.REVOKED);
+          expect(enrolled).toBe(0);
+          expect(desks).toBe(0);
+        }
+      }
+    });
+
+    it('does not revoke a join code that was just exhausted (stays USED)', async () => {
+      const classroom = await createClassroom('code-revoke');
+      const student = await createStudent('code-revoke');
+      const joinCode = await service.generateJoinCode(testTeacher.id, classroom.id, {
+        maxUses: 1,
+      });
+      await service.joinWithCode(student.id, { code: joinCode.code });
+
+      await expect(service.revokeJoinCode(testTeacher.id, classroom.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(
+        (await prisma.invitation.findUniqueOrThrow({ where: { id: joinCode.id } })).state,
+      ).toBe(InvitationState.USED);
+    });
+  });
+
   it('reactivates inactive or soft-deleted membership without duplicate or crash (CRIT-05)', async () => {
     const student = await createStudent('reactivate');
     const joinCode = await service.generateJoinCode(testTeacher.id, testClassroom.id, {

@@ -174,31 +174,35 @@ export class ClassroomInvitationsService {
       requiredRole: 'STAFF',
     });
 
-    const invitation = await this.prisma.invitation.findFirst({
+    // Atomic compare-and-set: only a PENDING invitation can be revoked. A read followed by an
+    // update by id could overwrite an acceptance that committed in between.
+    const revoked = await this.prisma.invitation.updateMany({
       where: {
         id: invitationId,
         classroomId,
         kind: InvitationKind.EMAIL,
+        state: InvitationState.PENDING,
       },
-    });
-
-    if (!invitation) {
-      throw new NotFoundException('Invitation not found');
-    }
-
-    if (invitation.state !== InvitationState.PENDING) {
-      throw new BadRequestException('Only pending invitations can be revoked');
-    }
-
-    const updated = await this.prisma.invitation.update({
-      where: { id: invitationId },
       data: { state: InvitationState.REVOKED },
     });
 
-    return {
-      id: updated.id,
-      state: updated.state,
-    };
+    if (revoked.count === 1) {
+      return { id: invitationId, state: InvitationState.REVOKED };
+    }
+
+    // Nothing matched: report why, without changing anything.
+    const current = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, classroomId, kind: InvitationKind.EMAIL },
+      select: { state: true },
+    });
+
+    if (!current) {
+      throw new NotFoundException('Invitation not found');
+    }
+    if (current.state === InvitationState.USED) {
+      throw new BadRequestException('Invitation has already been used and cannot be revoked');
+    }
+    throw new BadRequestException('Only pending invitations can be revoked');
   }
 
   /**
@@ -281,22 +285,19 @@ export class ClassroomInvitationsService {
       requiredRole: 'STAFF',
     });
 
-    const activeCode = await this.prisma.invitation.findFirst({
+    // Atomic compare-and-set so a code that was just exhausted (USED) is never overwritten.
+    const revoked = await this.prisma.invitation.updateMany({
       where: {
         classroomId,
         kind: InvitationKind.JOIN_CODE,
         state: InvitationState.PENDING,
       },
-    });
-
-    if (!activeCode) {
-      throw new NotFoundException('No active join code found for this classroom');
-    }
-
-    await this.prisma.invitation.update({
-      where: { id: activeCode.id },
       data: { state: InvitationState.REVOKED },
     });
+
+    if (revoked.count === 0) {
+      throw new NotFoundException('No active join code found for this classroom');
+    }
 
     return {
       success: true,
