@@ -20,6 +20,7 @@ import { AccessVerificationService, UUID_PATTERN } from '../access/access-verifi
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
+import { encryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
@@ -102,7 +103,8 @@ export class ClassroomInvitationsService {
           classroomId,
           targetEmail,
           role,
-          token,
+          // Never persist the raw token: seal it, bound to this invitation.
+          encryptedToken: encryptSecret(token, this.config.invitationTokenKey, created.id),
         },
       });
 

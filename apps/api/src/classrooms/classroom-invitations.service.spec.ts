@@ -17,6 +17,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
+import { decryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
@@ -54,6 +55,7 @@ describe('ClassroomInvitationsService', () => {
     outboxMaxAttempts: 5,
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
+    invitationTokenKey: Buffer.alloc(32, 7),
     allowedOrigins: ['http://localhost:3000'],
     s3Bucket: 'bucket',
     s3Region: 'sa-east-1',
@@ -184,9 +186,20 @@ describe('ClassroomInvitationsService', () => {
             invitationId,
             classroomId: CLASSROOM_ID,
             targetEmail: 'newstudent@example.edu.ar',
+            encryptedToken: {
+              iv: expect.any(String),
+              authTag: expect.any(String),
+              ciphertext: expect.any(String),
+            },
           }),
         }),
       );
+      const recorded = mockOutbox.record.mock.calls[0][1];
+      expect(JSON.stringify(recorded)).not.toContain(res.token);
+      expect(recorded.payload).not.toHaveProperty('token');
+      expect(
+        decryptSecret(recorded.payload.encryptedToken, Buffer.alloc(32, 7), invitationId),
+      ).toBe(res.token);
       expect(res.id).toBe(invitationId);
       expect(res.targetEmail).toBe('newstudent@example.edu.ar');
       expect(res.token).toBeDefined();

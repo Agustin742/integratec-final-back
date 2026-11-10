@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
+import { decryptSecret } from '../platform/crypto/secret-box';
 import { EMAIL_PORT, type EmailPort } from '../platform/email/email.port';
 import {
   OutboxHandlerRegistry,
@@ -40,7 +41,7 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
 
   async handle(event: OutboxEventEnvelope): Promise<void> {
     const payload = event.payload as unknown as ClassroomInvitationCreatedPayload;
-    if (!payload?.invitationId || !payload?.targetEmail || !payload?.token) {
+    if (!payload?.invitationId || !payload?.targetEmail || !payload?.encryptedToken) {
       return;
     }
 
@@ -54,9 +55,16 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
         return; // Canceled, revoked, or classroom deleted
       }
 
+      // Decrypt only now, right before delivery; throws if the payload was tampered with.
+      const token = decryptSecret(
+        payload.encryptedToken,
+        this.config.invitationTokenKey,
+        payload.invitationId,
+      );
+
       const classroomName = invitation.classroom?.name ?? 'Virtual Classroom';
       const baseUrl = this.config.allowedOrigins[0] || 'http://localhost:3000';
-      const acceptUrl = `${baseUrl}/invitations/accept?token=${payload.token}`;
+      const acceptUrl = `${baseUrl}/invitations/accept?token=${token}`;
 
       await this.email.send({
         to: payload.targetEmail,

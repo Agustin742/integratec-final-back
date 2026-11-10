@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -16,9 +16,12 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
+import { InMemoryEmailAdapter } from '../platform/email/in-memory-email.adapter';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { OutboxHandlerRegistry } from '../platform/outbox/outbox.registry';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
+import { ClassroomInvitationCreatedHandler } from './classroom-invitation-created.handler';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
 
@@ -49,6 +52,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     outboxMaxAttempts: 5,
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
+    invitationTokenKey: randomBytes(32),
     allowedOrigins: ['http://localhost:3000'],
     s3Bucket: 'bucket',
     s3Region: 'sa-east-1',
@@ -191,6 +195,64 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
       },
     });
     expect(event).toBeDefined();
+  });
+
+  it('never persists the raw invitation token and still delivers a working email', async () => {
+    // Dedicated classroom so accepting the invitation does not consume a shared desk.
+    const classroom = await prisma.classroom.create({
+      data: {
+        name: `Aula Token ${Date.now()}`,
+        independentTeacherId: testTeacher.id,
+        adultMode: false,
+      },
+    });
+    createdClassroomIds.push(classroom.id);
+    await prisma.desk.createMany({
+      data: Array.from({ length: 2 }, (_, i) => ({ classroomId: classroom.id, deskIndex: i + 1 })),
+    });
+
+    const email = `no.plaintext.${Date.now()}@example.edu.ar`;
+    const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, { email });
+
+    // No persisted row may contain the raw token: outbox payloads and invitation rows.
+    const events = await prisma.$queryRaw<{ payload: string }[]>`
+      SELECT payload::text AS payload FROM outbox_events`;
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect(event.payload).not.toContain(inv.token);
+    }
+    const invitationRows = await prisma.$queryRaw<{ row: string }[]>`
+      SELECT to_jsonb(i)::text AS row FROM invitations i WHERE i.id = ${inv.id}::uuid`;
+    expect(invitationRows[0].row).not.toContain(inv.token);
+
+    // The outbox handler decrypts at delivery time and mails the working token.
+    const stored = await prisma.outboxEvent.findFirstOrThrow({
+      where: {
+        type: CLASSROOM_INVITATION_CREATED_EVENT,
+        payload: { path: ['invitationId'], equals: inv.id },
+      },
+    });
+    const emailAdapter = new InMemoryEmailAdapter();
+    const handler = new ClassroomInvitationCreatedHandler(
+      prisma as unknown as PrismaService,
+      new OutboxHandlerRegistry(),
+      emailAdapter,
+      dummyConfig,
+    );
+    await handler.handle({
+      id: stored.id,
+      type: stored.type,
+      payload: stored.payload as never,
+      occurredAt: stored.occurredAt,
+    });
+
+    expect(emailAdapter.sent).toHaveLength(1);
+    expect(emailAdapter.sent[0].to).toBe(email);
+    expect(emailAdapter.sent[0].text).toContain(inv.token);
+
+    const student = await createStudent('mailed-token');
+    const accepted = await service.acceptEmailInvitation(student.id, { token: inv.token });
+    expect(accepted.alreadyMember).toBe(false);
   });
 
   it('rejects a TEACHER invitation without persisting an invitation or outbox event', async () => {

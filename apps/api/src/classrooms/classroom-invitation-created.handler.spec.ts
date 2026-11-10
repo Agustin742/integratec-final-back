@@ -1,9 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { EMAIL_PORT, type EmailPort } from '../platform/email/email.port';
+import { encryptSecret } from '../platform/crypto/secret-box';
 import {
   OutboxHandlerRegistry,
   type OutboxEventEnvelope,
@@ -17,6 +18,8 @@ import {
   CLASSROOM_INVITATION_CREATED_EVENT,
   type ClassroomInvitationCreatedPayload,
 } from './classroom-invitation-events';
+
+const TOKEN_KEY = randomBytes(32);
 
 describe('ClassroomInvitationCreatedHandler', () => {
   let handler: ClassroomInvitationCreatedHandler;
@@ -41,6 +44,7 @@ describe('ClassroomInvitationCreatedHandler', () => {
     outboxMaxAttempts: 5,
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
+    invitationTokenKey: TOKEN_KEY,
     allowedOrigins: ['https://aula.example.edu.ar'],
     s3Bucket: 'bucket',
     s3Region: 'sa-east-1',
@@ -94,7 +98,7 @@ describe('ClassroomInvitationCreatedHandler', () => {
       classroomId,
       targetEmail: 'student@example.edu.ar',
       role: 'STUDENT',
-      token: 'opaque-token-12345',
+      encryptedToken: encryptSecret('opaque-token-12345', TOKEN_KEY, invitationId),
     };
 
     const event: OutboxEventEnvelope = {
@@ -133,7 +137,7 @@ describe('ClassroomInvitationCreatedHandler', () => {
         classroomId: randomUUID(),
         targetEmail: 'student@example.edu.ar',
         role: 'STUDENT',
-        token: 'opaque-token-12345',
+        encryptedToken: encryptSecret('opaque-token-12345', TOKEN_KEY, invitationId),
       } as unknown as OutboxEventEnvelope['payload'],
       occurredAt: new Date(),
     };
@@ -162,11 +166,58 @@ describe('ClassroomInvitationCreatedHandler', () => {
         classroomId: randomUUID(),
         targetEmail: 'student@example.edu.ar',
         role: 'STUDENT',
-        token: 'opaque-token-12345',
+        encryptedToken: encryptSecret('opaque-token-12345', TOKEN_KEY, invitationId),
       } as unknown as OutboxEventEnvelope['payload'],
       occurredAt: new Date(),
     };
 
     await expect(handler.handle(event)).rejects.toBeInstanceOf(ClassroomInvitationDeliveryError);
+  });
+
+  it('fails delivery without sending when the sealed token was tampered with', async () => {
+    const invitationId = randomUUID();
+    mockPrisma.invitation.findUnique.mockResolvedValue({
+      id: invitationId,
+      state: 'PENDING',
+      expiresAt: new Date(Date.now() + 86400000),
+      classroom: { name: 'Matemática 1', deletedAt: null },
+    });
+    const sealed = encryptSecret('opaque-token-12345', TOKEN_KEY, invitationId);
+    const forged = Buffer.from(sealed.ciphertext, 'base64');
+    forged[0] ^= 0xff;
+
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId,
+        classroomId: randomUUID(),
+        targetEmail: 'student@example.edu.ar',
+        role: 'STUDENT',
+        encryptedToken: { ...sealed, ciphertext: forged.toString('base64') },
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await expect(handler.handle(event)).rejects.toBeInstanceOf(ClassroomInvitationDeliveryError);
+    expect(mockEmail.send).not.toHaveBeenCalled();
+  });
+
+  it('ignores events that carry no sealed token', async () => {
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId: randomUUID(),
+        classroomId: randomUUID(),
+        targetEmail: 'student@example.edu.ar',
+        role: 'STUDENT',
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await handler.handle(event);
+
+    expect(mockEmail.send).not.toHaveBeenCalled();
   });
 });
