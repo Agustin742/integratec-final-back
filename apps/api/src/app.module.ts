@@ -5,6 +5,7 @@ import { ClassroomsModule } from './classrooms/classrooms.module';
 import type { ApiConfig } from './config/api-config';
 import { ApiConfigModule } from './config/config.module';
 import { HealthController } from './health.controller';
+import { RealtimeJoinModule } from './internal/realtime/realtime-join.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 
@@ -21,6 +22,7 @@ export class AppModule {
         AuthModule,
         AccessModule,
         UsersModule,
+        RealtimeJoinModule,
         ClassroomsModule,
       ],
     };

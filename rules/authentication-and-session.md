@@ -38,6 +38,7 @@ The backend is the only authority for identity, session validity, and authorizat
 ## Realtime authentication
 
 - A Colyseus join **MUST** present a verifiable credential, and the server **MUST** confirm identity and access to the target classroom through NestJS before admission (`onAuth` calls an internal NestJS endpoint; see [Architecture](./architecture.md)); see [Realtime and presence](./realtime-and-presence.md).
+- The client sends the access token with the Colyseus SDK (`client.auth.token`), which arrives as `Authorization: Bearer <access token>` on the matchmake request and as the `token` argument of `onAuth`; join options carry only `classroomId`, and the token **MUST NOT** be read from options or URLs (D2 update, 2026-11-09).
 - Rejected joins and messages **MUST** apply the same principles as `401`/`403` without inventing HTTP codes for WebSocket messages.
 - Logout, session expiry, or loss of access **MUST** end the user's live connections.
 - Join credentials **MUST NOT** appear in URLs that are logged.

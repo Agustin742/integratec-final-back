@@ -206,7 +206,7 @@ classDiagram
 
   namespace Realtime {
     class ClassroomRoom {
-      +onAuth(client, options)
+      +onAuth(token, options, context)
       +onJoin(client, options)
       +onLeave(client, consented)
     }
@@ -372,7 +372,7 @@ classDiagram
 Cuatro decisiones que el diagrama deja explícitas y conviene no perder de vista:
 
 1. **Las escrituras publican después de persistir.** `RealtimePublisher` cuelga de los servicios (`ClassroomsService`, `GradingService`, `MessagesService`), nunca de los controllers. El evento solo puede emitirse después de que Prisma confirmó la escritura (persistencia antes de difusión, [Architecture](../../../rules/architecture.md#services-and-ownership)); si el aviso se pierde, el cliente reconcilia por REST. El transporte NestJS hacia Colyseus sigue **abierto**.
-2. **Colyseus cruza a NestJS, no a Prisma.** `NestApiClient` es la única vía de Colyseus hacia datos persistentes: en `onAuth` llama al endpoint interno de `InternalAuthController`, autenticado con un secreto de servicio guardado en Secrets Manager (decisión D2, aprobada por Agustín el 2026-11-02). Colyseus rechaza el ingreso si NestJS no puede verificar. El proceso realtime no tiene cliente de base de datos ni credenciales de RDS.
+2. **Colyseus cruza a NestJS, no a Prisma.** `NestApiClient` es la única vía de Colyseus hacia datos persistentes: en `onAuth` llama al endpoint interno `POST /internal/realtime/join-verification` de `InternalAuthController`, autenticado con el encabezado `x-internal-service-secret` y un secreto de servicio guardado en Secrets Manager (decisión D2, aprobada por Agustín el 2026-11-02; el token llega como `Authorization: Bearer` de la petición de matchmaking, actualización del 2026-11-09). Colyseus rechaza el ingreso si NestJS no puede verificar. El proceso realtime no tiene cliente de base de datos ni credenciales de RDS.
 3. **Autenticación y autorización son distintas, y la autorización es una sola.** `SessionAuthGuard` valida el JWT de acceso y contrasta su `sessionId` con la sesión almacenada en cada request (D1), de modo que una sesión revocada responde `401`. `AuthorizationService` es la única implementación de acceso a escuela, aula y vínculo parental que usan REST, las verificaciones de Colyseus y las herramientas del bot (RN-03, RN-04). Rol y membresía se leen del estado persistido en cada request. Un recurso fuera de alcance responde `404` y `403` queda para rol insuficiente sobre un recurso visible.
 4. **El bot es de solo lectura.** `ReadOnlyToolRegistry` invoca únicamente consultas de servicios existentes bajo la autorización del usuario que consulta, nunca métodos de escritura (RN-14). `BotService` bloquea la consulta mientras el alumno tiene un examen en curso (RN-13).
 

@@ -11,7 +11,7 @@ import {
 export function start(
   env: NodeJS.ProcessEnv | Record<string, string | undefined>,
   exit: (code: number) => void,
-  listen: (port: number) => unknown,
+  listen: (port: number, config: RealtimeConfig) => unknown,
 ): void {
   let config: RealtimeConfig;
   try {
@@ -24,5 +24,5 @@ export function start(
     }
     throw error;
   }
-  listen(config.port);
+  listen(config.port, config);
 }

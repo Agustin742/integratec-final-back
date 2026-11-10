@@ -33,6 +33,12 @@ describe('start', () => {
     );
 
     expect(exit).not.toHaveBeenCalled();
-    expect(listen).toHaveBeenCalledExactlyOnceWith(2999);
+    expect(listen).toHaveBeenCalledExactlyOnceWith(
+      2999,
+      expect.objectContaining({
+        port: 2999,
+        apiInternalUrl: 'http://localhost:3000',
+      }),
+    );
   });
 });
