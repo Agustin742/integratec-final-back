@@ -37,6 +37,7 @@ import { CreateClassroomInvitationDto } from './dto/create-invitation.dto';
 import { CreateJoinCodeDto } from './dto/create-join-code.dto';
 import {
   ClassroomInvitationResponseDto,
+  CreatedClassroomInvitationResponseDto,
   RevokeInvitationResponseDto,
 } from './dto/invitation-response.dto';
 import { JoinClassroomResponseDto } from './dto/join-classroom-response.dto';
@@ -243,8 +244,9 @@ export class ClassroomsController {
     example: '4e5f6a7b-0000-4000-8000-000000000002',
   })
   @ApiCreatedResponse({
-    type: ClassroomInvitationResponseDto,
-    description: 'Email invitation created and outbox event scheduled.',
+    type: CreatedClassroomInvitationResponseDto,
+    description:
+      'Email invitation created, raw secret token returned once, and outbox event scheduled.',
   })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
@@ -266,7 +268,7 @@ export class ClassroomsController {
     @CurrentUser('userId') actorUserId: string,
     @Param('id') classroomId: string,
     @Body() dto: CreateClassroomInvitationDto,
-  ): Promise<ClassroomInvitationResponseDto> {
+  ): Promise<CreatedClassroomInvitationResponseDto> {
     return this.invitationsService.createEmailInvitation(actorUserId, classroomId, dto);
   }
 

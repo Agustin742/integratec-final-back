@@ -605,10 +605,10 @@
         },
         "responses": {
           "201": {
-            "description": "Email invitation created and outbox event scheduled.",
+            "description": "Email invitation created, raw secret token returned once, and outbox event scheduled.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ClassroomInvitationResponseDto" }
+                "schema": { "$ref": "#/components/schemas/CreatedClassroomInvitationResponseDto" }
               }
             }
           },
@@ -1753,11 +1753,62 @@
           "role": {
             "type": "string",
             "description": "Classroom role for the invitee (defaults to STUDENT)",
-            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "enum": ["STUDENT", "TEACHER"],
             "default": "STUDENT"
           }
         },
         "required": ["email"]
+      },
+      "CreatedClassroomInvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Invitation UUID" },
+          "kind": {
+            "type": "string",
+            "enum": ["EMAIL", "JOIN_CODE"],
+            "description": "Type of invitation"
+          },
+          "targetEmail": {
+            "type": "object",
+            "description": "Target email for EMAIL invitations",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "description": "Assigned role upon joining"
+          },
+          "maxUses": {
+            "type": "object",
+            "description": "Maximum allowed uses, null if unlimited",
+            "nullable": true
+          },
+          "useCount": {
+            "type": "number",
+            "description": "Number of times this invitation has been used"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING", "USED", "REVOKED", "EXPIRED"],
+            "description": "Current lifecycle state"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Expiration timestamp"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          },
+          "token": {
+            "type": "string",
+            "description": "Raw invitation secret token, returned only once upon creation",
+            "example": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+          }
+        },
+        "required": ["id", "kind", "role", "useCount", "state", "expiresAt", "createdAt", "token"]
       },
       "ClassroomInvitationResponseDto": {
         "type": "object",

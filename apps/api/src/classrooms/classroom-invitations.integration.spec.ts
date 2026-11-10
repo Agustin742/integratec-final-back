@@ -177,6 +177,8 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     });
 
     expect(inv.id).toBeDefined();
+    expect(inv.token).toBeDefined();
+    expect(typeof inv.token).toBe('string');
     expect(inv.targetEmail).toBe(email);
     expect(inv.kind).toBe(InvitationKind.EMAIL);
     expect(inv.state).toBe(InvitationState.PENDING);

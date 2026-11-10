@@ -31,6 +31,7 @@ import type { CreateClassroomInvitationDto } from './dto/create-invitation.dto';
 import type { CreateJoinCodeDto } from './dto/create-join-code.dto';
 import type {
   ClassroomInvitationResponseDto,
+  CreatedClassroomInvitationResponseDto,
   RevokeInvitationResponseDto,
 } from './dto/invitation-response.dto';
 import type { JoinClassroomResponseDto } from './dto/join-classroom-response.dto';
@@ -57,7 +58,7 @@ export class ClassroomInvitationsService {
     actorUserId: string,
     classroomId: string,
     dto: CreateClassroomInvitationDto,
-  ): Promise<ClassroomInvitationResponseDto> {
+  ): Promise<CreatedClassroomInvitationResponseDto> {
     if (!UUID_PATTERN.test(actorUserId)) {
       throw new UnauthorizedException('Authentication is required');
     }
@@ -67,6 +68,10 @@ export class ClassroomInvitationsService {
     });
 
     const role = dto.role ?? InvitationRole.STUDENT;
+
+    if (role === InvitationRole.OWNER || role === InvitationRole.ADMIN) {
+      throw new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles');
+    }
 
     if (role === InvitationRole.TEACHER && access.myRole !== 'OWNER' && access.myRole !== 'ADMIN') {
       throw new ForbiddenException('Only school owners and administrators may invite teachers');
@@ -108,7 +113,10 @@ export class ClassroomInvitationsService {
       return created;
     });
 
-    return this.toInvitationResponse(invitation);
+    return {
+      ...this.toInvitationResponse(invitation),
+      token,
+    };
   }
 
   /**

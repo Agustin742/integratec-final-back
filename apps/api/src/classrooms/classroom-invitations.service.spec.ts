@@ -188,6 +188,28 @@ describe('ClassroomInvitationsService', () => {
       );
       expect(res.id).toBe(invitationId);
       expect(res.targetEmail).toBe('newstudent@example.edu.ar');
+      expect(res.token).toBeDefined();
+      expect(typeof res.token).toBe('string');
+    });
+
+    it('rejects invitation when role is OWNER or ADMIN', async () => {
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'admin@example.edu.ar',
+          role: InvitationRole.OWNER,
+        }),
+      ).rejects.toThrow(
+        new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles'),
+      );
+
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'admin@example.edu.ar',
+          role: InvitationRole.ADMIN,
+        }),
+      ).rejects.toThrow(
+        new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles'),
+      );
     });
 
     it('rejects teacher invitation when requester is regular teacher (CRIT-03)', async () => {

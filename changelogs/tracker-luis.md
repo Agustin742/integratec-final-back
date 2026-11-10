@@ -26,6 +26,7 @@
   - **WARN-05 (Staff enrollment prevention):** Rejected attempts by independent teachers, school owners, and school administrators to join as students via join code, throwing `409 Conflict` without consuming code uses.
   - **WARN-07 (Integration test hygiene):** Removed silent skips (`try { await prisma.$connect(); } catch { return; }` and `if (!testClassroom) return;`) in `classroom-invitations.integration.spec.ts`, failing fast if database is unreachable and guaranteeing `skipped: 0`.
   - **POL-01 & POL-02 (Crockford Base32 normalization & Revocation guard):** In `normalizeJoinCode`, mapped Crockford Base32 aliases (`O` -> `0`, `I`/`L` -> `1`). In `revokeInvitation`, validated that only `PENDING` invitations can be revoked, returning `400 BadRequest` if already used or revoked.
+  - **Contract refinement (Raw token return & Role restriction):** Created `CreatedClassroomInvitationResponseDto` returning the raw `token` secret once on `POST /classrooms/:id/invitations` per Issue #22 scope, while `GET` list omits it. Blocked `OWNER` and `ADMIN` roles in `CreateClassroomInvitationDto` and `createEmailInvitation`, restricting classroom invitations strictly to `STUDENT` or `TEACHER`.
 - **Reason:** Enable teachers and school administrators to invite students via email or shareable join codes, allocate 3D desks automatically with dynamic auto-expansion, and protect joining endpoints against brute force attacks.
 - **Next step:** Open PR targeting `develop` and move card #22 to `In review` on GitHub Project 3.
 

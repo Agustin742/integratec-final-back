@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { InvitationRole } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsEnum, IsOptional } from 'class-validator';
+import { IsEmail, IsIn, IsOptional } from 'class-validator';
 
 export class CreateClassroomInvitationDto {
   @ApiProperty({
@@ -14,10 +14,12 @@ export class CreateClassroomInvitationDto {
 
   @ApiPropertyOptional({
     description: 'Classroom role for the invitee (defaults to STUDENT)',
-    enum: InvitationRole,
+    enum: [InvitationRole.STUDENT, InvitationRole.TEACHER],
     default: InvitationRole.STUDENT,
   })
   @IsOptional()
-  @IsEnum(InvitationRole, { message: 'role must be a valid invitation role' })
+  @IsIn([InvitationRole.STUDENT, InvitationRole.TEACHER], {
+    message: 'role must be either STUDENT or TEACHER',
+  })
   role?: InvitationRole = InvitationRole.STUDENT;
 }
