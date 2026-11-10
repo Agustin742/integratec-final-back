@@ -206,6 +206,21 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-05.
 - **Open:** Domain and routing. Path versus host routing for Colyseus remains open (gap 20). Let's Encrypt needs a DNS name that points to the Elastic IP; a free wildcard DNS name (for example sslip.io) is a candidate interim option, not decided.
 
+### D14. Realtime presence and movement policy
+
+- **Question:** Which tick rate, duplicate-connection policy, access-change propagation, reconnection window, and message contract does the live classroom use (issue #25, gaps 3 to 5)?
+- **Outcome:**
+  1. **Movement:** clients send direction intents; the server simulates at 20 Hz with a fixed speed and collision checks and patches state at 20 Hz; the frontend interpolates; no client prediction for now. Each connection is limited to 30 messages per second and the excess is dropped silently.
+  2. **Duplicate connections:** one avatar per user shared by up to 3 simultaneous connections; the last input wins; the user appears once; the avatar is removed when the last connection leaves; connected time counts the union of the intervals. A 4th connection is closed with `4002`.
+  3. **Access changes:** NestJS writes an outbox event on membership removal and on logout or session revocation; its handler calls an internal Colyseus endpoint (same `x-internal-service-secret` scheme, not routed by the proxy) that closes the user's connections with `4001` and blocks reconnection. No periodic polling.
+  4. **Reconnection:** a 20 second window (configurable) through `allowReconnection`; the avatar stays with `status: 'reconnecting'`; reconnection re-verifies access with NestJS; the client backs off 1, 2, 4, and 8 seconds and then offers a manual "Reconnect"; disconnected seconds are not counted as connected time.
+  5. **Contracts:** `avatar:input` `{ x, z }` in `[-1, 1]` (zero stops); state `avatars` keyed by `userId` with `Avatar { userId, displayName, role, x, z, rotation, status }`; close codes `4001` (access revoked) and `4002` (too many connections).
+- **Rationale:** Server-side intents and a fixed step keep movement authoritative and cheap to validate; a shared avatar avoids ghost duplicates when a user opens several screens; an outbox event is already the project's way to announce a committed change, so eviction needs no new infrastructure and survives a transient failure through retries; a short reconnection window covers network switches without keeping avatars alive for long.
+- **Alternatives:** Client-authoritative positions or client prediction (more complex, easier to cheat); one avatar per connection (duplicates in the presence list); periodic re-verification of every connection (load, delay); a longer reconnection window.
+- **Trade-off:** The close codes `4001` and `4002` are also used by Colyseus (server shutdown and protocol errors), so clients read the close reason too. Reconnection re-verifies with the verified user and session identifiers through a second internal endpoint, because the access token may have expired. Connected time is reported once per presence session and is not retried, so it can undercount after a failure.
+- **Affected contracts:** [Realtime and presence](../rules/realtime-and-presence.md), [API contracts](../rules/api-contracts.md#realtime-contract), [Architecture](../rules/architecture.md).
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-10. The walkable surface (a 16 by 12 classroom with 13 obstacle boxes, shared in `packages/contracts`) is a proposal to confirm in the pull request.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.

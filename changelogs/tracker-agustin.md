@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-10 — Classroom presence and movement, server side (#25)
+
+- **Status:** in-progress (work-unit commits on `feat/25-classroom-presence`; no PR yet)
+- **Area / files:** `rules/realtime-and-presence.md`, `rules/api-contracts.md`, `rules/architecture.md`, `docs/technical-justification.md` (D14), `docs/diagrams/05-reference/gaps.md`; later commits touch `packages/contracts/`, `apps/realtime/src/`, `apps/api/src/internal/realtime/`, `apps/api/prisma/`
+- **Change:** Recorded the five realtime decisions approved on 2026-11-10 (intent-based movement at 20 Hz with a 30 messages per second limit, one avatar shared by up to 3 connections, outbox-driven live eviction, a 20 second reconnection window, and the `avatar:input` contract with close codes `4001` and `4002`) as D14 and in the realtime and contract rules. The walkable layout stays a proposal to confirm in the PR.
+- **Reason:** Issue #25 needs the open gaps 3 to 5 closed before the room can be implemented.
+- **Next step:** Implement the room (contracts and state, presence, movement, reconnection, connected time, live eviction) and open the PR into `develop`.
+
 ## 2026-11-09 — Colyseus skeleton with join authorization through an internal API endpoint (#24)
 
 - **Status:** in-progress (PR #77 review fixes pushed; awaiting re-review)
