@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
-  ForbiddenException,
   HttpException,
   HttpStatus,
   NotFoundException,
@@ -193,7 +193,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     expect(event).toBeDefined();
   });
 
-  it('rejects email invitation for teacher when invited by regular teacher (CRIT-03)', async () => {
+  it('rejects a TEACHER invitation without persisting an invitation or outbox event', async () => {
     const email = `colleague.${Date.now()}@example.edu.ar`;
     await expect(
       service.createEmailInvitation(testTeacher.id, testClassroom.id, {
@@ -201,8 +201,9 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
         role: InvitationRole.TEACHER,
       }),
     ).rejects.toThrow(
-      new ForbiddenException('Only school owners and administrators may invite teachers'),
+      new BadRequestException('Classroom invitations can only be issued for students'),
     );
+    expect(await prisma.invitation.count({ where: { targetEmail: email } })).toBe(0);
   });
 
   it('generates a join code and marks previous active code as REVOKED', async () => {

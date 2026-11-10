@@ -13,13 +13,12 @@ export class CreateClassroomInvitationDto {
   email!: string;
 
   @ApiPropertyOptional({
-    description: 'Classroom role for the invitee (defaults to STUDENT)',
-    enum: [InvitationRole.STUDENT, InvitationRole.TEACHER],
+    description:
+      'Classroom role for the invitee. Only STUDENT is supported; teacher invitations are out of scope for classroom invitations.',
+    enum: [InvitationRole.STUDENT],
     default: InvitationRole.STUDENT,
   })
   @IsOptional()
-  @IsIn([InvitationRole.STUDENT, InvitationRole.TEACHER], {
-    message: 'role must be either STUDENT or TEACHER',
-  })
+  @IsIn([InvitationRole.STUDENT], { message: 'role must be STUDENT' })
   role?: InvitationRole = InvitationRole.STUDENT;
 }

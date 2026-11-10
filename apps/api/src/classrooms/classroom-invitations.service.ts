@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -67,14 +66,11 @@ export class ClassroomInvitationsService {
       requiredRole: 'STAFF',
     });
 
+    // Only student invitations are supported here. Teacher invitations belong to
+    // the school-teacher invitation flow (HU-AUL-004).
     const role = dto.role ?? InvitationRole.STUDENT;
-
-    if (role === InvitationRole.OWNER || role === InvitationRole.ADMIN) {
-      throw new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles');
-    }
-
-    if (role === InvitationRole.TEACHER && access.myRole !== 'OWNER' && access.myRole !== 'ADMIN') {
-      throw new ForbiddenException('Only school owners and administrators may invite teachers');
+    if (role !== InvitationRole.STUDENT) {
+      throw new BadRequestException('Classroom invitations can only be issued for students');
     }
 
     const token = randomBytes(32).toString('hex');
@@ -625,6 +621,7 @@ export class ClassroomInvitationsService {
     if (
       !invitation ||
       invitation.kind !== InvitationKind.EMAIL ||
+      invitation.role !== InvitationRole.STUDENT ||
       !invitation.classroom ||
       invitation.classroom.deletedAt ||
       invitation.classroom.school?.deletedAt
@@ -722,31 +719,7 @@ export class ClassroomInvitationsService {
           throw new BadRequestException('Invitation is no longer active');
         }
 
-        const targetRole =
-          invitation.role === InvitationRole.TEACHER
-            ? ClassroomRole.TEACHER
-            : ClassroomRole.STUDENT;
-
-        // If invited as a school classroom teacher, guarantee active SchoolMember authority
-        if (targetRole === ClassroomRole.TEACHER && invitation.schoolId) {
-          await tx.schoolMember.upsert({
-            where: {
-              schoolId_userId: {
-                schoolId: invitation.schoolId,
-                userId: actorUserId,
-              },
-            },
-            create: {
-              schoolId: invitation.schoolId,
-              userId: actorUserId,
-              role: SchoolRole.TEACHER,
-              state: MembershipState.ACTIVE,
-            },
-            update: {
-              state: MembershipState.ACTIVE,
-            },
-          });
-        }
+        const targetRole = ClassroomRole.STUDENT;
 
         let membershipId: string;
         let desk: { id: string; deskIndex: number } | null = null;
@@ -761,13 +734,7 @@ export class ClassroomInvitationsService {
             },
           });
           membershipId = reactivated.id;
-          if (targetRole === ClassroomRole.STUDENT) {
-            if (existingMembership.desk) {
-              desk = existingMembership.desk;
-            } else {
-              desk = await this.assignDesk(tx, classroomId, membershipId);
-            }
-          }
+          desk = existingMembership.desk ?? (await this.assignDesk(tx, classroomId, membershipId));
         } else {
           const created = await tx.classroomMembership.create({
             data: {
@@ -778,9 +745,7 @@ export class ClassroomInvitationsService {
             },
           });
           membershipId = created.id;
-          if (targetRole === ClassroomRole.STUDENT) {
-            desk = await this.assignDesk(tx, classroomId, membershipId);
-          }
+          desk = await this.assignDesk(tx, classroomId, membershipId);
         }
 
         return {

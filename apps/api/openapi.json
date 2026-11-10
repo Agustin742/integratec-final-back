@@ -1752,8 +1752,8 @@
           },
           "role": {
             "type": "string",
-            "description": "Classroom role for the invitee (defaults to STUDENT)",
-            "enum": ["STUDENT", "TEACHER"],
+            "description": "Classroom role for the invitee. Only STUDENT is supported; teacher invitations are out of scope for classroom invitations.",
+            "enum": ["STUDENT"],
             "default": "STUDENT"
           }
         },

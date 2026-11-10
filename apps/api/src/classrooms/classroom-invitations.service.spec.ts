@@ -193,83 +193,21 @@ describe('ClassroomInvitationsService', () => {
       expect(typeof res.token).toBe('string');
     });
 
-    it('rejects invitation when role is OWNER or ADMIN', async () => {
-      await expect(
-        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
-          email: 'admin@example.edu.ar',
-          role: InvitationRole.OWNER,
-        }),
-      ).rejects.toThrow(
-        new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles'),
-      );
-
-      await expect(
-        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
-          email: 'admin@example.edu.ar',
-          role: InvitationRole.ADMIN,
-        }),
-      ).rejects.toThrow(
-        new BadRequestException('Classroom invitations cannot grant OWNER or ADMIN roles'),
-      );
-    });
-
-    it('rejects teacher invitation when requester is regular teacher (CRIT-03)', async () => {
-      mockAccessService.verifyClassroomAccess.mockResolvedValueOnce({
-        classroom: {
-          id: CLASSROOM_ID,
-          schoolId: SCHOOL_ID,
-          independentTeacherId: null,
-          name: 'Ciencias',
-          adultMode: false,
-        },
-        myRole: 'TEACHER',
-        capabilities: ['invite_members'],
-      });
-
-      await expect(
-        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
-          email: 'colleague@example.edu.ar',
-          role: InvitationRole.TEACHER,
-        }),
-      ).rejects.toThrow(
-        new ForbiddenException('Only school owners and administrators may invite teachers'),
-      );
-    });
-
-    it('allows teacher invitation when requester is school OWNER or ADMIN (CRIT-03)', async () => {
-      mockAccessService.verifyClassroomAccess.mockResolvedValueOnce({
-        classroom: {
-          id: CLASSROOM_ID,
-          schoolId: SCHOOL_ID,
-          independentTeacherId: null,
-          name: 'Ciencias',
-          adultMode: false,
-        },
-        myRole: 'OWNER',
-        capabilities: ['manage_school', 'invite_members'],
-      });
-
-      const invId = randomUUID();
-      mockPrisma.invitation.create.mockResolvedValueOnce({
-        id: invId,
-        kind: InvitationKind.EMAIL,
-        targetEmail: 'colleague@example.edu.ar',
-        role: InvitationRole.TEACHER,
-        maxUses: 1,
-        useCount: 0,
-        state: InvitationState.PENDING,
-        expiresAt: new Date(),
-        createdAt: new Date(),
-      });
-
-      const res = await service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
-        email: 'colleague@example.edu.ar',
-        role: InvitationRole.TEACHER,
-      });
-
-      expect(res.id).toBe(invId);
-      expect(res.role).toBe(InvitationRole.TEACHER);
-    });
+    it.each([InvitationRole.TEACHER, InvitationRole.OWNER, InvitationRole.ADMIN])(
+      'rejects a %s invitation because only student invitations are supported',
+      async (role) => {
+        await expect(
+          service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+            email: 'colleague@example.edu.ar',
+            role,
+          }),
+        ).rejects.toThrow(
+          new BadRequestException('Classroom invitations can only be issued for students'),
+        );
+        expect(mockPrisma.invitation.create).not.toHaveBeenCalled();
+        expect(mockOutbox.record).not.toHaveBeenCalled();
+      },
+    );
 
     it('rejects unauthenticated callers with 401', async () => {
       await expect(
@@ -927,14 +865,9 @@ describe('ClassroomInvitationsService', () => {
       );
     });
 
-    it('upserts SchoolMember authority when accepting teacher invitation for a school classroom', async () => {
-      const token = 'token-teacher-123456';
-      const invitationId = randomUUID();
-      const membershipId = randomUUID();
-      const teacherUserId = randomUUID();
-
+    it('refuses to accept a non-student invitation and creates no membership', async () => {
       mockPrisma.invitation.findUnique.mockResolvedValue({
-        id: invitationId,
+        id: randomUUID(),
         kind: InvitationKind.EMAIL,
         classroomId: CLASSROOM_ID,
         schoolId: SCHOOL_ID,
@@ -943,30 +876,39 @@ describe('ClassroomInvitationsService', () => {
         expiresAt: new Date(Date.now() + 100000),
         classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
       });
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
 
+      await expect(
+        service.acceptEmailInvitation(randomUUID(), { token: 'token-legacy-teacher' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+      expect(mockPrisma.schoolMember.upsert).not.toHaveBeenCalled();
+    });
+
+    it('never touches school membership when accepting an invitation', async () => {
+      const token = 'token-no-school-member';
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: InvitationKind.EMAIL,
+        classroomId: CLASSROOM_ID,
+        schoolId: SCHOOL_ID,
+        role: InvitationRole.STUDENT,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
+      });
       mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
       mockPrisma.classroomMembership.create.mockResolvedValue({
-        id: membershipId,
+        id: randomUUID(),
         classroomId: CLASSROOM_ID,
-        userId: teacherUserId,
-        role: ClassroomRole.TEACHER,
+        role: ClassroomRole.STUDENT,
       });
 
-      const res = await service.acceptEmailInvitation(teacherUserId, { token });
+      const res = await service.acceptEmailInvitation(randomUUID(), { token });
 
-      expect(res.alreadyMember).toBe(false);
-      expect(res.role).toBe(ClassroomRole.TEACHER);
-      expect(res.desk).toBeNull();
-      expect(mockPrisma.schoolMember.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            schoolId_userId: {
-              schoolId: SCHOOL_ID,
-              userId: teacherUserId,
-            },
-          },
-        }),
-      );
+      expect(res.role).toBe(ClassroomRole.STUDENT);
+      expect(mockPrisma.schoolMember.upsert).not.toHaveBeenCalled();
     });
 
     it('reactivates inactive membership when accepting invitation (CRIT-05)', async () => {
@@ -1019,6 +961,7 @@ describe('ClassroomInvitationsService', () => {
         id: randomUUID(),
         kind: InvitationKind.EMAIL,
         classroomId: CLASSROOM_ID,
+        role: InvitationRole.STUDENT,
         state: InvitationState.PENDING,
         expiresAt: new Date(Date.now() - 1000), // expired
         classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
