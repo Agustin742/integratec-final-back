@@ -74,6 +74,7 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 - Onboarding uses two mechanisms (decision D7, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d7-invitation-model)): **email invitations** and the **classroom join code**.
 - **Email invitation:** Owner or Admin invite teachers; teachers (and Owner or Admin) invite students and parents to a classroom. An invitation is bound to one target (school or classroom), one role, and one email address. Teachers invited by Owner or Admin and parents are **always** invited by email, single use; a join code **MUST NOT** grant either role.
 - The raw invitation secret **MUST NOT** be stored; only a hash **MUST** be persisted. The invitation **MUST** carry an expiry, be revocable, and be single use. Lifetime defaults are configuration, not fixed in code.
+- The raw secret **MUST NOT** be persisted in plaintext in any table, including asynchronous delivery records such as outbox payloads. The outbox event carries the secret sealed with AES-256-GCM under the `INVITATION_TOKEN_KEY` secret, bound to the invitation id; only the email delivery handler decrypts it, immediately before calling the email service.
 - Lookup, expiry, revocation, use, and membership creation **MUST** be validated and applied atomically so concurrent acceptances cannot create duplicate memberships.
 - Acceptance **MUST** require authentication as the invited account. The invited email **MAY** differ from the account email; possession of the valid, unexpired invitation secret plus authentication is what binds the account.
 - **Classroom join code:** a classroom has a join code that its teacher can share (Owner or Admin **MAY** also manage it). It grants **only** the `Student` role in that classroom and **MUST NOT** grant Teacher, Parent, or any school role.
@@ -84,6 +85,12 @@ Implementers **MUST NOT** extend the matrix. Changes require updating this rule 
 - Invitation delivery goes through the email service described in [Communication and notifications](./communication-and-notifications.md). An invitation request **MUST NOT** reveal whether the address already has an account.
 - Invitations and join codes **MUST NOT** be accepted for a deleted school or classroom, and accepting twice **MUST NOT** duplicate the membership.
 - Expelling or removing a member is a logical deactivation: created content (messages, submissions, grades) is preserved and attributed. Loss of access **MUST** apply immediately, including to live connections.
+
+## Desk allocation
+
+- Decision (approved by Agustin on 2026-11-10, backed by [RF-ESP-002](../docs/functional-requirements.md) criterion 3 and [HU-ESP-002](../docs/user-stories.md) criterion 3): the server keeps **at least one assignable desk for every enrolled student**. A `Classroom` has no capacity field, so enrollment is never rejected because the classroom is full.
+- Joining a classroom (join code or email invitation) assigns the unassigned desk with the lowest `deskIndex`. When none is free, the server creates a new desk with index `max(deskIndex) + 1` (indexes are 1-based; a new classroom starts with 12) and assigns it in the same transaction. Desks are never removed automatically.
+- Clients **MUST** render the desks from the backend data (the desk list and each student's `deskIndex`), not from a fixed seat count.
 
 ## Parents and adult mode
 

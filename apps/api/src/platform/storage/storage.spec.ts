@@ -34,6 +34,7 @@ const config: ApiConfig = {
   outboxMaxAttempts: 1,
   internalServiceSecret: 'storage-spec-placeholder-not-a-secret',
   jwtSecret: 'storage-jwt-placeholder-not-a-secret-000000',
+  invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost'],
   s3Bucket: env('S3_BUCKET', 'aula-virtual-dev'),
   s3Region: env('S3_REGION', 'sa-east-1'),
