@@ -2,7 +2,7 @@
 
 ## 2026-11-11 — Classroom desk map and resource authorization pattern (#26)
 
-- **Status:** in-progress (implementation verified; single-PR publication authorized)
+- **Status:** completed (implementation and PR publication; current-head CI and human approval are tracked in the PR)
 - **Area / files:** `apps/api/src/classrooms/desks/`, `apps/api/src/testing/resource-authorization*.ts`, desk-map OpenAPI contract and documentation.
 - **Change:** Investigated existing enrollment allocation and removal release, then started isolated implementation from `develop` at `8e723c7` on `feat/26-classroom-desks` with AI assistance.
 - **Reason:** Deliver issue #26 without duplicating Luis's #52 member directory or Agustin's #25 realtime presence/movement. Reuse the approved lowest-free-index allocation and automatic expansion; no manual reassignment or new capacity policy.
@@ -20,7 +20,8 @@
 - **Local work-unit commits:** Desk-map behavior `d348890` (515 authored + 85 generated lines, coherent-unit overage disclosed); helper and actual HTTP use `3cfb030` (255 authored lines); persisted acceptance test/docs `06c2ca7` (236 authored changed lines). Each includes its tests/docs; source remained identical to the verified final candidate during index-only slicing. The actual feature base is `8e723c7`, not accumulated history against `main`.
 - **Native assessment:** RDD remains on. Each committed unit was assessed against its immediate predecessor; all returned `reviewDue: false` / `under_budget` (native medium). Security item 2 retained independent verification, fulfilled above. No native START, review receipt or approval is claimed, and none was required by these assessments.
 - **Publication authorization:** Alejo requested publication and explicitly selected one PR into `develop` with a size exception after disclosure of 1,110 changed lines in 15 files. Preserve the coherent work-unit commits; publication bookkeeping may add tracker lines. Fresh fetch confirms `origin/develop` is still `8e723c7` and the branch is not behind. No existing PR for this branch. Use the repository's existing `enhancement` label and issue #26; no invented approval/type labels or template.
-- **Next step:** Run publication preflight, publish the branch/open the PR, and observe exact-head CI. No merge or deployment authorized. Root-format failure on five unrelated ignored artifacts remains disclosed; scoped formatting and all applicable functional/static checks passed.
+- **Publication receipt:** Non-force push and [PR #83](https://github.com/Agustin742/integratec-final-back/pull/83) creation succeeded into `develop`, assigned to AlejoElPaisano with Agustin742 requested for review and the existing `enhancement` label. The description links #26, records the size exception and preserves verification limits/failures. Current-head CI and teammate approval remain authoritative in the PR; initial-head checks are not evidence for a later metadata head.
+- **Next step:** Observe exact final-head CI and obtain teammate approval before any separately authorized merge. No merge or deployment performed or authorized. Root-format failure on five unrelated ignored artifacts remains disclosed; scoped formatting and applicable functional/static checks passed. Publication receipt bookkeeping does not change verified source/contracts.
 
 ## 2026-11-11 — Resolve PR #81 integration feedback
 
