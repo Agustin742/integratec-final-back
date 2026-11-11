@@ -691,6 +691,51 @@
         "summary": "List student roster for classroom staff",
         "tags": ["classrooms"]
       }
+    },
+    "/classrooms/{id}/students/{studentId}": {
+      "delete": {
+        "operationId": "ClassroomRemovalController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "studentId",
+            "required": true,
+            "in": "path",
+            "description": "Student USER UUID, not membership UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Removed, or already inactive/deleted; no response body." },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid UUID, foreign/unknown classroom, or unknown/nonstudent target.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Logically remove a student and revoke child-specific parent access",
+        "tags": ["classrooms"]
+      }
     }
   },
   "info": {

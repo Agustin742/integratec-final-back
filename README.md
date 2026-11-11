@@ -19,6 +19,8 @@ backend/
 ## Classroom member management
 
 - [Private student roster](docs/classroom-roster.md): `GET /classrooms/:id/roster`, paginated student state and guardian links for classroom staff only; separate from the D12 mention directory.
+- [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
+- The transactional outbox records `classroom.membership.removed`; live-room disconnection remains a separate transport follow-up.
 
 ## Local setup and development
 
