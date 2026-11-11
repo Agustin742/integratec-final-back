@@ -36,7 +36,7 @@ Approved by Agustin on 2026-11-10 ([D14](../docs/technical-justification.md#d14-
 
 Colyseus itself uses `4001` for a server shutdown and `4002` for protocol errors (an invalid message or a failed join). The close **reason** disambiguates: only the values above mean revoked access or too many connections. The frontend **MUST** read the reason, not only the code.
 
-The classroom layout (bounds and obstacle boxes) that the server uses for collisions is exported from `packages/contracts` (`CLASSROOM_LAYOUT`) so the frontend scene and the server agree.
+The classroom layout (bounds and obstacle boxes) that the server uses for collisions is exported from `packages/contracts` (`CLASSROOM_LAYOUT`) so the frontend scene and the server agree. It is temporary and shared by every classroom until per-classroom layouts replace it (issue #79).
 
 ## Compatibility and verification
 

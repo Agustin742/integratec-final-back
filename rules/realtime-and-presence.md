@@ -121,6 +121,6 @@ Message and close-code definitions are in [API contracts](./api-contracts.md#rea
 
 ## Open decisions
 
-- **Proposal to confirm in the pull request of issue #25:** the walkable surface, a classroom of 16 by 12 units with a front teacher desk and 12 student desks, defined as shared data in `packages/contracts` so the frontend scene and the server agree. The frontend and the team adjust it to the real scene.
+- **Temporary layout (approved by Agustin on 2026-11-10):** the walkable surface is one fixed layout for every classroom, a classroom of 16 by 12 units with a front teacher desk and 12 student desks, defined as shared data in `packages/contracts` so the frontend scene and the server agree. It **MUST** be replaced by a per-classroom layout; how layouts are generated is open and tracked in issue #79.
 - Whether chat is sent through REST or realtime messages ([Communication and notifications](./communication-and-notifications.md)).
 - Collaboration sync mechanism (Colyseus state or Yjs).

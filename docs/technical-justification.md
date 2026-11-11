@@ -219,7 +219,7 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Alternatives:** Client-authoritative positions or client prediction (more complex, easier to cheat); one avatar per connection (duplicates in the presence list); periodic re-verification of every connection (load, delay); a longer reconnection window.
 - **Trade-off:** The close codes `4001` and `4002` are also used by Colyseus (server shutdown and protocol errors), so clients read the close reason too. Reconnection re-verifies with the verified user and session identifiers through a second internal endpoint, because the access token may have expired. Connected time is reported once per presence session and is not retried, so it can undercount after a failure.
 - **Affected contracts:** [Realtime and presence](../rules/realtime-and-presence.md), [API contracts](../rules/api-contracts.md#realtime-contract), [Architecture](../rules/architecture.md).
-- **Approval:** Approved by Agustin (decision owner) on 2026-11-10. The walkable surface (a 16 by 12 classroom with 13 obstacle boxes, shared in `packages/contracts`) is a proposal to confirm in the pull request.
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-10. The walkable surface (a 16 by 12 classroom with 13 obstacle boxes, shared in `packages/contracts`) is a temporary fixed layout for every classroom; per-classroom layout generation is open and tracked in issue #79.
 
 ## 8. Known conflicts and notes
 

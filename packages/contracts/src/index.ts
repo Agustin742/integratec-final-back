@@ -106,9 +106,10 @@ const desk = (
 });
 
 /**
- * Walkable surface shared by the server (collisions) and the frontend scene (proposal to confirm
- * in the pull request of issue #25): a 16 by 12 classroom, the teacher desk at the front
- * (negative z) and twelve student desks in three rows of four. The entrance is at the back.
+ * TEMPORARY: one fixed layout shared by every classroom until per-classroom layouts land (issue
+ * #79). Walkable surface used by the server (collisions) and the frontend scene: a 16 by 12
+ * classroom, the teacher desk at the front (negative z) and twelve student desks in three rows of
+ * four. The entrance is at the back. Desks added by auto-expansion (#22) have no place here yet.
  */
 export const CLASSROOM_LAYOUT: ClassroomLayout = {
   bounds: { minX: -8, maxX: 8, minZ: -6, maxZ: 6 },
