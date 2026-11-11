@@ -50,6 +50,13 @@ export interface ClassroomRoomOptions {
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
 
+/**
+ * Largest `connectedSeconds` the API accepts in one report (`MAX_CONNECTED_SECONDS_PER_REPORT` in
+ * its connected-time DTO, seven days). A longer presence session is reported at this value instead
+ * of being rejected, and not retried, for exceeding it.
+ */
+const MAX_CONNECTED_SECONDS_PER_REPORT = 7 * 24 * 3600;
+
 interface Intent extends AvatarInput {
   /** Connection that sent it: when it leaves, the avatar stops. */
   owner: string;
@@ -114,7 +121,19 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     }
     this.limiters.set(client.sessionId, new RateLimiter(INPUT_RATE_LIMIT_PER_SECOND));
     this.authByConnection.set(client.sessionId, auth);
-    if (attached.first) this.addAvatar(auth);
+    if (attached.first) {
+      this.addAvatar(auth);
+    } else {
+      // The avatar exists because another connection of the user is live or held: show who they
+      // are now and that they are back, rather than leaving a `reconnecting` status until the held
+      // connection expires.
+      const avatar = this.state.avatars.get(auth.userId);
+      if (avatar) {
+        avatar.displayName = auth.displayName;
+        avatar.role = auth.role;
+      }
+      this.refreshStatus(auth.userId);
+    }
     this.syncConnectedTime(auth.userId);
   }
 
@@ -156,11 +175,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     }
     try {
       const current = await this.verifier.reverify(auth);
-      // The connection may have been evicted while the API was answering.
-      if (!this.userConnections.has(client.sessionId)) {
-        this.closeReconnection(client, 'denied');
-        return;
-      }
+      // The connection may have been released while the API was answering (evicted, or its socket
+      // closed): the release already closed it and reported its time, so nothing resumes.
+      if (!this.userConnections.has(client.sessionId)) return;
       auth.role = current.role;
       auth.displayName = current.displayName;
       const avatar = this.state.avatars.get(userId);
@@ -172,6 +189,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       this.refreshStatus(userId);
       this.syncConnectedTime(userId);
     } catch (error) {
+      if (!this.userConnections.has(client.sessionId)) return; // released meanwhile, see above
       if (error instanceof JoinDeniedError) {
         this.closeReconnection(client, 'denied');
       } else {
@@ -281,7 +299,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * identifier and not retried: connected time is a coarse metric, never worth blocking the room.
    */
   private reportConnectedTime(userId: string, milliseconds: number): void {
-    const connectedSeconds = Math.round(milliseconds / 1000);
+    const connectedSeconds = Math.min(
+      Math.round(milliseconds / 1000),
+      MAX_CONNECTED_SECONDS_PER_REPORT,
+    );
     if (connectedSeconds < 1) return;
     const reporter = this.options.reporter ?? noopConnectedTimeReporter;
     const delivery = reporter
@@ -296,8 +317,13 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     this.inFlightReports.add(delivery);
   }
 
-  /** Refuses a reconnection: a definitive denial reads as revoked access, an outage as retryable. */
+  /**
+   * Refuses a reconnection: a definitive denial reads as revoked access, an outage as retryable.
+   * The connection is released here rather than left to the socket's close event, so the room's
+   * state does not depend on the transport; the release is idempotent when that event follows.
+   */
   private closeReconnection(client: Client, cause: 'denied' | 'unavailable'): void {
+    this.releaseConnection(client.sessionId);
     if (cause === 'denied') {
       client.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
     } else {
