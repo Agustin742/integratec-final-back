@@ -115,6 +115,54 @@ describe('ApiJoinVerifier', () => {
     expect(error.cause).toBeUndefined();
   });
 
+  describe('reverify', () => {
+    const REQUEST = {
+      userId: IDENTITY.userId,
+      authSessionId: IDENTITY.sessionId,
+      classroomId: CLASSROOM_ID,
+    };
+
+    it('posts the verified ids, never a token, and returns the current identity', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(200, IDENTITY));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).resolves.toEqual(IDENTITY);
+
+      const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://api.internal:3000/internal/realtime/access-reverification');
+      expect(new Headers(init.headers).get('x-internal-service-secret')).toBe(SECRET);
+      expect(JSON.parse(init.body as string)).toEqual({
+        userId: IDENTITY.userId,
+        sessionId: IDENTITY.sessionId,
+        classroomId: CLASSROOM_ID,
+      });
+    });
+
+    it.each([401, 403, 404, 500])('denies on a %i response', async (status) => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(status, {}));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinDeniedError,
+      );
+    });
+
+    it('denies when the network call fails', async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinDeniedError,
+      );
+    });
+
+    it.each([
+      ['another user', { ...IDENTITY, userId: '11111111-1111-4111-8111-111111111111' }],
+      ['another session', { ...IDENTITY, sessionId: '11111111-1111-4111-8111-111111111111' }],
+      ['another classroom', { ...IDENTITY, classroomId: '11111111-1111-4111-8111-111111111111' }],
+      ['a malformed body', { nope: true }],
+    ])('denies an answer for %s', async (_label, body) => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(200, body));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinDeniedError,
+      );
+    });
+  });
+
   describe('verification URL', () => {
     const urlFor = async (baseUrl: string): Promise<string> => {
       const fetchImpl = vi.fn().mockResolvedValue(json(200, IDENTITY));

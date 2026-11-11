@@ -163,7 +163,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate, so a service cannot start with it. Use the same value in the API and the realtime server.
 
-Service-to-service calls to the API send it in the `x-internal-service-secret` header. The only internal route today is `POST /internal/realtime/join-verification` (body `{ accessToken, classroomId }`), which the realtime server calls from `onAuth`; it is excluded from the public OpenAPI document and must not be routed by the reverse proxy (Caddy must never expose `/internal/*`; this is infrastructure work). If the internal call fails, times out, or returns a malformed response, the realtime server rejects the join (fail closed).
+Service-to-service calls to the API send it in the `x-internal-service-secret` header. The internal routes are `POST /internal/realtime/join-verification` (body `{ accessToken, classroomId }`), which the realtime server calls from `onAuth`, and `POST /internal/realtime/access-reverification` (body `{ userId, sessionId, classroomId }`, no token), which it calls when a dropped connection comes back inside the reconnection window. Both are excluded from the public OpenAPI document and must not be routed by the reverse proxy (Caddy must never expose `/internal/*`; this is infrastructure work). If an internal call fails, times out, or returns a malformed response, the realtime server rejects the join or the reconnection (fail closed).
 
 The client sets the access token with the Colyseus SDK (`client.auth.token`); it arrives as `Authorization: Bearer <access token>` on the matchmake request and as the `token` argument of `onAuth`. Join options carry only `classroomId`; the token is never read from options or URLs (see [D2](./docs/technical-justification.md#d2-nestjs-and-colyseus-integration)).
 
@@ -206,6 +206,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `PORT`                    | Default `2567`; integer 1-65535                   | Colyseus and HTTP listen port                                            | Public         | Yes     |
 | `API_INTERNAL_URL`        | Required; absolute `http(s)` URL                  | Base URL of the API for internal calls                                   | Private        | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+| `RECONNECTION_WINDOW_SECONDS` | Default `20`; integer 1-120                   | Seconds a dropped connection may reconnect before its avatar is removed  | Public         | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 

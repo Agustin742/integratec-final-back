@@ -13,6 +13,7 @@ start(
           baseUrl: config.apiInternalUrl,
           serviceSecret: config.internalServiceSecret,
         }),
+        { reconnectionWindowSeconds: config.reconnectionWindowSeconds },
       ),
       port,
     ),

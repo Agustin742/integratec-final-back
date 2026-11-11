@@ -21,7 +21,10 @@ const AUTH = {
 
 describe('createClassroomRoom', () => {
   it('exposes a static onAuth that Colyseus can call detached from the class', async () => {
-    const verifier: JoinVerifier = { verify: vi.fn().mockResolvedValue(IDENTITY) };
+    const verifier: JoinVerifier = {
+      verify: vi.fn().mockResolvedValue(IDENTITY),
+      reverify: vi.fn(),
+    };
     const RoomClass = createClassroomRoom(verifier);
     const { onAuth } = RoomClass; // MatchMaker invokes it without `this`
     const context = { token: 'token-1' } as never;
@@ -32,7 +35,7 @@ describe('createClassroomRoom', () => {
 
   /** A room that has run `onCreate`, with the real-time loop replaced so no timer leaks. */
   const makeCreatedRoom = () => {
-    const room = new (createClassroomRoom({ verify: vi.fn() }))();
+    const room = new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
     const setFixedTimestep = vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
     room.onCreate({ classroomId: CLASSROOM_ID });
     return { room, setFixedTimestep };
@@ -68,7 +71,8 @@ describe('createClassroomRoom', () => {
     expect(room.state.avatars.size).toBe(0);
   });
 
-  const makeCreatedRoomWithoutCreate = () => new (createClassroomRoom({ verify: vi.fn() }))();
+  const makeCreatedRoomWithoutCreate = () =>
+    new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
 
   describe('onCreate', () => {
     const makeRoom = () => makeCreatedRoomWithoutCreate();

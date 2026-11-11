@@ -12,7 +12,10 @@ const IDENTITY = {
   displayName: 'Ada Lovelace',
 };
 
-const verifierReturning = (impl: JoinVerifier['verify']) => ({ verify: vi.fn(impl) });
+const verifierReturning = (impl: JoinVerifier['verify']) => ({
+  verify: vi.fn(impl),
+  reverify: vi.fn(),
+});
 
 const rejection = async (promise: Promise<unknown>): Promise<ServerError> => {
   const error = await promise.then(

@@ -1,7 +1,9 @@
 import {
   AVATAR_INPUT_MESSAGE,
   CLASSROOM_LAYOUT,
+  CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
+  CLOSE_REASON_ACCESS_REVOKED,
   CLOSE_REASON_TOO_MANY_CONNECTIONS,
   INPUT_RATE_LIMIT_PER_SECOND,
   MAX_CONNECTIONS_PER_USER,
@@ -10,7 +12,14 @@ import {
   avatarInputSchema,
   type AvatarInput,
 } from '@aula/contracts';
-import { Room, ServerError, validate, type AuthContext, type Client } from '@colyseus/core';
+import {
+  Room,
+  ServerError,
+  validate,
+  type AuthContext,
+  type Client,
+  type Deferred,
+} from '@colyseus/core';
 import type { ClassroomAuth, JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
 import { stepAvatar } from '../movement/step-avatar';
@@ -23,7 +32,11 @@ import { Avatar, ClassroomState } from './classroom-state';
 export interface ClassroomRoomOptions {
   /** Milliseconds clock shared by rate limiting and time tracking; injectable for tests. */
   now?: () => number;
+  /** Seconds a dropped connection is held for before its avatar is removed. Default 20. */
+  reconnectionWindowSeconds?: number;
 }
+
+const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
 
 interface Intent extends AvatarInput {
   /** Connection that sent it: when it leaves, the avatar stops. */
@@ -34,11 +47,14 @@ interface Intent extends AvatarInput {
 export class ClassroomRoom extends Room<{ state: ClassroomState }> {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
+  protected verifier!: JoinVerifier;
   /** Not named `presence`: Colyseus already owns `room.presence`. */
   private readonly userConnections = new PresenceRegistry(MAX_CONNECTIONS_PER_USER);
   private readonly limiters = new Map<string, RateLimiter>();
   /** Latest direction per user, shared by all of their connections (the last input wins). */
   private readonly intents = new Map<string, Intent>();
+  /** Reconnections the room is waiting for, by connection id. */
+  private readonly pendingReconnections = new Map<string, Deferred<Client>>();
 
   /**
    * Client intents. Payloads are validated by Colyseus against the shared contract schema; a
@@ -82,14 +98,71 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     if (attached.first) this.addAvatar(auth);
   }
 
+  /**
+   * A non-consented drop (network loss, closed lid). The connection is held for the reconnection
+   * window; while the user has no live connection their avatar shows as `reconnecting`. A consented
+   * leave never reaches here, it goes straight to {@link onLeave}.
+   */
+  onDrop(client: Client): void {
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (userId === undefined) return; // a refused join: nothing to hold
+    this.userConnections.hold(client.sessionId);
+    this.releaseIntent(userId, client.sessionId);
+    this.refreshStatus(userId);
+    try {
+      const pending = this.allowReconnection(client, this.reconnectionWindowSeconds());
+      this.pendingReconnections.set(client.sessionId, pending);
+      pending.catch(() => undefined); // expiry or rejection ends in onLeave
+    } catch {
+      // The room is closing: onLeave runs next and cleans up.
+    }
+  }
+
+  /**
+   * The client came back inside the window. Access is checked again against current persisted
+   * state before it is restored, and anything but a clear yes closes the connection.
+   */
+  async onReconnect(client: Client): Promise<void> {
+    this.pendingReconnections.delete(client.sessionId);
+    const auth = client.auth as ClassroomAuth | undefined;
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (auth === undefined || userId === undefined) {
+      this.denyReconnection(client);
+      return;
+    }
+    try {
+      const current = await this.verifier.reverify(auth);
+      // The connection may have been evicted while the API was answering.
+      if (!this.userConnections.has(client.sessionId)) {
+        this.denyReconnection(client);
+        return;
+      }
+      auth.role = current.role;
+      auth.displayName = current.displayName;
+      const avatar = this.state.avatars.get(userId);
+      if (avatar) {
+        avatar.role = current.role;
+        avatar.displayName = current.displayName;
+      }
+      this.userConnections.resume(client.sessionId);
+      this.refreshStatus(userId);
+    } catch {
+      this.denyReconnection(client);
+    }
+  }
+
   onLeave(client: Client): void {
     this.limiters.delete(client.sessionId);
+    this.pendingReconnections.delete(client.sessionId);
     const userId = this.userConnections.userOf(client.sessionId);
     const detached = this.userConnections.detach(client.sessionId);
-    if (userId !== undefined && this.intents.get(userId)?.owner === client.sessionId) {
-      this.intents.delete(userId);
+    if (userId === undefined) return;
+    this.releaseIntent(userId, client.sessionId);
+    if (detached?.userGone) {
+      this.state.avatars.delete(userId);
+    } else {
+      this.refreshStatus(userId);
     }
-    if (detached?.userGone) this.state.avatars.delete(detached.userId);
   }
 
   /** One fixed simulation step: every moving avatar advances, clamped by the classroom layout. */
@@ -116,6 +189,27 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     } else {
       this.intents.set(userId, { x: input.x, z: input.z, owner: client.sessionId });
     }
+  }
+
+  private denyReconnection(client: Client): void {
+    client.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+  }
+
+  /** Stops the avatar when the connection that was steering it goes away. */
+  private releaseIntent(userId: string, connectionId: string): void {
+    if (this.intents.get(userId)?.owner === connectionId) this.intents.delete(userId);
+  }
+
+  /** `online` while any connection of the user is live, `reconnecting` while all are held. */
+  private refreshStatus(userId: string): void {
+    const avatar = this.state.avatars.get(userId);
+    if (!avatar) return;
+    const status = this.userConnections.liveCount(userId) > 0 ? 'online' : 'reconnecting';
+    if (avatar.status !== status) avatar.status = status;
+  }
+
+  private reconnectionWindowSeconds(): number {
+    return this.options.reconnectionWindowSeconds ?? DEFAULT_RECONNECTION_WINDOW_SECONDS;
   }
 
   private now(): number {
@@ -153,6 +247,7 @@ export function createClassroomRoom(
 ): ClassroomRoomType {
   return class extends ClassroomRoom {
     protected override options = options;
+    protected override verifier = verifier;
 
     static override async onAuth(
       token: string,

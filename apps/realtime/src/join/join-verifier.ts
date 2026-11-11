@@ -33,10 +33,23 @@ export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
   displayName: identity.displayName,
 });
 
+/** A connection that was verified at join and now asks to come back. */
+export interface ReverifyRequest {
+  userId: string;
+  authSessionId: string;
+  classroomId: string;
+}
+
 /** Asks the authorization service whether a token may enter a classroom. */
 export interface JoinVerifier {
   /** Resolves with the verified identity or rejects with {@link JoinDeniedError}. */
   verify(accessToken: string, classroomId: string): Promise<VerifiedJoin>;
+  /**
+   * Repeats the access check for a user already verified at join, with no token: the token may
+   * have expired during the session, while the verified user and session are still checked
+   * against current persisted state. Rejects with {@link JoinDeniedError} when access was lost.
+   */
+  reverify(request: ReverifyRequest): Promise<VerifiedJoin>;
 }
 
 /**

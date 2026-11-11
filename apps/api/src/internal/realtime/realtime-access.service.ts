@@ -22,6 +22,20 @@ export class RealtimeAccessService {
     return this.identityFor(userId, sessionId, classroomId);
   }
 
+  /**
+   * Re-verification of a user already admitted: the session must still be live and the access
+   * must still hold. It takes ids instead of a token because the join token may have expired
+   * while the session is still valid, which would make a reconnection impossible.
+   */
+  async reverify(
+    userId: string,
+    sessionId: string,
+    classroomId: string,
+  ): Promise<JoinVerificationResponseDto> {
+    await this.sessions.verifySession(userId, sessionId);
+    return this.identityFor(userId, sessionId, classroomId);
+  }
+
   private async identityFor(
     userId: string,
     sessionId: string,

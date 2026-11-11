@@ -18,6 +18,21 @@ export class JoinVerificationRequestDto {
   classroomId!: string;
 }
 
+/** Re-check of a user admitted earlier; carries ids, never a token. */
+export class AccessReverificationRequestDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'userId must be a UUID' })
+  userId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'sessionId must be a UUID' })
+  sessionId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'classroomId must be a UUID' })
+  classroomId!: string;
+}
+
 export class JoinVerificationResponseDto {
   @ApiProperty({ format: 'uuid' })
   userId!: string;

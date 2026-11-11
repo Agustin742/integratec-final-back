@@ -3,7 +3,11 @@ import { ApiExcludeController } from '@nestjs/swagger';
 import { Public } from '../../auth/public.decorator';
 import { InternalServiceGuard } from './internal-service.guard';
 import { RealtimeAccessService } from './realtime-access.service';
-import { JoinVerificationRequestDto, JoinVerificationResponseDto } from './realtime-join.dto';
+import {
+  AccessReverificationRequestDto,
+  JoinVerificationRequestDto,
+  JoinVerificationResponseDto,
+} from './realtime-join.dto';
 
 /**
  * Called only by the realtime server from Colyseus `onAuth`: NestJS stays the single
@@ -22,5 +26,14 @@ export class RealtimeJoinController {
   @HttpCode(HttpStatus.OK)
   async verifyJoin(@Body() dto: JoinVerificationRequestDto): Promise<JoinVerificationResponseDto> {
     return this.access.verifyJoin(dto.accessToken, dto.classroomId);
+  }
+
+  /** Called when a dropped connection comes back: the access is checked again from persisted state. */
+  @Post('access-reverification')
+  @HttpCode(HttpStatus.OK)
+  async reverifyAccess(
+    @Body() dto: AccessReverificationRequestDto,
+  ): Promise<JoinVerificationResponseDto> {
+    return this.access.reverify(dto.userId, dto.sessionId, dto.classroomId);
   }
 }

@@ -25,6 +25,8 @@ export interface StubApi {
   calls: RecordedCall[];
   /** Replies to the internal endpoints; set `connectedTimeStatus` to simulate a failure. */
   connectedTimeStatus: number;
+  /** Forces the reverification endpoint to answer with this status. */
+  reverificationStatus: number | undefined;
   close(): Promise<void>;
 }
 
@@ -53,6 +55,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
     users: new Map(users.map((user) => [user.userId, user])),
     calls,
     connectedTimeStatus: 204,
+    reverificationStatus: undefined,
     close: () => new Promise((resolve) => stub.server.close(() => resolve())),
   };
 
@@ -82,6 +85,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
           : reply(401);
       }
       if (path === '/internal/realtime/access-reverification') {
+        if (stub.reverificationStatus !== undefined) return reply(stub.reverificationStatus);
         const user = byUserId.get(String(body.userId));
         return user && user.sessionId === body.sessionId && user.classrooms.has(classroomId)
           ? reply(200, identity(user, classroomId))
