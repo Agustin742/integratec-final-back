@@ -30,11 +30,14 @@ describe('createClassroomRoom', () => {
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);
   });
 
-  const makeJoinedRoom = () => {
+  /** A room that has run `onCreate`, with the real-time loop replaced so no timer leaks. */
+  const makeCreatedRoom = () => {
     const room = new (createClassroomRoom({ verify: vi.fn() }))();
+    const setFixedTimestep = vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
     room.onCreate({ classroomId: CLASSROOM_ID });
-    return room;
+    return { room, setFixedTimestep };
   };
+  const makeJoinedRoom = () => makeCreatedRoom().room;
 
   it('rejects a join whose verified classroom differs from the room classroom', () => {
     const room = makeJoinedRoom();
@@ -65,8 +68,10 @@ describe('createClassroomRoom', () => {
     expect(room.state.avatars.size).toBe(0);
   });
 
+  const makeCreatedRoomWithoutCreate = () => new (createClassroomRoom({ verify: vi.fn() }))();
+
   describe('onCreate', () => {
-    const makeRoom = () => new (createClassroomRoom({ verify: vi.fn() }))();
+    const makeRoom = () => makeCreatedRoomWithoutCreate();
 
     it.each([
       ['missing options', undefined],
@@ -78,11 +83,17 @@ describe('createClassroomRoom', () => {
     });
 
     it('binds the room to a valid classroomId and mirrors it in the state', () => {
-      const room = makeRoom();
-      room.onCreate({ classroomId: CLASSROOM_ID });
+      const { room } = makeCreatedRoom();
 
       expect(room.classroomId).toBe(CLASSROOM_ID);
       expect(room.state.classroomId).toBe(CLASSROOM_ID);
+    });
+
+    it('runs a fixed 20 Hz simulation and patches state at 20 Hz', () => {
+      const { room, setFixedTimestep } = makeCreatedRoom();
+
+      expect(setFixedTimestep).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 20);
+      expect(room.patchRate).toBe(50);
     });
   });
 });
