@@ -48,4 +48,18 @@ The read does not allocate, reassign, release or repair desks. Enrollment (#22) 
 
 `apps/api/src/classrooms/desks/desks.http.spec.ts` exercises real Nest routing, the global session guard, shared access service, error envelope and response projection using synthetic sessions and predicate-aware mocked persistence. It checks allowed/denied scopes, free and expanded layouts, full-layout retrieval and unchanged controlled fixture state. It does **not** prove PostgreSQL constraints, allocation concurrency, live authentication or frontend integration. No database is required.
 
-The [resource authorization test pattern](resource-authorization-testing.md) is reused by the route's tests.
+The [resource authorization test pattern](resource-authorization-testing.md) is reused by the mocked route tests.
+
+### PostgreSQL acceptance coverage
+
+`apps/api/src/classrooms/desks/desks.integration.spec.ts` adds one real Nest/Prisma HTTP lifecycle scenario for S4. It creates a classroom and join code through existing public routes, then compares the desk map against public enrollment responses for 13 students. Assertions cover exact desk, membership and user identifiers, one assignment per enrolled student, expansion beyond the initial 12 desks, idempotent rejoin without duplicate assignments, public removal releasing the same physical desk, immediate `404` for the removed student's map access, and a new student's reuse of that desk. The map is read as both teacher and enrolled students.
+
+Prisma is used only to create synthetic user fixtures and clean up rows scoped to their generated UUIDs; no internal database read is an acceptance oracle. The test consumes the existing #22 allocator and #23 removal flow instead of seeding assignments or reproducing their algorithms. This is additional acceptance proof for an already implemented feature, not a new feature RED/GREEN cycle.
+
+Run only against an explicitly supplied, migrated, disposable local PostgreSQL database using `DATABASE_URL`; `loadIsolatedTestDatabaseUrl` rejects a missing URL, with no environment-file loading or default connection. The task uses separate implementation and verifier databases. No provisioning, migration or shared-data cleanup is performed by this test.
+
+```bash
+pnpm --filter @aula/api exec vitest run src/classrooms/desks/desks.integration.spec.ts --pool=threads --maxWorkers=2 --minWorkers=1
+```
+
+The task-owned PostgreSQL run passed **1/1 lifecycle test** (parent-run focused command, exit `0`). Session identity remains synthetic and the outbox dispatcher is disabled; removal uses its real transactional event writer, but delivery is not asserted. This does not prove live token verification, concurrent enrollment contention, school-role matrix integration, email invitation acceptance, realtime behavior or frontend integration. Those boundaries are not inferred from the passing lifecycle scenario.
