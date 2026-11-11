@@ -57,8 +57,15 @@ export const MAX_CONNECTIONS_PER_USER = 3;
  */
 export const CLOSE_CODE_ACCESS_REVOKED = 4001;
 export const CLOSE_CODE_TOO_MANY_CONNECTIONS = 4002;
+/**
+ * Access could not be verified (the API was unreachable, slow or failing) when a dropped
+ * connection came back. Unlike 4001 it says nothing about the user's access: the client may retry.
+ * 4100 sits outside every code Colyseus uses (4000 to 4003 and 4010).
+ */
+export const CLOSE_CODE_VERIFICATION_UNAVAILABLE = 4100;
 export const CLOSE_REASON_ACCESS_REVOKED = 'access_revoked';
 export const CLOSE_REASON_TOO_MANY_CONNECTIONS = 'too_many_connections';
+export const CLOSE_REASON_VERIFICATION_UNAVAILABLE = 'verification_unavailable';
 
 /** Client to server: the direction the avatar should walk. `{ x: 0, z: 0 }` stops it. */
 export const AVATAR_INPUT_MESSAGE = 'avatar:input';

@@ -47,7 +47,8 @@ export interface JoinVerifier {
   /**
    * Repeats the access check for a user already verified at join, with no token: the token may
    * have expired during the session, while the verified user and session are still checked
-   * against current persisted state. Rejects with {@link JoinDeniedError} when access was lost.
+   * against current persisted state. Rejects with {@link JoinDeniedError} when access was lost,
+   * and with {@link JoinVerificationUnavailableError} when the answer could not be obtained.
    */
   reverify(request: ReverifyRequest): Promise<VerifiedJoin>;
 }
@@ -60,5 +61,18 @@ export class JoinDeniedError extends Error {
   constructor() {
     super('Join denied');
     this.name = 'JoinDeniedError';
+  }
+}
+
+/**
+ * The access check could not be completed (network error, timeout, 5xx, throttling). It says
+ * nothing about the user's access, which is why it is a different failure from
+ * {@link JoinDeniedError}: callers fail closed either way but tell the client it may retry. Like
+ * the denial, it carries no cause so nothing sensitive can leak.
+ */
+export class JoinVerificationUnavailableError extends Error {
+  constructor() {
+    super('Join verification unavailable');
+    this.name = 'JoinVerificationUnavailableError';
   }
 }

@@ -6,8 +6,10 @@ import {
   CLASSROOM_ROOM_NAME,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
+  CLOSE_CODE_VERIFICATION_UNAVAILABLE,
   CLOSE_REASON_ACCESS_REVOKED,
   CLOSE_REASON_TOO_MANY_CONNECTIONS,
+  CLOSE_REASON_VERIFICATION_UNAVAILABLE,
   INPUT_RATE_LIMIT_PER_SECOND,
   MAX_CONNECTIONS_PER_USER,
   PATCH_RATE_HZ,
@@ -40,9 +42,16 @@ describe('realtime contract', () => {
       expect(CLOSE_CODE_TOO_MANY_CONNECTIONS).toBe(4002);
     });
 
+    it('uses 4100 when access could not be verified, outside every code Colyseus uses', () => {
+      expect(CLOSE_CODE_VERIFICATION_UNAVAILABLE).toBe(4100);
+      // Colyseus: 4000 consented, 4001 shutdown, 4002 error, 4003 failed to reconnect, 4010 may retry.
+      expect([4000, 4001, 4002, 4003, 4010]).not.toContain(CLOSE_CODE_VERIFICATION_UNAVAILABLE);
+    });
+
     it('gives each code a reason so clients can tell them from the Colyseus codes', () => {
       expect(CLOSE_REASON_ACCESS_REVOKED).toBe('access_revoked');
       expect(CLOSE_REASON_TOO_MANY_CONNECTIONS).toBe('too_many_connections');
+      expect(CLOSE_REASON_VERIFICATION_UNAVAILABLE).toBe('verification_unavailable');
     });
   });
 

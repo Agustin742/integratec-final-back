@@ -1,7 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ServerError } from '@colyseus/core';
-import { createClassroomRoom } from './classroom-room';
-import type { JoinVerifier } from '../join/join-verifier';
+import {
+  CLOSE_CODE_ACCESS_REVOKED,
+  CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+  CLOSE_REASON_ACCESS_REVOKED,
+  CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+} from '@aula/contracts';
+import { createClassroomRoom, type ClassroomRoom } from './classroom-room';
+import {
+  JoinDeniedError,
+  JoinVerificationUnavailableError,
+  type JoinVerifier,
+} from '../join/join-verifier';
 
 const CLASSROOM_ID = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const IDENTITY = {
@@ -165,6 +175,97 @@ describe('createClassroomRoom', () => {
 
       expect(setFixedTimestep).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 20);
       expect(room.patchRate).toBe(50);
+    });
+  });
+
+  describe('reconnection', () => {
+    interface FakeClient {
+      sessionId: string;
+      auth: typeof AUTH;
+      leave: ReturnType<typeof vi.fn>;
+    }
+
+    const makeReconnectingRoom = (reverify: JoinVerifier['reverify']) => {
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      // The unit test has no real transport: a resolved promise stands in for the pending hold.
+      vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const client: FakeClient = { sessionId: 's1', auth: { ...AUTH }, leave: vi.fn() };
+      room.onJoin(client as never);
+      room.onDrop(client as never);
+      return { room, client };
+    };
+    const sendInput = (room: ClassroomRoom, client: FakeClient, x: number, z: number): void =>
+      (
+        room as unknown as { onAvatarInput(c: FakeClient, i: { x: number; z: number }): void }
+      ).onAvatarInput(client, { x, z });
+    const positionAfterStep = (room: ClassroomRoom): number => {
+      room.tick(0.5);
+      return room.state.avatars.get(IDENTITY.userId)?.x ?? Number.NaN;
+    };
+
+    it('ignores input from a connection until its access is confirmed', async () => {
+      let confirm: (identity: typeof IDENTITY) => void = () => undefined;
+      const { room, client } = makeReconnectingRoom(
+        () => new Promise((resolve) => (confirm = resolve)),
+      );
+      const spawnX = room.state.avatars.get(IDENTITY.userId)?.x;
+
+      const reconnecting = room.onReconnect(client as never);
+      sendInput(room, client, 1, 0);
+      expect(positionAfterStep(room)).toBe(spawnX);
+
+      confirm(IDENTITY);
+      await reconnecting;
+      sendInput(room, client, 1, 0);
+      expect(positionAfterStep(room)).toBeGreaterThan(spawnX ?? 0);
+    });
+
+    it('never resumes the avatar or its input when access is denied', async () => {
+      const { room, client } = makeReconnectingRoom(() => Promise.reject(new JoinDeniedError()));
+      const spawnX = room.state.avatars.get(IDENTITY.userId)?.x;
+
+      await room.onReconnect(client as never);
+      sendInput(room, client, 1, 0);
+
+      expect(positionAfterStep(room)).toBe(spawnX);
+      expect(room.state.avatars.get(IDENTITY.userId)?.status).toBe('reconnecting');
+    });
+
+    it('closes a denied reconnection as revoked access', async () => {
+      const { room, client } = makeReconnectingRoom(() => Promise.reject(new JoinDeniedError()));
+
+      await room.onReconnect(client as never);
+
+      expect(client.leave).toHaveBeenCalledExactlyOnceWith(
+        CLOSE_CODE_ACCESS_REVOKED,
+        CLOSE_REASON_ACCESS_REVOKED,
+      );
+    });
+
+    it('closes an unverifiable reconnection with the retryable code, not as revoked access', async () => {
+      const { room, client } = makeReconnectingRoom(() =>
+        Promise.reject(new JoinVerificationUnavailableError()),
+      );
+
+      await room.onReconnect(client as never);
+
+      expect(client.leave).toHaveBeenCalledExactlyOnceWith(
+        CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+        CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+      );
+    });
+
+    it('treats an unexpected verifier failure as unavailable and fails closed', async () => {
+      const { room, client } = makeReconnectingRoom(() => Promise.reject(new Error('boom')));
+
+      await room.onReconnect(client as never);
+
+      expect(client.leave).toHaveBeenCalledExactlyOnceWith(
+        CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+        CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+      );
     });
   });
 });

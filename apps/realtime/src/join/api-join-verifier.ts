@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   CLASSROOM_ROLES,
   JoinDeniedError,
+  JoinVerificationUnavailableError,
   type JoinVerifier,
   type ReverifyRequest,
   type VerifiedJoin,
@@ -38,9 +39,16 @@ export interface ApiJoinVerifierOptions {
   fetchImpl?: typeof fetch;
 }
 
+/** Answers that say the request itself was refused; any other non-200 status says nothing about access. */
+const DEFINITIVE_DENIAL_STATUSES = new Set([400, 401, 403, 404]);
+
 /**
  * Verifies joins against the internal NestJS endpoint. It fails closed: any network error,
- * timeout, non-200 status or malformed body is a denial. It never logs the token or secret.
+ * timeout, non-200 status or malformed body refuses the join. A join always reports a plain
+ * {@link JoinDeniedError}, but a re-verification tells a definitive denial (the API said no or the
+ * answer was malformed or for someone else) apart from a check that could not be completed
+ * ({@link JoinVerificationUnavailableError}: network, timeout, 5xx, throttling), so the client can
+ * retry the latter. It never logs the token or secret.
  */
 export class ApiJoinVerifier implements JoinVerifier {
   private readonly baseUrl: string;
@@ -56,7 +64,12 @@ export class ApiJoinVerifier implements JoinVerifier {
   }
 
   async verify(accessToken: string, classroomId: string): Promise<VerifiedJoin> {
-    const identity = await this.post(VERIFICATION_PATH, { accessToken, classroomId });
+    const identity = await this.post(VERIFICATION_PATH, { accessToken, classroomId }).catch(
+      (error: unknown) => {
+        // A join has one failure shape: the client cannot tell why it was refused.
+        throw error instanceof JoinVerificationUnavailableError ? new JoinDeniedError() : error;
+      },
+    );
     if (identity.classroomId !== classroomId) throw new JoinDeniedError();
     return identity;
   }
@@ -91,7 +104,9 @@ export class ApiJoinVerifier implements JoinVerifier {
         signal: controller.signal,
       });
       if (response.status !== 200) {
-        throw new JoinDeniedError();
+        throw DEFINITIVE_DENIAL_STATUSES.has(response.status)
+          ? new JoinDeniedError()
+          : new JoinVerificationUnavailableError();
       }
       // The body is read inside the timeout window too: a stalled body is a denial.
       const parsed = verifiedJoinSchema.safeParse(await response.json());
@@ -100,8 +115,11 @@ export class ApiJoinVerifier implements JoinVerifier {
       }
       return parsed.data;
     } catch (error) {
-      // Collapse every failure into one cause-free denial so nothing sensitive can leak.
-      throw error instanceof JoinDeniedError ? error : new JoinDeniedError();
+      // Collapse every failure into one of two cause-free errors so nothing sensitive can leak.
+      if (error instanceof JoinDeniedError || error instanceof JoinVerificationUnavailableError) {
+        throw error;
+      }
+      throw new JoinVerificationUnavailableError();
     } finally {
       clearTimeout(timer);
     }

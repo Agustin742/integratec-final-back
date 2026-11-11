@@ -3,8 +3,10 @@ import {
   CLASSROOM_LAYOUT,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
+  CLOSE_CODE_VERIFICATION_UNAVAILABLE,
   CLOSE_REASON_ACCESS_REVOKED,
   CLOSE_REASON_TOO_MANY_CONNECTIONS,
+  CLOSE_REASON_VERIFICATION_UNAVAILABLE,
   INPUT_RATE_LIMIT_PER_SECOND,
   MAX_CONNECTIONS_PER_USER,
   PATCH_RATE_HZ,
@@ -20,7 +22,7 @@ import {
   type Client,
   type Deferred,
 } from '@colyseus/core';
-import type { ClassroomAuth, JoinVerifier } from '../join/join-verifier';
+import { JoinDeniedError, type ClassroomAuth, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
 import { stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
@@ -139,21 +141,24 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
 
   /**
    * The client came back inside the window. Access is checked again against current persisted
-   * state before it is restored, and anything but a clear yes closes the connection.
+   * state before anything resumes: until then the connection stays held, so its input is ignored,
+   * the avatar stays `reconnecting` and no connected time accrues. Anything but a clear yes closes
+   * the connection: `4001` when access is definitively denied, `4100` when it could not be
+   * verified (so the client may retry).
    */
   async onReconnect(client: Client): Promise<void> {
     this.pendingReconnections.delete(client.sessionId);
     const auth = client.auth as ClassroomAuth | undefined;
     const userId = this.userConnections.userOf(client.sessionId);
     if (auth === undefined || userId === undefined) {
-      this.denyReconnection(client);
+      this.closeReconnection(client, 'denied');
       return;
     }
     try {
       const current = await this.verifier.reverify(auth);
       // The connection may have been evicted while the API was answering.
       if (!this.userConnections.has(client.sessionId)) {
-        this.denyReconnection(client);
+        this.closeReconnection(client, 'denied');
         return;
       }
       auth.role = current.role;
@@ -166,8 +171,14 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
       this.syncConnectedTime(userId);
-    } catch {
-      this.denyReconnection(client);
+    } catch (error) {
+      if (error instanceof JoinDeniedError) {
+        this.closeReconnection(client, 'denied');
+      } else {
+        // The API was unreachable or failing: access is unknown, not revoked. No identifiers logged.
+        console.warn('realtime: reconnection access verification unavailable');
+        this.closeReconnection(client, 'unavailable');
+      }
     }
   }
 
@@ -249,6 +260,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     const limiter = this.limiters.get(client.sessionId);
     const userId = this.userConnections.userOf(client.sessionId);
     if (limiter === undefined || userId === undefined) return;
+    // A held connection (dropped, or reconnected but not yet re-verified) cannot steer the avatar.
+    if (!this.userConnections.isLive(client.sessionId)) return;
     // Over the limit: dropped silently, with no effect on the avatar.
     if (!limiter.tryConsume(this.now())) return;
     if (input.x === 0 && input.z === 0) {
@@ -283,8 +296,13 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     this.inFlightReports.add(delivery);
   }
 
-  private denyReconnection(client: Client): void {
-    client.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+  /** Refuses a reconnection: a definitive denial reads as revoked access, an outage as retryable. */
+  private closeReconnection(client: Client, cause: 'denied' | 'unavailable'): void {
+    if (cause === 'denied') {
+      client.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+    } else {
+      client.leave(CLOSE_CODE_VERIFICATION_UNAVAILABLE, CLOSE_REASON_VERIFICATION_UNAVAILABLE);
+    }
   }
 
   /** Stops the avatar when the connection that was steering it goes away. */

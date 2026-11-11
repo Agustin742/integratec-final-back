@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiJoinVerifier } from './api-join-verifier';
-import { JoinDeniedError } from './join-verifier';
+import { JoinDeniedError, JoinVerificationUnavailableError } from './join-verifier';
 
 const SECRET = 'test-only-secret-with-at-least-32-characters';
 const TOKEN = 'super-secret-access-token';
@@ -136,18 +136,51 @@ describe('ApiJoinVerifier', () => {
       });
     });
 
-    it.each([401, 403, 404, 500])('denies on a %i response', async (status) => {
+    it.each([400, 401, 403, 404])('denies on a definitive %i answer', async (status) => {
       const fetchImpl = vi.fn().mockResolvedValue(json(status, {}));
       await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
         JoinDeniedError,
       );
     });
 
-    it('denies when the network call fails', async () => {
+    it.each([408, 429, 500, 502, 503, 504])(
+      'reports the verification as unavailable on a %i response',
+      async (status) => {
+        const fetchImpl = vi.fn().mockResolvedValue(json(status, {}));
+        await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+          JoinVerificationUnavailableError,
+        );
+      },
+    );
+
+    it('reports the verification as unavailable when the network call fails', async () => {
       const fetchImpl = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
       await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
-        JoinDeniedError,
+        JoinVerificationUnavailableError,
       );
+    });
+
+    it('reports the verification as unavailable when the API does not answer in time', async () => {
+      const fetchImpl = vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          }),
+      ) as unknown as typeof fetch;
+      await expect(makeVerifier(fetchImpl, 20).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinVerificationUnavailableError,
+      );
+    });
+
+    it('carries no cause or sensitive text in the unavailable error', async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new Error(`boom ${SECRET}`));
+      const error = (await makeVerifier(fetchImpl)
+        .reverify(REQUEST)
+        .catch((e: unknown) => e)) as Error;
+      expect(error.message).not.toContain(SECRET);
+      expect(error.cause).toBeUndefined();
     });
 
     it.each([

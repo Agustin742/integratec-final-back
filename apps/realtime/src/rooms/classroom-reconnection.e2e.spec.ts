@@ -1,7 +1,13 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import type { Room as SdkRoom } from '@colyseus/sdk';
-import { CLASSROOM_ROOM_NAME } from '@aula/contracts';
+import {
+  CLASSROOM_ROOM_NAME,
+  CLOSE_CODE_ACCESS_REVOKED,
+  CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+  CLOSE_REASON_ACCESS_REVOKED,
+  CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+} from '@aula/contracts';
 import { createAppConfig } from '../app.config';
 import { ApiJoinVerifier } from '../join/api-join-verifier';
 import {
@@ -150,7 +156,10 @@ describe('ClassroomRoom reconnection (real Colyseus server + stub API)', () => {
     await waitUntil(() => avatarOf(observer, ada)?.status === 'reconnecting', 'reconnecting');
     ada.classrooms.delete(CLASSROOM);
 
-    await expect(colyseus.sdk.reconnect(token)).rejects.toThrow();
+    await expect(colyseus.sdk.reconnect(token)).rejects.toMatchObject({
+      code: CLOSE_CODE_ACCESS_REVOKED,
+      message: CLOSE_REASON_ACCESS_REVOKED,
+    });
 
     await waitUntil(
       () => !serverRoom(observer).state.avatars.has(ada.userId),
@@ -158,7 +167,7 @@ describe('ClassroomRoom reconnection (real Colyseus server + stub API)', () => {
     );
   });
 
-  it('fails closed when the API cannot answer the re-verification', async () => {
+  it('fails closed with a retryable code when the API cannot answer the re-verification', async () => {
     const observer = await join(bob);
     const room = await join(ada);
     const token = room.reconnectionToken;
@@ -166,7 +175,10 @@ describe('ClassroomRoom reconnection (real Colyseus server + stub API)', () => {
     await waitUntil(() => avatarOf(observer, ada)?.status === 'reconnecting', 'reconnecting');
     api.reverificationStatus = 503;
 
-    await expect(colyseus.sdk.reconnect(token)).rejects.toThrow();
+    await expect(colyseus.sdk.reconnect(token)).rejects.toMatchObject({
+      code: CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+      message: CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+    });
 
     await waitUntil(
       () => !serverRoom(observer).state.avatars.has(ada.userId),
