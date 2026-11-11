@@ -10,7 +10,11 @@ import { Prisma } from '@prisma/client';
 import type { ApiConfig } from '../../config/api-config';
 import { API_CONFIG } from '../../config/config.module';
 import { PrismaService } from '../../prisma/prisma.service';
-import { OutboxHandlerRegistry, type OutboxEventEnvelope } from './outbox.registry';
+import {
+  OutboxHandlerRegistry,
+  type OutboxEventEnvelope,
+  type OutboxRetryPolicy,
+} from './outbox.registry';
 
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_BATCH_SIZE = 50;
@@ -197,7 +201,8 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
       return;
     }
     const attempts = row.attempts + 1;
-    const exhausted = attempts >= this.maxAttempts;
+    const policy = this.registry.retryPolicyFor(row.type);
+    const exhausted = attempts >= (policy.maxAttempts ?? this.maxAttempts);
     await this.prisma.outboxEvent.update({
       where: { id: row.id },
       data: {
@@ -216,8 +221,26 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
       attempts,
       errorName: error.name,
     };
-    if (exhausted) this.logger.error({ ...detail, exhausted: true });
-    else this.logger.warn(detail);
+    if (exhausted) {
+      this.logger.error({ ...detail, exhausted: true });
+      this.notifyExhausted(policy, row);
+    } else {
+      this.logger.warn(detail);
+    }
+  }
+
+  /** A faulty hook must not undo the outcome that was just persisted. */
+  private notifyExhausted(policy: OutboxRetryPolicy, row: ClaimedRow): void {
+    try {
+      policy.onExhausted?.({
+        id: row.id,
+        type: row.type,
+        payload: row.payload,
+        occurredAt: row.occurredAt,
+      });
+    } catch {
+      this.logger.error({ operation: 'outbox.event.exhausted-hook', eventId: row.id });
+    }
   }
 
   /** Returns the failure, or undefined when every handler succeeded. */

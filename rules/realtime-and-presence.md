@@ -109,7 +109,7 @@ Approved by Agustin on 2026-11-10.
 
 - NestJS writes an outbox event, in the same transaction as the change, when a classroom membership is deactivated or removed and when a session is revoked (logout, refresh-token reuse, password reset).
 - The event handler calls `POST /internal/evictions` on the realtime server with the `x-internal-service-secret` header. The route is internal: the reverse proxy **MUST NOT** route it (Caddy exposes only the matchmaking and WebSocket paths).
-- The server closes every matching connection with code `4001`, rejects any pending reconnection of it, and removes the avatar when no connection remains. Delivery is at least once, so eviction is idempotent.
+- The server closes every matching connection with code `4001`, rejects any pending reconnection of it, and removes the avatar when no connection remains. Delivery is at least once, so eviction is idempotent. Eviction events use a longer outbox retry budget than other events (12 attempts, about 2.8 hours), failed calls log their kind and HTTP status (never identifiers or secrets), and an eviction that is given up on is logged at error level. There is no periodic fallback: after an outage longer than the budget a revoked connection can stay open until it drops, and its reconnection is then re-verified.
 
 ## Connected time
 

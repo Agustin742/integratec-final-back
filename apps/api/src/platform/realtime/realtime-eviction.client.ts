@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 export const REALTIME_EVICTION_PORT = Symbol('REALTIME_EVICTION_PORT');
 
 /** What to evict: a user's connections, optionally narrowed to a classroom or an account session. */
@@ -13,13 +15,21 @@ export interface RealtimeEvictionPort {
   evict(request: EvictionRequest): Promise<void>;
 }
 
+/** Why an eviction call failed: the realtime server answered with an error, was slow, or was not reached. */
+export type RealtimeEvictionFailureKind = 'http' | 'timeout' | 'unreachable' | 'invalid_event';
+
 /**
- * Generic on purpose: the outbox stores handler error messages, and neither the secret nor a
- * user id may end up in that table.
+ * Names the failure kind (and the HTTP status when there was one) so a configuration fault, such as
+ * a 401 from a rotated secret, can be told apart from an outage. Still generic otherwise: the outbox
+ * stores handler error messages, and neither the secret, a user id nor the underlying cause may end
+ * up in that table or in a log.
  */
 export class RealtimeEvictionError extends Error {
-  constructor() {
-    super('realtime eviction failed');
+  constructor(
+    readonly kind: RealtimeEvictionFailureKind,
+    readonly status?: number,
+  ) {
+    super(`realtime eviction failed: ${kind === 'http' ? `http ${status}` : kind}`);
     this.name = 'RealtimeEvictionError';
   }
 }
@@ -43,6 +53,7 @@ export class HttpRealtimeEvictionClient implements RealtimeEvictionPort {
   private readonly serviceSecret: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly logger = new Logger(HttpRealtimeEvictionClient.name);
 
   constructor(options: HttpRealtimeEvictionClientOptions) {
     const url = new URL(options.baseUrl);
@@ -57,18 +68,31 @@ export class HttpRealtimeEvictionClient implements RealtimeEvictionPort {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await this.fetchImpl(this.url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          [SERVICE_SECRET_HEADER]: this.serviceSecret,
-        },
-        body: JSON.stringify(request),
-        signal: controller.signal,
+      let response: Response;
+      try {
+        response = await this.fetchImpl(this.url, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            [SERVICE_SECRET_HEADER]: this.serviceSecret,
+          },
+          body: JSON.stringify(request),
+          signal: controller.signal,
+        });
+      } catch {
+        throw new RealtimeEvictionError(controller.signal.aborted ? 'timeout' : 'unreachable');
+      }
+      if (!response.ok) throw new RealtimeEvictionError('http', response.status);
+    } catch (error) {
+      const failure =
+        error instanceof RealtimeEvictionError ? error : new RealtimeEvictionError('unreachable');
+      // Kind and status only: no user id, no secret, no cause.
+      this.logger.warn({
+        operation: 'realtime.eviction.failed',
+        kind: failure.kind,
+        ...(failure.status === undefined ? {} : { status: failure.status }),
       });
-      if (!response.ok) throw new Error();
-    } catch {
-      throw new RealtimeEvictionError();
+      throw failure;
     } finally {
       clearTimeout(timer);
     }

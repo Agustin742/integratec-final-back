@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authTestConfig } from '../../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../../config/config.module';
 import { PrismaModule } from '../../prisma/prisma.module';
@@ -10,7 +12,7 @@ import { OutboxDispatcher } from '../outbox/outbox.dispatcher';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import { OutboxHandlerRegistry, type OutboxEventEnvelope } from '../outbox/outbox.registry';
 import { HttpRealtimeEvictionClient, RealtimeEvictionError } from './realtime-eviction.client';
-import { RealtimeEvictionHandler } from './realtime-eviction.handler';
+import { EVICTION_MAX_ATTEMPTS, RealtimeEvictionHandler } from './realtime-eviction.handler';
 import { RealtimeEventsModule } from './realtime-events.module';
 import {
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
@@ -51,27 +53,32 @@ describe('HttpRealtimeEvictionClient', () => {
   });
 
   it.each([400, 401, 404, 500, 503])(
-    'fails on a %i response so the outbox retries',
+    'fails on a %i response, keeping the status, so the outbox retries',
     async (status) => {
       const fetchImpl = vi.fn().mockResolvedValue(new Response('{}', { status }));
-      await expect(make(fetchImpl).evict({ userId: USER })).rejects.toBeInstanceOf(
-        RealtimeEvictionError,
-      );
+      const error = (await make(fetchImpl)
+        .evict({ userId: USER })
+        .catch((e: unknown) => e)) as RealtimeEvictionError;
+
+      expect(error).toBeInstanceOf(RealtimeEvictionError);
+      expect(error).toMatchObject({ kind: 'http', status });
+      expect(error.message).toBe(`realtime eviction failed: http ${status}`);
     },
   );
 
-  it('fails without echoing the cause when the realtime server is unreachable', async () => {
+  it('fails as unreachable, without echoing the cause, when the realtime server refuses', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new TypeError(`ECONNREFUSED ${SECRET}`));
     const error = (await make(fetchImpl)
       .evict({ userId: USER })
-      .catch((e: unknown) => e)) as Error;
+      .catch((e: unknown) => e)) as RealtimeEvictionError;
 
     expect(error).toBeInstanceOf(RealtimeEvictionError);
+    expect(error).toMatchObject({ kind: 'unreachable', status: undefined });
     expect(error.message).not.toContain(SECRET);
     expect(error.cause).toBeUndefined();
   });
 
-  it('aborts the request when the realtime server does not answer in time', async () => {
+  it('aborts the request and reports a timeout when the realtime server does not answer', async () => {
     let signal: AbortSignal | undefined;
     const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
       signal = init?.signal ?? undefined;
@@ -80,10 +87,53 @@ describe('HttpRealtimeEvictionClient', () => {
       });
     }) as unknown as typeof fetch;
 
-    await expect(make(fetchImpl, 20).evict({ userId: USER })).rejects.toBeInstanceOf(
-      RealtimeEvictionError,
-    );
+    await expect(make(fetchImpl, 20).evict({ userId: USER })).rejects.toMatchObject({
+      name: 'RealtimeEvictionError',
+      kind: 'timeout',
+    });
     expect(signal?.aborted).toBe(true);
+  });
+
+  describe('failure log', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const cases: [string, () => Promise<Response>, string, number | undefined][] = [
+      ['a non-2xx answer', () => Promise.resolve(new Response('{}', { status: 401 })), 'http', 401],
+      [
+        'a refused connection',
+        () => Promise.reject(new TypeError('ECONNREFUSED')),
+        'unreachable',
+        undefined,
+      ],
+    ];
+    it.each(cases)(
+      'logs the kind and status for %s, with no identifier or secret',
+      async (_label, impl, kind, status) => {
+        const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+        await make(vi.fn(impl) as unknown as typeof fetch)
+          .evict({ userId: USER, classroomId: CLASSROOM, sessionId: SESSION })
+          .catch(() => undefined);
+
+        expect(warn).toHaveBeenCalledExactlyOnceWith({
+          operation: 'realtime.eviction.failed',
+          kind,
+          ...(status === undefined ? {} : { status }),
+        });
+        const logged = JSON.stringify(warn.mock.calls);
+        for (const sensitive of [USER, CLASSROOM, SESSION, SECRET]) {
+          expect(logged).not.toContain(sensitive);
+        }
+      },
+    );
+
+    it('logs nothing when the eviction is accepted', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      await make(vi.fn().mockResolvedValue(new Response(null, { status: 204 }))).evict({
+        userId: USER,
+      });
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -139,9 +189,33 @@ describe('RealtimeEvictionHandler', () => {
     expect(client.evict).not.toHaveBeenCalled();
   });
 
+  it('gives both event types a longer retry budget than the default', () => {
+    const { registry } = makeHandler();
+    for (const type of [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT]) {
+      expect(registry.retryPolicyFor(type).maxAttempts).toBe(EVICTION_MAX_ATTEMPTS);
+    }
+    expect(EVICTION_MAX_ATTEMPTS).toBeGreaterThan(5);
+  });
+
+  it('logs loudly, without identifiers, when an eviction is given up on', () => {
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { registry } = makeHandler();
+    const event = envelope(REALTIME_SESSIONS_REVOKED_EVENT, { userId: USER, sessionId: SESSION });
+
+    registry.retryPolicyFor(event.type).onExhausted?.(event);
+
+    expect(error).toHaveBeenCalledExactlyOnceWith({
+      operation: 'realtime.eviction.undelivered',
+      eventId: event.id,
+      type: event.type,
+    });
+    expect(JSON.stringify(error.mock.calls)).not.toContain(USER);
+    error.mockRestore();
+  });
+
   it('lets a delivery failure propagate so the outbox retries', async () => {
     const { client, registry } = makeHandler();
-    client.evict.mockRejectedValue(new RealtimeEvictionError());
+    client.evict.mockRejectedValue(new RealtimeEvictionError('http', 503));
     await expect(
       run(registry, envelope(REALTIME_SESSIONS_REVOKED_EVENT, { userId: USER })),
     ).rejects.toBeInstanceOf(RealtimeEvictionError);
@@ -150,11 +224,13 @@ describe('RealtimeEvictionHandler', () => {
 
 describe('Outbox to realtime eviction (integration)', () => {
   let realtime: Server;
-  let received: { path: string; secret: unknown; body: unknown }[] = [];
+  let received: { path: string; secret: unknown; body: { userId?: string } }[] = [];
   let realtimeStatus = 204;
   let prisma: PrismaService;
   let dispatcher: OutboxDispatcher;
   let outbox: OutboxWriter;
+  /** Unique per test: other spec files write the same event types into the shared database. */
+  let user: string;
 
   beforeAll(async () => {
     realtime = createServer((req, res) => {
@@ -164,7 +240,7 @@ describe('Outbox to realtime eviction (integration)', () => {
         received.push({
           path: req.url ?? '',
           secret: req.headers['x-internal-service-secret'],
-          body: JSON.parse(raw) as unknown,
+          body: JSON.parse(raw) as { userId?: string },
         });
         res.writeHead(realtimeStatus).end();
       });
@@ -184,64 +260,102 @@ describe('Outbox to realtime eviction (integration)', () => {
     outbox = moduleRef.get(OutboxWriter);
   });
 
-  beforeEach(async () => {
+  beforeEach(() => {
     received = [];
     realtimeStatus = 204;
-    // Only this suite's event types may be pending, or dispatching would deliver strangers' rows.
-    await prisma.outboxEvent.deleteMany({
-      where: {
-        type: { in: [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT] },
-      },
-    });
+    user = randomUUID();
+  });
+
+  // Only this test's own rows are removed: a type-wide delete would race with the other suites.
+  afterEach(async () => {
+    await prisma.outboxEvent.deleteMany({ where: ownRows(user) });
   });
 
   afterAll(async () => {
-    await prisma?.outboxEvent.deleteMany({
-      where: {
-        type: { in: [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT] },
-      },
-    });
     await new Promise((resolve) => realtime.close(resolve));
   });
 
-  const dispatch = () =>
-    dispatcher.dispatchPending(50, new Date(), [
+  const ownRows = (userId: string) => ({
+    type: { in: [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT] },
+    payload: { path: ['userId'], equals: userId },
+  });
+  const ownRow = () => prisma.outboxEvent.findFirstOrThrow({ where: ownRows(user) });
+  /** What the stub received for this test's user; strangers' events may pass through it too. */
+  const ownReceived = () => received.filter((call) => call.body.userId === user);
+  const record = (type: string, payload: object) =>
+    prisma.$transaction((tx) => outbox.record(tx, { type, payload }));
+
+  const dispatch = (now = new Date()) =>
+    dispatcher.dispatchPending(50, now, [
       REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
       REALTIME_SESSIONS_REVOKED_EVENT,
     ]);
 
   it('delivers a recorded event to the realtime server with the service secret', async () => {
-    await prisma.$transaction((tx) =>
-      outbox.record(tx, {
-        type: REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
-        payload: { userId: USER, classroomId: CLASSROOM },
-      }),
-    );
+    await record(REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, { userId: user, classroomId: CLASSROOM });
 
-    await expect(dispatch()).resolves.toMatchObject({ delivered: 1, retried: 0 });
+    await dispatch();
 
-    expect(received).toEqual([
+    expect(ownReceived()).toEqual([
       {
         path: '/internal/evictions',
         secret: SECRET,
-        body: { userId: USER, classroomId: CLASSROOM },
+        body: { userId: user, classroomId: CLASSROOM },
       },
     ]);
+    expect((await ownRow()).processedAt).not.toBeNull();
+  });
+
+  it('is not disturbed by a pending event of another user in the same table', async () => {
+    const stranger = randomUUID();
+    await record(REALTIME_SESSIONS_REVOKED_EVENT, { userId: stranger });
+    await record(REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, { userId: user, classroomId: CLASSROOM });
+
+    try {
+      await dispatch();
+
+      expect(ownReceived()).toHaveLength(1);
+      expect((await ownRow()).processedAt).not.toBeNull();
+    } finally {
+      await prisma.outboxEvent.deleteMany({ where: ownRows(stranger) });
+    }
   });
 
   it('retries the event when the realtime server is unavailable and delivers it later', async () => {
     realtimeStatus = 503;
-    await prisma.$transaction((tx) =>
-      outbox.record(tx, { type: REALTIME_SESSIONS_REVOKED_EVENT, payload: { userId: USER } }),
-    );
+    await record(REALTIME_SESSIONS_REVOKED_EVENT, { userId: user });
 
-    await expect(dispatch()).resolves.toMatchObject({ delivered: 0, retried: 1 });
+    await dispatch();
+    expect(ownReceived()).toHaveLength(1);
+    const failed = await ownRow();
+    expect(failed).toMatchObject({ attempts: 1, processedAt: null, failedAt: null });
+    expect(failed.lastError).toBe('RealtimeEvictionError: realtime eviction failed: http 503');
 
     realtimeStatus = 204;
-    const later = new Date(Date.now() + 3_600_000);
-    await expect(
-      dispatcher.dispatchPending(50, later, [REALTIME_SESSIONS_REVOKED_EVENT]),
-    ).resolves.toMatchObject({ delivered: 1 });
-    expect(received).toHaveLength(2);
+    await dispatch(new Date(Date.now() + 3_600_000));
+
+    expect(ownReceived()).toHaveLength(2);
+    expect((await ownRow()).processedAt).not.toBeNull();
+  });
+
+  it('keeps retrying past the default attempt budget before giving up', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    realtimeStatus = 503;
+    await record(REALTIME_SESSIONS_REVOKED_EVENT, { userId: user });
+
+    let at = new Date();
+    for (let attempt = 1; attempt <= EVICTION_MAX_ATTEMPTS; attempt += 1) {
+      await dispatch(at);
+      const row = await ownRow();
+      expect(row.failedAt === null).toBe(attempt < EVICTION_MAX_ATTEMPTS);
+      at = new Date(Math.max(at.getTime(), row.availableAt.getTime()));
+    }
+
+    expect(ownReceived()).toHaveLength(EVICTION_MAX_ATTEMPTS);
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: 'realtime.eviction.undelivered' }),
+    );
+    vi.restoreAllMocks();
   });
 });
