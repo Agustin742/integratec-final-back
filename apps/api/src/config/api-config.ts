@@ -31,6 +31,11 @@ export interface ApiConfig {
   invitationTtlSeconds: number;
   outboxPollIntervalSeconds: number;
   outboxMaxAttempts: number;
+  /**
+   * Base URL of the realtime server on the private network, called to evict users who lost access.
+   * Required in production; elsewhere it defaults to the local realtime server.
+   */
+  realtimeInternalUrl: string;
   internalServiceSecret: string;
   /** HS256 signing key of access tokens. Never log or return it. */
   jwtSecret: string;
@@ -74,6 +79,9 @@ export const MAX_AUTH_CLEANUP_INTERVAL_SECONDS = 7 * 86400;
 export const DEFAULT_AUTH_DATA_RETENTION_SECONDS = 30 * 86400;
 export const DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS = 86400;
 export const DEFAULT_AUTH_CLEANUP_BATCH_SIZE = 1000;
+
+/** Local realtime server, used when `REALTIME_INTERNAL_URL` is unset outside production. */
+export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
 
 /** Local frontend reset page, used when `PASSWORD_RESET_URL_BASE` is unset outside production. */
 export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/reset-password';
@@ -160,6 +168,14 @@ const isHttpOrigin = (value: string): boolean => {
   }
 };
 
+const isHttpUrl = (value: string): boolean => {
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+};
+
 const isResetUrlBase = (value: string): boolean => {
   try {
     const url = new URL(value);
@@ -211,6 +227,11 @@ const envSchema = z
       .refine(isResetUrlBase, PASSWORD_RESET_URL_MESSAGE)
       .optional(),
     INVITATION_TTL: duration('7d'),
+    // A rejected value is never echoed, only the variable name.
+    REALTIME_INTERNAL_URL: z
+      .string()
+      .refine(isHttpUrl, 'must be an absolute http:// or https:// URL')
+      .optional(),
     OUTBOX_POLL_INTERVAL: duration('5s'),
     OUTBOX_MAX_ATTEMPTS: z
       .string()
@@ -289,6 +310,14 @@ const envSchema = z
         message: 'must use HTTPS in production',
       });
     }
+    // Evictions must go to the real realtime server, never silently to a local default.
+    if (env.NODE_ENV === 'production' && env.REALTIME_INTERNAL_URL === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['REALTIME_INTERNAL_URL'],
+        message: 'is required in production',
+      });
+    }
     // Pruning rotated tokens of a still-live session would break refresh reuse detection.
     if (
       typeof env.AUTH_DATA_RETENTION === 'number' &&
@@ -354,6 +383,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     invitationTtlSeconds: values.INVITATION_TTL,
     outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,
+    realtimeInternalUrl: values.REALTIME_INTERNAL_URL ?? DEFAULT_REALTIME_INTERNAL_URL,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
     jwtSecret: values.JWT_SECRET,
     allowedOrigins: values.ALLOWED_ORIGINS,

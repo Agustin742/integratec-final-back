@@ -43,6 +43,7 @@ describe('loadApiConfig', () => {
       invitationTtlSeconds: 604800,
       outboxPollIntervalSeconds: 5,
       outboxMaxAttempts: 5,
+      realtimeInternalUrl: 'http://localhost:2567',
       internalServiceSecret: SECRET,
       jwtSecret: JWT_SECRET_VALUE,
       allowedOrigins: ['http://localhost:5173'],
@@ -130,6 +131,7 @@ describe('loadApiConfig', () => {
       REFRESH_REUSE_GRACE: '2m',
       PASSWORD_RESET_TTL: '30m',
       PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
+      REALTIME_INTERNAL_URL: 'http://realtime:2567',
       INVITATION_TTL: '3d',
       OUTBOX_POLL_INTERVAL: '30s',
       OUTBOX_MAX_ATTEMPTS: '8',
@@ -146,6 +148,7 @@ describe('loadApiConfig', () => {
       invitationTtlSeconds: 259200,
       outboxPollIntervalSeconds: 30,
       outboxMaxAttempts: 8,
+      realtimeInternalUrl: 'http://realtime:2567',
       allowedOrigins: ['https://a.example.com', 'https://b.example.com:8443'],
     });
   });
@@ -313,8 +316,38 @@ describe('loadApiConfig', () => {
           ...validEnv(),
           NODE_ENV: 'production',
           PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
+          REALTIME_INTERNAL_URL: 'http://realtime:2567',
         }).passwordResetUrlBase,
       ).toBe('https://app.example.com/reset-password');
+    });
+  });
+
+  describe('REALTIME_INTERNAL_URL', () => {
+    it('defaults to the local realtime server outside production', () => {
+      expect(loadApiConfig(validEnv()).realtimeInternalUrl).toBe('http://localhost:2567');
+    });
+
+    it('accepts an http or https URL with a path prefix', () => {
+      expect(
+        loadApiConfig({ ...validEnv(), REALTIME_INTERNAL_URL: 'https://rt.internal:2567/base' })
+          .realtimeInternalUrl,
+      ).toBe('https://rt.internal:2567/base');
+    });
+
+    it.each(['not a url', 'ftp://realtime:2567', 'realtime:2567'])('rejects %s by name', (url) => {
+      const message = messageOf({ ...validEnv(), REALTIME_INTERNAL_URL: url });
+      expect(message).toContain('REALTIME_INTERNAL_URL');
+      expect(message).not.toContain(url);
+    });
+
+    it('is required in production so evictions never go to a default address', () => {
+      const message = messageOf({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
+      });
+      expect(message).toContain('REALTIME_INTERNAL_URL');
+      expect(message).toContain('required in production');
     });
   });
 

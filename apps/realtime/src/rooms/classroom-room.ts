@@ -32,6 +32,7 @@ import {
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
 import { Avatar, ClassroomState } from './classroom-state';
+import type { EvictableRoom, RoomDirectory } from './room-directory';
 
 /** Collaborators and settings a room receives from the server bootstrap. */
 export interface ClassroomRoomOptions {
@@ -41,6 +42,8 @@ export interface ClassroomRoomOptions {
   reconnectionWindowSeconds?: number;
   /** Receives one connected-time aggregate per user presence session. Default: discards them. */
   reporter?: ConnectedTimeReporter;
+  /** Where the room announces itself so live evictions can find it. */
+  directory?: RoomDirectory;
 }
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
@@ -51,7 +54,7 @@ interface Intent extends AvatarInput {
 }
 
 /** Room logic that does not depend on the verifier. */
-export class ClassroomRoom extends Room<{ state: ClassroomState }> {
+export class ClassroomRoom extends Room<{ state: ClassroomState }> implements EvictableRoom {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
   protected verifier!: JoinVerifier;
@@ -62,6 +65,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
   private readonly intents = new Map<string, Intent>();
   /** Reconnections the room is waiting for, by connection id. */
   private readonly pendingReconnections = new Map<string, Deferred<Client>>();
+  /** Who each connection is, kept for connections that are held and so have no client in the room. */
+  private readonly authByConnection = new Map<string, ClassroomAuth>();
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -86,6 +91,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     this.state.classroomId = classroomId;
     this.patchRate = 1000 / PATCH_RATE_HZ;
     this.setFixedTimestep(({ dt }) => this.tick(dt), SIMULATION_TICK_RATE_HZ);
+    this.options.directory?.register(classroomId, this);
   }
 
   /**
@@ -105,6 +111,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
       throw new ServerError(CLOSE_CODE_TOO_MANY_CONNECTIONS, CLOSE_REASON_TOO_MANY_CONNECTIONS);
     }
     this.limiters.set(client.sessionId, new RateLimiter(INPUT_RATE_LIMIT_PER_SECOND));
+    this.authByConnection.set(client.sessionId, auth);
     if (attached.first) this.addAvatar(auth);
     this.syncConnectedTime(auth.userId);
   }
@@ -165,12 +172,47 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
   }
 
   onLeave(client: Client): void {
-    this.limiters.delete(client.sessionId);
-    this.pendingReconnections.delete(client.sessionId);
-    const userId = this.userConnections.userOf(client.sessionId);
-    const detached = this.userConnections.detach(client.sessionId);
+    this.releaseConnection(client.sessionId);
+  }
+
+  /**
+   * Closes the connections of a user that lost access (membership removed or session ended) with
+   * `4001`, including those held for reconnection, and returns how many there were. The state is
+   * cleaned up right away and the pending reconnection is rejected, so nothing about the old
+   * connection can come back; a fresh join still goes through the API check. `sessionId` narrows it
+   * to the connections made with that account session.
+   */
+  evict(filter: { userId: string; sessionId?: string }): number {
+    let evicted = 0;
+    for (const connectionId of this.userConnections.connectionIds(filter.userId)) {
+      if (
+        filter.sessionId !== undefined &&
+        this.authByConnection.get(connectionId)?.authSessionId !== filter.sessionId
+      ) {
+        continue;
+      }
+      const client = this.clients.getById(connectionId);
+      const pending = this.pendingReconnections.get(connectionId);
+      this.releaseConnection(connectionId);
+      pending?.reject(false);
+      client?.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+      evicted += 1;
+    }
+    return evicted;
+  }
+
+  /**
+   * Forgets a connection for good. Idempotent, because a connection can be released twice (for
+   * example by an eviction and then by the framework's own leave): the second call finds nothing.
+   */
+  private releaseConnection(connectionId: string): void {
+    this.limiters.delete(connectionId);
+    this.pendingReconnections.delete(connectionId);
+    this.authByConnection.delete(connectionId);
+    const userId = this.userConnections.userOf(connectionId);
+    const detached = this.userConnections.detach(connectionId);
     if (userId === undefined) return;
-    this.releaseIntent(userId, client.sessionId);
+    this.releaseIntent(userId, connectionId);
     if (detached?.userGone) {
       this.state.avatars.delete(userId);
       this.reportConnectedTime(userId, this.connectedTime.complete(userId, this.now()));
@@ -186,6 +228,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
       this.reportConnectedTime(userId, milliseconds);
     }
     this.pendingReconnections.clear();
+    this.options.directory?.unregister(this.classroomId, this);
     await Promise.allSettled([...this.inFlightReports]);
   }
 

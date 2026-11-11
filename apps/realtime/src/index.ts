@@ -15,6 +15,7 @@ start(
           serviceSecret: config.internalServiceSecret,
         }),
         {
+          internalServiceSecret: config.internalServiceSecret,
           reconnectionWindowSeconds: config.reconnectionWindowSeconds,
           reporter: new ApiConnectedTimeReporter({
             baseUrl: config.apiInternalUrl,

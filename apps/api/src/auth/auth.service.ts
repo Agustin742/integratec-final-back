@@ -12,6 +12,7 @@ import { RegistrationPath } from '@aula/contracts';
 import * as bcrypt from 'bcrypt';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginRequestDto } from './dto/login-request.dto';
 import { RefreshRequestDto } from './dto/refresh-request.dto';
@@ -36,6 +37,7 @@ export class AuthService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   /**
@@ -186,10 +188,24 @@ export class AuthService implements OnModuleInit {
     await this.revokeSession(sessionId);
   }
 
+  /**
+   * Revokes the session and, in the same transaction, records the event that closes its live
+   * classroom connections. An already revoked or unknown session records nothing.
+   */
   private async revokeSession(sessionId: string): Promise<void> {
-    await this.prisma.session.updateMany({
-      where: { id: sessionId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      const session = await tx.session.findFirst({
+        where: { id: sessionId, revokedAt: null },
+        select: { userId: true },
+      });
+      if (session === null) return;
+      const { count } = await tx.session.updateMany({
+        where: { id: sessionId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      if (count === 1) {
+        await this.realtimeEvents.recordSessionRevoked(tx, { userId: session.userId, sessionId });
+      }
     });
   }
 

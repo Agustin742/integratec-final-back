@@ -35,6 +35,7 @@ const config: ApiConfig = {
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: MAX_ATTEMPTS,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
   jwtSecret: 'outbox-jwt-placeholder-not-a-secret-000000',
   allowedOrigins: ['http://localhost'],
