@@ -71,6 +71,73 @@ describe('createClassroomRoom', () => {
     expect(room.state.avatars.size).toBe(0);
   });
 
+  describe('onDispose', () => {
+    const makeTimedRoom = (nowMs: { value: number }) => {
+      const reporter = { report: vi.fn().mockResolvedValue(undefined) };
+      const room = new (createClassroomRoom(
+        { verify: vi.fn(), reverify: vi.fn() },
+        { now: () => nowMs.value, reporter },
+      ))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      return { room, reporter };
+    };
+
+    it('reports the connected time of whoever is still present', async () => {
+      const clock = { value: 1_000_000 };
+      const { room, reporter } = makeTimedRoom(clock);
+      room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+      clock.value += 42_000;
+
+      await room.onDispose();
+
+      expect(reporter.report).toHaveBeenCalledExactlyOnceWith({
+        userId: AUTH.userId,
+        classroomId: CLASSROOM_ID,
+        connectedSeconds: 42,
+        endedAt: new Date(clock.value).toISOString(),
+      });
+    });
+
+    it('reports nobody twice: a user who already left is not reported again', async () => {
+      const clock = { value: 1_000_000 };
+      const { room, reporter } = makeTimedRoom(clock);
+      const client = { sessionId: 's1', auth: AUTH } as never;
+      room.onJoin(client);
+      clock.value += 10_000;
+      room.onLeave(client);
+
+      await room.onDispose();
+
+      expect(reporter.report).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for a report that is still being delivered', async () => {
+      const clock = { value: 1_000_000 };
+      let finish: () => void = () => undefined;
+      const reporter = {
+        report: vi.fn(() => new Promise<void>((resolve) => (finish = resolve))),
+      };
+      const room = new (createClassroomRoom(
+        { verify: vi.fn(), reverify: vi.fn() },
+        { now: () => clock.value, reporter },
+      ))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+      clock.value += 5_000;
+
+      let disposed = false;
+      const disposing = room.onDispose().then(() => (disposed = true));
+      await Promise.resolve();
+      expect(disposed).toBe(false);
+
+      finish();
+      await disposing;
+      expect(disposed).toBe(true);
+    });
+  });
+
   const makeCreatedRoomWithoutCreate = () =>
     new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
 

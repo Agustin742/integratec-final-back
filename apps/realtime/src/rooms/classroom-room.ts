@@ -25,6 +25,11 @@ import { RateLimiter } from '../movement/rate-limiter';
 import { stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
 import { pickSpawnPoint } from '../presence/spawn';
+import {
+  noopConnectedTimeReporter,
+  type ConnectedTimeReporter,
+} from '../time/api-connected-time-reporter';
+import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
 import { Avatar, ClassroomState } from './classroom-state';
 
@@ -34,6 +39,8 @@ export interface ClassroomRoomOptions {
   now?: () => number;
   /** Seconds a dropped connection is held for before its avatar is removed. Default 20. */
   reconnectionWindowSeconds?: number;
+  /** Receives one connected-time aggregate per user presence session. Default: discards them. */
+  reporter?: ConnectedTimeReporter;
 }
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
@@ -55,6 +62,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
   private readonly intents = new Map<string, Intent>();
   /** Reconnections the room is waiting for, by connection id. */
   private readonly pendingReconnections = new Map<string, Deferred<Client>>();
+  private readonly connectedTime = new ConnectedTimeTracker();
+  /** Reports still being delivered, awaited on dispose so none is cut short. */
+  private readonly inFlightReports = new Set<Promise<void>>();
 
   /**
    * Client intents. Payloads are validated by Colyseus against the shared contract schema; a
@@ -96,6 +106,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     }
     this.limiters.set(client.sessionId, new RateLimiter(INPUT_RATE_LIMIT_PER_SECOND));
     if (attached.first) this.addAvatar(auth);
+    this.syncConnectedTime(auth.userId);
   }
 
   /**
@@ -109,6 +120,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     this.userConnections.hold(client.sessionId);
     this.releaseIntent(userId, client.sessionId);
     this.refreshStatus(userId);
+    this.syncConnectedTime(userId);
     try {
       const pending = this.allowReconnection(client, this.reconnectionWindowSeconds());
       this.pendingReconnections.set(client.sessionId, pending);
@@ -146,6 +158,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
       }
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
+      this.syncConnectedTime(userId);
     } catch {
       this.denyReconnection(client);
     }
@@ -160,9 +173,20 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     this.releaseIntent(userId, client.sessionId);
     if (detached?.userGone) {
       this.state.avatars.delete(userId);
+      this.reportConnectedTime(userId, this.connectedTime.complete(userId, this.now()));
     } else {
       this.refreshStatus(userId);
+      this.syncConnectedTime(userId);
     }
+  }
+
+  /** Reports whoever is still tracked, then waits for every report in flight. */
+  async onDispose(): Promise<void> {
+    for (const [userId, milliseconds] of this.connectedTime.drain(this.now())) {
+      this.reportConnectedTime(userId, milliseconds);
+    }
+    this.pendingReconnections.clear();
+    await Promise.allSettled([...this.inFlightReports]);
   }
 
   /** One fixed simulation step: every moving avatar advances, clamped by the classroom layout. */
@@ -189,6 +213,31 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> {
     } else {
       this.intents.set(userId, { x: input.x, z: input.z, owner: client.sessionId });
     }
+  }
+
+  /** Tells the time tracker whether the user has any live connection right now. */
+  private syncConnectedTime(userId: string): void {
+    this.connectedTime.setLive(userId, this.userConnections.liveCount(userId) > 0, this.now());
+  }
+
+  /**
+   * Sends one aggregate for a finished presence session. A failure is logged without any
+   * identifier and not retried: connected time is a coarse metric, never worth blocking the room.
+   */
+  private reportConnectedTime(userId: string, milliseconds: number): void {
+    const connectedSeconds = Math.round(milliseconds / 1000);
+    if (connectedSeconds < 1) return;
+    const reporter = this.options.reporter ?? noopConnectedTimeReporter;
+    const delivery = reporter
+      .report({
+        userId,
+        classroomId: this.classroomId,
+        connectedSeconds,
+        endedAt: new Date(this.now()).toISOString(),
+      })
+      .catch(() => console.warn('realtime: connected time report failed'))
+      .finally(() => this.inFlightReports.delete(delivery));
+    this.inFlightReports.add(delivery);
   }
 
   private denyReconnection(client: Client): void {
