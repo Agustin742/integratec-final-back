@@ -46,6 +46,8 @@ export function stepAvatar(
   input: Direction,
   dtSeconds: number,
 ): Pose {
+  // A step that is not a positive, finite duration would move backwards, produce NaN or never end.
+  if (!(dtSeconds > 0) || !Number.isFinite(dtSeconds)) return pose;
   const length = Math.hypot(input.x, input.z);
   if (!(length >= INPUT_DEADZONE)) return pose;
 

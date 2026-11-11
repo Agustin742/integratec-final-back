@@ -28,6 +28,17 @@ const run = (start: { x: number; z: number }, input: { x: number; z: number }, t
 };
 
 describe('stepAvatar', () => {
+  it.each([
+    ['zero', 0],
+    ['negative', -DT],
+    ['NaN', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['negative infinite', Number.NEGATIVE_INFINITY],
+  ])('leaves the pose unchanged for a %s time step', (_label, dt) => {
+    const pose = { ...AISLE, rotation: 0.5 };
+    expect(stepAvatar(CLASSROOM_LAYOUT, pose, { x: 1, z: 0 }, dt)).toBe(pose);
+  });
+
   it('moves at the fixed speed along the requested direction', () => {
     const next = stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 0 }, DT);
     expect(next.x).toBeCloseTo(AISLE.x + STEP, 6);
