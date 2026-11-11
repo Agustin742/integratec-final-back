@@ -1,5 +1,29 @@
 # Tracker — Luis
 
+## 2026-11-11 — Classroom member directory readable by members (Issue #52)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/classrooms/directory/`, `apps/api/src/classrooms/classrooms.module.ts`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #52 (`feat(classrooms): classroom member directory readable by members`):
+  - Created `ClassroomDirectoryModule`, `ClassroomDirectoryController`, `ClassroomDirectoryService`, and `directory.dto.ts` under `apps/api/src/classrooms/directory/`.
+  - Implemented `GET /classrooms/:id/members` providing public member cards (`id`, `userId`, `displayName`, `role`, `avatar`) for @mention autocomplete and classroom member list per Decision D12 (`rules/classrooms-and-roles.md:66-70`).
+  - Contextual access verification via `AccessVerificationService`:
+    - Enrolled students, classroom teachers, school owners, and school administrators are permitted (`list_directory` capability).
+    - Linked parents receive `403 Forbidden` (`Classroom member directory is only accessible to classroom members`).
+    - Strangers, foreign teachers, removed members, nonexistent classrooms, and invalid UUIDs receive uniform `404 NotFound` without existence leakage.
+  - Queries active members (`state: ACTIVE`, `deletedAt: null`, `role in [STUDENT, TEACHER]`), dynamically includes independent teachers from `classroom.independentTeacherId` when active and deduplicates against memberships.
+  - Case-insensitive prefix search via `q` query parameter, treating LIKE wildcard characters as literal prefix text.
+  - Stable sort order by `displayName asc, id asc`.
+  - Strict privacy protection: never leaks email, passwordHash, parent links, or grades.
+  - Resilient avatar fallback: normalizes valid appearance via `avatarSnapshot` and falls back to `DEFAULT_AVATAR` for missing, null, or corrupted configurations.
+  - Comprehensive testing suite:
+    - Unit tests (`directory.spec.ts`) covering authorization matrix, role capabilities, independent teacher inclusion, prefix filtering, pagination, avatar fallback, and privacy.
+    - HTTP tests (`directory.http.spec.ts`) validating status codes (200, 400, 401, 403, 404), parameter validation, and privacy.
+    - PostgreSQL integration tests (`directory.integration.spec.ts`) validating end-to-end database filtering, pagination, removed member exclusion, and mandatory concurrent read safety via `Promise.all`.
+  - Exported updated OpenAPI specification to `apps/api/openapi.json`.
+- **Reason:** Enable classroom members (students and teachers) to view their classmates and teachers for @mention autocomplete and class directory while enforcing strict privacy and contextual authorization boundaries.
+- **Next step:** Review verification results, open pull request targeting `develop`, and update issue board status.
+
 ## 2026-11-09 — Classroom invitations, join codes, and desk assignment (Issue #22)
 
 - **Status:** completed
