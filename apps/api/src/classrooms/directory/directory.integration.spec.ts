@@ -340,9 +340,7 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
 
   it('rejection policy: linked parent receives 403 Forbidden', async () => {
     const res = await get('', parentUser).expect(403);
-    expect(res.body.message).toBe(
-      'Classroom member directory is only accessible to classroom members',
-    );
+    expect(res.body.error?.code).toBe('FORBIDDEN');
   });
 
   it('rejection policy: stranger, foreign teacher, removed student receive 404 NotFound', async () => {
