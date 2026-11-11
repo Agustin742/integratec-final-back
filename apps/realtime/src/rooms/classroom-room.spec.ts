@@ -189,6 +189,33 @@ describe('createClassroomRoom', () => {
     });
   });
 
+  describe('session-specific eviction of held reconnections', () => {
+    it('rejects the held reconnection of the evicted session only and keeps the other session', () => {
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      const holds = new Map<string, { reject: ReturnType<typeof vi.fn>; catch: () => void }>();
+      vi.spyOn(room, 'allowReconnection').mockImplementation(((client: { sessionId: string }) => {
+        const hold = { reject: vi.fn(), catch: () => undefined };
+        holds.set(client.sessionId, hold);
+        return hold;
+      }) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const other = { sessionId: 's1', auth: { ...AUTH, authSessionId: 'session-a' } };
+      const revoked = { sessionId: 's2', auth: { ...AUTH, authSessionId: 'session-b' } };
+      room.onJoin(other as never);
+      room.onJoin(revoked as never);
+      room.onDrop(other as never);
+      room.onDrop(revoked as never);
+
+      const evicted = room.evict({ userId: IDENTITY.userId, sessionId: 'session-b' });
+
+      expect(evicted).toBe(1);
+      expect(holds.get('s2')?.reject).toHaveBeenCalledWith(false);
+      expect(holds.get('s1')?.reject).not.toHaveBeenCalled();
+      expect(room.state.avatars.has(IDENTITY.userId)).toBe(true);
+    });
+  });
+
   describe('onCreate', () => {
     const makeRoom = () => makeCreatedRoomWithoutCreate();
 
