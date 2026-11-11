@@ -39,6 +39,11 @@ export interface ApiConfig {
   internalServiceSecret: string;
   /** HS256 signing key of access tokens. Never log or return it. */
   jwtSecret: string;
+  /**
+   * AES-256 key (32 bytes) that seals invitation tokens inside outbox payloads, so the raw
+   * token is never persisted in plaintext. Never log or return it.
+   */
+  invitationTokenKey: Buffer;
   allowedOrigins: string[];
   s3Bucket: string;
   s3Region: string;
@@ -112,6 +117,9 @@ const DURATION_MESSAGE = 'must be a positive duration such as 30s, 15m, 12h or 7
 const ORIGINS_MESSAGE =
   'must be a comma-separated list of http(s) origins without path, e.g. https://app.example.com';
 
+const INVITATION_TOKEN_KEY_MESSAGE =
+  'must be a 32-byte key encoded as 64 hexadecimal characters or as base64';
+
 const BUCKET_MESSAGE =
   'must be a bucket name of 3-63 lowercase letters, digits, dots or hyphens, starting and ending with a letter or digit';
 const REGION_MESSAGE = 'must be an AWS region name such as sa-east-1';
@@ -149,6 +157,18 @@ const duration = (
             .max(maxSeconds ?? Infinity, maxMessage),
         ),
     );
+
+/** Decodes a 32-byte key written as 64 hex characters or as base64; undefined otherwise. */
+const decodeKey32 = (value: string): Buffer | undefined => {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    return Buffer.from(value, 'hex');
+  }
+  if (/^[A-Za-z0-9+/]{43}=?$/.test(value)) {
+    const decoded = Buffer.from(value, 'base64');
+    return decoded.length === 32 ? decoded : undefined;
+  }
+  return undefined;
+};
 
 const isPostgresUrl = (value: string): boolean => {
   try {
@@ -271,6 +291,14 @@ const envSchema = z
       ),
     INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
     JWT_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
+    INVITATION_TOKEN_KEY: z.string(required).transform((value, ctx) => {
+      const key = decodeKey32(value);
+      if (key === undefined) {
+        ctx.addIssue({ code: 'custom', message: INVITATION_TOKEN_KEY_MESSAGE });
+        return z.NEVER;
+      }
+      return key;
+    }),
     ALLOWED_ORIGINS: z
       .string(required)
       .transform((value) => value.split(',').map((origin) => origin.trim()))
@@ -386,6 +414,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     realtimeInternalUrl: values.REALTIME_INTERNAL_URL ?? DEFAULT_REALTIME_INTERNAL_URL,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
     jwtSecret: values.JWT_SECRET,
+    invitationTokenKey: values.INVITATION_TOKEN_KEY,
     allowedOrigins: values.ALLOWED_ORIGINS,
     s3Bucket: values.S3_BUCKET,
     s3Region: values.S3_REGION,

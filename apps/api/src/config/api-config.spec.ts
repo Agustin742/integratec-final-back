@@ -10,11 +10,13 @@ import {
 
 const SECRET = 's3cr3t-value-that-is-at-least-32-chars-long!';
 const JWT_SECRET_VALUE = 'jwt-signing-key-synthetic-for-tests-0000';
+const INVITATION_TOKEN_KEY_HEX = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
 
 const validEnv = (): Record<string, string | undefined> => ({
   DATABASE_URL: 'postgresql://user:pw@localhost:5432/aula?schema=public',
   INTERNAL_SERVICE_SECRET: SECRET,
   JWT_SECRET: JWT_SECRET_VALUE,
+  INVITATION_TOKEN_KEY: INVITATION_TOKEN_KEY_HEX,
   ALLOWED_ORIGINS: 'http://localhost:5173',
   S3_BUCKET: 'aula-virtual-dev',
 });
@@ -46,6 +48,7 @@ describe('loadApiConfig', () => {
       realtimeInternalUrl: 'http://localhost:2567',
       internalServiceSecret: SECRET,
       jwtSecret: JWT_SECRET_VALUE,
+      invitationTokenKey: Buffer.from(INVITATION_TOKEN_KEY_HEX, 'hex'),
       allowedOrigins: ['http://localhost:5173'],
       s3Bucket: 'aula-virtual-dev',
       s3Region: 'sa-east-1',
@@ -157,6 +160,7 @@ describe('loadApiConfig', () => {
     'DATABASE_URL',
     'INTERNAL_SERVICE_SECRET',
     'JWT_SECRET',
+    'INVITATION_TOKEN_KEY',
     'ALLOWED_ORIGINS',
     'S3_BUCKET',
   ])('names %s when it is missing', (name) => {
@@ -177,6 +181,7 @@ describe('loadApiConfig', () => {
       'DATABASE_URL',
       'INTERNAL_SERVICE_SECRET',
       'JWT_SECRET',
+      'INVITATION_TOKEN_KEY',
       'ALLOWED_ORIGINS',
       'S3_BUCKET',
     ]) {
@@ -194,6 +199,7 @@ describe('loadApiConfig', () => {
         'ALLOWED_ORIGINS',
         'DATABASE_URL',
         'INTERNAL_SERVICE_SECRET',
+        'INVITATION_TOKEN_KEY',
         'JWT_SECRET',
         'PORT',
         'S3_BUCKET',
@@ -369,6 +375,28 @@ describe('loadApiConfig', () => {
     expect(message).toContain('JWT_SECRET');
     expect(message).toContain('32');
     expect(message).not.toContain('short-jwt-key');
+  });
+
+  it('accepts INVITATION_TOKEN_KEY as 32 bytes encoded in base64', () => {
+    const bytes = Buffer.from(INVITATION_TOKEN_KEY_HEX, 'hex');
+    const config = loadApiConfig({
+      ...validEnv(),
+      INVITATION_TOKEN_KEY: bytes.toString('base64'),
+    });
+    expect(config.invitationTokenKey.equals(bytes)).toBe(true);
+  });
+
+  it.each([
+    ['too short hex', '00112233445566778899aabbccddeeff'],
+    ['non-hex 64 chars', 'z'.repeat(64)],
+    ['16 bytes in base64', Buffer.alloc(16, 1).toString('base64')],
+    ['48 bytes in base64', Buffer.alloc(48, 1).toString('base64')],
+    ['plain text', 'not-a-key'],
+  ])('rejects INVITATION_TOKEN_KEY that is %s without echoing its value', (_label, value) => {
+    const message = messageOf({ ...validEnv(), INVITATION_TOKEN_KEY: value });
+    expect(message).toContain('INVITATION_TOKEN_KEY');
+    expect(message).toContain('32');
+    expect(message).not.toContain(value);
   });
 
   it.each(['localhost:5173', 'ftp://example.com', 'http://a.com/path', 'http://a.com/', ','])(

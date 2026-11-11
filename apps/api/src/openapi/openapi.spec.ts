@@ -29,6 +29,7 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
   jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
+  invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost:5173'],
   s3Bucket: 'synthetic-bucket',
   s3Region: 'sa-east-1',

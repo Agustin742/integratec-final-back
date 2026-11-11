@@ -606,11 +606,15 @@ describe('Classrooms PostgreSQL Integration Tests (HU-AUL-001)', () => {
         .set('Authorization', tokenForUser(independentTeacher.id))
         .expect(200);
 
-      expect(allAsc.body.items.map((i: { id: string }) => i.id)).toEqual(
-        [...page1Desc.body.items, ...page2Desc.body.items]
-          .map((i: { id: string }) => i.id)
-          .reverse(),
-      );
+      const combinedDesc = [...page1Desc.body.items, ...page2Desc.body.items] as {
+        id: string;
+        createdAt: string;
+      }[];
+      const expectedAscIds = [...combinedDesc]
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .map((i) => i.id);
+
+      expect(allAsc.body.items.map((i: { id: string }) => i.id)).toEqual(expectedAscIds);
 
       // Student sees only the 1 classroom they are enrolled in
       const studentList = await request(app.getHttpServer())

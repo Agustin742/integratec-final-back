@@ -1,5 +1,41 @@
 # Tracker — Luis
 
+## 2026-11-09 — Classroom invitations, join codes, and desk assignment (Issue #22)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/classrooms/`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #22 (HU-AUL-002: Join a classroom through email invitation or access code/link):
+  - Created `ClassroomInvitationsService`, `InvitationsController`, and extended `ClassroomsController` and `ClassroomsModule` with seven endpoints:
+    - `POST /classrooms/:id/invitations`: issues single-use email invitation with SHA-256 hashed secret, target email, expiration, and outbox event dispatch (`classroom.invitation-created`) for asynchronous email delivery via `EmailPort`. Preserves complete non-disclosure of existing users.
+    - `GET /classrooms/:id/invitations`: paginated list of email invitations filtered by status.
+    - `DELETE /classrooms/:id/invitations/:invitationId`: revokes active email invitation.
+    - `POST /classrooms/:id/join-code`: generates/regenerates shareable uppercase alphanumeric join code (7 Crockford Base32 characters); automatically revokes previous active join code; stores only SHA-256 hash and exposes raw code once upon generation.
+    - `DELETE /classrooms/:id/join-code`: revokes active join code.
+    - `POST /invitations/accept`: accepts opaque token from email invitation, binds authenticated account to classroom membership, and assigns available desk.
+    - `POST /classrooms/join`: redeems join code, enforces sliding-window in-memory rate limiting against brute-force guessing (`429 TOO_MANY_REQUESTS`), creates membership atomically, assigns lowest available desk, and auto-expands desks dynamically (`(maxDeskIndex ?? 0) + 1`) when all default 12 desks are occupied.
+  - Enforced idempotency: re-joining by an already enrolled student returns existing membership and desk without consuming extra uses.
+  - Implemented transactional concurrency safety and tested with `Promise.all` for max-uses race conditions, duplicate user joins, and desk allocation.
+  - Added unit test suites and PostgreSQL integration test battery (`*.spec.ts` and `*.integration.spec.ts`).
+  - Exported updated OpenAPI specification to `apps/api/openapi.json`.
+- **Review refinements (Issue #22 review):**
+  - **CRIT-01 (Desk concurrency):** Replaced bare `tx.desk.update` in `assignDesk` with atomic conditional claim `tx.desk.updateMany({ where: { id: availableDesk.id, membershipId: null }, data: { membershipId } })`. If `claimed.count === 0`, retries with next available desk or auto-expansion with retry on `(classroomId, deskIndex)` collision, preventing desk clobbering.
+  - **CRIT-02 (Atomic `useCount` increment & P2004 handling):** Enforced conditional atomic increment on `tx.invitation.updateMany` bounded by `useCount: { lt: maxUses }` and transitions state to `USED` upon reaching limit. Caught Prisma constraint error `P2004` alongside `P2002` mapping to `409 Conflict`.
+  - **CRIT-03 & WARN-06 (Teacher invitation authorization):** Restricted `role === TEACHER` on `createEmailInvitation` to school `OWNER` and `ADMIN`, throwing `403 Forbidden` if requested by a classroom teacher per `rules/classrooms-and-roles.md:75`. In `acceptEmailInvitation`, upserted `SchoolMember(TEACHER)` for school classrooms to guarantee active school authority.
+  - **CRIT-04 & WARN-04 (Soft-deleted school & classroom check):** Included `school: { select: { deletedAt: true } }` on classroom relations in `joinWithCode` and `acceptEmailInvitation`, uniformly throwing `404 NotFound` with identical opaque error message (`Invalid or expired join code` / `Invalid or expired invitation`) to avoid information leakage.
+  - **CRIT-05 (Reactivate inactive/soft-deleted memberships):** Implemented reactivation inside `$transaction` for inactive or soft-deleted memberships upon re-joining or accepting an invitation, assigning an unallocated desk if none exists and preventing duplicate insertion crashes (`P2002`).
+  - **WARN-05 (Staff enrollment prevention):** Rejected attempts by independent teachers, school owners, and school administrators to join as students via join code, throwing `409 Conflict` without consuming code uses.
+  - **WARN-07 (Integration test hygiene):** Removed silent skips (`try { await prisma.$connect(); } catch { return; }` and `if (!testClassroom) return;`) in `classroom-invitations.integration.spec.ts`, failing fast if database is unreachable and guaranteeing `skipped: 0`.
+  - **POL-01 & POL-02 (Crockford Base32 normalization & Revocation guard):** In `normalizeJoinCode`, mapped Crockford Base32 aliases (`O` -> `0`, `I`/`L` -> `1`). In `revokeInvitation`, validated that only `PENDING` invitations can be revoked, returning `400 BadRequest` if already used or revoked.
+  - **Contract refinement (Raw token return & Role restriction):** Created `CreatedClassroomInvitationResponseDto` returning the raw `token` secret once on `POST /classrooms/:id/invitations` per Issue #22 scope, while `GET` list omits it. Blocked `OWNER` and `ADMIN` roles in `CreateClassroomInvitationDto` and `createEmailInvitation`, restricting classroom invitations strictly to `STUDENT` or `TEACHER`.
+- **Review round 2 (PR #78 review):**
+  - **Teacher invitations removed (out of scope for #22):** `POST /classrooms/:id/invitations` now accepts only `STUDENT` (`400` for any other role), and `acceptEmailInvitation` no longer creates or reactivates a `SchoolMember`; it always enrolls the account as a classroom `Student` and treats a non-student invitation as invalid. This supersedes the CRIT-03 teacher-authorization and `STUDENT` or `TEACHER` role-restriction items above. Teacher invitations belong to HU-AUL-004. OpenAPI regenerated.
+  - **Invitation token no longer persisted in plaintext:** the `classroom.invitation-created` outbox payload now carries `encryptedToken` (`{ iv, authTag, ciphertext }`, AES-256-GCM, bound to the invitation id) instead of the raw token. The key is the new required `INVITATION_TOKEN_KEY` secret (32 bytes as hex or base64, validated in `api-config.ts`, documented in `.env.example`, `docker-compose.yml`, and the README). `ClassroomInvitationCreatedHandler` decrypts it right before calling `EmailPort`. Helper: `apps/api/src/platform/crypto/secret-box.ts`.
+  - **Idempotent retry with an exhausted code or used invitation:** `joinWithCode` now recognizes an actively enrolled student before rejecting a `USED` or exhausted (`useCount >= maxUses`) join code, and `acceptEmailInvitation` does the same for a `USED` invitation. The existing membership and desk are returned without consuming another use; other users, removed members, and deleted classrooms or schools are still rejected. Covered by `maxUses: 1` integration tests.
+  - **Atomic revocation:** `revokeInvitation` and `revokeJoinCode` now use a conditional `updateMany` filtered by `state: PENDING` and check the affected-row count, so a concurrently accepted (`USED`) invitation or exhausted code is never overwritten with `REVOKED`. When nothing matches, the invitation is re-read and the matching error (`404`, or `400` for already used, revoked, or expired) is returned. Covered by a stale-read unit test and acceptance-versus-revocation integration tests (both orders plus a `Promise.all` race asserting the invariant).
+  - **Desk auto-expansion recorded as a decision:** documented in `rules/classrooms-and-roles.md` (Desk allocation) with its basis in RF-ESP-002 and HU-ESP-002 criterion 3: one assignable desk per enrolled student, no classroom capacity, clients render desks from backend data. The existing integration test covers the 13th and 14th students receiving desks 13 and 14 (indexes are 1-based). The `deskIndex` field description in OpenAPI now states the policy.
+- **Reason:** Enable teachers and school administrators to invite students via email or shareable join codes, allocate 3D desks automatically with dynamic auto-expansion, and protect joining endpoints against brute force attacks.
+- **Next step:** Open PR targeting `develop` and move card #22 to `In review` on GitHub Project 3.
+
 ## 2026-11-08 — Create and configure virtual classrooms (Issue #21)
 
 - **Status:** in-progress

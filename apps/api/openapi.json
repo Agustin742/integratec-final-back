@@ -428,6 +428,64 @@
         "tags": ["classrooms"]
       }
     },
+    "/classrooms/join": {
+      "post": {
+        "description": "Redeems a valid classroom join code to atomically enroll the authenticated student and assign an available desk. Protected by sliding-window rate limiting against brute force attempts. Dynamic desk auto-expansion ensures desk allocation even if default desks are fully occupied.",
+        "operationId": "ClassroomsController_joinClassroom",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/JoinClassroomWithCodeDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successfully joined the classroom with desk allocated.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JoinClassroomResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed code or join code is no longer active / expired.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Join code does not exist or classroom was deleted.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Join code has reached maximum uses or concurrent join conflict occurred.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded: too many invalid join code attempts.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Join a classroom with access code",
+        "tags": ["classrooms"]
+      }
+    },
     "/classrooms/{id}": {
       "get": {
         "description": "Returns the persistent state of a virtual classroom, its pet, desk count, and the server-derived role and capabilities for the authenticated caller.",
@@ -524,6 +582,326 @@
         "tags": ["classrooms"]
       }
     },
+    "/classrooms/{id}/invitations": {
+      "post": {
+        "description": "Issues a single-use email invitation for the specified classroom and schedules asynchronous email delivery via the transactional outbox. Restricted to teaching staff (School Owner/Admin or the classroom Teacher). Completely preserves non-disclosure (never reveals whether the email exists).",
+        "operationId": "ClassroomsController_createInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "example": "4e5f6a7b-0000-4000-8000-000000000002", "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateClassroomInvitationDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Email invitation created, raw secret token returned once, and outbox event scheduled.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreatedClassroomInvitationResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed on email or role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a student or parent without invite_members capability.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Issue an email invitation to join a classroom",
+        "tags": ["classrooms"]
+      },
+      "get": {
+        "description": "Returns a paginated list of email invitations for the classroom. Restricted to classroom staff.",
+        "operationId": "ClassroomsController_listInvitations",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "example": "4e5f6a7b-0000-4000-8000-000000000002", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter invitations by status (default is PENDING)",
+            "schema": {
+              "default": "PENDING",
+              "type": "string",
+              "enum": ["PENDING", "USED", "REVOKED", "EXPIRED", "ALL"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of invitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ClassroomInvitationResponseDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or status filter parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a student or parent without invite_members capability.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List email invitations for a classroom",
+        "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}/invitations/{invitationId}": {
+      "delete": {
+        "description": "Marks an active email invitation as REVOKED so it can no longer be accepted. Restricted to classroom staff.",
+        "operationId": "ClassroomsController_revokeInvitation",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "invitationId",
+            "required": true,
+            "in": "path",
+            "description": "Invitation UUID to revoke",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Invitation revoked successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RevokeInvitationResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller lacks invite_members authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom or invitation does not exist.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Revoke an email invitation",
+        "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}/join-code": {
+      "post": {
+        "description": "Generates a new shareable join code for the classroom. If an active join code already exists, marks the previous code as REVOKED. The raw join code is returned ONCE in this response; only its SHA-256 hash is persisted. Restricted to classroom staff.",
+        "operationId": "ClassroomsController_generateJoinCode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateJoinCodeDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New join code created. Raw code is exposed only in this response.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JoinCodeResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters for maxUses or expiresInSeconds.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller lacks invite_members authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Generate or regenerate classroom join code",
+        "tags": ["classrooms"]
+      },
+      "delete": {
+        "description": "Revokes the current active join code for this classroom, preventing any further student enrolments using it. Restricted to classroom staff.",
+        "operationId": "ClassroomsController_revokeJoinCode",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Join code revoked successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean", "example": true },
+                    "message": { "type": "string", "example": "Join code revoked successfully" }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller lacks invite_members authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom not found or no active join code exists.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Revoke active classroom join code",
+        "tags": ["classrooms"]
+      }
+    },
     "/me/classrooms": {
       "get": {
         "description": "Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false) with derived role and capabilities.",
@@ -592,6 +970,198 @@
         },
         "security": [{ "bearer": [] }],
         "summary": "List classrooms accessible to the authenticated user",
+        "tags": ["classrooms"]
+      }
+    },
+    "/invitations/accept": {
+      "post": {
+        "description": "Atomically binds the authenticated user account to the classroom specified in the email invitation and assigns an available desk. Idempotent: re-accepting by an already enrolled student succeeds and returns the existing desk without error.",
+        "operationId": "InvitationsController_accept",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AcceptInvitationDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Classroom membership established and desk assigned.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/JoinClassroomResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invitation token is malformed, expired, or already used.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invitation token does not exist or classroom was deleted.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Concurrent invitation acceptance conflict.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Accept an email invitation to join a classroom",
+        "tags": ["invitations"]
+      }
+    },
+    "/classrooms/{id}/roster": {
+      "get": {
+        "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
+        "operationId": "ClassroomRosterController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Omit to include both states.",
+            "schema": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive display-name prefix.",
+            "schema": { "maxLength": 100, "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student roster including historical logical rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RosterStudentDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List student roster for classroom staff",
+        "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}/students/{studentId}": {
+      "delete": {
+        "operationId": "ClassroomRemovalController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "studentId",
+            "required": true,
+            "in": "path",
+            "description": "Student USER UUID, not membership UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Removed, or already inactive/deleted; no response body." },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid UUID, foreign/unknown classroom, or unknown/nonstudent target.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Logically remove a student and revoke child-specific parent access",
         "tags": ["classrooms"]
       }
     }
@@ -1233,6 +1803,49 @@
           "updatedAt"
         ]
       },
+      "JoinClassroomWithCodeDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Classroom access code (normalized uppercase alphanumeric)",
+            "example": "K7P9X2M"
+          }
+        },
+        "required": ["code"]
+      },
+      "AssignedDeskDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Desk UUID" },
+          "deskIndex": {
+            "type": "number",
+            "description": "1-based index of the assigned desk in the classroom. When every desk is taken, the server creates a new desk (highest index + 1) so each enrolled student has one; classrooms have no capacity limit"
+          }
+        },
+        "required": ["id", "deskIndex"]
+      },
+      "JoinClassroomResponseDto": {
+        "type": "object",
+        "properties": {
+          "classroomId": { "type": "string", "description": "Classroom UUID" },
+          "membershipId": {
+            "type": "string",
+            "description": "Created or existing membership UUID"
+          },
+          "role": { "type": "string", "enum": ["TEACHER", "STUDENT"], "default": "STUDENT" },
+          "desk": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/AssignedDeskDto" }]
+          },
+          "alreadyMember": {
+            "type": "boolean",
+            "description": "True if the caller was already enrolled in this classroom (idempotent rejoin)"
+          }
+        },
+        "required": ["classroomId", "membershipId", "role", "desk", "alreadyMember"]
+      },
       "UpdateClassroomDto": {
         "type": "object",
         "properties": {
@@ -1270,6 +1883,226 @@
             "description": "Whether interactive classroom games are disabled"
           }
         }
+      },
+      "CreateClassroomInvitationDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Target email address to invite",
+            "example": "student@example.edu.ar"
+          },
+          "role": {
+            "type": "string",
+            "description": "Classroom role for the invitee. Only STUDENT is supported; teacher invitations are out of scope for classroom invitations.",
+            "enum": ["STUDENT"],
+            "default": "STUDENT"
+          }
+        },
+        "required": ["email"]
+      },
+      "CreatedClassroomInvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Invitation UUID" },
+          "kind": {
+            "type": "string",
+            "enum": ["EMAIL", "JOIN_CODE"],
+            "description": "Type of invitation"
+          },
+          "targetEmail": {
+            "type": "object",
+            "description": "Target email for EMAIL invitations",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "description": "Assigned role upon joining"
+          },
+          "maxUses": {
+            "type": "object",
+            "description": "Maximum allowed uses, null if unlimited",
+            "nullable": true
+          },
+          "useCount": {
+            "type": "number",
+            "description": "Number of times this invitation has been used"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING", "USED", "REVOKED", "EXPIRED"],
+            "description": "Current lifecycle state"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Expiration timestamp"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          },
+          "token": {
+            "type": "string",
+            "description": "Raw invitation secret token, returned only once upon creation",
+            "example": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+          }
+        },
+        "required": ["id", "kind", "role", "useCount", "state", "expiresAt", "createdAt", "token"]
+      },
+      "ClassroomInvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Invitation UUID" },
+          "kind": {
+            "type": "string",
+            "enum": ["EMAIL", "JOIN_CODE"],
+            "description": "Type of invitation"
+          },
+          "targetEmail": {
+            "type": "object",
+            "description": "Target email for EMAIL invitations",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "description": "Assigned role upon joining"
+          },
+          "maxUses": {
+            "type": "object",
+            "description": "Maximum allowed uses, null if unlimited",
+            "nullable": true
+          },
+          "useCount": {
+            "type": "number",
+            "description": "Number of times this invitation has been used"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING", "USED", "REVOKED", "EXPIRED"],
+            "description": "Current lifecycle state"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Expiration timestamp"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          }
+        },
+        "required": ["id", "kind", "role", "useCount", "state", "expiresAt", "createdAt"]
+      },
+      "RevokeInvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Revoked invitation UUID" },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING", "USED", "REVOKED", "EXPIRED"],
+            "example": "REVOKED"
+          }
+        },
+        "required": ["id", "state"]
+      },
+      "CreateJoinCodeDto": {
+        "type": "object",
+        "properties": {
+          "maxUses": {
+            "type": "number",
+            "description": "Maximum uses for this join code (omit for unlimited)",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "description": "Lifetime in seconds for this join code (defaults to server config INVITATION_TTL)",
+            "minimum": 60,
+            "maximum": 2592000
+          }
+        }
+      },
+      "JoinCodeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Invitation UUID" },
+          "code": {
+            "type": "string",
+            "description": "Raw shareable join code (6-8 alphanumeric characters). Shown ONCE upon generation.",
+            "example": "K7P9X2M"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "default": "STUDENT"
+          },
+          "maxUses": {
+            "type": "object",
+            "description": "Maximum uses, null if unlimited",
+            "nullable": true
+          },
+          "useCount": { "type": "number", "description": "Current use count", "default": 0 },
+          "state": {
+            "type": "string",
+            "enum": ["PENDING", "USED", "REVOKED", "EXPIRED"],
+            "default": "PENDING"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Expiration timestamp"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          }
+        },
+        "required": ["id", "code", "role", "useCount", "state", "expiresAt", "createdAt"]
+      },
+      "AcceptInvitationDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Opaque token received via invitation email",
+            "example": "4f7e2d9a8c1b3e5f7a9d0c2e4b6a8f1d3c5e7b9a0c2e4f6a8b0d2e4f6a8b0c2e"
+          }
+        },
+        "required": ["token"]
+      },
+      "RosterGuardianDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["ACTIVE", "INACTIVE"],
+            "description": "Historical link state, not access authority."
+          }
+        },
+        "required": ["id", "displayName", "state"]
+      },
+      "RosterStudentDto": {
+        "type": "object",
+        "properties": {
+          "membershipId": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "state": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+          "deletedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "guardians": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RosterGuardianDto" }
+          }
+        },
+        "required": ["membershipId", "userId", "displayName", "state", "deletedAt", "guardians"]
       }
     }
   }

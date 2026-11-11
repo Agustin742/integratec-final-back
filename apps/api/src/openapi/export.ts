@@ -37,6 +37,7 @@ const EXPORT_CONFIG: ApiConfig = {
   realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'openapi-export-placeholder-not-a-secret',
   jwtSecret: 'export-jwt-placeholder-not-a-secret-000000',
+  invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost'],
   s3Bucket: 'openapi-export-placeholder',
   s3Region: 'sa-east-1',

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiConfigModule } from '../../config/config.module';
@@ -14,19 +14,26 @@ import { OutboxWriter } from './outbox.writer';
 
 const MAX_ATTEMPTS = 3;
 
-// Same approach as prisma.spec.ts: tests read the database URL from the environment (CI sets it).
+// CI and local runners must explicitly select their test database; never use a shared fallback.
 function testDatabaseUrl(): string {
   const env = (globalThis as unknown as { process?: { env?: Record<string, string | undefined> } })
     .process?.env;
-  return (
-    env?.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/aula_virtual?schema=public'
-  );
+  if (!env?.DATABASE_URL) throw new Error('Outbox integration tests require DATABASE_URL');
+  return env.DATABASE_URL;
 }
+
+const schema = `outbox_spec_${randomUUID().replaceAll('-', '')}`;
+const schemaIdentifier = (): string => {
+  if (!/^outbox_spec_[a-f0-9]{32}$/.test(schema)) throw new Error('Invalid owned outbox schema');
+  return `"${schema}"`;
+};
+const databaseUrl = new URL(testDatabaseUrl());
+databaseUrl.searchParams.set('schema', schema);
 
 const config: ApiConfig = {
   nodeEnv: 'test',
   port: 0,
-  databaseUrl: testDatabaseUrl(),
+  databaseUrl: databaseUrl.toString(),
   accessTokenTtlSeconds: 1,
   refreshTokenTtlSeconds: 1,
   refreshReuseGraceSeconds: 1,
@@ -38,6 +45,7 @@ const config: ApiConfig = {
   realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
   jwtSecret: 'outbox-jwt-placeholder-not-a-secret-000000',
+  invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost'],
   s3Bucket: 'outbox-spec-placeholder',
   s3Region: 'sa-east-1',
@@ -51,7 +59,9 @@ const config: ApiConfig = {
 };
 
 describe('transactional outbox (integration, real Postgres)', () => {
-  let moduleRef: TestingModule;
+  let moduleRef: TestingModule | undefined;
+  let fixture: PrismaClient;
+  let ownedSchemaOid: number | undefined;
   let prisma: PrismaService;
   let writer: OutboxWriter;
   let registry: OutboxHandlerRegistry;
@@ -59,6 +69,18 @@ describe('transactional outbox (integration, real Postgres)', () => {
   let type: string;
 
   beforeAll(async () => {
+    fixture = new PrismaClient({ datasources: { db: { url: config.databaseUrl } } });
+    // DDL identifiers cannot be bound parameters: only the validated, internally generated
+    // identifier is interpolated. No public rows are copied, changed or deleted.
+    ownedSchemaOid = await fixture.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`CREATE SCHEMA ${schemaIdentifier()}`);
+      await tx.$executeRawUnsafe(
+        `CREATE TABLE ${schemaIdentifier()}.outbox_events (LIKE public.outbox_events INCLUDING ALL)`,
+      );
+      const [created] = await tx.$queryRaw<{ oid: number }[]>`
+        SELECT oid FROM pg_namespace WHERE nspname = ${schema}`;
+      return created.oid;
+    });
     moduleRef = await Test.createTestingModule({
       imports: [ApiConfigModule.forRoot(config), PrismaModule, OutboxModule],
     }).compile();
@@ -67,13 +89,39 @@ describe('transactional outbox (integration, real Postgres)', () => {
     writer = moduleRef.get(OutboxWriter);
     registry = moduleRef.get(OutboxHandlerRegistry);
     dispatcher = moduleRef.get(OutboxDispatcher);
-    // Rows left by an interrupted earlier run would be claimed ahead of this run's rows.
-    await prisma.outboxEvent.deleteMany({ where: { type: { startsWith: 'spec.' } } });
+    // Prisma model operations and the dispatcher's unqualified SQL must resolve to
+    // the same private table, not public.outbox_events or another suite's schema.
+    const [resolved] = await prisma.$queryRaw<{ schema: string; isolated: boolean }[]>`
+      SELECT current_schema() AS schema,
+        'outbox_events'::regclass = to_regclass(${`${schema}.outbox_events`}) AS isolated`;
+    expect(resolved).toEqual({ schema, isolated: true });
+    expect(await prisma.outboxEvent.count()).toBe(0);
     // Open a few connections up front so the concurrency test is not timing-sensitive.
     await Promise.all([1, 2, 3, 4].map(() => prisma.$queryRaw`SELECT 1`));
   }, 30_000);
 
-  afterAll(() => moduleRef.close());
+  afterAll(async () => {
+    try {
+      await moduleRef?.close();
+    } finally {
+      try {
+        if (ownedSchemaOid !== undefined) {
+          await fixture.$transaction(async (tx) => {
+            const [owned] = await tx.$queryRaw<{ oid: number }[]>`
+              SELECT oid FROM pg_namespace
+              WHERE nspname = ${schema}
+                AND nspowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)`;
+            if (owned?.oid !== ownedSchemaOid) throw new Error('Outbox fixture ownership changed');
+            // No CASCADE: unexpected objects/dependencies must fail cleanup, not be removed.
+            await tx.$executeRawUnsafe(`DROP TABLE ${schemaIdentifier()}.outbox_events`);
+            await tx.$executeRawUnsafe(`DROP SCHEMA ${schemaIdentifier()}`);
+          });
+        }
+      } finally {
+        await fixture?.$disconnect();
+      }
+    }
+  });
 
   // Each test uses its own event type, so rows and handlers never overlap.
   beforeEach(() => {
@@ -253,13 +301,25 @@ describe('transactional outbox (integration, real Postgres)', () => {
       entered += 1;
       await gate;
     });
-    for (let i = 0; i < 6; i += 1) await record({ n: i });
-
-    const both = Promise.all([dispatch(undefined, 3), dispatch(undefined, 3, other)]);
-    // Both dispatchers must hold a disjoint batch at the same time; a plain
-    // FOR UPDATE would leave the second one blocked, so this would time out.
-    await vi.waitFor(() => expect(entered).toBe(2), { timeout: 10_000 });
-    release();
+    await prisma.$transaction(async (tx) => {
+      for (let i = 0; i < 6; i += 1) await writer.record(tx, { type, payload: { n: i } });
+    });
+    // Use one database-observed cutoff after commit, including sub-millisecond
+    // PostgreSQL defaults that could still be ahead of a JavaScript Date's cutoff.
+    const { availableAt: dueAt } = await prisma.outboxEvent.findFirstOrThrow({
+      where: { type },
+      orderBy: { availableAt: 'desc' },
+    });
+    const now = new Date(dueAt.getTime() + 1);
+    const both = Promise.all([dispatch(now, 3), dispatch(now, 3, other)]);
+    try {
+      // Both dispatchers must hold a disjoint real PostgreSQL batch at the same time.
+      await vi.waitFor(() => expect(entered).toBe(2), { timeout: 10_000 });
+    } finally {
+      // A failed barrier must not leave handlers running into cleanup or the next test.
+      release();
+      await both;
+    }
     const results = await both;
 
     expect(results.map((r) => r.delivered)).toEqual([3, 3]);
