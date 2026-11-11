@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-11 — Resolve PR #81 integration feedback
+
+- **Status:** completed (local conflict resolution and integrated verification; PR delivery and current-head remote CI remain separately reported in PR #81)
+- **Area / files:** `apps/api/src/classrooms/classrooms.module.ts`, `apps/api/openapi.json`, integration with `develop` after #78.
+- **Change:** Reproduced the reported merge conflicts in exactly the module and generated contract, then integrated `develop` (`b28b5d1`) without rewriting history. Preserved all upstream invitation controllers/providers/exports plus roster/removal modules; regenerated OpenAPI from the combined module graph. Structural comparison preserves all 18 upstream paths plus the two #23 paths and all 34 schemas. No business service, authorization, re-enrollment or guardian-reactivation logic changed.
+- **Reason:** Agustin742 approved `0966ac9` but requested integration after #78 and fresh CI. Re-enrollment remains a team decision, explicitly not a defect in this PR; no policy change or follow-up issue is invented here.
+- **Verification:** Focused 87/87 tests across seven files passed. Full integrated workspace 1,128/1,128 passed (API 1,057, realtime 68, contracts 3), with supported Vitest threads/max2/min1. Lint, typecheck, build, documentation links (65 files), module/OpenAPI formatting and whitespace against `origin/develop` all passed. Existing task-owned disposable PostgreSQL/MinIO only; no shared data or new migration.
+- **Runner incident:** The first wrapper stopped after the successful focused run because Windows cp1252 could not print a Unicode checkmark. Preserved its exit/log and all 87 passing results, repaired scratch logging and continued only unexecuted checks under the original time budget. No focused retry or test weakening. This was a wrapper failure, not a failed test or a full-suite pass before continuation.
+- **Next step:** Publish the merge commit to the same [PR #81](https://github.com/Agustin742/integratec-final-back/pull/81), reply to the review, and observe exact new-head CI; the old green run is historical. Current CI and approval of the integrated head remain requirements before any separately authorized PR merge. No force push, PR merge or deployment.
+
 ## 2026-11-09 — Classroom roster and logical membership removal (#23)
 
 - **Status:** completed (implementation, scoped reviews and authorized PR publication; current-head CI and teammate approval remain required before merge)

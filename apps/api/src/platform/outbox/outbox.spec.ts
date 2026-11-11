@@ -44,6 +44,7 @@ const config: ApiConfig = {
   outboxMaxAttempts: MAX_ATTEMPTS,
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
   jwtSecret: 'outbox-jwt-placeholder-not-a-secret-000000',
+  invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost'],
   s3Bucket: 'outbox-spec-placeholder',
   s3Region: 'sa-east-1',
