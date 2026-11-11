@@ -89,6 +89,7 @@ Interfaz lo más simple posible:
 - Notificaciones sobre el estado de su hijo, **dentro de la aplicación y por email**.
 - Calificaciones de su hijo.
 - Mensajes con el profesor y con su hijo.
+- Si se da de baja a un alumno del aula, también se retira el acceso de sus padres derivado de ese vínculo, sin borrar el historial. Se conserva el acceso por otros hijos activos o por otras aulas (confirmación de Alejo para la implementación de #23).
 
 ### 2.6 Actividades y calificaciones
 

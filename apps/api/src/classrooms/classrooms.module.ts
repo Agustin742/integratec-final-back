@@ -10,9 +10,18 @@ import { ClassroomsService } from './classrooms.service';
 import { InvitationsController } from './invitations.controller';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
 import { MeClassroomsController } from './me-classrooms.controller';
+import { ClassroomRemovalModule } from './removal/classroom-removal.module';
+import { ClassroomRosterModule } from './roster/roster.module';
 
 @Module({
-  imports: [PrismaModule, AccessModule, OutboxModule, EmailModule],
+  imports: [
+    PrismaModule,
+    AccessModule,
+    OutboxModule,
+    EmailModule,
+    ClassroomRosterModule,
+    ClassroomRemovalModule,
+  ],
   controllers: [ClassroomsController, MeClassroomsController, InvitationsController],
   providers: [
     ClassroomsService,
