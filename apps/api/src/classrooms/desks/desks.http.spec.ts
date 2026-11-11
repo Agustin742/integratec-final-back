@@ -10,6 +10,7 @@ import { ApiConfigModule } from '../../config/config.module';
 import { configureHttp } from '../../http/configure-http';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertResourceAuthorization } from '../../testing/resource-authorization';
 import { ClassroomDesksModule } from './desks.module';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -271,6 +272,36 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
       sealFixture();
       expect((await get().expect(404)).body.error.code).toBe('NOT_FOUND');
       expect(prisma.desk.findMany).not.toHaveBeenCalled();
+    },
+  );
+  it.each([false, true])(
+    'S3/S5 resource boundary for students when adultMode=%s',
+    async (adultMode) => {
+      classrooms[0].adultMode = adultMode;
+      classrooms[1].adultMode = adultMode;
+      sealFixture();
+      await assertResourceAuthorization({
+        allowedResourceId: classroomId,
+        foreignResourceId: foreignId,
+        interaction: { classroomId, objectId: desks[0].id },
+        deniedStatus: 404,
+        request: (resourceId, interaction) => {
+          const req = get(resourceId);
+          return interaction === undefined ? req : req.query(interaction);
+        },
+        assertAllowed: (response) => {
+          expect(response.body).toMatchObject({ items: expect.any(Array) });
+        },
+        assertDenied: (response) => {
+          expect(response.body).toMatchObject({ error: { code: 'NOT_FOUND' } });
+          expect(response.body).not.toHaveProperty('items');
+        },
+      });
+      // The successful layout was read twice; denied requests never fetched it.
+      expect(prisma.desk.findMany).toHaveBeenCalledTimes(2);
+      expect(
+        prisma.desk.findMany.mock.calls.every(([query]) => query.where.classroomId === classroomId),
+      ).toBe(true);
     },
   );
   it.each([false, true])('excludes parent-only access when adultMode=%s', async (adultMode) => {

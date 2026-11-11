@@ -47,3 +47,5 @@ The read does not allocate, reassign, release or repair desks. Enrollment (#22) 
 ## Verification boundary
 
 `apps/api/src/classrooms/desks/desks.http.spec.ts` exercises real Nest routing, the global session guard, shared access service, error envelope and response projection using synthetic sessions and predicate-aware mocked persistence. It checks allowed/denied scopes, free and expanded layouts, full-layout retrieval and unchanged controlled fixture state. It does **not** prove PostgreSQL constraints, allocation concurrency, live authentication or frontend integration. No database is required.
+
+The [resource authorization test pattern](resource-authorization-testing.md) is reused by the route's tests.

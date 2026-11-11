@@ -25,6 +25,7 @@ backend/
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
+- [Resource authorization test pattern](docs/resource-authorization-testing.md): reusable public-request assertions for resource ID tampering and untrusted object interaction context.
 
 ## Local setup and development
 
