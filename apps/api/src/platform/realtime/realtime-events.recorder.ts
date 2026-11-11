@@ -11,10 +11,11 @@ import {
  * Records the events that evict a user from live classrooms. Every method takes the caller's
  * transaction: the event exists if and only if the change that caused it commits.
  *
- * Whoever deactivates or removes a classroom membership MUST call
- * {@link recordClassroomAccessRevoked} in that same transaction. No such operation exists yet
- * (membership management arrives with the invitation and member-directory stories); until it does,
- * a removed member is only refused at their next join or reconnection.
+ * Student removal (#23) does not call {@link recordClassroomAccessRevoked}: it records
+ * `classroom.membership.removed`, which `RealtimeEvictionHandler` also handles, so one event both
+ * documents the removal and evicts the student. Any other operation that deactivates or removes a
+ * classroom membership MUST call {@link recordClassroomAccessRevoked} in its transaction; otherwise
+ * the member is only refused at their next join or reconnection.
  */
 @Injectable()
 export class RealtimeEventsRecorder {

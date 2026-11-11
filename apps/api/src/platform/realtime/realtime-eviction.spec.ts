@@ -15,6 +15,7 @@ import { HttpRealtimeEvictionClient, RealtimeEvictionError } from './realtime-ev
 import { EVICTION_MAX_ATTEMPTS, RealtimeEvictionHandler } from './realtime-eviction.handler';
 import { RealtimeEventsModule } from './realtime-events.module';
 import {
+  CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
   REALTIME_SESSIONS_REVOKED_EVENT,
 } from './realtime-events';
@@ -163,6 +164,20 @@ describe('RealtimeEvictionHandler', () => {
     expect(client.evict).toHaveBeenCalledExactlyOnceWith({ userId: USER, classroomId: CLASSROOM });
   });
 
+  it('evicts a removed student from the classroom from the membership removal event', async () => {
+    const { client, registry } = makeHandler();
+    expect(registry.handlersFor(CLASSROOM_MEMBERSHIP_REMOVED_EVENT)).toHaveLength(1);
+    await run(
+      registry,
+      envelope(CLASSROOM_MEMBERSHIP_REMOVED_EVENT, {
+        classroomId: CLASSROOM,
+        membershipId: SESSION,
+        userId: USER,
+      }),
+    );
+    expect(client.evict).toHaveBeenCalledExactlyOnceWith({ userId: USER, classroomId: CLASSROOM });
+  });
+
   it('evicts the connections of the revoked session from every classroom', async () => {
     const { client, registry } = makeHandler();
     await run(
@@ -182,6 +197,7 @@ describe('RealtimeEvictionHandler', () => {
     ['a missing userId', REALTIME_SESSIONS_REVOKED_EVENT, {}],
     ['a malformed userId', REALTIME_SESSIONS_REVOKED_EVENT, { userId: 'x' }],
     ['a missing classroomId', REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, { userId: USER }],
+    ['a removal without a classroomId', CLASSROOM_MEMBERSHIP_REMOVED_EVENT, { userId: USER }],
     ['a non-object payload', REALTIME_SESSIONS_REVOKED_EVENT, 'x'],
   ])('rejects %s without calling the realtime server', async (_label, type, payload) => {
     const { client, registry } = makeHandler();
@@ -189,9 +205,13 @@ describe('RealtimeEvictionHandler', () => {
     expect(client.evict).not.toHaveBeenCalled();
   });
 
-  it('gives both event types a longer retry budget than the default', () => {
+  it('gives every eviction event type a longer retry budget than the default', () => {
     const { registry } = makeHandler();
-    for (const type of [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT]) {
+    for (const type of [
+      REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+      REALTIME_SESSIONS_REVOKED_EVENT,
+      CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
+    ]) {
       expect(registry.retryPolicyFor(type).maxAttempts).toBe(EVICTION_MAX_ATTEMPTS);
     }
     expect(EVICTION_MAX_ATTEMPTS).toBeGreaterThan(5);
@@ -276,7 +296,13 @@ describe('Outbox to realtime eviction (integration)', () => {
   });
 
   const ownRows = (userId: string) => ({
-    type: { in: [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT] },
+    type: {
+      in: [
+        REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+        REALTIME_SESSIONS_REVOKED_EVENT,
+        CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
+      ],
+    },
     payload: { path: ['userId'], equals: userId },
   });
   const ownRow = () => prisma.outboxEvent.findFirstOrThrow({ where: ownRows(user) });
@@ -289,6 +315,7 @@ describe('Outbox to realtime eviction (integration)', () => {
     dispatcher.dispatchPending(50, now, [
       REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
       REALTIME_SESSIONS_REVOKED_EVENT,
+      CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
     ]);
 
   it('delivers a recorded event to the realtime server with the service secret', async () => {
@@ -319,6 +346,21 @@ describe('Outbox to realtime eviction (integration)', () => {
     } finally {
       await prisma.outboxEvent.deleteMany({ where: ownRows(stranger) });
     }
+  });
+
+  it('evicts a removed student: the event ClassroomRemovalService records reaches the realtime server', async () => {
+    await record(CLASSROOM_MEMBERSHIP_REMOVED_EVENT, {
+      classroomId: CLASSROOM,
+      membershipId: SESSION,
+      userId: user,
+    });
+
+    await dispatch();
+
+    expect(ownReceived().map((call) => call.body)).toEqual([
+      { userId: user, classroomId: CLASSROOM },
+    ]);
+    expect((await ownRow()).processedAt).not.toBeNull();
   });
 
   it('retries the event when the realtime server is unavailable and delivers it later', async () => {

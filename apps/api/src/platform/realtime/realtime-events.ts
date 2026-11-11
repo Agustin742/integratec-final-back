@@ -11,6 +11,14 @@
 export const REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT = 'realtime.classroom-access-revoked';
 
 /**
+ * A teacher removed a student from a classroom (written by `ClassroomRemovalService`, #23). The
+ * eviction handler subscribes to it directly, so removal needs no second event: the same row that
+ * records the removal evicts the student's live connections in that classroom.
+ * Payload: `{ classroomId, membershipId, userId }`.
+ */
+export const CLASSROOM_MEMBERSHIP_REMOVED_EVENT = 'classroom.membership.removed';
+
+/**
  * One session, or every session of a user, was revoked (logout, refresh token reuse, password
  * reset). Payload: `{ userId, sessionId }` for one session, `{ userId }` for all of them.
  */

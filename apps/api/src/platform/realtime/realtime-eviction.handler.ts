@@ -8,6 +8,7 @@ import {
   type RealtimeEvictionPort,
 } from './realtime-eviction.client';
 import {
+  CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
   REALTIME_SESSIONS_REVOKED_EVENT,
 } from './realtime-events';
@@ -21,6 +22,8 @@ import {
 export const EVICTION_MAX_ATTEMPTS = 12;
 
 const classroomAccessRevoked = z.object({ userId: z.uuid(), classroomId: z.uuid() });
+// `membershipId` is part of the removal payload but not of the eviction, so it is dropped here.
+const membershipRemoved = z.object({ userId: z.uuid(), classroomId: z.uuid() });
 const sessionsRevoked = z.object({ userId: z.uuid(), sessionId: z.uuid().optional() });
 
 /**
@@ -39,7 +42,11 @@ export class RealtimeEvictionHandler implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    for (const type of [REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, REALTIME_SESSIONS_REVOKED_EVENT]) {
+    for (const type of [
+      REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+      REALTIME_SESSIONS_REVOKED_EVENT,
+      CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
+    ]) {
       this.registry.setRetryPolicy(type, {
         maxAttempts: EVICTION_MAX_ATTEMPTS,
         // The row stays in `outbox_events` as failed; this makes the consequence impossible to miss.
@@ -53,6 +60,9 @@ export class RealtimeEvictionHandler implements OnModuleInit {
     }
     this.registry.register(REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, (event) =>
       this.handle(classroomAccessRevoked, event),
+    );
+    this.registry.register(CLASSROOM_MEMBERSHIP_REMOVED_EVENT, (event) =>
+      this.handle(membershipRemoved, event),
     );
     this.registry.register(REALTIME_SESSIONS_REVOKED_EVENT, (event) =>
       this.handle(sessionsRevoked, event),
