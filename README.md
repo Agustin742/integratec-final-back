@@ -16,6 +16,10 @@ backend/
 └── scripts/          # CI tooling and regression checks
 ```
 
+## Classroom member management
+
+- [Private student roster](docs/classroom-roster.md): `GET /classrooms/:id/roster`, paginated student state and guardian links for classroom staff only; separate from the D12 mention directory.
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.

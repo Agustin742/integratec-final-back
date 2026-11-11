@@ -594,6 +594,103 @@
         "summary": "List classrooms accessible to the authenticated user",
         "tags": ["classrooms"]
       }
+    },
+    "/classrooms/{id}/roster": {
+      "get": {
+        "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
+        "operationId": "ClassroomRosterController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Omit to include both states.",
+            "schema": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive display-name prefix.",
+            "schema": { "maxLength": 100, "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Student roster including historical logical rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/RosterStudentDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List student roster for classroom staff",
+        "tags": ["classrooms"]
+      }
     }
   },
   "info": {
@@ -1270,6 +1367,34 @@
             "description": "Whether interactive classroom games are disabled"
           }
         }
+      },
+      "RosterGuardianDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["ACTIVE", "INACTIVE"],
+            "description": "Historical link state, not access authority."
+          }
+        },
+        "required": ["id", "displayName", "state"]
+      },
+      "RosterStudentDto": {
+        "type": "object",
+        "properties": {
+          "membershipId": { "type": "string", "format": "uuid" },
+          "userId": { "type": "string", "format": "uuid" },
+          "displayName": { "type": "string" },
+          "state": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+          "deletedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "guardians": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/RosterGuardianDto" }
+          }
+        },
+        "required": ["membershipId", "userId", "displayName", "state", "deletedAt", "guardians"]
       }
     }
   }
