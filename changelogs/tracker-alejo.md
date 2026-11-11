@@ -2,7 +2,7 @@
 
 ## 2026-11-11 — Classroom desk map and resource authorization pattern (#26)
 
-- **Status:** completed (implementation and bounded independent verification; local only)
+- **Status:** in-progress (implementation verified; single-PR publication authorized)
 - **Area / files:** `apps/api/src/classrooms/desks/`, `apps/api/src/testing/resource-authorization*.ts`, desk-map OpenAPI contract and documentation.
 - **Change:** Investigated existing enrollment allocation and removal release, then started isolated implementation from `develop` at `8e723c7` on `feat/26-classroom-desks` with AI assistance.
 - **Reason:** Deliver issue #26 without duplicating Luis's #52 member directory or Agustin's #25 realtime presence/movement. Reuse the approved lowest-free-index allocation and automatic expansion; no manual reassignment or new capacity policy.
@@ -19,7 +19,8 @@
 - **Final independent S4 verdict:** PASS. The verifier reviewed setup/UUID-scoped cleanup and requested one separate-database run, correlated to parent job-10 on `odd26_verify`: exit 0, 1/1 passed, 3.95s Vitest. Its IPC query timed out, but the original job completed exactly once; complete output was returned for its own verdict without a duplicate run. Public HTTP proved 13 exact assignments, expansion, idempotent rejoin, removal release/removed 404 and desk reuse. All candidate hashes stayed stable. Prior 28/28, initial S4 partial and parent's full suite remain distinct evidence. Synthetic sessions, disabled outbox dispatch, and no live-token/concurrency/frontend proof are explicit limits.
 - **Local work-unit commits:** Desk-map behavior `d348890` (515 authored + 85 generated lines, coherent-unit overage disclosed); helper and actual HTTP use `3cfb030` (255 authored lines); persisted acceptance test/docs `06c2ca7` (236 authored changed lines). Each includes its tests/docs; source remained identical to the verified final candidate during index-only slicing. The actual feature base is `8e723c7`, not accumulated history against `main`.
 - **Native assessment:** RDD remains on. Each committed unit was assessed against its immediate predecessor; all returned `reviewDue: false` / `under_budget` (native medium). Security item 2 retained independent verification, fulfilled above. No native START, review receipt or approval is claimed, and none was required by these assessments.
-- **Next step:** Human review of the local branch and a separate publishing decision. No push, PR, merge or deployment performed or authorized. Root-format failure on five unrelated ignored artifacts remains disclosed; scoped formatting and all applicable functional/static checks passed.
+- **Publication authorization:** Alejo requested publication and explicitly selected one PR into `develop` with a size exception after disclosure of 1,110 changed lines in 15 files. Preserve the coherent work-unit commits; publication bookkeeping may add tracker lines. Fresh fetch confirms `origin/develop` is still `8e723c7` and the branch is not behind. No existing PR for this branch. Use the repository's existing `enhancement` label and issue #26; no invented approval/type labels or template.
+- **Next step:** Run publication preflight, publish the branch/open the PR, and observe exact-head CI. No merge or deployment authorized. Root-format failure on five unrelated ignored artifacts remains disclosed; scoped formatting and all applicable functional/static checks passed.
 
 ## 2026-11-11 — Resolve PR #81 integration feedback
 
