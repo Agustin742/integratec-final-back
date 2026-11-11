@@ -8,7 +8,30 @@ export interface VerifiedJoin {
   sessionId: string;
   classroomId: string;
   role: ClassroomRole;
+  /** Name shown on the avatar; it comes from the API, never from the client. */
+  displayName: string;
 }
+
+/**
+ * What a connection carries as `client.auth`. The account session id is deliberately named
+ * `authSessionId`: Colyseus adopts `auth.sessionId` as the id of the connection itself, so a key
+ * with that name would give every connection of one account the same id.
+ */
+export interface ClassroomAuth {
+  userId: string;
+  authSessionId: string;
+  classroomId: string;
+  role: ClassroomRole;
+  displayName: string;
+}
+
+export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
+  userId: identity.userId,
+  authSessionId: identity.sessionId,
+  classroomId: identity.classroomId,
+  role: identity.role,
+  displayName: identity.displayName,
+});
 
 /** Asks the authorization service whether a token may enter a classroom. */
 export interface JoinVerifier {

@@ -23,6 +23,7 @@ const verifiedJoinSchema = z.object({
   sessionId: z.uuid(),
   classroomId: z.uuid(),
   role: z.enum(CLASSROOM_ROLES),
+  displayName: z.string().min(1).max(100),
 });
 
 export interface ApiJoinVerifierOptions {

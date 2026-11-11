@@ -10,6 +10,7 @@ const IDENTITY = {
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   classroomId: CLASSROOM_ID,
   role: 'TEACHER',
+  displayName: 'Ada Lovelace',
 };
 
 const json = (status: number, body: unknown): Response =>
@@ -86,6 +87,9 @@ describe('ApiJoinVerifier', () => {
     ['an unknown role', json(200, { ...IDENTITY, role: 'ROOT' })],
     ['a parent role (no live access)', json(200, { ...IDENTITY, role: 'PARENT' })],
     ['a missing sessionId', json(200, { ...IDENTITY, sessionId: undefined })],
+    ['a missing displayName', json(200, { ...IDENTITY, displayName: undefined })],
+    ['an empty displayName', json(200, { ...IDENTITY, displayName: '' })],
+    ['an oversized displayName', json(200, { ...IDENTITY, displayName: 'x'.repeat(101) })],
   ])('denies a 200 response with %s', async (_label, response) => {
     const fetchImpl = vi.fn().mockResolvedValue(response);
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(

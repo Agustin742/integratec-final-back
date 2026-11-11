@@ -31,4 +31,8 @@ export class JoinVerificationResponseDto {
   /** Parents never receive a live join (rules/realtime-and-presence.md). */
   @ApiProperty({ enum: ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] })
   role!: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT';
+
+  /** Name shown on the user's avatar in the live room. */
+  @ApiProperty({ maxLength: 100 })
+  displayName!: string;
 }

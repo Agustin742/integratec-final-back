@@ -9,6 +9,7 @@ const IDENTITY = {
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   classroomId: CLASSROOM_ID,
   role: 'STUDENT' as const,
+  displayName: 'Ada Lovelace',
 };
 
 const verifierReturning = (impl: JoinVerifier['verify']) => ({ verify: vi.fn(impl) });
@@ -25,10 +26,23 @@ const rejection = async (promise: Promise<unknown>): Promise<ServerError> => {
 describe('authenticateJoin', () => {
   it('returns the verified identity for a valid token and classroomId', async () => {
     const verifier = verifierReturning(async () => IDENTITY);
-    await expect(
-      authenticateJoin(verifier, 'token-1', { classroomId: CLASSROOM_ID }),
-    ).resolves.toEqual(IDENTITY);
+    const auth = await authenticateJoin(verifier, 'token-1', { classroomId: CLASSROOM_ID });
+
+    expect(auth).toEqual({
+      userId: IDENTITY.userId,
+      authSessionId: IDENTITY.sessionId,
+      classroomId: CLASSROOM_ID,
+      role: 'STUDENT',
+      displayName: 'Ada Lovelace',
+    });
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);
+  });
+
+  it('never exposes a `sessionId` key: Colyseus would adopt it as the id of every connection', async () => {
+    const verifier = verifierReturning(async () => IDENTITY);
+    const auth = await authenticateJoin(verifier, 'token-1', { classroomId: CLASSROOM_ID });
+
+    expect(auth).not.toHaveProperty('sessionId');
   });
 
   it.each([undefined, '', '   '])(
