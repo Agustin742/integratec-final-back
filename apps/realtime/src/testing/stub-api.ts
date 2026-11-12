@@ -46,7 +46,9 @@ const readBody = (req: IncomingMessage): Promise<Record<string, unknown>> =>
 /** Stand-in for the NestJS internal endpoints, driven by an in-memory user table. */
 export async function startStubApi(users: StubUser[]): Promise<StubApi> {
   const byToken = new Map(users.map((user) => [user.token, user]));
-  const byUserId = new Map(users.map((user) => [user.userId, user]));
+  // One account can have several sessions (logins), each with its own token and session id.
+  const bySession = (userId: string, sessionId: unknown) =>
+    users.find((user) => user.userId === userId && user.sessionId === sessionId);
   const calls: RecordedCall[] = [];
 
   const stub: StubApi = {
@@ -86,8 +88,8 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
       }
       if (path === '/internal/realtime/access-reverification') {
         if (stub.reverificationStatus !== undefined) return reply(stub.reverificationStatus);
-        const user = byUserId.get(String(body.userId));
-        return user && user.sessionId === body.sessionId && user.classrooms.has(classroomId)
+        const user = bySession(String(body.userId), body.sessionId);
+        return user?.classrooms.has(classroomId)
           ? reply(200, identity(user, classroomId))
           : reply(401);
       }

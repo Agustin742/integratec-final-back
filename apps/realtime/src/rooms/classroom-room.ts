@@ -62,6 +62,13 @@ interface Intent extends AvatarInput {
   owner: string;
 }
 
+/** A join whose access is being verified: not attached yet, but already revocable. */
+interface PendingAdmission {
+  userId: string;
+  authSessionId: string;
+  revoked: boolean;
+}
+
 /** Room logic that does not depend on the verifier. */
 export class ClassroomRoom extends Room<{ state: ClassroomState }> implements EvictableRoom {
   classroomId = '';
@@ -76,6 +83,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
   private readonly pendingReconnections = new Map<string, Deferred<Client>>();
   /** Who each connection is, kept for connections that are held and so have no client in the room. */
   private readonly authByConnection = new Map<string, ClassroomAuth>();
+  /** Joins still waiting for the access check, by connection id: an eviction must reach them too. */
+  private readonly pendingAdmissions = new Map<string, PendingAdmission>();
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -107,13 +116,48 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * `joinById` ignores `filterBy`, so a client verified for classroom A could name room B.
    * The identity verified for this exact room must match the room's own classroom.
    *
+   * The identity in `client.auth` was checked when the seat was reserved, and Colyseus replays it
+   * unchanged when the seat is consumed (up to the reservation time later). Access is therefore
+   * verified again here, against current persisted state, before anything is attached: `4001` when
+   * it was lost, `4100` when it could not be verified (the client may retry). While that check is
+   * in flight the admission is registered in `pendingAdmissions`, so an eviction that arrives
+   * meanwhile still reaches it.
+   *
    * A user has one avatar however many connections they hold: the first connection creates it and
    * the last one to leave removes it. Over the cap the connection is refused with `4002`.
    */
-  onJoin(client: Client): void {
+  async onJoin(client: Client): Promise<void> {
     const auth = client.auth as ClassroomAuth | undefined;
     if (auth?.classroomId !== this.classroomId) {
       throw new ServerError(401, 'Unauthorized');
+    }
+    const admission: PendingAdmission = {
+      userId: auth.userId,
+      authSessionId: auth.authSessionId,
+      revoked: false,
+    };
+    this.pendingAdmissions.set(client.sessionId, admission);
+    try {
+      const current = await this.verifier.reverify(auth);
+      // Evicted, closed or disposed while the API was answering: nothing is attached.
+      if (admission.revoked) {
+        throw new ServerError(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+      }
+      auth.role = current.role;
+      auth.displayName = current.displayName;
+    } catch (error) {
+      if (error instanceof ServerError) throw error;
+      if (admission.revoked || error instanceof JoinDeniedError) {
+        throw new ServerError(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+      }
+      // The API was unreachable or failing: access is unknown, not revoked. No identifiers logged.
+      console.warn('realtime: join access verification unavailable');
+      throw new ServerError(
+        CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+        CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+      );
+    } finally {
+      this.pendingAdmissions.delete(client.sessionId);
     }
     const attached = this.userConnections.attach(auth.userId, client.sessionId);
     if (attached.result === 'full') {
@@ -210,9 +254,23 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * cleaned up right away and the pending reconnection is rejected, so nothing about the old
    * connection can come back; a fresh join still goes through the API check. `sessionId` narrows it
    * to the connections made with that account session.
+   *
+   * Joins still being verified (a seat reserved earlier, consumed just now) are revoked too and
+   * counted: the eviction acted on them, and they are refused with `4001` once their check ends.
    */
   evict(filter: { userId: string; sessionId?: string }): number {
     let evicted = 0;
+    for (const admission of this.pendingAdmissions.values()) {
+      if (
+        admission.revoked ||
+        admission.userId !== filter.userId ||
+        (filter.sessionId !== undefined && admission.authSessionId !== filter.sessionId)
+      ) {
+        continue;
+      }
+      admission.revoked = true;
+      evicted += 1;
+    }
     for (const connectionId of this.userConnections.connectionIds(filter.userId)) {
       if (
         filter.sessionId !== undefined &&
@@ -235,6 +293,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * example by an eviction and then by the framework's own leave): the second call finds nothing.
    */
   private releaseConnection(connectionId: string): void {
+    const admission = this.pendingAdmissions.get(connectionId);
+    if (admission) admission.revoked = true; // left before its access check ended
     this.limiters.delete(connectionId);
     this.pendingReconnections.delete(connectionId);
     this.authByConnection.delete(connectionId);
@@ -257,6 +317,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       this.reportConnectedTime(userId, milliseconds);
     }
     this.pendingReconnections.clear();
+    for (const admission of this.pendingAdmissions.values()) admission.revoked = true;
     this.options.directory?.unregister(this.classroomId, this);
     await Promise.allSettled([...this.inFlightReports]);
   }

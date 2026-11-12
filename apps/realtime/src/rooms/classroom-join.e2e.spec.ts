@@ -17,7 +17,10 @@ const IDENTITY = {
   displayName: 'Ada Lovelace',
 };
 
-/** Stub of the NestJS endpoint: the token is valid only for classroom A. */
+/**
+ * Stub of the NestJS endpoints: the token is valid only for classroom A, and so is the user's
+ * access when it is checked again at admission.
+ */
 function startStubApi(): Promise<{ server: HttpServer; url: string; calls: string[] }> {
   const calls: string[] = [];
   const server = createServer((req, res) => {
@@ -25,10 +28,11 @@ function startStubApi(): Promise<{ server: HttpServer; url: string; calls: strin
     req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
     req.on('end', () => {
       calls.push(raw);
-      const body = JSON.parse(raw) as { accessToken: string; classroomId: string };
+      const body = JSON.parse(raw) as { accessToken?: string; classroomId: string };
+      const reverification = req.url === '/internal/realtime/access-reverification';
       const authorized =
         req.headers['x-internal-service-secret'] === SECRET &&
-        body.accessToken === GOOD_TOKEN &&
+        (reverification || body.accessToken === GOOD_TOKEN) &&
         body.classroomId === CLASSROOM_A;
       res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' });
       res.end(JSON.stringify(authorized ? { ...IDENTITY, classroomId: CLASSROOM_A } : {}));

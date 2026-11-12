@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ServerError } from '@colyseus/core';
 import {
   CLOSE_CODE_ACCESS_REVOKED,
+  CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
   CLOSE_REASON_ACCESS_REVOKED,
   CLOSE_REASON_VERIFICATION_UNAVAILABLE,
@@ -33,7 +34,7 @@ describe('createClassroomRoom', () => {
   it('exposes a static onAuth that Colyseus can call detached from the class', async () => {
     const verifier: JoinVerifier = {
       verify: vi.fn().mockResolvedValue(IDENTITY),
-      reverify: vi.fn(),
+      reverify: vi.fn().mockResolvedValue(IDENTITY),
     };
     const RoomClass = createClassroomRoom(verifier);
     const { onAuth } = RoomClass; // MatchMaker invokes it without `this`
@@ -45,28 +46,31 @@ describe('createClassroomRoom', () => {
 
   /** A room that has run `onCreate`, with the real-time loop replaced so no timer leaks. */
   const makeCreatedRoom = () => {
-    const room = new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
+    const room = new (createClassroomRoom({
+      verify: vi.fn(),
+      reverify: vi.fn().mockResolvedValue(IDENTITY),
+    }))();
     const setFixedTimestep = vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
     room.onCreate({ classroomId: CLASSROOM_ID });
     return { room, setFixedTimestep };
   };
   const makeJoinedRoom = () => makeCreatedRoom().room;
 
-  it('rejects a join whose verified classroom differs from the room classroom', () => {
+  it('rejects a join whose verified classroom differs from the room classroom', async () => {
     const room = makeJoinedRoom();
     const client = {
       sessionId: 's1',
       auth: { ...AUTH, classroomId: '11111111-1111-4111-8111-111111111111' },
     };
 
-    expect(() => room.onJoin(client as never)).toThrow(ServerError);
+    await expect(room.onJoin(client as never)).rejects.toThrow(ServerError);
     expect(room.state.avatars.size).toBe(0);
   });
 
-  it('admits a join whose verified classroom equals the room classroom', () => {
+  it('admits a join whose verified classroom equals the room classroom', async () => {
     const room = makeJoinedRoom();
 
-    expect(() => room.onJoin({ sessionId: 's1', auth: AUTH } as never)).not.toThrow();
+    await expect(room.onJoin({ sessionId: 's1', auth: AUTH } as never)).resolves.toBeUndefined();
     expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({
       displayName: 'Ada Lovelace',
       role: 'TEACHER',
@@ -74,10 +78,10 @@ describe('createClassroomRoom', () => {
     });
   });
 
-  it('rejects a join with no verified identity', () => {
+  it('rejects a join with no verified identity', async () => {
     const room = makeJoinedRoom();
 
-    expect(() => room.onJoin({ sessionId: 's1' } as never)).toThrow(ServerError);
+    await expect(room.onJoin({ sessionId: 's1' } as never)).rejects.toThrow(ServerError);
     expect(room.state.avatars.size).toBe(0);
   });
 
@@ -85,7 +89,7 @@ describe('createClassroomRoom', () => {
     const makeTimedRoom = (nowMs: { value: number }) => {
       const reporter = { report: vi.fn().mockResolvedValue(undefined) };
       const room = new (createClassroomRoom(
-        { verify: vi.fn(), reverify: vi.fn() },
+        { verify: vi.fn(), reverify: vi.fn().mockResolvedValue(IDENTITY) },
         { now: () => nowMs.value, reporter },
       ))();
       vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
@@ -96,7 +100,7 @@ describe('createClassroomRoom', () => {
     it('reports the connected time of whoever is still present', async () => {
       const clock = { value: 1_000_000 };
       const { room, reporter } = makeTimedRoom(clock);
-      room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+      await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
       clock.value += 42_000;
 
       await room.onDispose();
@@ -113,7 +117,7 @@ describe('createClassroomRoom', () => {
       const clock = { value: 1_000_000 };
       const { room, reporter } = makeTimedRoom(clock);
       const client = { sessionId: 's1', auth: AUTH } as never;
-      room.onJoin(client);
+      await room.onJoin(client);
       clock.value += 10_000;
       room.onLeave(client);
 
@@ -125,7 +129,7 @@ describe('createClassroomRoom', () => {
     it('never reports more seconds than the API accepts in one report', async () => {
       const clock = { value: 1_000_000 };
       const { room, reporter } = makeTimedRoom(clock);
-      room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+      await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
       clock.value += 8 * 24 * 3600 * 1000;
 
       await room.onDispose();
@@ -142,12 +146,12 @@ describe('createClassroomRoom', () => {
         report: vi.fn(() => new Promise<void>((resolve) => (finish = resolve))),
       };
       const room = new (createClassroomRoom(
-        { verify: vi.fn(), reverify: vi.fn() },
+        { verify: vi.fn(), reverify: vi.fn().mockResolvedValue(IDENTITY) },
         { now: () => clock.value, reporter },
       ))();
       vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
       room.onCreate({ classroomId: CLASSROOM_ID });
-      room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+      await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
       clock.value += 5_000;
 
       let disposed = false;
@@ -162,23 +166,24 @@ describe('createClassroomRoom', () => {
   });
 
   const makeCreatedRoomWithoutCreate = () =>
-    new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
+    new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn().mockResolvedValue(IDENTITY) }))();
 
   describe('a second connection while another is held', () => {
-    it('shows the avatar as online with the current identity instead of staying reconnecting', () => {
-      const room = new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
+    it('shows the avatar as online with the current identity instead of staying reconnecting', async () => {
+      const reverify = vi
+        .fn()
+        .mockResolvedValueOnce(IDENTITY)
+        .mockResolvedValue({ ...IDENTITY, role: 'STUDENT', displayName: 'Ada L.' });
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
       vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
       vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
       room.onCreate({ classroomId: CLASSROOM_ID });
       const first = { sessionId: 's1', auth: { ...AUTH } };
-      room.onJoin(first as never);
+      await room.onJoin(first as never);
       room.onDrop(first as never); // for example a page refresh
       expect(room.state.avatars.get(IDENTITY.userId)?.status).toBe('reconnecting');
 
-      room.onJoin({
-        sessionId: 's2',
-        auth: { ...AUTH, role: 'STUDENT', displayName: 'Ada L.' },
-      } as never);
+      await room.onJoin({ sessionId: 's2', auth: { ...AUTH } } as never);
 
       expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({
         status: 'online',
@@ -190,8 +195,11 @@ describe('createClassroomRoom', () => {
   });
 
   describe('session-specific eviction of held reconnections', () => {
-    it('rejects the held reconnection of the evicted session only and keeps the other session', () => {
-      const room = new (createClassroomRoom({ verify: vi.fn(), reverify: vi.fn() }))();
+    it('rejects the held reconnection of the evicted session only and keeps the other session', async () => {
+      const room = new (createClassroomRoom({
+        verify: vi.fn(),
+        reverify: vi.fn().mockResolvedValue(IDENTITY),
+      }))();
       vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
       const holds = new Map<string, { reject: ReturnType<typeof vi.fn>; catch: () => void }>();
       vi.spyOn(room, 'allowReconnection').mockImplementation(((client: { sessionId: string }) => {
@@ -202,8 +210,8 @@ describe('createClassroomRoom', () => {
       room.onCreate({ classroomId: CLASSROOM_ID });
       const other = { sessionId: 's1', auth: { ...AUTH, authSessionId: 'session-a' } };
       const revoked = { sessionId: 's2', auth: { ...AUTH, authSessionId: 'session-b' } };
-      room.onJoin(other as never);
-      room.onJoin(revoked as never);
+      await room.onJoin(other as never);
+      await room.onJoin(revoked as never);
       room.onDrop(other as never);
       room.onDrop(revoked as never);
 
@@ -250,14 +258,19 @@ describe('createClassroomRoom', () => {
       leave: ReturnType<typeof vi.fn>;
     }
 
-    const makeReconnectingRoom = (reverify: JoinVerifier['reverify']) => {
-      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+    const makeReconnectingRoom = async (reverify: JoinVerifier['reverify']) => {
+      // The first check is the join itself and passes; `reverify` answers the reconnection.
+      const joinThenReconnect = vi
+        .fn()
+        .mockResolvedValueOnce(IDENTITY)
+        .mockImplementation(reverify);
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify: joinThenReconnect }))();
       vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
       // The unit test has no real transport: a resolved promise stands in for the pending hold.
       vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
       room.onCreate({ classroomId: CLASSROOM_ID });
       const client: FakeClient = { sessionId: 's1', auth: { ...AUTH }, leave: vi.fn() };
-      room.onJoin(client as never);
+      await room.onJoin(client as never);
       room.onDrop(client as never);
       return { room, client };
     };
@@ -272,7 +285,7 @@ describe('createClassroomRoom', () => {
 
     it('ignores input from a connection until its access is confirmed', async () => {
       let confirm: (identity: typeof IDENTITY) => void = () => undefined;
-      const { room, client } = makeReconnectingRoom(
+      const { room, client } = await makeReconnectingRoom(
         () => new Promise((resolve) => (confirm = resolve)),
       );
       const spawnX = room.state.avatars.get(IDENTITY.userId)?.x;
@@ -288,7 +301,9 @@ describe('createClassroomRoom', () => {
     });
 
     it('releases the connection and its avatar when access is denied, without relying on the transport', async () => {
-      const { room, client } = makeReconnectingRoom(() => Promise.reject(new JoinDeniedError()));
+      const { room, client } = await makeReconnectingRoom(() =>
+        Promise.reject(new JoinDeniedError()),
+      );
 
       await room.onReconnect(client as never);
       sendInput(room, client, 1, 0);
@@ -298,7 +313,7 @@ describe('createClassroomRoom', () => {
     });
 
     it('releases the connection when verification is unavailable too', async () => {
-      const { room, client } = makeReconnectingRoom(() =>
+      const { room, client } = await makeReconnectingRoom(() =>
         Promise.reject(new JoinVerificationUnavailableError()),
       );
 
@@ -308,15 +323,21 @@ describe('createClassroomRoom', () => {
     });
 
     describe('a connection released while access is being re-verified', () => {
-      const makeTimedReconnectingRoom = () => {
+      const makeTimedReconnectingRoom = async () => {
         const clock = { value: 1_000_000 };
         const reporter = { report: vi.fn().mockResolvedValue(undefined) };
         let settle: { resolve(i: typeof IDENTITY): void; reject(e: Error): void } = {
           resolve: () => undefined,
           reject: () => undefined,
         };
-        const reverify = () =>
-          new Promise<typeof IDENTITY>((resolve, reject) => (settle = { resolve, reject }));
+        let joined = false;
+        const reverify = () => {
+          if (!joined) {
+            joined = true; // the join itself
+            return Promise.resolve(IDENTITY);
+          }
+          return new Promise<typeof IDENTITY>((resolve, reject) => (settle = { resolve, reject }));
+        };
         const room = new (createClassroomRoom(
           { verify: vi.fn(), reverify },
           { now: () => clock.value, reporter },
@@ -325,14 +346,14 @@ describe('createClassroomRoom', () => {
         vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
         room.onCreate({ classroomId: CLASSROOM_ID });
         const client: FakeClient = { sessionId: 's1', auth: { ...AUTH }, leave: vi.fn() };
-        room.onJoin(client as never);
+        await room.onJoin(client as never);
         clock.value += 30_000;
         room.onDrop(client as never);
         return { room, client, reporter, settle: () => settle };
       };
 
       it('reports the connected time once and does not close the socket again when it already left', async () => {
-        const { room, client, reporter, settle } = makeTimedReconnectingRoom();
+        const { room, client, reporter, settle } = await makeTimedReconnectingRoom();
         const reconnecting = room.onReconnect(client as never);
 
         room.onLeave(client as never); // the socket closed while the API was answering
@@ -346,7 +367,7 @@ describe('createClassroomRoom', () => {
       });
 
       it('lets an eviction close the socket and does not close it a second time', async () => {
-        const { room, client, reporter, settle } = makeTimedReconnectingRoom();
+        const { room, client, reporter, settle } = await makeTimedReconnectingRoom();
         vi.spyOn(room.clients, 'getById').mockReturnValue(client as never);
         const reconnecting = room.onReconnect(client as never);
 
@@ -364,7 +385,9 @@ describe('createClassroomRoom', () => {
     });
 
     it('closes a denied reconnection as revoked access', async () => {
-      const { room, client } = makeReconnectingRoom(() => Promise.reject(new JoinDeniedError()));
+      const { room, client } = await makeReconnectingRoom(() =>
+        Promise.reject(new JoinDeniedError()),
+      );
 
       await room.onReconnect(client as never);
 
@@ -375,7 +398,7 @@ describe('createClassroomRoom', () => {
     });
 
     it('closes an unverifiable reconnection with the retryable code, not as revoked access', async () => {
-      const { room, client } = makeReconnectingRoom(() =>
+      const { room, client } = await makeReconnectingRoom(() =>
         Promise.reject(new JoinVerificationUnavailableError()),
       );
 
@@ -388,7 +411,7 @@ describe('createClassroomRoom', () => {
     });
 
     it('treats an unexpected verifier failure as unavailable and fails closed', async () => {
-      const { room, client } = makeReconnectingRoom(() => Promise.reject(new Error('boom')));
+      const { room, client } = await makeReconnectingRoom(() => Promise.reject(new Error('boom')));
 
       await room.onReconnect(client as never);
 
@@ -396,6 +419,176 @@ describe('createClassroomRoom', () => {
         CLOSE_CODE_VERIFICATION_UNAVAILABLE,
         CLOSE_REASON_VERIFICATION_UNAVAILABLE,
       );
+    });
+  });
+  describe('admission re-verification (a seat reservation outlives access)', () => {
+    const makeAdmissionRoom = (reverify: JoinVerifier['reverify']) => {
+      const clock = { value: 1_000_000 };
+      const reporter = { report: vi.fn().mockResolvedValue(undefined) };
+      const room = new (createClassroomRoom(
+        { verify: vi.fn(), reverify },
+        { now: () => clock.value, reporter },
+      ))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      return { room, reporter, clock };
+    };
+    const hold = () => {
+      let settle: { resolve(i: typeof IDENTITY): void; reject(e: Error): void } = {
+        resolve: () => undefined,
+        reject: () => undefined,
+      };
+      const reverify = vi.fn(
+        () => new Promise<typeof IDENTITY>((resolve, reject) => (settle = { resolve, reject })),
+      );
+      return { reverify, settle: () => settle };
+    };
+
+    it('checks the verified identity against the API before admitting', async () => {
+      const requests: unknown[] = [];
+      const reverify = vi.fn((request: object) => {
+        requests.push({ ...request }); // the room refreshes the same object afterwards
+        return Promise.resolve({ ...IDENTITY, role: 'STUDENT' as const, displayName: 'Ada L.' });
+      });
+      const { room } = makeAdmissionRoom(reverify);
+      const client = { sessionId: 's1', auth: { ...AUTH } };
+
+      await room.onJoin(client as never);
+
+      expect(requests).toEqual([
+        {
+          userId: AUTH.userId,
+          authSessionId: AUTH.authSessionId,
+          classroomId: CLASSROOM_ID,
+          role: AUTH.role,
+          displayName: AUTH.displayName,
+        },
+      ]);
+      expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({
+        role: 'STUDENT',
+        displayName: 'Ada L.',
+      });
+      expect(client.auth).toMatchObject({ role: 'STUDENT', displayName: 'Ada L.' });
+    });
+
+    it('refuses the join as revoked access when the API denies it', async () => {
+      const { room } = makeAdmissionRoom(vi.fn().mockRejectedValue(new JoinDeniedError()));
+
+      await expect(
+        room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never),
+      ).rejects.toMatchObject({
+        code: CLOSE_CODE_ACCESS_REVOKED,
+        message: CLOSE_REASON_ACCESS_REVOKED,
+      });
+      expect(room.state.avatars.size).toBe(0);
+    });
+
+    it('refuses the join with the retryable code when access cannot be verified', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { room } = makeAdmissionRoom(
+        vi.fn().mockRejectedValue(new JoinVerificationUnavailableError()),
+      );
+
+      await expect(
+        room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never),
+      ).rejects.toMatchObject({
+        code: CLOSE_CODE_VERIFICATION_UNAVAILABLE,
+        message: CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+      });
+      expect(room.state.avatars.size).toBe(0);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        'realtime: join access verification unavailable',
+      );
+    });
+
+    it('refuses an eviction that arrives while access is being verified, creating nothing', async () => {
+      const { reverify, settle } = hold();
+      const { room, reporter } = makeAdmissionRoom(reverify);
+      const joining = room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+      const outcome = expect(joining).rejects.toMatchObject({
+        code: CLOSE_CODE_ACCESS_REVOKED,
+        message: CLOSE_REASON_ACCESS_REVOKED,
+      });
+
+      const evicted = room.evict({ userId: IDENTITY.userId });
+      settle().resolve(IDENTITY); // the API still answered yes: only the eviction can refuse it
+
+      await outcome;
+      await room.onDispose();
+      expect(evicted).toBe(1);
+      expect(room.state.avatars.size).toBe(0);
+      expect(reporter.report).not.toHaveBeenCalled();
+    });
+
+    it('spares a pending admission of another session when the eviction is session-filtered', async () => {
+      const { reverify, settle } = hold();
+      const { room } = makeAdmissionRoom(reverify);
+      const joining = room.onJoin({
+        sessionId: 's1',
+        auth: { ...AUTH, authSessionId: 'session-a' },
+      } as never);
+
+      const evicted = room.evict({ userId: IDENTITY.userId, sessionId: 'session-b' });
+      settle().resolve(IDENTITY);
+
+      await expect(joining).resolves.toBeUndefined();
+      expect(evicted).toBe(0);
+      expect(room.state.avatars.has(IDENTITY.userId)).toBe(true);
+    });
+
+    it('evicts only the pending admissions of the named user and of the matching session', async () => {
+      const { reverify, settle } = hold();
+      const { room } = makeAdmissionRoom(reverify);
+      const other = { ...AUTH, userId: 'other-user' };
+      const joining = room.onJoin({
+        sessionId: 's1',
+        auth: { ...AUTH, authSessionId: 'session-a' },
+      } as never);
+
+      expect(room.evict({ userId: other.userId })).toBe(0);
+      expect(room.evict({ userId: IDENTITY.userId, sessionId: 'session-a' })).toBe(1);
+      settle().resolve(IDENTITY);
+
+      await expect(joining).rejects.toMatchObject({ code: CLOSE_CODE_ACCESS_REVOKED });
+    });
+
+    it('does not admit a connection that left while access was being verified', async () => {
+      const { reverify, settle } = hold();
+      const { room } = makeAdmissionRoom(reverify);
+      const client = { sessionId: 's1', auth: { ...AUTH } };
+      const joining = room.onJoin(client as never);
+      const outcome = expect(joining).rejects.toBeDefined();
+
+      room.onLeave(client as never); // the socket closed meanwhile
+      settle().resolve(IDENTITY);
+
+      await outcome;
+      expect(room.state.avatars.size).toBe(0);
+    });
+
+    it('keeps the connection cap when admission completes', async () => {
+      const { room } = makeAdmissionRoom(vi.fn().mockResolvedValue(IDENTITY));
+      for (const id of ['s1', 's2', 's3'])
+        await room.onJoin({ sessionId: id, auth: { ...AUTH } } as never);
+
+      await expect(
+        room.onJoin({ sessionId: 's4', auth: { ...AUTH } } as never),
+      ).rejects.toMatchObject({
+        code: CLOSE_CODE_TOO_MANY_CONNECTIONS,
+      });
+    });
+
+    it('does not call the API for a join into another classroom', async () => {
+      const reverify = vi.fn();
+      const { room } = makeAdmissionRoom(reverify);
+
+      await expect(
+        room.onJoin({
+          sessionId: 's1',
+          auth: { ...AUTH, classroomId: '11111111-1111-4111-8111-111111111111' },
+        } as never),
+      ).rejects.toThrow(ServerError);
+      expect(reverify).not.toHaveBeenCalled();
     });
   });
 });
