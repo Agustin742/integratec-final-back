@@ -5,10 +5,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationRecorder } from './notification-recorder.service';
 import { NotificationRequestedHandler } from './notification-requested.handler';
 import { NotificationsService } from './notifications.service';
+import { NotificationsController } from './notifications.controller';
 
-/** Import-ready; root REST integration is a separate work unit. */
+/** Durable producer API and session-protected notification center. */
 @Module({
   imports: [PrismaModule, AccessModule, OutboxModule],
+  controllers: [NotificationsController],
   providers: [NotificationRecorder, NotificationRequestedHandler, NotificationsService],
   exports: [NotificationRecorder, NotificationsService],
 })

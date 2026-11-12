@@ -97,6 +97,46 @@ describe('OpenAPI document', () => {
     expect(schemas.ErrorCode).toMatchObject({ enum: Object.values(ERROR_CODES) });
   });
 
+  it('publishes authenticated notification navigation and read contracts without storage internals', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    for (const [path, method] of [
+      ['/notifications', 'get'],
+      ['/notifications/{id}/read', 'patch'],
+      ['/notifications/read-all', 'patch'],
+    ] as const) {
+      const operation = doc.paths[path]?.[method];
+      expect(operation).toBeDefined();
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      expect(operation?.responses['200']).toBeDefined();
+      expect(operation?.responses['401']).toBeDefined();
+    }
+    expect(doc.paths['/notifications/{id}/read']?.patch?.responses['404']).toBeDefined();
+    const query = doc.paths['/notifications']?.get?.parameters ?? [];
+    expect(query.map((parameter) => 'name' in parameter && parameter.name)).toEqual([
+      'page',
+      'pageSize',
+    ]);
+    expect(doc.components?.schemas?.NotificationDto).toMatchObject({
+      required: ['id', 'kind', 'resourceId', 'classroomId', 'studentId', 'readAt', 'createdAt'],
+      properties: {
+        studentId: { nullable: true, format: 'uuid' },
+        readAt: { nullable: true, format: 'date-time' },
+        createdAt: { format: 'date-time' },
+      },
+    });
+    const schema = doc.components?.schemas?.NotificationDto;
+    expect(schema && 'properties' in schema && Object.keys(schema.properties ?? {})).toEqual([
+      'id',
+      'kind',
+      'resourceId',
+      'classroomId',
+      'studentId',
+      'readAt',
+      'createdAt',
+    ]);
+  });
+
   it('serves the JSON document and the Scalar UI outside production', async () => {
     app = await createApp('development');
 

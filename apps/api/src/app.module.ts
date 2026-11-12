@@ -8,6 +8,7 @@ import { HealthController } from './health.controller';
 import { RealtimeJoinModule } from './internal/realtime/realtime-join.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   controllers: [HealthController],
@@ -24,6 +25,7 @@ export class AppModule {
         UsersModule,
         RealtimeJoinModule,
         ClassroomsModule,
+        NotificationsModule,
       ],
     };
   }
