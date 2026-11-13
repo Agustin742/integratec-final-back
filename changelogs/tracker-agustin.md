@@ -3,10 +3,11 @@
 ## 2026-11-13 — File submissions, server side (#30)
 
 - **Status:** in-progress (branch `feat/30-file-submissions`, stacked on `feat/28-publish-activities` while PR #86 is not merged; no PR yet)
-- **Area / files so far:** `apps/api/prisma/` (`Submission` and `SubmissionFile` models, migration `20261113120000_create_submissions`), `apps/api/src/submissions/` (schema and PostgreSQL constraint specs)
+- **Area / files so far:** `apps/api/prisma/` (`Submission` and `SubmissionFile` models, migration `20261113120000_create_submissions`), `apps/api/src/submissions/` (schema and PostgreSQL constraint specs, `submission-file-policy.ts`), `apps/api/src/testing/` (`in-memory-storage.ts`, `file-fixtures.ts`), `apps/api/package.json` (`file-type`)
 - **Change:** T1 only. Added `submissions` (one row per activity and student, server-set `submitted_at`, `is_late`, client `idempotency_key`) and `submission_files` (unique private `storage_key`, original name, content type, size, position). The MVP allows a single submission per activity and student, with no resubmission. Database `CHECK` constraints back the idempotency key length (1-255), file size (1 byte to 10 MB), position (0-4, at most five files), original name length (1-255) and the content type allow-list (PDF, PNG, JPEG, DOCX). Foreign keys are `RESTRICT`, like the rest of the schema.
 - **Reason:** Students need a stored, idempotent submission per activity before the upload endpoint, grading (#32) and streaks can be built on it; enforcing the invariants in PostgreSQL keeps them true even if a service check is missed.
-- **Next step:** T2, file validation (magic-byte allow-list, size and count limits) and an in-memory storage port for tests; then the multipart endpoint, own-submission read, the question-edit lock, the outbox event and docs.
+- **T2:** Added the submission file policy: the real type is detected from the bytes with `file-type` (PDF, PNG, JPEG and DOCX only; a plain zip or XLSX is rejected, the client MIME and extension are never trusted), 10 MB per file, 1 to 5 files, names sanitized to 1-255 characters. It returns accepted files or violations mapped to `VALIDATION_FAILED` details, and builds storage keys from ids only. Added an in-memory `StoragePort` with failure injection for tests.
+- **Next step:** T3, the multipart endpoint, own-submission read, the question-edit lock, the outbox event and docs.
 
 ## 2026-11-13 — Publish activities, server side (#28)
 
