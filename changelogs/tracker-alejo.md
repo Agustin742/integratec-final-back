@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-13 — Review and merge PR #80
+
+- **Status:** completed
+- **Area / files:** PR #80, realtime admission regression coverage, local `develop`, `changelogs/tracker-alejo.md`.
+- **Change:** AI-assisted scoped review of head `ff69226`; Alejo explicitly authorized approval, merge and local pull. Approval published as AlejoElPaisano; merged into `develop` with merge commit `ed3d330`, preserving contributor attribution. Focused admission regressions and all 248 realtime tests passed locally; exact-head CI passed 1,137 API, 248 realtime and 26 contract tests. No fresh whole-PR audit or independent verifier execution claimed.
+- **Reason:** Resolve the reserved-seat admission review blocker and integrate Agustin's work.
+- **Verification:** Local `develop` fast-forward pull succeeded; `HEAD` and `origin/develop` both equal `ed3d330240ecfd553f456e8f6e0218c21378275a`, with ahead/behind `0/0`. Initial branch switch safely refused the task-owned tracker edit; only that exact entry was relocated here before continuing. The notification feature branch and isolated `.worktrees/pr-80-review` remain preserved. No post-merge application suite or deployment claimed.
+- **Publication / cleanup:** Alejo authorized this documentation-only PR and removal of the task-owned review worktree. The clean worktree was unregistered; Git left dependency remnants, which were removed only from that owned directory. No other branch or worktree was removed.
+- **Next step:** Teammate review of this tracker-only PR. PRs #83 and #84 are a separate authorized follow-up; no extra approval or merge of this receipt PR is claimed.
+
 ## 2026-11-11 — Resolve PR #81 integration feedback
 
 - **Status:** completed (local conflict resolution and integrated verification; PR delivery and current-head remote CI remain separately reported in PR #81)
