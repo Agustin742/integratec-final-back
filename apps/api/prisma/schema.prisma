@@ -61,6 +61,14 @@ enum RegistrationPath {
   @@map("registration_path")
 }
 
+enum PointEntryKind {
+  EARNING      @map("earning")
+  DEBIT        @map("debit")
+  COMPENSATION @map("compensation")
+
+  @@map("point_entry_kind")
+}
+
 model User {
   id               String           @id @default(uuid()) @db.Uuid
   email            String           @unique @db.VarChar(255)
@@ -80,9 +88,11 @@ model User {
   parentOfLinks          ParentLink[]          @relation("ParentLinks")
   childInLinks           ParentLink[]          @relation("ChildLinks")
   usedJoinCodes          JoinCodeUsage[]
-  notifications          Notification[]        @relation("NotificationRecipient")
-  studentNotifications   Notification[]        @relation("NotificationStudent")
-  activityMetrics        ActivityMetric[]
+  notifications            Notification[]        @relation("NotificationRecipient")
+  studentNotifications     Notification[]        @relation("NotificationStudent")
+  activityMetrics          ActivityMetric[]
+  studentPointTransactions PointTransaction[]    @relation("StudentPointTransactions")
+  actorPointTransactions   PointTransaction[]    @relation("ActorPointTransactions")
 
   @@map("users")
 }
@@ -209,6 +219,7 @@ model Classroom {
   parentLinks        ParentLink[]
   notifications      Notification[]
   activityMetrics    ActivityMetric[]
+  pointTransactions  PointTransaction[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -407,4 +418,28 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@map("notification_deliveries")
+}
+
+/// Immutable append-only points ledger per student and classroom.
+/// Balance is derived as SUM(amount); entries are never updated or deleted.
+model PointTransaction {
+  id             String         @id @default(uuid()) @db.Uuid
+  classroomId    String         @map("classroom_id") @db.Uuid
+  studentId      String         @map("student_id") @db.Uuid
+  actorId        String?        @map("actor_id") @db.Uuid
+  entryKind      PointEntryKind @map("entry_kind")
+  amount         Int
+  sourceType     String         @map("source_type") @db.VarChar(40)
+  sourceId       String         @map("source_id") @db.Uuid
+  idempotencyKey String?        @unique @map("idempotency_key") @db.VarChar(128)
+  reason         String         @db.VarChar(240)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student   User      @relation("StudentPointTransactions", fields: [studentId], references: [id], onDelete: Restrict)
+  actor     User?     @relation("ActorPointTransactions", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([classroomId, studentId, createdAt, id])
+  @@index([studentId])
+  @@map("point_transactions")
 }
