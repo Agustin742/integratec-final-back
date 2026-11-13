@@ -27,6 +27,11 @@ backend/
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
 - [Resource authorization test pattern](docs/resource-authorization-testing.md): reusable public-request assertions for resource ID tampering and untrusted object interaction context.
 
+## Notification center
+
+- [Notification API and producer integration](docs/notifications.md): authenticated `GET /notifications`, `PATCH /notifications/:id/read` and `PATCH /notifications/read-all`, with current recipient/child access, paginated navigation metadata and idempotent persisted read state.
+- Frontend display, live push, email delivery and feature producers remain out of scope; parent announcements are deferred pending #37.
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.

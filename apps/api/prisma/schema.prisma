@@ -80,6 +80,8 @@ model User {
   parentOfLinks          ParentLink[]          @relation("ParentLinks")
   childInLinks           ParentLink[]          @relation("ChildLinks")
   usedJoinCodes          JoinCodeUsage[]
+  notifications          Notification[]        @relation("NotificationRecipient")
+  studentNotifications   Notification[]        @relation("NotificationStudent")
   activityMetrics        ActivityMetric[]
 
   @@map("users")
@@ -205,6 +207,7 @@ model Classroom {
   pet                ClassroomPet?
   invitations        Invitation[]
   parentLinks        ParentLink[]
+  notifications      Notification[]
   activityMetrics    ActivityMetric[]
 
   @@index([schoolId])
@@ -346,6 +349,8 @@ model OutboxEvent {
   attempts    Int       @default(0)
   lastError   String?   @map("last_error") @db.VarChar(300)
 
+  notification Notification?
+
   @@index([processedAt, failedAt, availableAt])
   @@map("outbox_events")
 }
@@ -363,4 +368,43 @@ model JoinCodeUsage {
   @@index([invitationId])
   @@index([userId])
   @@map("join_code_usages")
+}
+
+/// Minimal navigation metadata, never source content or grades.
+model Notification {
+  id            String    @id @default(uuid()) @db.Uuid
+  recipientId   String    @map("recipient_id") @db.Uuid
+  classroomId   String    @map("classroom_id") @db.Uuid
+  studentId     String?   @map("student_id") @db.Uuid
+  sourceEventId String    @unique @map("source_event_id") @db.Uuid
+  kind          String    @db.VarChar(32)
+  resourceId    String    @map("resource_id") @db.Uuid
+  readAt        DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  recipient   User                   @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+  classroom   Classroom              @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student     User?                  @relation("NotificationStudent", fields: [studentId], references: [id], onDelete: Restrict)
+  sourceEvent OutboxEvent            @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
+  deliveries  NotificationDelivery[]
+
+  @@index([recipientId, createdAt, id])
+  @@index([classroomId])
+  @@index([studentId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String    @id @default(uuid()) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  channel        String    @db.VarChar(20)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, channel])
+  @@map("notification_deliveries")
 }

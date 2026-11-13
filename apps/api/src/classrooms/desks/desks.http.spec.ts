@@ -36,6 +36,7 @@ const config: ApiConfig = {
   outboxMaxAttempts: 5,
   realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-internal-secret-for-tests-0000',
+  realtimeInternalUrl: 'http://localhost:2567',
   jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
   invitationTokenKey: Buffer.alloc(32, 1),
   allowedOrigins: ['http://localhost'],

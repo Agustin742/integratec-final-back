@@ -1023,6 +1023,134 @@
         "tags": ["invitations"]
       }
     },
+    "/notifications": {
+      "get": {
+        "description": "Own recipient only. Current classroom and exact student access are checked before pagination and total. Fixed order: createdAt DESC, id DESC; no sort override.",
+        "operationId": "NotificationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimal navigation metadata; no source content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/NotificationDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List currently accessible notifications",
+        "tags": ["notifications"]
+      }
+    },
+    "/notifications/read-all": {
+      "patch": {
+        "description": "Idempotent. Updates only unread visible notices; preserves previous readAt values. No request body.",
+        "operationId": "NotificationsController_readAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/NotificationsReadResultDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Mark all currently accessible notifications read",
+        "tags": ["notifications"]
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "description": "Idempotent: replay preserves the original readAt. No request body.",
+        "operationId": "NotificationsController_read",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Notification UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/NotificationDto" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, foreign-recipient or currently inaccessible notification.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Mark one currently accessible notification read",
+        "tags": ["notifications"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -2211,6 +2339,37 @@
           }
         },
         "required": ["token"]
+      },
+      "NotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "kind": {
+            "type": "string",
+            "enum": ["activity_published", "grade_posted", "announcement", "mention"]
+          },
+          "resourceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Navigation only; source endpoint authorizes detail access independently."
+          },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid", "nullable": true },
+          "readAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "kind", "resourceId", "classroomId", "studentId", "readAt", "createdAt"]
+      },
+      "NotificationsReadResultDto": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of previously unread, currently visible notices changed by this request."
+          }
+        },
+        "required": ["updated"]
       },
       "RosterGuardianDto": {
         "type": "object",
