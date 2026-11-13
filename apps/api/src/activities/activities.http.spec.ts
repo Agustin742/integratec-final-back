@@ -87,6 +87,31 @@ describe('activities contract stubs — API contracts', () => {
     await call('get', `${base}?secret=x`).set('Authorization', 'Bearer synthetic').expect(400);
   });
 
+  it('rejects a sort field outside the allow-list with VALIDATION_FAILED on sort', async () => {
+    const res = await call('get', `${base}?sort=password`)
+      .set('Authorization', 'Bearer synthetic')
+      .expect(400);
+    expect(res.body.error.code).toBe('VALIDATION_FAILED');
+    expect(res.body.error.details).toEqual([{ field: 'sort', messages: expect.any(Array) }]);
+  });
+  it.each(['dueAt', '-dueAt', 'createdAt', '-createdAt'])(
+    'accepts sort=%s (reaches the stub, not 400)',
+    async (sort) => {
+      const res = await call('get', `${base}?sort=${sort}`).set(
+        'Authorization',
+        'Bearer synthetic',
+      );
+      expect(res.status).not.toBe(400);
+    },
+  );
+  it('rejects an explicit null on PATCH before reaching the handler', async () => {
+    const res = await call('patch', `${base}/${activityId}`)
+      .set('Authorization', 'Bearer synthetic')
+      .send({ title: null })
+      .expect(400);
+    expect(res.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
   it('OpenAPI: student option has no isCorrect, teacher option does; GET one is oneOf', () => {
     const doc = SwaggerModule.createDocument(app, new DocumentBuilder().build());
     const schemas = doc.components?.schemas as Record<string, { properties?: object }>;

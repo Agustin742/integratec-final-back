@@ -3,6 +3,7 @@ import { validate, type ValidationError } from 'class-validator';
 import { describe, expect, it } from 'vitest';
 import {
   CreateActivityDto,
+  ListActivitiesQueryDto,
   StudentActivityResponseDto,
   type StudentOptionDto,
   UpdateActivityDto,
@@ -145,6 +146,47 @@ describe('CreateActivityDto', () => {
       expect(failing(errors)).toEqual(['questions']);
     }
   });
+});
+
+describe('CreateActivityDto optional fields', () => {
+  it.each(['opensAt', 'description', 'allowLate', 'weightMultiplier'])(
+    'rejects an explicit null for %s (absent is fine)',
+    async (field) => {
+      expect((await check(CreateActivityDto, tp)).errors).toEqual([]);
+      const res = await check(CreateActivityDto, { ...tp, [field]: null });
+      expect(failing(res.errors)).toEqual([field]);
+    },
+  );
+});
+
+describe('UpdateActivityDto explicit nulls', () => {
+  it.each([
+    'title',
+    'description',
+    'opensAt',
+    'dueAt',
+    'allowLate',
+    'maxScore',
+    'weightMultiplier',
+    'questions',
+  ])('rejects an explicit null for %s', async (field) => {
+    const res = await check(UpdateActivityDto, { [field]: null });
+    expect(failing(res.errors)).toEqual([field]);
+  });
+});
+
+describe('ListActivitiesQueryDto sort', () => {
+  it.each([undefined, 'dueAt', '-dueAt', 'createdAt', '-createdAt'])('accepts %s', async (sort) => {
+    const { errors } = await check(ListActivitiesQueryDto, sort === undefined ? {} : { sort });
+    expect(errors).toEqual([]);
+  });
+  it.each(['password', '-password', 'title', 'dueAt,createdAt', '', '--dueAt', 'duedat'])(
+    'rejects %j',
+    async (sort) => {
+      const { errors } = await check(ListActivitiesQueryDto, { sort });
+      expect(failing(errors)).toEqual(['sort']);
+    },
+  );
 });
 
 describe('UpdateActivityDto', () => {

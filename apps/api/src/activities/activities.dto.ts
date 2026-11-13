@@ -25,6 +25,7 @@ import {
   type ValidationOptions,
 } from 'class-validator';
 import { PaginationQueryDto } from '../http/pagination/pagination-query.dto';
+import { parseSort, type SortOptions } from '../http/pagination/sort';
 import { VisibleText } from '../http/visible-text';
 
 /** Limits shared by validation, OpenAPI and (later) the service. */
@@ -42,8 +43,48 @@ export const ACTIVITY_LIMITS = {
 /** Sort allow-list for the list endpoint; every ORDER BY adds `id` as tiebreaker. */
 export const ACTIVITY_SORT_FIELDS = ['dueAt', 'createdAt'] as const;
 export const ACTIVITY_DEFAULT_SORT = { field: 'dueAt', direction: 'asc' } as const;
+export type ActivitySortField = (typeof ACTIVITY_SORT_FIELDS)[number];
+/** Same shape the other list endpoints hand to `parseSort`; the service reuses it (T3). */
+export const ACTIVITY_SORT_OPTIONS: SortOptions<ActivitySortField> = {
+  allowed: ACTIVITY_SORT_FIELDS,
+  default: ACTIVITY_DEFAULT_SORT,
+};
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+/**
+ * The property may be absent, but an explicit `null` is a validation error. `@IsOptional` also
+ * skips `null`, so it must not be used on fields whose column is NOT NULL (or where `null` has
+ * no meaning). `PartialType(..., { skipNullProperties: false })` applies the same rule on PATCH.
+ */
+function OptionalButNotNull() {
+  return ValidateIf((_object: unknown, value: unknown) => value !== undefined);
+}
+
+/** `sort` must be one of `ACTIVITY_SORT_FIELDS`, optionally prefixed with `-`; reuses `parseSort`. */
+function IsActivitySort(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isActivitySort',
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      validator: {
+        validate: (value: unknown) => {
+          if (typeof value !== 'string') return false;
+          try {
+            parseSort(value, ACTIVITY_SORT_OPTIONS);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        defaultMessage: () =>
+          `sort must be one of: ${ACTIVITY_SORT_FIELDS.join(', ')} (prefix "-" for descending)`,
+      },
+    });
+  };
+}
 
 /** ISO 8601 instant that must carry an explicit offset (`Z` or `+hh:mm`), so it is never ambiguous. */
 function IsInstant(property: string) {
@@ -145,7 +186,7 @@ export class CreateActivityDto {
   title!: string;
 
   @ApiPropertyOptional({ maxLength: ACTIVITY_LIMITS.descriptionMax, default: '' })
-  @IsOptional()
+  @OptionalButNotNull()
   @IsString()
   @MaxLength(ACTIVITY_LIMITS.descriptionMax)
   description?: string;
@@ -155,9 +196,10 @@ export class CreateActivityDto {
     format: 'date-time',
     description:
       'Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly ' +
-      'before dueAt. ISO 8601 with offset; stored as UTC.',
+      'before dueAt. ISO 8601 with offset; stored as UTC. Omit it for no window; `null` is ' +
+      'rejected, so it cannot be removed through PATCH.',
   })
-  @IsOptional()
+  @OptionalButNotNull()
   @IsInstant('opensAt')
   opensAt?: string;
 
@@ -170,7 +212,7 @@ export class CreateActivityDto {
   dueAt!: string;
 
   @ApiPropertyOptional({ default: false, description: 'Accept submissions after dueAt.' })
-  @IsOptional()
+  @OptionalButNotNull()
   @IsBoolean()
   allowLate?: boolean;
 
@@ -189,7 +231,7 @@ export class CreateActivityDto {
       'Weight in the period average. At most 2 decimals. Defaults are applied by the service, ' +
       'not on the DTO, so PATCH never resets them.',
   })
-  @IsOptional()
+  @OptionalButNotNull()
   @IsNumber({ maxDecimalPlaces: ACTIVITY_LIMITS.weight.decimals })
   @Min(ACTIVITY_LIMITS.weight.min)
   @Max(ACTIVITY_LIMITS.weight.max)
@@ -221,7 +263,10 @@ class UpdatableFieldsDto extends OmitType(CreateActivityDto, [
   'questions',
 ] as const) {}
 
-export class UpdateActivityDto extends PartialType(UpdatableFieldsDto) {
+// `skipNullProperties: false` keeps PATCH from using `@IsOptional`, which would let `null` through.
+export class UpdateActivityDto extends PartialType(UpdatableFieldsDto, {
+  skipNullProperties: false,
+}) {
   @ApiPropertyOptional({
     type: [QuestionInputDto],
     minItems: ACTIVITY_LIMITS.questions.min,
@@ -230,7 +275,7 @@ export class UpdateActivityDto extends PartialType(UpdatableFieldsDto) {
       'Replaces all questions and options. Only for MULTIPLE_CHOICE activities, and only until ' +
       'the first submission exists (then 409).',
   })
-  @IsOptional()
+  @OptionalButNotNull()
   @IsArray()
   @ArrayMinSize(ACTIVITY_LIMITS.questions.min)
   @ArrayMaxSize(ACTIVITY_LIMITS.questions.max)
@@ -244,6 +289,17 @@ export class ListActivitiesQueryDto extends PickType(PaginationQueryDto, [
   'pageSize',
   'sort',
 ] as const) {
+  @ApiPropertyOptional({
+    type: 'string',
+    enum: [...ACTIVITY_SORT_FIELDS, ...ACTIVITY_SORT_FIELDS.map((f) => `-${f}`)],
+    default: ACTIVITY_DEFAULT_SORT.field,
+    description:
+      'Field to order by; prefix with "-" for descending. Default `dueAt` ascending; `id` is ' +
+      'the tiebreaker.',
+  })
+  @IsActivitySort()
+  sort?: string;
+
   @ApiPropertyOptional({
     enum: ActivityState,
     description:

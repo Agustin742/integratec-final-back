@@ -1515,8 +1515,13 @@
             "name": "sort",
             "required": false,
             "in": "query",
-            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
-            "schema": { "example": "-createdAt", "type": "string" }
+            "description": "Field to order by; prefix with \"-\" for descending. Default `dueAt` ascending; `id` is the tiebreaker.",
+            "schema": {
+              "default": "dueAt",
+              "example": "-createdAt",
+              "type": "string",
+              "enum": ["dueAt", "createdAt", "-dueAt", "-createdAt"]
+            }
           },
           {
             "name": "state",
@@ -2882,7 +2887,7 @@
           "opensAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC."
+            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC. Omit it for no window; `null` is rejected, so it cannot be removed through PATCH."
           },
           "dueAt": {
             "type": "string",
@@ -3159,7 +3164,7 @@
           "opensAt": {
             "type": "string",
             "format": "date-time",
-            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC."
+            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC. Omit it for no window; `null` is rejected, so it cannot be removed through PATCH."
           },
           "dueAt": {
             "type": "string",
