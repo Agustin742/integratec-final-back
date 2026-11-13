@@ -27,6 +27,8 @@ export interface StubApi {
   connectedTimeStatus: number;
   /** Forces the reverification endpoint to answer with this status. */
   reverificationStatus: number | undefined;
+  /** When set, the reverification endpoint answers only once this settles (request still recorded). */
+  reverificationGate: Promise<unknown> | undefined;
   close(): Promise<void>;
 }
 
@@ -58,6 +60,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
     calls,
     connectedTimeStatus: 204,
     reverificationStatus: undefined,
+    reverificationGate: undefined,
     close: () => new Promise((resolve) => stub.server.close(() => resolve())),
   };
 
@@ -70,7 +73,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
   });
 
   stub.server = createServer((req, res) => {
-    void readBody(req).then((body) => {
+    void readBody(req).then(async (body) => {
       const path = req.url ?? '';
       calls.push({ path, body });
       const reply = (status: number, payload: unknown = {}) => {
@@ -87,6 +90,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
           : reply(401);
       }
       if (path === '/internal/realtime/access-reverification') {
+        await stub.reverificationGate;
         if (stub.reverificationStatus !== undefined) return reply(stub.reverificationStatus);
         const user = bySession(String(body.userId), body.sessionId);
         return user?.classrooms.has(classroomId)
