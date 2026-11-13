@@ -1151,6 +1151,155 @@
         "tags": ["notifications"]
       }
     },
+    "/classrooms/{id}/points": {
+      "get": {
+        "description": "Returns the server-derived points balance (SUM of ledger amounts) and paginated immutable movements for the authenticated active student in the classroom. Supports sort=createdAt|amount (prefix \"-\" for descending; default -createdAt) with a matching id tiebreaker. No balance writes or student-to-student transfers are permitted.",
+        "operationId": "PointsController_getOwnWallet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StudentWalletDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get authenticated student points wallet and ledger movements",
+        "tags": ["points"]
+      }
+    },
+    "/classrooms/{id}/students/{studentId}/points": {
+      "get": {
+        "description": "Returns the server-derived points balance and paginated immutable movements for an active enrolled student in the classroom. Accessible to the student themselves, classroom staff (Owner, Admin, Teacher), and active linked parents when adultMode is disabled. Classmates receive 403; strangers, unlinked parents, and adult-mode parent requests receive 404. Supports sort=createdAt|amount (default -createdAt) with a matching id tiebreaker.",
+        "operationId": "PointsController_getStudentWallet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "studentId",
+            "required": true,
+            "in": "path",
+            "description": "Target student user UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StudentWalletDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Classmate student cannot access another student points wallet.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or student resource.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get a student points wallet and ledger movements",
+        "tags": ["points"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -2370,6 +2519,64 @@
           }
         },
         "required": ["updated"]
+      },
+      "PointEntryKind": { "type": "string", "enum": ["EARNING", "DEBIT", "COMPENSATION"] },
+      "PointMovementDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "entryKind": { "allOf": [{ "$ref": "#/components/schemas/PointEntryKind" }] },
+          "amount": {
+            "type": "integer",
+            "description": "Signed integer delta: positive for earnings, negative for debits, non-zero signed for compensations.",
+            "example": 50
+          },
+          "sourceType": { "type": "string", "maxLength": 40, "example": "submission_grade" },
+          "sourceId": { "type": "string", "format": "uuid" },
+          "reason": {
+            "type": "string",
+            "maxLength": 240,
+            "example": "Activity graded: Fractions Quiz"
+          },
+          "actorId": { "type": "string", "format": "uuid", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "entryKind",
+          "amount",
+          "sourceType",
+          "sourceId",
+          "reason",
+          "actorId",
+          "createdAt"
+        ]
+      },
+      "StudentWalletDto": {
+        "type": "object",
+        "properties": {
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Server-derived current balance computed as SUM(amount) in the classroom.",
+            "example": 120
+          },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PointMovementDto" }
+          },
+          "page": { "type": "integer", "minimum": 1, "example": 1 },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Total number of ledger entries for this student in the classroom."
+          }
+        },
+        "required": ["classroomId", "studentId", "balance", "items", "page", "pageSize", "total"]
       },
       "RosterGuardianDto": {
         "type": "object",
