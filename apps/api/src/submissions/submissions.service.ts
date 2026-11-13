@@ -131,8 +131,8 @@ export class SubmissionsService {
    *
    * Order: access (404/403) -> header (400) -> existing submission (replay 200 or 409) -> window
    * and format (409) -> file content (400) -> upload -> ONE short transaction. The transaction
-   * locks the activity row, so concurrent submits queue, then re-checks everything against
-   * committed state and stamps `submittedAt` from the server clock. Uploads happen outside any
+   * share-locks the activity row (blocking teacher edits, not other students), then re-checks
+   * everything against committed state and stamps `submittedAt` from the server clock. Uploads happen outside any
    * transaction; whatever was uploaded is deleted again on every path that stores no submission.
    */
   async submit(
@@ -276,13 +276,16 @@ export class SubmissionsService {
   ): Promise<TransactionOutcome> {
     const { id: activityId, classroomId } = activity;
     return this.prisma.$transaction(async (tx) => {
-      // Row lock first (same pattern as publish/update): concurrent submits for this activity
-      // queue here, and everything below reads state committed before this transaction owns it.
+      // Shared row lock first. Submitting never changes the activity, so students must not queue
+      // behind each other (a deadline rush would outlast the transaction timeout), but the lock
+      // still conflicts with the FOR UPDATE that update/publish/deactivate take: a teacher change
+      // waits for in-flight submits and a submit queued behind one reads the committed result.
+      // One submission per student stays guaranteed by the unique index (P2002 handled by the caller).
       const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM activities
         WHERE id = ${activityId}::uuid AND classroom_id = ${classroomId}::uuid
           AND deleted_at IS NULL
-        FOR UPDATE`;
+        FOR SHARE`;
       if (locked.length === 0) throw this.notFound();
       const current = await tx.activity.findFirst({
         where: { id: activityId, classroomId, deletedAt: null },

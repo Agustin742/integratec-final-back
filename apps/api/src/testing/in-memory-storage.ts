@@ -31,6 +31,16 @@ interface Failure {
   remaining: number;
 }
 
+export interface PutHookOptions {
+  /** Number of puts to run the hook for, then it is removed. Defaults to every put. */
+  times?: number;
+}
+
+interface PutHook {
+  handler: (key: string) => void | Promise<void>;
+  remaining: number;
+}
+
 const DEFAULT_TTL_SECONDS = 300;
 
 /**
@@ -41,12 +51,14 @@ const DEFAULT_TTL_SECONDS = 300;
 export class InMemoryStorage implements StoragePort {
   private readonly objects = new Map<string, StoredObject>();
   private failures: Failure[] = [];
+  private putHooks: PutHook[] = [];
   /** Every call in order, recorded before any injected failure is applied. */
   readonly calls: StorageCall[] = [];
 
   async put(key: string, body: Uint8Array, options: StoragePutOptions): Promise<void> {
     this.begin('put', key);
     this.objects.set(key, { body: body.slice(), contentType: options.contentType });
+    await this.runPutHooks(key);
   }
 
   async get(key: string): Promise<StoredObject> {
@@ -83,6 +95,19 @@ export class InMemoryStorage implements StoragePort {
     });
   }
 
+  /**
+   * Runs `handler` after each successful put (the object is already stored), for a limited number
+   * of puts. Lets a test change other state, such as database rows, in the middle of an upload.
+   * A hook that throws makes that put reject, like a failure injected after the write.
+   */
+  onPut(handler: (key: string) => void | Promise<void>, options: PutHookOptions = {}): void {
+    this.putHooks.push({ handler, remaining: options.times ?? Number.POSITIVE_INFINITY });
+  }
+
+  clearHooks(): void {
+    this.putHooks = [];
+  }
+
   clearFailures(): void {
     this.failures = [];
   }
@@ -99,6 +124,15 @@ export class InMemoryStorage implements StoragePort {
   peek(key: string): StoredObject | undefined {
     const found = this.objects.get(key);
     return found && { body: found.body.slice(), contentType: found.contentType };
+  }
+
+  private async runPutHooks(key: string): Promise<void> {
+    for (const hook of [...this.putHooks]) {
+      if (hook.remaining <= 0) continue;
+      hook.remaining -= 1;
+      await hook.handler(key);
+    }
+    this.putHooks = this.putHooks.filter((hook) => hook.remaining > 0);
   }
 
   private begin(operation: StorageOperation, key: string): void {

@@ -33,10 +33,11 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
   let app: INestApplication;
   let prisma: PrismaService;
   const storage = new InMemoryStorage();
-  const [teacher, s1, s2, stranger, parent, sElsewhere, other] = Array.from({ length: 7 }, () =>
-    randomUUID(),
+  const [teacher, s1, s2, stranger, parent, sElsewhere, other, sLeaving] = Array.from(
+    { length: 8 },
+    () => randomUUID(),
   );
-  const users = [teacher, s1, s2, stranger, parent, sElsewhere, other];
+  const users = [teacher, s1, s2, stranger, parent, sElsewhere, other, sLeaving];
   const [classroomA, classroomB] = [randomUUID(), randomUUID()];
   let fixtureReady = false;
   const token = (actor: string) => `Bearer submissions-test:${actor}`;
@@ -132,6 +133,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
         data: [
           { classroomId: classroomA, userId: s1, role: ClassroomRole.STUDENT },
           { classroomId: classroomA, userId: s2, role: ClassroomRole.STUDENT },
+          { classroomId: classroomA, userId: sLeaving, role: ClassroomRole.STUDENT },
           { classroomId: classroomB, userId: sElsewhere, role: ClassroomRole.STUDENT },
         ],
       });
@@ -145,6 +147,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
   afterEach(() => {
     vi.restoreAllMocks();
     storage.clearFailures();
+    storage.clearHooks();
   });
 
   afterAll(async () => {
@@ -449,159 +452,226 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
     });
   });
 
-  describe(
-    'concurrent requests are serialized by the activity row lock',
-    { timeout: 20_000 },
-    () => {
-      /** Deterministic: hold the row lock, let both requests queue behind it, then release. */
-      const holdRowLock = async (activityId: string) => {
-        const blocker = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
-        let release!: () => void;
-        const released = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        let ready!: (pid: number) => void;
-        const locked = new Promise<number>((resolve) => {
-          ready = resolve;
-        });
-        const done = blocker.$transaction(
-          async (tx) => {
+  describe('concurrent requests and the activity row lock', { timeout: 20_000 }, () => {
+    /** Deterministic: hold the row lock, let both requests queue behind it, then release. */
+    const holdRowLock = async (
+      activityId: string,
+      options: {
+        mode?: 'UPDATE' | 'SHARE';
+        beforeCommit?: (tx: Prisma.TransactionClient) => Promise<void>;
+      } = {},
+    ) => {
+      const blocker = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+      let release!: () => void;
+      const released = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let ready!: (pid: number) => void;
+      const locked = new Promise<number>((resolve) => {
+        ready = resolve;
+      });
+      const done = blocker.$transaction(
+        async (tx) => {
+          if (options.mode === 'SHARE') {
+            await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR SHARE`;
+          } else {
             await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR UPDATE`;
-            const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-            ready(pid);
-            await released;
-          },
-          { timeout: 60_000 },
-        );
-        const pid = await locked;
-        const queued = async () => {
-          const [{ n }] = await prisma.$queryRaw<{ n: number }[]>`
+          }
+          const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          ready(pid);
+          await released;
+          await options.beforeCommit?.(tx);
+        },
+        { timeout: 60_000 },
+      );
+      const pid = await locked;
+      const queued = async () => {
+        const [{ n }] = await prisma.$queryRaw<{ n: number }[]>`
           WITH RECURSIVE waiting(pid) AS (
             SELECT pid FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))
             UNION
             SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
           )
           SELECT count(*)::int AS n FROM waiting`;
-          return n;
-        };
-        let closed = false;
-        return {
-          async waitForQueue(count: number) {
-            for (let i = 0; i < 200; i++) {
-              if ((await queued()) >= count) return;
-              await new Promise((resolve) => setTimeout(resolve, 25));
-            }
-            throw new Error(`expected ${count} queued writers`);
-          },
-          async release() {
-            if (closed) return;
-            closed = true;
-            release();
-            await done;
-            await blocker.$disconnect();
-          },
-        };
+        return n;
       };
+      let closed = false;
+      return {
+        async waitForQueue(count: number) {
+          for (let i = 0; i < 200; i++) {
+            if ((await queued()) >= count) return;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          throw new Error(`expected ${count} queued writers`);
+        },
+        async release() {
+          if (closed) return;
+          closed = true;
+          release();
+          await done;
+          await blocker.$disconnect();
+        },
+      };
+    };
 
-      it('two simultaneous submits with the same key: 201 and 200, one row, no orphan objects', async () => {
-        const activityId = await publishedActivity();
-        const key = randomUUID();
-        const lock = await holdRowLock(activityId);
-        try {
-          const pending = [submit(activityId, { key }), submit(activityId, { key })].map((req) =>
-            req.then((res) => res),
-          );
-          await lock.waitForQueue(2);
-          await lock.release();
-          const results = await Promise.all(pending);
-          expect(results.map((r) => r.status).sort()).toEqual([200, 201]);
-          expect(results[0].body.id).toBe(results[1].body.id);
-        } finally {
-          await lock.release();
-        }
-        const rows = await rowsOf(activityId);
-        expect(rows).toHaveLength(1);
-        const mine = storage.keys().filter((k) => k.includes(`/${activityId}/`));
-        expect(mine.sort()).toEqual(rows[0].files.map((f) => f.storageKey).sort());
-      });
+    it('submits by different students do not block each other (shared lock)', async () => {
+      const activityId = await publishedActivity();
+      const lock = await holdRowLock(activityId, { mode: 'SHARE' });
+      try {
+        const both = Promise.all([
+          submit(activityId, { actor: s1 }).then((res) => res),
+          submit(activityId, { actor: s2 }).then((res) => res),
+        ]);
+        const outcome = await Promise.race([
+          both,
+          new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 8_000)),
+        ]);
+        // Completed while another transaction still holds a shared lock on the activity row.
+        expect(outcome).not.toBe('blocked');
+        expect((outcome as { status: number }[]).map((r) => r.status)).toEqual([201, 201]);
+      } finally {
+        await lock.release();
+      }
+      expect(await rowsOf(activityId, s1)).toHaveLength(1);
+      expect(await rowsOf(activityId, s2)).toHaveLength(1);
+    });
 
-      it('two simultaneous submits with different keys: 201 and 409, one row, no 500', async () => {
-        const activityId = await publishedActivity();
-        const lock = await holdRowLock(activityId);
-        try {
-          const pending = [submit(activityId), submit(activityId)].map((req) =>
-            req.then((res) => res),
-          );
-          await lock.waitForQueue(2);
-          await lock.release();
-          const results = await Promise.all(pending);
-          expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
-        } finally {
-          await lock.release();
-        }
-        const rows = await rowsOf(activityId);
-        expect(rows).toHaveLength(1);
-        const mine = storage.keys().filter((k) => k.includes(`/${activityId}/`));
-        expect(mine.sort()).toEqual(rows[0].files.map((f) => f.storageKey).sort());
-      });
-
-      it('a deadline that passes while queued is decided after the lock: 409, nothing stored', async () => {
-        const activityId = await publishedActivity({ dueAt: new Date(Date.now() + HOUR_MS) });
-        const lock = await holdRowLock(activityId);
-        try {
-          const pending = submit(activityId).then((res) => res);
-          await lock.waitForQueue(1);
-          // Only Date is faked (timers stay real): the server clock jumps past dueAt while queued.
-          vi.useFakeTimers({ toFake: ['Date'] });
-          vi.setSystemTime(Date.now() + 2 * HOUR_MS);
-          await lock.release();
-          const res = await pending;
-          expect(res.status).toBe(409);
-          expect(res.body.error.details[0].messages[0]).toMatch(/deadline has passed/i);
-        } finally {
-          vi.useRealTimers();
-          await lock.release();
-        }
-        expect(await rowsOf(activityId)).toHaveLength(0);
-        expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
-      });
-
-      const uniqueViolation = () =>
-        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-          code: 'P2002',
-          clientVersion: 'test',
+    it('a teacher-style exclusive lock still blocks a submit until released', async () => {
+      const activityId = await publishedActivity();
+      const lock = await holdRowLock(activityId);
+      try {
+        let settled = false;
+        const pending = submit(activityId).then((res) => {
+          settled = true;
+          return res;
         });
-      const winnerWith = async (activityId: string, key: string) =>
-        prisma.submission.create({
-          data: { activityId, studentId: s1, submittedAt: new Date(), idempotencyKey: key },
-        });
+        await lock.waitForQueue(1);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        expect(settled).toBe(false);
+        await lock.release();
+        expect((await pending).status).toBe(201);
+      } finally {
+        await lock.release();
+      }
+    });
 
-      it('a unique violation from a racing writer is resolved as a replay for the same key (200)', async () => {
-        const activityId = await publishedActivity();
-        const key = randomUUID();
-        vi.spyOn(prisma, '$transaction').mockImplementationOnce(async () => {
-          await winnerWith(activityId, key);
-          throw uniqueViolation();
-        });
-        const res = await submit(activityId, { key }).expect(200);
-        expect(res.body.activityId).toBe(activityId);
-        expect(await rowsOf(activityId)).toHaveLength(1);
-        expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    it('state changed by the lock holder is re-read after the lock: deactivated meanwhile is 404', async () => {
+      const activityId = await publishedActivity();
+      const lock = await holdRowLock(activityId, {
+        beforeCommit: async (tx) => {
+          await tx.activity.update({ where: { id: activityId }, data: { deletedAt: new Date() } });
+        },
+      });
+      try {
+        const pending = submit(activityId).then((res) => res);
+        await lock.waitForQueue(1);
+        await lock.release();
+        expect((await pending).status).toBe(404);
+      } finally {
+        await lock.release();
+      }
+      expect(await rowsOf(activityId)).toHaveLength(0);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    });
+
+    it('two simultaneous submits with the same key: 201 and 200, one row, no orphan objects', async () => {
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      const lock = await holdRowLock(activityId);
+      try {
+        const pending = [submit(activityId, { key }), submit(activityId, { key })].map((req) =>
+          req.then((res) => res),
+        );
+        await lock.waitForQueue(2);
+        await lock.release();
+        const results = await Promise.all(pending);
+        expect(results.map((r) => r.status).sort()).toEqual([200, 201]);
+        expect(results[0].body.id).toBe(results[1].body.id);
+      } finally {
+        await lock.release();
+      }
+      const rows = await rowsOf(activityId);
+      expect(rows).toHaveLength(1);
+      const mine = storage.keys().filter((k) => k.includes(`/${activityId}/`));
+      expect(mine.sort()).toEqual(rows[0].files.map((f) => f.storageKey).sort());
+    });
+
+    it('two simultaneous submits with different keys: 201 and 409, one row, no 500', async () => {
+      const activityId = await publishedActivity();
+      const lock = await holdRowLock(activityId);
+      try {
+        const pending = [submit(activityId), submit(activityId)].map((req) =>
+          req.then((res) => res),
+        );
+        await lock.waitForQueue(2);
+        await lock.release();
+        const results = await Promise.all(pending);
+        expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      } finally {
+        await lock.release();
+      }
+      const rows = await rowsOf(activityId);
+      expect(rows).toHaveLength(1);
+      const mine = storage.keys().filter((k) => k.includes(`/${activityId}/`));
+      expect(mine.sort()).toEqual(rows[0].files.map((f) => f.storageKey).sort());
+    });
+
+    it('a deadline that passes while queued is decided after the lock: 409, nothing stored', async () => {
+      const activityId = await publishedActivity({ dueAt: new Date(Date.now() + HOUR_MS) });
+      const lock = await holdRowLock(activityId);
+      try {
+        const pending = submit(activityId).then((res) => res);
+        await lock.waitForQueue(1);
+        // Only Date is faked (timers stay real): the server clock jumps past dueAt while queued.
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(Date.now() + 2 * HOUR_MS);
+        await lock.release();
+        const res = await pending;
+        expect(res.status).toBe(409);
+        expect(res.body.error.details[0].messages[0]).toMatch(/deadline has passed/i);
+      } finally {
+        vi.useRealTimers();
+        await lock.release();
+      }
+      expect(await rowsOf(activityId)).toHaveLength(0);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    });
+
+    const uniqueViolation = () =>
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      });
+    const winnerWith = async (activityId: string, key: string) =>
+      prisma.submission.create({
+        data: { activityId, studentId: s1, submittedAt: new Date(), idempotencyKey: key },
       });
 
-      it('a unique violation from a racing writer with another key is 409, never 500', async () => {
-        const activityId = await publishedActivity();
-        vi.spyOn(prisma, '$transaction').mockImplementationOnce(async () => {
-          await winnerWith(activityId, randomUUID());
-          throw uniqueViolation();
-        });
-        const res = await submit(activityId).expect(409);
-        expect(res.body.error.code).toBe('CONFLICT');
-        expect(await rowsOf(activityId)).toHaveLength(1);
-        expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    it('a unique violation from a racing writer is resolved as a replay for the same key (200)', async () => {
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      vi.spyOn(prisma, '$transaction').mockImplementationOnce(async () => {
+        await winnerWith(activityId, key);
+        throw uniqueViolation();
       });
-    },
-  );
+      const res = await submit(activityId, { key }).expect(200);
+      expect(res.body.activityId).toBe(activityId);
+      expect(await rowsOf(activityId)).toHaveLength(1);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    });
+
+    it('a unique violation from a racing writer with another key is 409, never 500', async () => {
+      const activityId = await publishedActivity();
+      vi.spyOn(prisma, '$transaction').mockImplementationOnce(async () => {
+        await winnerWith(activityId, randomUUID());
+        throw uniqueViolation();
+      });
+      const res = await submit(activityId).expect(409);
+      expect(res.body.error.code).toBe('CONFLICT');
+      expect(await rowsOf(activityId)).toHaveLength(1);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+    });
+  });
 
   describe('failure cleanup', () => {
     it('a storage failure mid-upload leaves no rows and deletes the objects already stored', async () => {
@@ -638,6 +708,45 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       expect(await rowsOf(activityId)).toHaveLength(0);
       expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
       expect(storage.calls.filter((c) => c.operation === 'delete')).not.toHaveLength(0);
+    });
+
+    const deletesFor = (activityId: string) =>
+      storage.calls.filter((c) => c.operation === 'delete' && c.key.includes(`/${activityId}/`));
+
+    it('re-checks the activity after the upload: deactivated meanwhile is 404 and objects are deleted', async () => {
+      const activityId = await publishedActivity();
+      storage.onPut(
+        async () => {
+          await prisma.activity.update({
+            where: { id: activityId },
+            data: { deletedAt: new Date() },
+          });
+        },
+        { times: 1 },
+      );
+      const res = await submit(activityId, { actor: s1 }).expect(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+      expect(await rowsOf(activityId)).toHaveLength(0);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+      expect(deletesFor(activityId)).not.toHaveLength(0);
+    });
+
+    it('re-checks enrollment after the upload: removed meanwhile is 404 and objects are deleted', async () => {
+      const activityId = await publishedActivity();
+      storage.onPut(
+        async () => {
+          await prisma.classroomMembership.updateMany({
+            where: { classroomId: classroomA, userId: sLeaving },
+            data: { state: 'INACTIVE' },
+          });
+        },
+        { times: 1 },
+      );
+      const res = await submit(activityId, { actor: sLeaving }).expect(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+      expect(await rowsOf(activityId, sLeaving)).toHaveLength(0);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
+      expect(deletesFor(activityId)).not.toHaveLength(0);
     });
 
     it('does not mask the original error when a cleanup delete also fails', async () => {

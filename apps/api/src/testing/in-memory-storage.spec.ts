@@ -16,6 +16,30 @@ describe('InMemoryStorage', () => {
     expect(await storage.get('a/b')).toEqual({ body: bytes(9), contentType: 'application/pdf' });
   });
 
+  it('runs put hooks after the object is stored, for a limited number of puts', async () => {
+    const storage = new InMemoryStorage();
+    const seen: { key: string; stored: boolean }[] = [];
+    storage.onPut(
+      async (key) => {
+        seen.push({ key, stored: storage.has(key) });
+      },
+      { times: 1 },
+    );
+    await storage.put('a', bytes(1), { contentType: 'x/y' });
+    await storage.put('b', bytes(2), { contentType: 'x/y' });
+    expect(seen).toEqual([{ key: 'a', stored: true }]);
+
+    storage.onPut(() => {
+      throw new Error('hook failure');
+    });
+    await expect(storage.put('c', bytes(3), { contentType: 'x/y' })).rejects.toThrow(
+      'hook failure',
+    );
+    storage.clearHooks();
+    await storage.put('d', bytes(4), { contentType: 'x/y' });
+    expect(storage.has('d')).toBe(true);
+  });
+
   it('copies bodies so callers cannot mutate stored data', async () => {
     const storage = new InMemoryStorage();
     const body = bytes(1, 2);

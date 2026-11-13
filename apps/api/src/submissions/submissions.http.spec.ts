@@ -10,7 +10,7 @@ import { SessionVerifier } from '../auth/session-verifier.service';
 import { configureHttp } from '../http/configure-http';
 import { pdfBytes, pngBytes } from '../testing/file-fixtures';
 import { SUBMISSION_MAX_FILE_BYTES, SUBMISSION_MAX_FILES } from './submission-file-policy';
-import { SubmissionsController } from './submissions.controller';
+import { SubmissionsController, decodeUploadedName } from './submissions.controller';
 import { SubmissionsService } from './submissions.service';
 
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -155,5 +155,22 @@ describe('submissions HTTP transport (multipart, status codes, error envelope)',
     expect(Object.keys(operation.responses)).toEqual(
       expect.arrayContaining(['200', '201', '400', '401', '403', '404', '409', '413']),
     );
+  });
+
+  describe('decodeUploadedName', () => {
+    it('re-reads the Latin-1 view multer produces as UTF-8', () => {
+      expect(
+        decodeUploadedName('Trabajo pr\u00c3\u00a1ctico \u00c3\u00b1and\u00c3\u00ba.pdf'),
+      ).toBe('Trabajo pr\u00e1ctico \u00f1and\u00fa.pdf');
+    });
+
+    it('keeps ASCII names unchanged', () => {
+      expect(decodeUploadedName('report.pdf')).toBe('report.pdf');
+    });
+
+    it('keeps the original when the bytes are not valid UTF-8 (a genuinely Latin-1 name)', () => {
+      // "caf\u00e9.pdf" sent as Latin-1 is the single byte 0xE9, which is not valid UTF-8.
+      expect(decodeUploadedName('caf\u00e9.pdf')).toBe('caf\u00e9.pdf');
+    });
   });
 });

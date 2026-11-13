@@ -43,7 +43,7 @@ import { SubmissionsService } from './submissions.service';
  * "ñandú.pdf" arrives as "Ã±andÃº.pdf". Re-reads the bytes as UTF-8 and keeps the original when
  * that is not valid UTF-8 (a genuinely Latin-1 name).
  */
-function decodeUploadedName(name: string): string {
+export function decodeUploadedName(name: string): string {
   const decoded = Buffer.from(name, 'latin1').toString('utf8');
   return decoded.includes('�') ? name : decoded;
 }
