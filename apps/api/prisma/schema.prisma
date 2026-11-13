@@ -105,6 +105,7 @@ model User {
   studentNotifications  Notification[]        @relation("NotificationStudent")
   activityMetrics       ActivityMetric[]
   createdActivities     Activity[]
+  submissions           Submission[]
 
   @@map("users")
 }
@@ -382,9 +383,10 @@ model Activity {
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom Classroom  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  createdBy User       @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  questions Question[]
+  classroom   Classroom    @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  questions   Question[]
+  submissions Submission[]
 
   @@index([classroomId, state, deletedAt])
   @@index([classroomId, dueAt, id])
@@ -419,6 +421,48 @@ model Option {
 
   @@unique([questionId, position])
   @@map("options")
+}
+
+/// A student's single submission to a FILE activity (MVP: no resubmission). `submittedAt` is
+/// always set by the server; `isLate` is true when it passed `dueAt` on an `allowLate` activity.
+/// `idempotencyKey` is the client's `Idempotency-Key`. CHECK constraints in the database: key
+/// length 1-255 (see the create_submissions migration).
+model Submission {
+  id             String   @id @default(uuid()) @db.Uuid
+  activityId     String   @map("activity_id") @db.Uuid
+  studentId      String   @map("student_id") @db.Uuid
+  submittedAt    DateTime @map("submitted_at") @db.Timestamptz(6)
+  isLate         Boolean  @default(false) @map("is_late")
+  idempotencyKey String   @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activity Activity         @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  student  User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  files    SubmissionFile[]
+
+  @@unique([activityId, studentId])
+  @@index([studentId])
+  @@map("submissions")
+}
+
+/// One stored file of a submission. Bytes live in private object storage under `storageKey`.
+/// CHECK constraints in the database: `sizeBytes` 1 byte-10 MB, `position` 0-4 (at most five
+/// files), `originalName` length 1-255 and `contentType` limited to the allow-list.
+model SubmissionFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @map("submission_id") @db.Uuid
+  storageKey   String   @unique @map("storage_key")
+  originalName String   @map("original_name")
+  contentType  String   @map("content_type")
+  sizeBytes    Int      @map("size_bytes")
+  position     Int
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, position])
+  @@map("submission_files")
 }
 
 /// Transactional outbox: written in the same transaction as the business change and
