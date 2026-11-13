@@ -56,16 +56,37 @@ export type SubmissionFilesValidation =
   | { ok: false; violations: SubmissionFileViolation[] };
 
 type FileTypeModule = typeof import('file-type');
-let fileTypeModule: Promise<FileTypeModule> | undefined;
+
+/** Memoizes an async loader but forgets a failed attempt, so the next call retries. */
+export function createCachedLoader<T>(importer: () => Promise<T>): () => Promise<T> {
+  let cached: Promise<T> | undefined;
+  return () => {
+    cached ??= importer().catch((error: unknown) => {
+      cached = undefined;
+      throw error;
+    });
+    return cached;
+  };
+}
 
 /**
  * `file-type` is ESM-only while the API compiles to CommonJS. A dynamic `import()` compiles to
  * `require()`, which Node >= 22.12 can load for ESM without top-level await (the repo requires
- * Node 22); Vitest resolves it natively. Loaded lazily and once.
+ * Node 22); Vitest resolves it natively. Loaded lazily and once; a failed load is retried.
  */
-function loadFileType(): Promise<FileTypeModule> {
-  fileTypeModule ??= import('file-type');
-  return fileTypeModule;
+const loadFileType = createCachedLoader<FileTypeModule>(() => import('file-type'));
+
+/** Detected MIME, or `undefined` when the bytes are unrecognizable or detection itself fails. */
+async function detectType(
+  detect: FileTypeModule['fileTypeFromBuffer'],
+  bytes: Uint8Array,
+): Promise<string | undefined> {
+  try {
+    return (await detect(bytes))?.mime;
+  } catch {
+    // Malformed content (for example a corrupt archive) is an unsupported file, not a server error.
+    return undefined;
+  }
 }
 
 const ALLOWED = new Set<string>(SUBMISSION_ALLOWED_CONTENT_TYPES);
@@ -126,9 +147,9 @@ export async function validateSubmissionFiles(
         message: `File must not exceed ${SUBMISSION_MAX_FILE_BYTES / (1024 * 1024)} MB`,
       });
     } else {
-      const detected = await fileTypeFromBuffer(file.bytes);
-      if (isAllowed(detected?.mime)) {
-        contentType = detected.mime;
+      const detected = await detectType(fileTypeFromBuffer, file.bytes);
+      if (isAllowed(detected)) {
+        contentType = detected;
       } else {
         violations.push({
           code: 'UNSUPPORTED_TYPE',

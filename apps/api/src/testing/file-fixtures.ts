@@ -51,8 +51,13 @@ export function plainZipBytes(): Uint8Array {
   return zipBytes([{ name: 'notes.txt', content: 'hello' }]);
 }
 
-export function textBytes(text = 'MZ not really an executable, just text'): Uint8Array {
+export function textBytes(text = 'Just a plain text note, no magic number.'): Uint8Array {
   return encoder.encode(text);
+}
+
+/** DOS/Windows executable header (`MZ`), the classic upload to disguise as a document. */
+export function exeBytes(): Uint8Array {
+  return Uint8Array.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00]);
 }
 
 /** Zero-padded buffer of exactly `length` bytes that starts with `header`. */

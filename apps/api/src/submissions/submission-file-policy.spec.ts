@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InvalidStorageKeyError } from '../platform/storage/storage.port';
 import {
   docxBytes,
+  exeBytes,
   jpegBytes,
   pdfBytes,
   plainZipBytes,
@@ -16,6 +17,7 @@ import {
   SUBMISSION_MAX_FILE_BYTES,
   SUBMISSION_MAX_NAME_LENGTH,
   buildSubmissionStorageKey,
+  createCachedLoader,
   sanitizeOriginalName,
   toErrorDetails,
   validateSubmissionFiles,
@@ -76,10 +78,11 @@ describe('validateSubmissionFiles', () => {
 
   it.each([
     ['plain text renamed .pdf', textBytes()],
+    ['an executable renamed .pdf', exeBytes()],
     ['unknown bytes', Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])],
     ['a plain zip', plainZipBytes()],
     ['an xlsx package', xlsxBytes()],
-    ['a Windows executable', Uint8Array.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00])],
+    ['a Windows executable', exeBytes()],
   ])('rejects %s even when declared as a PDF', async (_n, bytes) => {
     expect(await violations([input(bytes, 'report.pdf')])).toEqual([
       expect.objectContaining({ code: 'UNSUPPORTED_TYPE', index: 0 }),
@@ -191,5 +194,26 @@ describe('buildSubmissionStorageKey', () => {
     expect(() => buildSubmissionStorageKey({ ...ids, fileId: bad })).toThrow(
       InvalidStorageKeyError,
     );
+  });
+});
+
+describe('createCachedLoader', () => {
+  it('loads once and shares the result', async () => {
+    let calls = 0;
+    const load = createCachedLoader(async () => ({ n: ++calls }));
+    expect(await load()).toBe(await load());
+    expect(calls).toBe(1);
+  });
+
+  it('retries after a failed load instead of caching the rejection', async () => {
+    let calls = 0;
+    const load = createCachedLoader(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('load failed');
+      return { ok: true };
+    });
+    await expect(load()).rejects.toThrow('load failed');
+    await expect(load()).resolves.toEqual({ ok: true });
+    expect(calls).toBe(2);
   });
 });
