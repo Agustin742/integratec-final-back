@@ -15,6 +15,8 @@ import {
   type AvatarInput,
 } from '@aula/contracts';
 import {
+  ClientState,
+  CloseCode,
   Room,
   ServerError,
   validate,
@@ -121,7 +123,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * verified again here, against current persisted state, before anything is attached: `4001` when
    * it was lost, `4100` when it could not be verified (the client may retry). While that check is
    * in flight the admission is registered in `pendingAdmissions`, so an eviction that arrives
-   * meanwhile still reaches it.
+   * meanwhile still reaches it. A socket that closes meanwhile is not revoked through `onLeave`
+   * (Colyseus defers it until this join settles, only marking the client `LEAVING`): the check
+   * after the await refuses it, so nothing is attached for a client that is already gone.
    *
    * A user has one avatar however many connections they hold: the first connection creates it and
    * the last one to leave removes it. Over the cap the connection is refused with `4002`.
@@ -139,9 +143,15 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     this.pendingAdmissions.set(client.sessionId, admission);
     try {
       const current = await this.verifier.reverify(auth);
-      // Evicted, closed or disposed while the API was answering: nothing is attached.
+      // Evicted or disposed while the API was answering: nothing is attached.
       if (admission.revoked) {
         throw new ServerError(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+      }
+      // The socket closed meanwhile: Colyseus only marks the client LEAVING and calls `onLeave`
+      // after this join settles, so it is checked here. The client is gone and will not read the
+      // code; it is the framework's own "consented leave" one.
+      if (client.state === ClientState.LEAVING) {
+        throw new ServerError(CloseCode.CONSENTED, 'left during admission');
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
@@ -293,8 +303,6 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
    * example by an eviction and then by the framework's own leave): the second call finds nothing.
    */
   private releaseConnection(connectionId: string): void {
-    const admission = this.pendingAdmissions.get(connectionId);
-    if (admission) admission.revoked = true; // left before its access check ended
     this.limiters.delete(connectionId);
     this.pendingReconnections.delete(connectionId);
     this.authByConnection.delete(connectionId);

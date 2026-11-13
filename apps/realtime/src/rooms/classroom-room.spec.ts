@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ServerError } from '@colyseus/core';
+import { ClientState, CloseCode, ServerError } from '@colyseus/core';
 import {
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
@@ -552,18 +552,27 @@ describe('createClassroomRoom', () => {
       await expect(joining).rejects.toMatchObject({ code: CLOSE_CODE_ACCESS_REVOKED });
     });
 
-    it('does not admit a connection that left while access was being verified', async () => {
+    it('does not admit a connection whose socket closed while access was being verified', async () => {
+      // Colyseus only marks the client as LEAVING while onJoin is pending; onLeave runs afterwards.
       const { reverify, settle } = hold();
-      const { room } = makeAdmissionRoom(reverify);
-      const client = { sessionId: 's1', auth: { ...AUTH } };
+      const { room, reporter, clock } = makeAdmissionRoom(reverify);
+      const client = {
+        sessionId: 's1',
+        auth: { ...AUTH },
+        state: ClientState.JOINING as ClientState,
+      };
       const joining = room.onJoin(client as never);
-      const outcome = expect(joining).rejects.toBeDefined();
+      const outcome = expect(joining).rejects.toMatchObject({ code: CloseCode.CONSENTED });
 
-      room.onLeave(client as never); // the socket closed meanwhile
-      settle().resolve(IDENTITY);
+      client.state = ClientState.LEAVING;
+      settle().resolve(IDENTITY); // the API still says access is granted
 
       await outcome;
+      clock.value += 60_000;
+      await room.onDispose();
       expect(room.state.avatars.size).toBe(0);
+      expect(room.evict({ userId: IDENTITY.userId })).toBe(0); // nothing was attached
+      expect(reporter.report).not.toHaveBeenCalled();
     });
 
     it('keeps the connection cap when admission completes', async () => {
