@@ -26,6 +26,7 @@ import {
   ApiUnauthorizedResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
 import {
@@ -36,12 +37,13 @@ import {
   TeacherActivityResponseDto,
   UpdateActivityDto,
 } from './activities.dto';
+import { ActivitiesService } from './activities.service';
 
-const NOT_IMPLEMENTED = 'Activities contract only: implemented in a later task.';
+const NOT_IMPLEMENTED = 'Publishing is implemented in a later task.';
 
 /**
- * Contract-first stage (api-contracts D8/D9): every handler answers 501 until the service lands.
- * Activities are the academic assignments (TP/exam); they are unrelated to `ActivityMetric`,
+ * Transport adapter only: authorization and business rules live in `ActivitiesService`.
+ * `publish` is still a stub (answers 501-style `NotImplementedException`). Activities are the academic assignments (TP/exam); they are unrelated to `ActivityMetric`,
  * which aggregates connected time.
  */
 @ApiTags('activities')
@@ -54,6 +56,8 @@ const NOT_IMPLEMENTED = 'Activities contract only: implemented in a later task.'
 })
 @Controller('classrooms/:id/activities')
 export class ActivitiesController {
+  constructor(private readonly activities: ActivitiesService) {}
+
   @Post()
   @ApiOperation({
     summary: 'Create a draft activity',
@@ -67,16 +71,20 @@ export class ActivitiesController {
     type: ErrorEnvelopeDto,
     description: 'Visible classroom but insufficient role (for example a student).',
   })
-  create(@Param('id') _classroomId: string, @Body() _dto: CreateActivityDto): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+  create(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Body() dto: CreateActivityDto,
+  ) {
+    return this.activities.create(actorId, classroomId, dto);
   }
 
   @Get()
   @ApiOperation({
     summary: 'List activities',
     description:
-      'Staff see drafts and published (filter with `state`); students and linked parents see ' +
-      'published only. Deactivated activities are never listed. Sortable by `dueAt` (default, ' +
+      'Staff see drafts and published (filter with `state`); students see published only ' +
+      '(their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ' +
       'ascending) or `createdAt`; `id` is the tiebreaker.',
   })
   @ApiPaginatedResponse(ActivitySummaryDto, 'Activities without questions.')
@@ -85,8 +93,12 @@ export class ActivitiesController {
     type: ErrorEnvelopeDto,
     description: 'Visible classroom but insufficient role.',
   })
-  list(@Param('id') _classroomId: string, @Query() _query: ListActivitiesQueryDto): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+  list(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Query() query: ListActivitiesQueryDto,
+  ) {
+    return this.activities.list(actorId, classroomId, query);
   }
 
   @Get(':activityId')
@@ -94,7 +106,8 @@ export class ActivitiesController {
     summary: 'Get one activity',
     description:
       'Role-dependent shape: staff receive the teacher view (questions with `isCorrect`); ' +
-      'students receive the student view (no `isCorrect` anywhere) and only published activities.',
+      'students receive the student view (no `isCorrect` anywhere) and only published activities. ' +
+      'Linked parents receive 403.',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiExtraModels(TeacherActivityResponseDto, StudentActivityResponseDto)
@@ -111,8 +124,12 @@ export class ActivitiesController {
     type: ErrorEnvelopeDto,
     description: 'Visible classroom but insufficient role.',
   })
-  get(@Param('id') _classroomId: string, @Param('activityId') _activityId: string): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+  get(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ) {
+    return this.activities.get(actorId, classroomId, activityId);
   }
 
   @Patch(':activityId')
@@ -131,11 +148,12 @@ export class ActivitiesController {
     description: 'Questions can no longer change because a submission exists.',
   })
   update(
-    @Param('id') _classroomId: string,
-    @Param('activityId') _activityId: string,
-    @Body() _dto: UpdateActivityDto,
-  ): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+    @Body() dto: UpdateActivityDto,
+  ) {
+    return this.activities.update(actorId, classroomId, activityId, dto);
   }
 
   @Post(':activityId/publish')
@@ -164,7 +182,11 @@ export class ActivitiesController {
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiNoContentResponse({ description: 'Deactivated.' })
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
-  deactivate(@Param('id') _classroomId: string, @Param('activityId') _activityId: string): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+  async deactivate(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ): Promise<void> {
+    await this.activities.deactivate(actorId, classroomId, activityId);
   }
 }

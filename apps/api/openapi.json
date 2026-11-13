@@ -1487,7 +1487,7 @@
         "tags": ["activities"]
       },
       "get": {
-        "description": "Staff see drafts and published (filter with `state`); students and linked parents see published only. Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker.",
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker.",
         "operationId": "ActivitiesController_list",
         "parameters": [
           {
@@ -1589,7 +1589,7 @@
     },
     "/classrooms/{id}/activities/{activityId}": {
       "get": {
-        "description": "Role-dependent shape: staff receive the teacher view (questions with `isCorrect`); students receive the student view (no `isCorrect` anywhere) and only published activities.",
+        "description": "Role-dependent shape: staff receive the teacher view (questions with `isCorrect`); students receive the student view (no `isCorrect` anywhere) and only published activities. Linked parents receive 403.",
         "operationId": "ActivitiesController_get",
         "parameters": [
           {
