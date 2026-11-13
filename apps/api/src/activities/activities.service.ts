@@ -273,35 +273,45 @@ export class ActivitiesService {
   ): Promise<TeacherActivityResponseDto> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'TEACHER' });
     if (!UUID_PATTERN.test(activityId)) throw this.notFound();
-    const existing = await this.prisma.activity.findFirst({
-      where: { id: activityId, classroomId, deletedAt: null },
-      select: { id: true, type: true, format: true, opensAt: true, dueAt: true },
-    });
-    if (!existing) throw this.notFound();
-
-    if (dto.questions !== undefined && existing.format !== 'MULTIPLE_CHOICE') {
-      throw new RequestValidationException([
-        {
-          field: 'questions',
-          messages: ['questions are only allowed for MULTIPLE_CHOICE activities'],
-        },
-      ]);
-    }
-    const opensAt = dto.opensAt === undefined ? existing.opensAt : new Date(dto.opensAt);
-    const dueAt = dto.dueAt === undefined ? existing.dueAt : new Date(dto.dueAt);
-    assertValidWindow(existing.type, opensAt, dueAt);
-
-    const data: Prisma.ActivityUpdateInput = {
-      ...(dto.title !== undefined ? { title: dto.title } : {}),
-      ...(dto.description !== undefined ? { description: dto.description } : {}),
-      ...(dto.opensAt !== undefined ? { opensAt } : {}),
-      ...(dto.dueAt !== undefined ? { dueAt } : {}),
-      ...(dto.allowLate !== undefined ? { allowLate: dto.allowLate } : {}),
-      ...(dto.maxScore !== undefined ? { maxScore: dto.maxScore } : {}),
-      ...(dto.weightMultiplier !== undefined ? { weightMultiplier: dto.weightMultiplier } : {}),
-    };
 
     const row = await this.prisma.$transaction(async (tx) => {
+      // Row lock first: every check below reads the state this transaction will overwrite, so
+      // no other PATCH or DELETE can change (or deactivate) the row between check and write.
+      // Under READ COMMITTED a waiter re-evaluates the predicate once the holder commits, so a
+      // row deactivated meanwhile no longer matches and is a 404. Tagged template: parameterized.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM activities
+        WHERE id = ${activityId}::uuid AND classroom_id = ${classroomId}::uuid
+          AND deleted_at IS NULL
+        FOR UPDATE`;
+      if (locked.length === 0) throw this.notFound();
+      const existing = await tx.activity.findFirst({
+        where: { id: activityId, classroomId, deletedAt: null },
+        select: { type: true, format: true, opensAt: true, dueAt: true },
+      });
+      if (!existing) throw this.notFound();
+
+      if (dto.questions !== undefined && existing.format !== 'MULTIPLE_CHOICE') {
+        throw new RequestValidationException([
+          {
+            field: 'questions',
+            messages: ['questions are only allowed for MULTIPLE_CHOICE activities'],
+          },
+        ]);
+      }
+      const opensAt = dto.opensAt === undefined ? existing.opensAt : new Date(dto.opensAt);
+      const dueAt = dto.dueAt === undefined ? existing.dueAt : new Date(dto.dueAt);
+      assertValidWindow(existing.type, opensAt, dueAt);
+
+      const data: Prisma.ActivityUpdateInput = {
+        ...(dto.title !== undefined ? { title: dto.title } : {}),
+        ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.opensAt !== undefined ? { opensAt } : {}),
+        ...(dto.dueAt !== undefined ? { dueAt } : {}),
+        ...(dto.allowLate !== undefined ? { allowLate: dto.allowLate } : {}),
+        ...(dto.maxScore !== undefined ? { maxScore: dto.maxScore } : {}),
+        ...(dto.weightMultiplier !== undefined ? { weightMultiplier: dto.weightMultiplier } : {}),
+      };
       if (dto.questions !== undefined) {
         // TODO(#30): once Submission exists, refuse replacing questions (409) when the activity
         // already has a submission ("freeze after the first answer"). Nothing to check yet.
@@ -309,7 +319,14 @@ export class ActivitiesService {
         await tx.question.deleteMany({ where: { activityId } });
         data.questions = { create: toQuestionCreates(dto.questions) };
       }
-      return tx.activity.update({ where: { id: activityId }, data, select: TEACHER_SELECT });
+      // The lock is the guarantee; the scoped where is a second line of defence (extended unique
+      // where, Prisma >= 5) so a write can never reach a row outside this classroom or a
+      // deactivated one even if the lock were ever removed.
+      return tx.activity.update({
+        where: { id: activityId, classroomId, deletedAt: null },
+        data,
+        select: TEACHER_SELECT,
+      });
     });
     return toTeacherView(row);
   }

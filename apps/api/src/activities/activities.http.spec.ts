@@ -67,6 +67,7 @@ const prisma = {
   question: { deleteMany: vi.fn() },
   option: { deleteMany: vi.fn() },
   $transaction: vi.fn(),
+  $queryRaw: vi.fn(),
 };
 
 function actAs(actor: Actor) {
@@ -129,6 +130,7 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     prisma.$transaction.mockImplementation(async (callback: (tx: unknown) => unknown) =>
       callback(prisma),
     );
+    prisma.$queryRaw.mockResolvedValue([{ id: activityId }]);
     prisma.activity.create.mockResolvedValue(row);
     prisma.activity.findFirst.mockResolvedValue(row);
     prisma.activity.findMany.mockResolvedValue([row]);
@@ -281,6 +283,7 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
         .send({ ...body, maxScore: 101, secret: 'x' })
         .expect(400);
       expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(prisma.activity.create).not.toHaveBeenCalled();
     });
   });
 
@@ -449,7 +452,9 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
         })
         .expect(400);
       expect(res.body.error.details).toEqual([{ field: 'questions', messages: expect.any(Array) }]);
-      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(prisma.option.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.question.deleteMany).not.toHaveBeenCalled();
     });
     it('re-validates the merged window: new dueAt not after the stored opensAt is 400', async () => {
       prisma.activity.findFirst.mockResolvedValue({
@@ -481,9 +486,12 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
       actAs('stranger');
       await call('patch', `${base}/${activityId}`).send({ title: 'x' }).expect(404);
       actAs('teacher');
-      prisma.activity.findFirst.mockResolvedValue(null);
+      // The row lock matches nothing (unknown, deactivated or foreign activity): no read, no write.
+      prisma.$queryRaw.mockResolvedValue([]);
       await call('patch', `${base}/${activityId}`).send({ title: 'x' }).expect(404);
+      expect(prisma.activity.findFirst).not.toHaveBeenCalled();
       expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(prisma.question.deleteMany).not.toHaveBeenCalled();
     });
   });
 

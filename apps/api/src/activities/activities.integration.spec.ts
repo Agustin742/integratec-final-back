@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, RegistrationPath, SchoolRole } from '@prisma/client';
+import { ClassroomRole, PrismaClient, RegistrationPath, SchoolRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -556,4 +556,173 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     });
     expect(res.body.questions[0].prompt).toBe('pub2 question 1');
   });
+
+  describe(
+    'concurrent writers are serialized by a row lock on the activity',
+    { timeout: 20_000 },
+    () => {
+      /**
+       * Deterministic ordering: a separate client holds `FOR UPDATE` on the row while the requests
+       * are launched, so each one is provably queued behind it (pg_blocking_pids) before the lock
+       * is released. No sleeps decide the outcome; polling only waits for the queue to form.
+       */
+      const holdRowLock = async (activityId: string) => {
+        const blocker = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+        let release!: () => void;
+        const released = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        let ready!: (pid: number) => void;
+        const locked = new Promise<number>((resolve) => {
+          ready = resolve;
+        });
+        const done = blocker.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR UPDATE`;
+            const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+            ready(pid);
+            await released;
+          },
+          { timeout: 60_000 },
+        );
+        const pid = await locked;
+        const queued = async () => {
+          const [{ n }] = await prisma.$queryRaw<{ n: number }[]>`
+          WITH RECURSIVE waiting(pid) AS (
+            SELECT pid FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))
+            UNION
+            SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
+          )
+          SELECT count(*)::int AS n FROM waiting`;
+          return n;
+        };
+        let closed = false;
+        return {
+          /** Resolves once `count` backends are queued behind the held lock. */
+          async waitForQueue(count: number) {
+            for (let i = 0; i < 200; i++) {
+              if ((await queued()) >= count) return;
+              await new Promise((resolve) => setTimeout(resolve, 25));
+            }
+            throw new Error(`expected ${count} queued writers`);
+          },
+          async release() {
+            if (closed) return;
+            closed = true;
+            release();
+            await done;
+            await blocker.$disconnect();
+          },
+        };
+      };
+      const fire = (req: request.Test) => req.then((res) => res);
+
+      it('PATCH queued behind a DELETE never writes to the deactivated row (404)', async () => {
+        const created = await createAs(teacher, classroomA, tpBody({ title: 'Before' }));
+        const lock = await holdRowLock(created.id);
+        try {
+          const del = fire(api('delete', `/${created.id}`, teacher));
+          await lock.waitForQueue(1);
+          const patch = fire(api('patch', `/${created.id}`, teacher).send({ title: 'Zombie' }));
+          await lock.waitForQueue(2);
+          await lock.release();
+          expect((await del).status).toBe(204);
+          expect((await patch).status).toBe(404);
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+        expect(row.deletedAt).toBeInstanceOf(Date);
+        expect(row.title).toBe('Before');
+      });
+
+      it('DELETE queued behind a PATCH waits for it: the edit is applied, then the row is deactivated', async () => {
+        const created = await createAs(teacher, classroomA, tpBody({ title: 'Before' }));
+        const lock = await holdRowLock(created.id);
+        try {
+          const patch = fire(api('patch', `/${created.id}`, teacher).send({ title: 'Edited' }));
+          await lock.waitForQueue(1);
+          const del = fire(api('delete', `/${created.id}`, teacher));
+          await lock.waitForQueue(2);
+          await lock.release();
+          expect((await patch).status).toBe(200);
+          expect((await del).status).toBe(204);
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+        expect(row.deletedAt).toBeInstanceOf(Date);
+        expect(row.title).toBe('Edited');
+      });
+
+      it('two PATCHes that are each valid alone but not together: one 200, one 400, never 500', async () => {
+        const exam = await createAs(
+          teacher,
+          classroomA,
+          tpBody({ type: 'EXAM', opensAt: '2026-12-01T08:00:00-03:00' }),
+        );
+        const lock = await holdRowLock(exam.id);
+        let results: { status: number; body: { error?: unknown } }[];
+        try {
+          // Stored window: opens 11:00Z, due 15:00Z. Each change alone keeps opensAt < dueAt.
+          const moveOpens = fire(
+            api('patch', `/${exam.id}`, teacher).send({ opensAt: '2026-12-01T14:00:00Z' }),
+          );
+          await lock.waitForQueue(1);
+          const moveDue = fire(
+            api('patch', `/${exam.id}`, teacher).send({ dueAt: '2026-12-01T13:00:00Z' }),
+          );
+          await lock.waitForQueue(2);
+          await lock.release();
+          results = await Promise.all([moveOpens, moveDue]);
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+        const rejected = results.find((r) => r.status === 400);
+        expect(rejected?.body.error).toMatchObject({
+          code: 'VALIDATION_FAILED',
+          details: [{ field: 'opensAt', messages: expect.any(Array) }],
+        });
+        const row = await prisma.activity.findUniqueOrThrow({ where: { id: exam.id } });
+        expect(row.opensAt!.getTime()).toBeLessThan(row.dueAt.getTime());
+      });
+
+      it('two concurrent question replacements are serialized: never 500, never a mix', async () => {
+        const created = await createAs(
+          teacher,
+          classroomA,
+          mcBody({ questions: mcQuestions('orig', 2) }),
+        );
+        const payloads = [mcQuestions('x', 3), mcQuestions('y', 2)];
+        const lock = await holdRowLock(created.id);
+        let results: { status: number }[];
+        try {
+          const first = fire(
+            api('patch', `/${created.id}`, teacher).send({ questions: payloads[0] }),
+          );
+          await lock.waitForQueue(1);
+          const second = fire(
+            api('patch', `/${created.id}`, teacher).send({ questions: payloads[1] }),
+          );
+          await lock.waitForQueue(2);
+          await lock.release();
+          results = await Promise.all([first, second]);
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        expect(results.map((r) => r.status)).toEqual([200, 200]);
+        const stored = await prisma.question.findMany({
+          where: { activityId: created.id },
+          orderBy: { position: 'asc' },
+          include: { options: { orderBy: { position: 'asc' } } },
+        });
+        const shape = stored.map((q) => ({
+          prompt: q.prompt,
+          options: q.options.map((o) => ({ label: o.label, isCorrect: o.isCorrect })),
+        }));
+        expect(payloads).toContainEqual(shape);
+      });
+    },
+  );
 });
