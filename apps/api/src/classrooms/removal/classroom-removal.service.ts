@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ClassroomRole, MembershipState } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../../access/access-verification.service';
+import { CLASSROOM_MEMBERSHIP_REMOVED_EVENT } from '../../platform/realtime/realtime-events';
 import { OutboxWriter } from '../../platform/outbox/outbox.writer';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -52,7 +53,7 @@ export class ClassroomRemovalService {
         data: { state: MembershipState.INACTIVE },
       });
       await this.outbox.record(tx, {
-        type: 'classroom.membership.removed',
+        type: CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
         payload: { classroomId, membershipId: membership.id, userId: studentId },
       });
     });

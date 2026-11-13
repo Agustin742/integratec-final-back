@@ -80,6 +80,7 @@ model User {
   parentOfLinks          ParentLink[]          @relation("ParentLinks")
   childInLinks           ParentLink[]          @relation("ChildLinks")
   usedJoinCodes          JoinCodeUsage[]
+  activityMetrics        ActivityMetric[]
 
   @@map("users")
 }
@@ -204,6 +205,7 @@ model Classroom {
   pet                ClassroomPet?
   invitations        Invitation[]
   parentLinks        ParentLink[]
+  activityMetrics    ActivityMetric[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -307,6 +309,27 @@ model Invitation {
   @@index([createdById])
   @@index([targetEmail])
   @@map("invitations")
+}
+
+/// Aggregated activity signals per user and classroom, one row per UTC day. Connected time is
+/// reported by the realtime server as an aggregate (never per tick or per movement) and added to
+/// the row of the day the presence session ended. Submissions and participation join this row
+/// with the activity-level metric (issue #36).
+model ActivityMetric {
+  id               String   @id @default(uuid()) @db.Uuid
+  classroomId      String   @map("classroom_id") @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  day              DateTime @db.Date
+  connectedSeconds Int      @default(0) @map("connected_seconds")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, userId, day])
+  @@index([userId])
+  @@map("activity_metrics")
 }
 
 /// Transactional outbox: written in the same transaction as the business change and

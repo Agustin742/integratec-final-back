@@ -116,6 +116,7 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
       sessionId: memberSessionId,
       classroomId,
       role: 'TEACHER',
+      displayName: 'rt-member',
     });
   });
 

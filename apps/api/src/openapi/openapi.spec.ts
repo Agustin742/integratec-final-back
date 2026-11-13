@@ -26,6 +26,7 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
   jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
   invitationTokenKey: Buffer.alloc(32, 1),

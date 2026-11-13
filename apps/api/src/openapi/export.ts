@@ -34,6 +34,7 @@ const EXPORT_CONFIG: ApiConfig = {
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: 1,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'openapi-export-placeholder-not-a-secret',
   jwtSecret: 'export-jwt-placeholder-not-a-secret-000000',
   invitationTokenKey: Buffer.alloc(32, 1),

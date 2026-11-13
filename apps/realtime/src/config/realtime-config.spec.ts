@@ -25,6 +25,27 @@ describe('loadRealtimeConfig', () => {
       port: 2567,
       apiInternalUrl: 'http://localhost:3000',
       internalServiceSecret: SECRET,
+      reconnectionWindowSeconds: 20,
+    });
+  });
+
+  describe('RECONNECTION_WINDOW_SECONDS', () => {
+    it('parses an explicit window', () => {
+      expect(
+        loadRealtimeConfig({ ...validEnv(), RECONNECTION_WINDOW_SECONDS: '45' }),
+      ).toMatchObject({ reconnectionWindowSeconds: 45 });
+    });
+
+    it.each(['0', '121', '-5', '1.5', 'abc', '20s'])('rejects %j by name', (value) => {
+      const message = messageOf({ ...validEnv(), RECONNECTION_WINDOW_SECONDS: value });
+      expect(message).toContain('RECONNECTION_WINDOW_SECONDS');
+      expect(message).toContain('between 1 and 120');
+    });
+
+    it('treats a blank value as unset', () => {
+      expect(loadRealtimeConfig({ ...validEnv(), RECONNECTION_WINDOW_SECONDS: ' ' })).toMatchObject(
+        { reconnectionWindowSeconds: 20 },
+      );
     });
   });
 
