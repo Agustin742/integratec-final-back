@@ -14,6 +14,7 @@ import { configureHttp } from '../http/configure-http';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertResourceAuthorization } from '../testing/resource-authorization';
 import { ActivitiesModule } from './activities.module';
+import { futureInstant, withOffset } from '../testing/relative-dates';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 const SCHOOL_ZONE = 'America/Argentina/Cordoba';
@@ -41,8 +42,8 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     randomUUID(),
   );
   const classrooms = [classroomA, classroomB, classroomC];
-  const dueAt = '2026-12-01T12:00:00-03:00';
-  const dueAtUtc = '2026-12-01T15:00:00.000Z';
+  const dueAt = withOffset(futureInstant(30, 15), '-03:00');
+  const dueAtUtc = futureInstant(30, 15).toISOString();
   const token = (actor: string) => `Bearer activities-test:${actor}`;
   const api = (
     method: 'get' | 'post' | 'patch' | 'delete',
@@ -361,9 +362,9 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
       data: { id: classroom, name: `Activities list ${classroom}`, independentTeacherId: teacher },
     });
     classrooms.push(classroom);
-    const tie = '2026-12-10T10:00:00-03:00';
-    const early = '2026-12-05T10:00:00-03:00';
-    const late = '2026-12-20T10:00:00-03:00';
+    const tie = withOffset(futureInstant(39, 13), '-03:00');
+    const early = withOffset(futureInstant(34, 13), '-03:00');
+    const late = withOffset(futureInstant(49, 13), '-03:00');
     const made = [
       await createAs(teacher, classroom, tpBody({ dueAt: tie })),
       await createAs(teacher, classroom, tpBody({ dueAt: tie })),
@@ -425,13 +426,13 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
   it('cross-field rules: TP cannot set opensAt, EXAM needs opensAt strictly before dueAt', async () => {
     const before = await rowCounts();
     const tp = await api('post', '', teacher)
-      .send(tpBody({ opensAt: '2026-11-30T10:00:00-03:00' }))
+      .send(tpBody({ opensAt: withOffset(futureInstant(29, 13), '-03:00') }))
       .expect(400);
     expect(tp.body.error).toMatchObject({
       code: 'VALIDATION_FAILED',
       details: [{ field: 'opensAt', messages: expect.any(Array) }],
     });
-    for (const opensAt of [dueAt, '2026-12-02T10:00:00-03:00']) {
+    for (const opensAt of [dueAt, withOffset(futureInstant(31, 13), '-03:00')]) {
       const exam = await api('post', '', teacher)
         .send(tpBody({ type: 'EXAM', opensAt }))
         .expect(400);
@@ -441,11 +442,11 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     const ok = await createAs(
       teacher,
       classroomA,
-      tpBody({ type: 'EXAM', opensAt: '2026-12-01T08:00:00-03:00' }),
+      tpBody({ type: 'EXAM', opensAt: withOffset(futureInstant(30, 11), '-03:00') }),
     );
     expect(ok).toMatchObject({
       type: 'EXAM',
-      opensAt: '2026-12-01T11:00:00.000Z',
+      opensAt: futureInstant(30, 11).toISOString(),
       dueAt: dueAtUtc,
     });
   });
@@ -454,7 +455,11 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     const exam = await createAs(
       teacher,
       classroomA,
-      tpBody({ type: 'EXAM', opensAt: '2026-12-01T08:00:00-03:00', description: 'keep me' }),
+      tpBody({
+        type: 'EXAM',
+        opensAt: withOffset(futureInstant(30, 11), '-03:00'),
+        description: 'keep me',
+      }),
     );
     const edited = (
       await api('patch', `/${exam.id}`, teacher)
@@ -465,18 +470,18 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
       title: 'Renamed',
       maxScore: 80,
       description: 'keep me',
-      opensAt: '2026-12-01T11:00:00.000Z',
+      opensAt: futureInstant(30, 11).toISOString(),
       dueAt: dueAtUtc,
     });
     // New dueAt falls before the stored opensAt.
     await api('patch', `/${exam.id}`, teacher)
-      .send({ dueAt: '2026-12-01T07:00:00-03:00' })
+      .send({ dueAt: withOffset(futureInstant(30, 10), '-03:00') })
       .expect(400);
     // New opensAt is not before the stored dueAt.
     await api('patch', `/${exam.id}`, teacher).send({ opensAt: dueAt }).expect(400);
     const tp = await createAs(teacher, classroomA, tpBody());
     await api('patch', `/${tp.id}`, teacher)
-      .send({ opensAt: '2026-11-30T10:00:00-03:00' })
+      .send({ opensAt: withOffset(futureInstant(29, 13), '-03:00') })
       .expect(400);
     await api('patch', `/${tp.id}`, teacher).send({ type: 'EXAM' }).expect(400);
     const unchanged = await prisma.activity.findUniqueOrThrow({ where: { id: exam.id } });
@@ -545,14 +550,14 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     const res = await api('patch', `/${created.id}`, teacher)
       .send({
         title: 'Published edit',
-        dueAt: '2026-12-15T12:00:00-03:00',
+        dueAt: withOffset(futureInstant(44, 15), '-03:00'),
         questions: mcQuestions('pub2', 1),
       })
       .expect(200);
     expect(res.body).toMatchObject({
       state: 'PUBLISHED',
       title: 'Published edit',
-      dueAt: '2026-12-15T15:00:00.000Z',
+      dueAt: futureInstant(44, 15).toISOString(),
     });
     expect(res.body.questions[0].prompt).toBe('pub2 question 1');
   });
@@ -659,18 +664,22 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
         const exam = await createAs(
           teacher,
           classroomA,
-          tpBody({ type: 'EXAM', opensAt: '2026-12-01T08:00:00-03:00' }),
+          tpBody({ type: 'EXAM', opensAt: withOffset(futureInstant(30, 11), '-03:00') }),
         );
         const lock = await holdRowLock(exam.id);
         let results: { status: number; body: { error?: unknown } }[];
         try {
           // Stored window: opens 11:00Z, due 15:00Z. Each change alone keeps opensAt < dueAt.
           const moveOpens = fire(
-            api('patch', `/${exam.id}`, teacher).send({ opensAt: '2026-12-01T14:00:00Z' }),
+            api('patch', `/${exam.id}`, teacher).send({
+              opensAt: futureInstant(30, 14).toISOString(),
+            }),
           );
           await lock.waitForQueue(1);
           const moveDue = fire(
-            api('patch', `/${exam.id}`, teacher).send({ dueAt: '2026-12-01T13:00:00Z' }),
+            api('patch', `/${exam.id}`, teacher).send({
+              dueAt: futureInstant(30, 13).toISOString(),
+            }),
           );
           await lock.waitForQueue(2);
           await lock.release();

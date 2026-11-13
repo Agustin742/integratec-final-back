@@ -8,6 +8,7 @@ import {
   type StudentOptionDto,
   UpdateActivityDto,
 } from './activities.dto';
+import { futureInstant, withOffset } from '../testing/relative-dates';
 
 const validOptions = [
   { label: 'Paris', isCorrect: true },
@@ -17,7 +18,7 @@ const tp = {
   type: 'TP',
   format: 'FILE',
   title: 'Essay',
-  dueAt: '2026-12-01T15:00:00.000Z',
+  dueAt: futureInstant(30, 15).toISOString(),
   maxScore: 10,
 };
 const mc = {
@@ -45,7 +46,7 @@ describe('CreateActivityDto', () => {
   it('accepts a valid multiple-choice exam with opensAt', async () => {
     const { errors } = await check(CreateActivityDto, {
       ...mc,
-      opensAt: '2026-12-01T12:00:00-03:00',
+      opensAt: withOffset(futureInstant(30, 15), '-03:00'),
     });
     expect(errors).toEqual([]);
   });
@@ -64,7 +65,7 @@ describe('CreateActivityDto', () => {
     ['weight 0.4', { weightMultiplier: 0.4 }, 'weightMultiplier'],
     ['weight 3.01', { weightMultiplier: 3.01 }, 'weightMultiplier'],
     ['weight 3 decimals', { weightMultiplier: 1.255 }, 'weightMultiplier'],
-    ['dueAt without offset', { dueAt: '2026-12-01T15:00:00' }, 'dueAt'],
+    ['dueAt without offset', { dueAt: futureInstant(30, 15).toISOString().slice(0, 19) }, 'dueAt'],
     ['dueAt not a date', { dueAt: 'tomorrow' }, 'dueAt'],
     ['opensAt not a date', { opensAt: '2026-13-45' }, 'opensAt'],
     ['unknown type', { type: 'QUIZ' }, 'type'],

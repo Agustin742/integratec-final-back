@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { type Prisma, PrismaClient, RegistrationPath } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
+import { futureInstant } from '../testing/relative-dates';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 
@@ -10,7 +11,7 @@ describe('activity PostgreSQL constraints — data and activities-and-grading', 
   const teacher = randomUUID();
   const classroom = randomUUID();
   const activityIds: string[] = [];
-  const dueAt = new Date('2026-12-01T12:00:00.000Z');
+  const dueAt = futureInstant(30, 12);
   let fixtureReady = false;
 
   const base = (): Prisma.ActivityUncheckedCreateInput => ({

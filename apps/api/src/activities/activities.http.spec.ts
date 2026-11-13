@@ -14,6 +14,9 @@ import { configureHttp } from '../http/configure-http';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivitiesModule } from './activities.module';
+import { futureInstant, withOffset } from '../testing/relative-dates';
+
+const dueAtIso = futureInstant(30, 15).toISOString();
 
 const classroomId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -24,7 +27,7 @@ const body = {
   type: 'TP',
   format: 'FILE',
   title: 'Essay',
-  dueAt: '2026-12-01T15:00:00.000Z',
+  dueAt: dueAtIso,
   maxScore: 10,
 };
 const row = {
@@ -37,7 +40,7 @@ const row = {
   title: 'Essay',
   description: '',
   opensAt: null,
-  dueAt: new Date('2026-12-01T15:00:00.000Z'),
+  dueAt: futureInstant(30, 15),
   allowLate: false,
   maxScore: 10,
   weightMultiplier: new Prisma.Decimal('1.5'),
@@ -186,12 +189,12 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
           weightMultiplier: 1,
           maxScore: 10,
         });
-        expect(data.dueAt).toEqual(new Date('2026-12-01T15:00:00.000Z'));
+        expect(data.dueAt).toEqual(futureInstant(30, 15));
         expect(res.body).toMatchObject({
           id: activityId,
           state: 'DRAFT',
           weightMultiplier: 1.5,
-          dueAt: '2026-12-01T15:00:00.000Z',
+          dueAt: dueAtIso,
           opensAt: null,
           timeZone: 'America/Argentina/Cordoba',
           questions: [],
@@ -257,13 +260,13 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     });
     it('rejects TP with opensAt as VALIDATION_FAILED details on opensAt', async () => {
       const res = await call('post', base)
-        .send({ ...body, opensAt: '2026-11-30T15:00:00.000Z' })
+        .send({ ...body, opensAt: futureInstant(29, 15).toISOString() })
         .expect(400);
       expect(res.body.error.code).toBe('VALIDATION_FAILED');
       expect(res.body.error.details).toEqual([{ field: 'opensAt', messages: expect.any(Array) }]);
       expect(prisma.activity.create).not.toHaveBeenCalled();
     });
-    it.each(['2026-12-01T15:00:00.000Z', '2026-12-02T15:00:00.000Z'])(
+    it.each([dueAtIso, futureInstant(31, 15).toISOString()])(
       'rejects an EXAM whose opensAt (%s) is not before dueAt',
       async (opensAt) => {
         const res = await call('post', base)
@@ -275,11 +278,9 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     );
     it('accepts an EXAM with opensAt before dueAt', async () => {
       await call('post', base)
-        .send({ ...body, type: 'EXAM', opensAt: '2026-12-01T11:00:00-03:00' })
+        .send({ ...body, type: 'EXAM', opensAt: withOffset(futureInstant(30, 14), '-03:00') })
         .expect(201);
-      expect(prisma.activity.create.mock.calls[0][0].data.opensAt).toEqual(
-        new Date('2026-12-01T14:00:00.000Z'),
-      );
+      expect(prisma.activity.create.mock.calls[0][0].data.opensAt).toEqual(futureInstant(30, 14));
     });
     it('rejects an invalid create body before reaching the service', async () => {
       const res = await call('post', base)
@@ -463,16 +464,16 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
       prisma.activity.findFirst.mockResolvedValue({
         ...row,
         type: 'EXAM',
-        opensAt: new Date('2026-12-01T12:00:00.000Z'),
+        opensAt: futureInstant(30, 12),
       });
       await call('patch', `${base}/${activityId}`)
-        .send({ dueAt: '2026-12-01T11:00:00.000Z' })
+        .send({ dueAt: futureInstant(30, 11).toISOString() })
         .expect(400);
       expect(prisma.activity.update).not.toHaveBeenCalled();
     });
     it('rejects opensAt on a TP through PATCH', async () => {
       await call('patch', `${base}/${activityId}`)
-        .send({ opensAt: '2026-11-30T10:00:00.000Z' })
+        .send({ opensAt: futureInstant(29, 10).toISOString() })
         .expect(400);
       expect(prisma.activity.update).not.toHaveBeenCalled();
     });
