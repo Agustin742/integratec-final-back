@@ -1,0 +1,189 @@
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiForbiddenResponse,
+  ApiNoContentResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
+import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
+import {
+  ActivitySummaryDto,
+  CreateActivityDto,
+  ListActivitiesQueryDto,
+  StudentActivityResponseDto,
+  TeacherActivityResponseDto,
+  UpdateActivityDto,
+} from './activities.dto';
+import { ActivitiesService } from './activities.service';
+
+/**
+ * Transport adapter only: authorization and business rules live in `ActivitiesService`.
+ * Activities are the academic assignments (TP/exam); they are unrelated to `ActivityMetric`,
+ * which aggregates connected time.
+ */
+@ApiTags('activities')
+@ApiBearerAuth()
+@ApiParam({ name: 'id', description: 'Classroom UUID' })
+@ApiUnauthorizedResponse({ type: ErrorEnvelopeDto, description: 'Authentication required.' })
+@ApiNotFoundResponse({
+  type: ErrorEnvelopeDto,
+  description: 'Invalid, nonexistent or out-of-scope classroom or activity.',
+})
+@Controller('classrooms/:id/activities')
+export class ActivitiesController {
+  constructor(private readonly activities: ActivitiesService) {}
+
+  @Post()
+  @ApiOperation({
+    summary: 'Create a draft activity',
+    description:
+      'Teacher-level staff only. Creates a DRAFT (invisible to students). Cross-field rules ' +
+      'checked by the service: `opensAt` only for EXAM and strictly before `dueAt`.',
+  })
+  @ApiCreatedResponse({ type: TeacherActivityResponseDto })
+  @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'Validation failed.' })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Visible classroom but insufficient role (for example a student).',
+  })
+  create(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Body() dto: CreateActivityDto,
+  ) {
+    return this.activities.create(actorId, classroomId, dto);
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'List activities',
+    description:
+      'Staff see drafts and published (filter with `state`); students see published only ' +
+      '(their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ' +
+      'ascending) or `createdAt`; `id` is the tiebreaker.',
+  })
+  @ApiPaginatedResponse(ActivitySummaryDto, 'Activities without questions.')
+  @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'Invalid query parameters.' })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Visible classroom but insufficient role.',
+  })
+  list(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Query() query: ListActivitiesQueryDto,
+  ) {
+    return this.activities.list(actorId, classroomId, query);
+  }
+
+  @Get(':activityId')
+  @ApiOperation({
+    summary: 'Get one activity',
+    description:
+      'Role-dependent shape: staff receive the teacher view (questions with `isCorrect`); ' +
+      'students receive the student view (no `isCorrect` anywhere) and only published activities. ' +
+      'Linked parents receive 403.',
+  })
+  @ApiParam({ name: 'activityId', description: 'Activity UUID' })
+  @ApiExtraModels(TeacherActivityResponseDto, StudentActivityResponseDto)
+  @ApiOkResponse({
+    description: 'Teacher view for staff, student view for students.',
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(TeacherActivityResponseDto) },
+        { $ref: getSchemaPath(StudentActivityResponseDto) },
+      ],
+    },
+  })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Visible classroom but insufficient role.',
+  })
+  get(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ) {
+    return this.activities.get(actorId, classroomId, activityId);
+  }
+
+  @Patch(':activityId')
+  @ApiOperation({
+    summary: 'Update an activity',
+    description:
+      'Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` ' +
+      'replaces all questions and stays editable only until the first submission exists.',
+  })
+  @ApiParam({ name: 'activityId', description: 'Activity UUID' })
+  @ApiOkResponse({ type: TeacherActivityResponseDto })
+  @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'Validation failed.' })
+  @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Questions can no longer change because a submission exists.',
+  })
+  update(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+    @Body() dto: UpdateActivityDto,
+  ) {
+    return this.activities.update(actorId, classroomId, activityId, dto);
+  }
+
+  @Post(':activityId/publish')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Publish a draft activity',
+    description:
+      'Teacher-level staff only. Moves DRAFT to PUBLISHED (one way) and records one ' +
+      '`activity_published` notification per active student in the same transaction, so ' +
+      'notices are delivered only after the publish commits. `dueAt` must still be in the ' +
+      'future and multiple-choice activities need valid questions (400).',
+  })
+  @ApiParam({ name: 'activityId', description: 'Activity UUID' })
+  @ApiOkResponse({ type: TeacherActivityResponseDto })
+  @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
+  @ApiConflictResponse({ type: ErrorEnvelopeDto, description: 'Activity is already published.' })
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description: 'The activity is not publishable (past `dueAt`, invalid questions).',
+  })
+  publish(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ) {
+    return this.activities.publish(actorId, classroomId, activityId);
+  }
+
+  @Delete(':activityId')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Deactivate an activity',
+    description:
+      'Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed.',
+  })
+  @ApiParam({ name: 'activityId', description: 'Activity UUID' })
+  @ApiNoContentResponse({ description: 'Deactivated.' })
+  @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
+  async deactivate(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ): Promise<void> {
+    await this.activities.deactivate(actorId, classroomId, activityId);
+  }
+}

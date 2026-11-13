@@ -1023,6 +1023,134 @@
         "tags": ["invitations"]
       }
     },
+    "/notifications": {
+      "get": {
+        "description": "Own recipient only. Current classroom and exact student access are checked before pagination and total. Fixed order: createdAt DESC, id DESC; no sort override.",
+        "operationId": "NotificationsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minimal navigation metadata; no source content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/NotificationDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List currently accessible notifications",
+        "tags": ["notifications"]
+      }
+    },
+    "/notifications/read-all": {
+      "patch": {
+        "description": "Idempotent. Updates only unread visible notices; preserves previous readAt values. No request body.",
+        "operationId": "NotificationsController_readAll",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/NotificationsReadResultDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Mark all currently accessible notifications read",
+        "tags": ["notifications"]
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "description": "Idempotent: replay preserves the original readAt. No request body.",
+        "operationId": "NotificationsController_read",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Notification UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/NotificationDto" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, foreign-recipient or currently inaccessible notification.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Mark one currently accessible notification read",
+        "tags": ["notifications"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -1299,6 +1427,400 @@
         "security": [{ "bearer": [] }],
         "summary": "Read the complete classroom desk map",
         "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}/activities": {
+      "post": {
+        "description": "Teacher-level staff only. Creates a DRAFT (invisible to students). Cross-field rules checked by the service: `opensAt` only for EXAM and strictly before `dueAt`.",
+        "operationId": "ActivitiesController_create",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateActivityDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherActivityResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role (for example a student).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Create a draft activity",
+        "tags": ["activities"]
+      },
+      "get": {
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker.",
+        "operationId": "ActivitiesController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Default `dueAt` ascending; `id` is the tiebreaker.",
+            "schema": {
+              "default": "dueAt",
+              "example": "-createdAt",
+              "type": "string",
+              "enum": ["dueAt", "createdAt", "-dueAt", "-createdAt"]
+            }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Staff only. Students always receive published activities only and may not filter drafts.",
+            "schema": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activities without questions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ActivitySummaryDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List activities",
+        "tags": ["activities"]
+      }
+    },
+    "/classrooms/{id}/activities/{activityId}": {
+      "get": {
+        "description": "Role-dependent shape: staff receive the teacher view (questions with `isCorrect`); students receive the student view (no `isCorrect` anywhere) and only published activities. Linked parents receive 403.",
+        "operationId": "ActivitiesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Teacher view for staff, student view for students.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/TeacherActivityResponseDto" },
+                    { "$ref": "#/components/schemas/StudentActivityResponseDto" }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get one activity",
+        "tags": ["activities"]
+      },
+      "patch": {
+        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists.",
+        "operationId": "ActivitiesController_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/UpdateActivityDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherActivityResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Questions can no longer change because a submission exists.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Update an activity",
+        "tags": ["activities"]
+      },
+      "delete": {
+        "description": "Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed.",
+        "operationId": "ActivitiesController_deactivate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Deactivated." },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Deactivate an activity",
+        "tags": ["activities"]
+      }
+    },
+    "/classrooms/{id}/activities/{activityId}/publish": {
+      "post": {
+        "description": "Teacher-level staff only. Moves DRAFT to PUBLISHED (one way) and records one `activity_published` notification per active student in the same transaction, so notices are delivered only after the publish commits. `dueAt` must still be in the future and multiple-choice activities need valid questions (400).",
+        "operationId": "ActivitiesController_publish",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TeacherActivityResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "The activity is not publishable (past `dueAt`, invalid questions).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Activity is already published.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Publish a draft activity",
+        "tags": ["activities"]
       }
     }
   },
@@ -2363,6 +2885,37 @@
         },
         "required": ["token"]
       },
+      "NotificationDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "kind": {
+            "type": "string",
+            "enum": ["activity_published", "grade_posted", "announcement", "mention"]
+          },
+          "resourceId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Navigation only; source endpoint authorizes detail access independently."
+          },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid", "nullable": true },
+          "readAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "kind", "resourceId", "classroomId", "studentId", "readAt", "createdAt"]
+      },
+      "NotificationsReadResultDto": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of previously unread, currently visible notices changed by this request."
+          }
+        },
+        "required": ["updated"]
+      },
       "RosterGuardianDto": {
         "type": "object",
         "properties": {
@@ -2451,6 +3004,351 @@
           }
         },
         "required": ["items"]
+      },
+      "OptionInputDto": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string", "maxLength": 500 },
+          "isCorrect": {
+            "type": "boolean",
+            "description": "Exactly one option per question must be correct."
+          }
+        },
+        "required": ["label", "isCorrect"]
+      },
+      "QuestionInputDto": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string", "maxLength": 1000 },
+          "options": {
+            "minItems": 2,
+            "maxItems": 6,
+            "description": "Order is the display order. Exactly one option must have `isCorrect: true` (single answer).",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OptionInputDto" }
+          }
+        },
+        "required": ["prompt", "options"]
+      },
+      "CreateActivityDto": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": {
+            "type": "string",
+            "enum": ["FILE", "MULTIPLE_CHOICE"],
+            "description": "Immutable after creation."
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": "string", "maxLength": 5000, "default": "" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC. Omit it for no window; `null` is rejected, so it cannot be removed through PATCH."
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deadline. ISO 8601 with offset; stored as UTC."
+          },
+          "allowLate": {
+            "type": "boolean",
+            "default": false,
+            "description": "Accept submissions after dueAt."
+          },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 3,
+            "default": 1,
+            "description": "Weight in the period average. At most 2 decimals. Defaults are applied by the service, not on the DTO, so PATCH never resets them."
+          },
+          "questions": {
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Required when format is MULTIPLE_CHOICE; forbidden for FILE.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/QuestionInputDto" }
+          }
+        },
+        "required": ["type", "format", "title", "dueAt", "maxScore"]
+      },
+      "TeacherOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "position": { "type": "integer", "minimum": 1 },
+          "label": { "type": "string" },
+          "isCorrect": {
+            "type": "boolean",
+            "description": "Teacher view only; never present in the student view."
+          }
+        },
+        "required": ["id", "position", "label", "isCorrect"]
+      },
+      "TeacherQuestionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "position": { "type": "integer", "minimum": 1 },
+          "prompt": { "type": "string" },
+          "options": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TeacherOptionDto" }
+          }
+        },
+        "required": ["id", "position", "prompt", "options"]
+      },
+      "TeacherActivityResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": { "type": "string", "enum": ["FILE", "MULTIPLE_CHOICE"] },
+          "state": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "dueAt": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC." },
+          "allowLate": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Number, not a decimal string."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "School IANA time zone for rendering the instants above."
+          },
+          "questionCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "createdById": { "type": "string", "format": "uuid" },
+          "questions": {
+            "description": "Includes correct answers.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TeacherQuestionDto" }
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "type",
+          "format",
+          "state",
+          "title",
+          "description",
+          "opensAt",
+          "dueAt",
+          "allowLate",
+          "maxScore",
+          "weightMultiplier",
+          "publishedAt",
+          "timeZone",
+          "questionCount",
+          "createdAt",
+          "updatedAt",
+          "createdById",
+          "questions"
+        ]
+      },
+      "ActivitySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": { "type": "string", "enum": ["FILE", "MULTIPLE_CHOICE"] },
+          "state": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "dueAt": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC." },
+          "allowLate": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Number, not a decimal string."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "School IANA time zone for rendering the instants above."
+          },
+          "questionCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "type",
+          "format",
+          "state",
+          "title",
+          "description",
+          "opensAt",
+          "dueAt",
+          "allowLate",
+          "maxScore",
+          "weightMultiplier",
+          "publishedAt",
+          "timeZone",
+          "questionCount",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "StudentOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "position": { "type": "integer", "minimum": 1 },
+          "label": { "type": "string" }
+        },
+        "required": ["id", "position", "label"]
+      },
+      "StudentQuestionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "position": { "type": "integer", "minimum": 1 },
+          "prompt": { "type": "string" },
+          "options": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StudentOptionDto" }
+          }
+        },
+        "required": ["id", "position", "prompt", "options"]
+      },
+      "StudentActivityResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": { "type": "string", "enum": ["FILE", "MULTIPLE_CHOICE"] },
+          "state": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "dueAt": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC." },
+          "allowLate": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Number, not a decimal string."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "School IANA time zone for rendering the instants above."
+          },
+          "questionCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "questions": {
+            "description": "Never includes correct answers.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StudentQuestionDto" }
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "type",
+          "format",
+          "state",
+          "title",
+          "description",
+          "opensAt",
+          "dueAt",
+          "allowLate",
+          "maxScore",
+          "weightMultiplier",
+          "publishedAt",
+          "timeZone",
+          "questionCount",
+          "createdAt",
+          "updatedAt",
+          "questions"
+        ]
+      },
+      "UpdateActivityDto": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "description": { "type": "string", "maxLength": 5000, "default": "" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Only meaningful for EXAM (TP must not set it; enforced by the service). Must be strictly before dueAt. ISO 8601 with offset; stored as UTC. Omit it for no window; `null` is rejected, so it cannot be removed through PATCH."
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deadline. ISO 8601 with offset; stored as UTC."
+          },
+          "allowLate": {
+            "type": "boolean",
+            "default": false,
+            "description": "Accept submissions after dueAt."
+          },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 3,
+            "default": 1,
+            "description": "Weight in the period average. At most 2 decimals. Defaults are applied by the service, not on the DTO, so PATCH never resets them."
+          },
+          "questions": {
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Replaces all questions and options. Only for MULTIPLE_CHOICE activities, and only until the first submission exists (then 409).",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/QuestionInputDto" }
+          }
+        }
       }
     }
   }

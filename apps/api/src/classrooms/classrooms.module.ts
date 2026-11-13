@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AccessModule } from '../access/access.module';
+import { ActivitiesModule } from '../activities/activities.module';
 import { EmailModule } from '../platform/email/email.module';
 import { OutboxModule } from '../platform/outbox/outbox.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -25,6 +26,7 @@ import { ClassroomRosterModule } from './roster/roster.module';
     ClassroomDirectoryModule,
     ClassroomRemovalModule,
     ClassroomDesksModule,
+    ActivitiesModule,
   ],
   controllers: [ClassroomsController, MeClassroomsController, InvitationsController],
   providers: [

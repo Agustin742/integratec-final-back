@@ -221,6 +221,20 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** [Realtime and presence](../rules/realtime-and-presence.md), [API contracts](../rules/api-contracts.md#realtime-contract), [Architecture](../rules/architecture.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-10. The walkable surface (a 16 by 12 classroom with 13 obstacle boxes, shared in `packages/contracts`) is a temporary fixed layout for every classroom; per-classroom layout generation is open and tracked in issue #79.
 
+### D15. Activity publishing defaults
+
+- **Question:** How are activities deleted and edited, and which defaults and limits apply to creating and publishing them (RF-ACT-001)?
+- **Outcome:**
+  1. **Deletion:** always logical (`deletedAt`, RN-18); a row is never physically removed, so history survives submissions and grades.
+  2. **Questions and options:** editable until the first submission exists. Submissions do not exist yet, so they are always editable; issue #30 must add the lock (`409`).
+  3. **Defaults:** title 1-120 characters; description at most 5000; multiple choice has 1-50 questions of 2-6 options with exactly one correct; `weightMultiplier` 0.5-3 defaulting to 1; an exam has an optional `opensAt` and a required `dueAt`, a TP has only `dueAt`; a single attempt; the whole classroom is the audience.
+  4. **Out of scope:** study material upload (#46) and the realtime `activity:published` emission (transport open).
+- **Rationale:** Logical deletion satisfies "do not delete activities with submissions or grades" now and later without a special case; the freeze-on-first-answer rule keeps teacher fixes possible until students answer, without changing answers already given.
+- **Alternatives:** Physical deletion when no submissions exist (rejected: two deletion paths and a race with the first submission); freezing questions at publish (rejected: blocks fixing typos after publishing).
+- **Trade-off:** Until #30 lands nothing locks the questions, and a published activity can still be edited and cannot be unpublished.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), [Communication and notifications](../rules/communication-and-notifications.md), and the [activities guide](activities.md).
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-13.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.

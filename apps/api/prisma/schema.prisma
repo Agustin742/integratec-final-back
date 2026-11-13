@@ -61,6 +61,27 @@ enum RegistrationPath {
   @@map("registration_path")
 }
 
+enum ActivityType {
+  TP   @map("tp")
+  EXAM @map("exam")
+
+  @@map("activity_type")
+}
+
+enum ActivityFormat {
+  FILE            @map("file")
+  MULTIPLE_CHOICE @map("multiple_choice")
+
+  @@map("activity_format")
+}
+
+enum ActivityState {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+
+  @@map("activity_state")
+}
+
 model User {
   id               String           @id @default(uuid()) @db.Uuid
   email            String           @unique @db.VarChar(255)
@@ -70,17 +91,20 @@ model User {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  avatarConfig           AvatarConfiguration?
-  sessions               Session[]
-  passwordResetTokens    PasswordResetToken[]
-  schoolMemberships      SchoolMember[]
-  independentClassrooms  Classroom[]           @relation("IndependentTeacherClassrooms")
-  classroomMemberships   ClassroomMembership[]
-  createdInvitations     Invitation[]          @relation("InvitationCreator")
-  parentOfLinks          ParentLink[]          @relation("ParentLinks")
-  childInLinks           ParentLink[]          @relation("ChildLinks")
-  usedJoinCodes          JoinCodeUsage[]
-  activityMetrics        ActivityMetric[]
+  avatarConfig          AvatarConfiguration?
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
+  schoolMemberships     SchoolMember[]
+  independentClassrooms Classroom[]           @relation("IndependentTeacherClassrooms")
+  classroomMemberships  ClassroomMembership[]
+  createdInvitations    Invitation[]          @relation("InvitationCreator")
+  parentOfLinks         ParentLink[]          @relation("ParentLinks")
+  childInLinks          ParentLink[]          @relation("ChildLinks")
+  usedJoinCodes         JoinCodeUsage[]
+  notifications         Notification[]        @relation("NotificationRecipient")
+  studentNotifications  Notification[]        @relation("NotificationStudent")
+  activityMetrics       ActivityMetric[]
+  createdActivities     Activity[]
 
   @@map("users")
 }
@@ -185,18 +209,18 @@ model SchoolMember {
 }
 
 model Classroom {
-  id                    String    @id @default(uuid()) @db.Uuid
-  schoolId              String?   @map("school_id") @db.Uuid
-  independentTeacherId  String?   @map("independent_teacher_id") @db.Uuid
-  name                  String    @db.VarChar(120)
-  subject               String?   @db.VarChar(200)
-  adultMode             Boolean   @default(false) @map("adult_mode")
-  chatMuted             Boolean   @default(false) @map("chat_muted")
-  collaborationLocked   Boolean   @default(false) @map("collaboration_locked")
-  gamesDisabled         Boolean   @default(false) @map("games_disabled")
-  deletedAt             DateTime? @map("deleted_at") @db.Timestamptz(6)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String    @id @default(uuid()) @db.Uuid
+  schoolId             String?   @map("school_id") @db.Uuid
+  independentTeacherId String?   @map("independent_teacher_id") @db.Uuid
+  name                 String    @db.VarChar(120)
+  subject              String?   @db.VarChar(200)
+  adultMode            Boolean   @default(false) @map("adult_mode")
+  chatMuted            Boolean   @default(false) @map("chat_muted")
+  collaborationLocked  Boolean   @default(false) @map("collaboration_locked")
+  gamesDisabled        Boolean   @default(false) @map("games_disabled")
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   school             School?               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   independentTeacher User?                 @relation("IndependentTeacherClassrooms", fields: [independentTeacherId], references: [id], onDelete: Restrict)
@@ -205,7 +229,9 @@ model Classroom {
   pet                ClassroomPet?
   invitations        Invitation[]
   parentLinks        ParentLink[]
+  notifications      Notification[]
   activityMetrics    ActivityMetric[]
+  activities         Activity[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -332,6 +358,69 @@ model ActivityMetric {
   @@map("activity_metrics")
 }
 
+/// Academic activity (TP or exam) published by a teacher to a classroom. It is unrelated to
+/// ActivityMetric, which aggregates connected time. Deletion is always logical (`deletedAt`).
+/// Invariants enforced by CHECK constraints in the database (and validated again in the service):
+/// `maxScore` 0-100, `weightMultiplier` 0.5-3, `opensAt` (when set) strictly before `dueAt`, and
+/// `publishedAt` required whenever `state` is PUBLISHED. Instants are UTC.
+model Activity {
+  id               String         @id @default(uuid()) @db.Uuid
+  classroomId      String         @map("classroom_id") @db.Uuid
+  createdById      String         @map("created_by_id") @db.Uuid
+  type             ActivityType
+  format           ActivityFormat
+  state            ActivityState  @default(DRAFT)
+  title            String         @db.VarChar(120)
+  description      String         @default("")
+  opensAt          DateTime?      @map("opens_at") @db.Timestamptz(6)
+  dueAt            DateTime       @map("due_at") @db.Timestamptz(6)
+  allowLate        Boolean        @default(false) @map("allow_late")
+  maxScore         Int            @map("max_score")
+  weightMultiplier Decimal        @default(1) @map("weight_multiplier") @db.Decimal(3, 2)
+  publishedAt      DateTime?      @map("published_at") @db.Timestamptz(6)
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  createdBy User       @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  questions Question[]
+
+  @@index([classroomId, state, deletedAt])
+  @@index([classroomId, dueAt, id])
+  @@index([createdById])
+  @@map("activities")
+}
+
+model Question {
+  id         String   @id @default(uuid()) @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  position   Int
+  prompt     String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  options  Option[]
+
+  @@unique([activityId, position])
+  @@map("questions")
+}
+
+/// `isCorrect` is server-side only and must never be selected for student responses.
+model Option {
+  id         String  @id @default(uuid()) @db.Uuid
+  questionId String  @map("question_id") @db.Uuid
+  position   Int
+  label      String
+  isCorrect  Boolean @default(false) @map("is_correct")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  @@unique([questionId, position])
+  @@map("options")
+}
+
 /// Transactional outbox: written in the same transaction as the business change and
 /// delivered at-least-once to in-process handlers after commit. Rows are never deleted
 /// here; `processedAt` marks delivery and `failedAt` marks exhausted retries.
@@ -345,6 +434,8 @@ model OutboxEvent {
   failedAt    DateTime? @map("failed_at") @db.Timestamptz(6)
   attempts    Int       @default(0)
   lastError   String?   @map("last_error") @db.VarChar(300)
+
+  notification Notification?
 
   @@index([processedAt, failedAt, availableAt])
   @@map("outbox_events")
@@ -363,4 +454,43 @@ model JoinCodeUsage {
   @@index([invitationId])
   @@index([userId])
   @@map("join_code_usages")
+}
+
+/// Minimal navigation metadata, never source content or grades.
+model Notification {
+  id            String    @id @default(uuid()) @db.Uuid
+  recipientId   String    @map("recipient_id") @db.Uuid
+  classroomId   String    @map("classroom_id") @db.Uuid
+  studentId     String?   @map("student_id") @db.Uuid
+  sourceEventId String    @unique @map("source_event_id") @db.Uuid
+  kind          String    @db.VarChar(32)
+  resourceId    String    @map("resource_id") @db.Uuid
+  readAt        DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  recipient   User                   @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+  classroom   Classroom              @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student     User?                  @relation("NotificationStudent", fields: [studentId], references: [id], onDelete: Restrict)
+  sourceEvent OutboxEvent            @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
+  deliveries  NotificationDelivery[]
+
+  @@index([recipientId, createdAt, id])
+  @@index([classroomId])
+  @@index([studentId])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String    @id @default(uuid()) @db.Uuid
+  notificationId String    @map("notification_id") @db.Uuid
+  channel        String    @db.VarChar(20)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+
+  @@unique([notificationId, channel])
+  @@map("notification_deliveries")
 }
