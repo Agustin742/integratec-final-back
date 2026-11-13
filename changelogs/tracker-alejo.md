@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-13 — Classroom panel availability (frontend #26, delivery A)
+
+- **Status:** blocked (S1–S4 implementation, independent verification and isolated Linux full-suite 1,499/1,499 passed; awaiting human decision on native review transport unavailability and local work-unit commit)
+- **Area / files:** shared access projection, GET-specific classroom DTO/service/controller, OpenAPI, access/HTTP/contract tests, `docs/classroom-context.md`, `README.md`.
+- **Change:** Implemented backend-only `availablePanels`; Pet reserved, parents grades-only, existing capabilities/authorization and create/update/list shapes preserved. Original RED 7 failed/7 passed, focused GREEN 164/164; after two failed format corrections, the human-authorized formatting-only continuation passed. Independent isolated verification passed S1-S4: 246/246 tests (82 PostgreSQL), all-workspace typecheck; no source blockers. Parent formatting, docs (67 files), whitespace and all-workspace build passed. OpenAPI regenerated.
+- **Linux full-suite verification:** After positive-allowlist setup fixes (`job-1` nested-quote syntax error with 0 tests run; `job-2` 1,498/1,499 passing where only `openapi.spec.ts` differed because root `prettier.config.mjs` was omitted from the container allowlist), human-authorized `job-3` (252 public files, `node@sha256:e13726ca604184d7a91fcacab1fc09eefd642dc28e79ac34e85540dd93b78cfb`, `--frozen-lockfile`, isolated `panels_a_linux` PostgreSQL and `panels-a-linux` MinIO) exited 0 in 48s: `pnpm build` passed across all 3 packages and `pnpm test` passed **1,499/1,499** (`packages/contracts` 26/26 across 2 files, `apps/realtime` 248/248 across 22 files, `apps/api` 1,225/1,225 across 57 files). Earlier Windows host `job-4` native process crash (`3221225477` after 26/26 contracts and 454 API tests) remains preserved in history.
+- **Native review status:** Selecting the two intended untracked files (`apps/api/src/classrooms/classroom-context.http.spec.ts`, `docs/classroom-context.md`) froze lineage `review-96bf66410dfe9d64` (native tier `medium`, 11 files, 613 total changed lines including 157 generated OpenAPI lines / 456 authored lines, lens `review-reliability`). The single authorized host-relay capture failed in transport (`pi-host-relay-transport-failure`: Antigravity `gemini-4-hydrogen-high` returned `Resource has been exhausted`, 0 tokens, no mutation). Bound `status` reoffers the same `review-reliability` slot; no automatic retry was performed.
+- **Reason:** Unblock the frontend panel registry without new permissions, private-roster exposure or context invalidation.
+- **Next step:** Human decision on whether to retry the reoffered `review-reliability` capture for lineage `review-96bf66410dfe9d64` or proceed directly to the local work-unit commit on `feat/classroom-panels-a` (456 authored changed lines + 157 generated OpenAPI lines). B, D14, frontend and publication remain excluded.
+
 ## 2026-11-11 — Classroom desk map and resource authorization pattern (#26)
 
 - **Status:** completed (implementation and PR publication; current-head CI and human approval are tracked in the PR)

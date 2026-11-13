@@ -7,6 +7,7 @@ import {
 import { ClassroomRole, MembershipState, type Prisma, SchoolRole } from '@prisma/client';
 import {
   AccessVerificationService,
+  computeClassroomPanels,
   type ClassroomAccessRole,
   type ClassroomCapability,
   UUID_PATTERN,
@@ -22,6 +23,7 @@ import {
   DEFAULT_PET_SPECIES,
 } from './classrooms.constants';
 import type {
+  ClassroomContextResponseDto,
   ClassroomDetailResponseDto,
   ClassroomListItemDto,
 } from './dto/classroom-response.dto';
@@ -138,7 +140,7 @@ export class ClassroomsService {
    * Retrieves the classroom detail and server-derived role/capabilities for the actor.
    * Responds 404 if the classroom does not exist or the actor has no valid access.
    */
-  async findOne(actorUserId: string, classroomId: string): Promise<ClassroomDetailResponseDto> {
+  async findOne(actorUserId: string, classroomId: string): Promise<ClassroomContextResponseDto> {
     if (!UUID_PATTERN.test(actorUserId)) {
       throw new UnauthorizedException('Authentication is required');
     }
@@ -163,7 +165,10 @@ export class ClassroomsService {
       throw new NotFoundException('Classroom not found');
     }
 
-    return this.toDetailResponse(classroom, access.myRole, access.capabilities);
+    return {
+      ...this.toDetailResponse(classroom, access.myRole, access.capabilities),
+      availablePanels: computeClassroomPanels(access.myRole),
+    };
   }
 
   /**

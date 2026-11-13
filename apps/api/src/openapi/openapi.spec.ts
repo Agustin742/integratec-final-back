@@ -128,6 +128,55 @@ describe('OpenAPI document', () => {
     ]);
   });
 
+  it('adds panel availability only to the classroom GET context', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const operation = doc.paths['/classrooms/{id}']?.get;
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(operation?.responses ?? {})).toEqual(['200', '401', '404']);
+    const contextRef = '#/components/schemas/ClassroomContextResponseDto';
+    expect(operation?.responses['200']).toMatchObject({
+      content: { 'application/json': { schema: { $ref: contextRef } } },
+    });
+    const schemas = doc.components?.schemas ?? {};
+    const panelRef = '#/components/schemas/ClassroomPanelKey';
+    expect(schemas.ClassroomContextResponseDto).toMatchObject({
+      required: expect.arrayContaining(['myRole', 'capabilities', 'availablePanels']),
+      properties: {
+        availablePanels: { type: 'array', items: { $ref: panelRef } },
+      },
+    });
+    expect(schemas.ClassroomPanelKey).toMatchObject({
+      enum: [
+        'activities',
+        'material',
+        'grades',
+        'chat',
+        'notices',
+        'shop',
+        'bot',
+        'members',
+        'settings',
+        'pet',
+      ],
+    });
+    for (const name of ['ClassroomListItemDto', 'ClassroomDetailResponseDto']) {
+      const schema = schemas[name];
+      const properties = schema && 'properties' in schema && schema.properties;
+      expect(properties).not.toHaveProperty('availablePanels');
+    }
+    const unchangedOperations = [
+      ['/classrooms', 'post', '201'],
+      ['/classrooms/{id}', 'patch', '200'],
+    ] as const;
+    for (const [path, method, status] of unchangedOperations) {
+      const detailRef = '#/components/schemas/ClassroomDetailResponseDto';
+      expect(doc.paths[path]?.[method]?.responses[status]).toMatchObject({
+        content: { 'application/json': { schema: { $ref: detailRef } } },
+      });
+    }
+  });
+
   it('serves the JSON document and the Scalar UI outside production', async () => {
     app = await createApp('development');
 

@@ -31,7 +31,11 @@ import { parseSort } from '../http/pagination/sort';
 import type { Paginated } from '../http/pagination/paginated';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { ClassroomsService } from './classrooms.service';
-import { ClassroomDetailResponseDto, ClassroomListItemDto } from './dto/classroom-response.dto';
+import {
+  ClassroomContextResponseDto,
+  ClassroomDetailResponseDto,
+  ClassroomListItemDto,
+} from './dto/classroom-response.dto';
 import { CreateClassroomDto } from './dto/create-classroom.dto';
 import { CreateClassroomInvitationDto } from './dto/create-invitation.dto';
 import { CreateJoinCodeDto } from './dto/create-join-code.dto';
@@ -164,7 +168,7 @@ export class ClassroomsController {
   @ApiOperation({
     summary: 'Get classroom details and caller capabilities',
     description:
-      'Returns the persistent state of a virtual classroom, its pet, desk count, and the server-derived role and capabilities for the authenticated caller.',
+      'Returns persistent classroom state, pet, desk count, and the server-derived role, capabilities and availablePanels. Panels are UI availability, not operation authorization; pet is reserved and never available. Linked parents receive only the grades panel; adult mode disables parent access.',
   })
   @ApiParam({
     name: 'id',
@@ -172,8 +176,8 @@ export class ClassroomsController {
     example: '4e5f6a7b-0000-4000-8000-000000000002',
   })
   @ApiOkResponse({
-    type: ClassroomDetailResponseDto,
-    description: 'Classroom details and caller capabilities.',
+    type: ClassroomContextResponseDto,
+    description: 'Classroom details, caller capabilities and available panels.',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -186,7 +190,7 @@ export class ClassroomsController {
   async findOne(
     @CurrentUser('userId') actorUserId: string,
     @Param('id') classroomId: string,
-  ): Promise<ClassroomDetailResponseDto> {
+  ): Promise<ClassroomContextResponseDto> {
     return this.classroomsService.findOne(actorUserId, classroomId);
   }
 
