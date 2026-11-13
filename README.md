@@ -22,6 +22,11 @@ backend/
 - [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
 - The transactional outbox records `classroom.membership.removed`; the realtime eviction handler consumes it to disconnect the removed student's live connections in that classroom.
 
+## Classroom desk map
+
+- [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
+- [Resource authorization test pattern](docs/resource-authorization-testing.md): reusable public-request assertions for resource ID tampering and untrusted object interaction context.
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.
