@@ -10,7 +10,11 @@ import { SessionVerifier } from '../auth/session-verifier.service';
 import { configureHttp } from '../http/configure-http';
 import { pdfBytes, pngBytes } from '../testing/file-fixtures';
 import { SUBMISSION_MAX_FILE_BYTES, SUBMISSION_MAX_FILES } from './submission-file-policy';
-import { SubmissionsController, decodeUploadedName } from './submissions.controller';
+import {
+  SubmissionReadController,
+  SubmissionsController,
+  decodeUploadedName,
+} from './submissions.controller';
 import { SubmissionsService } from './submissions.service';
 
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -26,14 +30,14 @@ const submission = {
 };
 
 // The controller is a transport adapter: the service (rules, storage, persistence) is stubbed.
-const service = { submit: vi.fn() };
+const service = { submit: vi.fn(), readOwn: vi.fn(), readById: vi.fn() };
 
 describe('submissions HTTP transport (multipart, status codes, error envelope)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      controllers: [SubmissionsController],
+      controllers: [SubmissionsController, SubmissionReadController],
       providers: [
         { provide: SubmissionsService, useValue: service },
         { provide: APP_GUARD, useClass: SessionAuthGuard },
@@ -59,6 +63,8 @@ describe('submissions HTTP transport (multipart, status codes, error envelope)',
 
   beforeEach(() => {
     service.submit.mockReset();
+    service.readOwn.mockReset();
+    service.readById.mockReset();
     service.submit.mockResolvedValue({ submission, created: true });
   });
 
@@ -155,6 +161,63 @@ describe('submissions HTTP transport (multipart, status codes, error envelope)',
     expect(Object.keys(operation.responses)).toEqual(
       expect.arrayContaining(['200', '201', '400', '401', '403', '404', '409', '413']),
     );
+  });
+
+  describe('read routes', () => {
+    const readable = {
+      ...submission,
+      files: [
+        {
+          id: '88888888-8888-4888-8888-888888888888',
+          originalName: 'a.pdf',
+          contentType: 'application/pdf',
+          sizeBytes: 10,
+          position: 0,
+          downloadUrl: 'https://storage.test/x',
+          downloadUrlExpiresAt: '2026-11-13T12:05:00.000Z',
+        },
+      ],
+    };
+
+    it('serves GET /activities/:id/submissions/me from the service with no-store', async () => {
+      service.readOwn.mockResolvedValue(readable);
+      const res = await request(app.getHttpServer())
+        .get(`${url}/me`)
+        .set('Authorization', 'Bearer http-test')
+        .expect(200);
+      expect(res.body).toEqual(readable);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(service.readOwn).toHaveBeenCalledWith(actorId, activityId);
+    });
+
+    it('serves GET /submissions/:id from the service with no-store', async () => {
+      service.readById.mockResolvedValue(readable);
+      const res = await request(app.getHttpServer())
+        .get(`/submissions/${submission.id}`)
+        .set('Authorization', 'Bearer http-test')
+        .expect(200);
+      expect(res.body).toEqual(readable);
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(service.readById).toHaveBeenCalledWith(actorId, submission.id);
+    });
+
+    it('requires authentication on both read routes', async () => {
+      await request(app.getHttpServer()).get(`${url}/me`).expect(401);
+      await request(app.getHttpServer()).get(`/submissions/${submission.id}`).expect(401);
+      expect(service.readOwn).not.toHaveBeenCalled();
+      expect(service.readById).not.toHaveBeenCalled();
+    });
+
+    it('documents both read routes in OpenAPI with the download fields', () => {
+      const doc = SwaggerModule.createDocument(
+        app,
+        new DocumentBuilder().setTitle('t').setVersion('1').build(),
+      );
+      expect(doc.paths['/activities/{activityId}/submissions/me'].get).toBeDefined();
+      const byId = doc.paths['/submissions/{submissionId}'].get!;
+      expect(Object.keys(byId.responses)).toEqual(expect.arrayContaining(['200', '401', '404']));
+      expect(JSON.stringify(doc.components?.schemas)).toContain('downloadUrlExpiresAt');
+    });
   });
 
   describe('decodeUploadedName', () => {

@@ -1238,6 +1238,92 @@
         "tags": ["submissions"]
       }
     },
+    "/activities/{activityId}/submissions/me": {
+      "get": {
+        "description": "Student only. Returns the calling student's submission with a short-lived signed `downloadUrl` per file (lifetime from `STORAGE_SIGNED_URL_TTL`, reported in `downloadUrlExpiresAt`). The response is not cacheable. A student who has not submitted yet gets 404 `Submission not found`; unknown, draft or deactivated activities and non-members get 404 `Activity not found`; staff and linked parents get 403.",
+        "operationId": "SubmissionsController_readOwn",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionDownloadResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but not a student (staff, linked parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent, draft or deactivated activity, not a member, or nothing submitted yet.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read my submission to an activity",
+        "tags": ["submissions"]
+      }
+    },
+    "/submissions/{submissionId}": {
+      "get": {
+        "description": "Readable by the student who submitted it and by teacher-level staff of the activity's classroom (teacher, school Owner or Admin). Returns a short-lived signed `downloadUrl` per file; the response is not cacheable. Every other caller (another student, a linked parent, a non-member) gets the same 404 as for an unknown id, so existence never leaks.",
+        "operationId": "SubmissionReadController_readById",
+        "parameters": [
+          {
+            "name": "submissionId",
+            "required": true,
+            "in": "path",
+            "description": "Submission UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionDownloadResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed or unknown id, deactivated activity, or the caller may not read it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read a submission",
+        "tags": ["submissions"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -2910,6 +2996,72 @@
           "files": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/SubmissionFileResponseDto" }
+          }
+        },
+        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+      },
+      "SubmissionFileDownloadDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "originalName": {
+            "type": "string",
+            "description": "Sanitized display name (no path, no control characters)."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Detected from the file bytes, never from the client-declared type.",
+            "example": "application/pdf"
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4,
+            "description": "Zero-based order in which the files were sent."
+          },
+          "downloadUrl": {
+            "type": "string",
+            "description": "Short-lived signed URL that downloads the file without credentials. Treat it as a secret: do not log or share it; request the submission again for a fresh one."
+          },
+          "downloadUrlExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC instant after which `downloadUrl` stops working."
+          }
+        },
+        "required": [
+          "id",
+          "originalName",
+          "contentType",
+          "sizeBytes",
+          "position",
+          "downloadUrl",
+          "downloadUrlExpiresAt"
+        ]
+      },
+      "SubmissionDownloadResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server clock, ISO 8601 UTC, taken once the activity row was locked."
+          },
+          "isLate": {
+            "type": "boolean",
+            "description": "True when submitted after `dueAt` on an activity with `allowLate`."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["submitted"],
+            "description": "Derived state of the work."
+          },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionFileDownloadDto" }
           }
         },
         "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]

@@ -1,5 +1,7 @@
 import {
   Controller,
+  Get,
+  Header,
   Headers,
   HttpCode,
   Param,
@@ -34,6 +36,7 @@ import {
   CreateSubmissionBodyDto,
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENCY_KEY_MAX_LENGTH,
+  SubmissionDownloadResponseDto,
   SubmissionResponseDto,
 } from './submissions.dto';
 import { SubmissionsService } from './submissions.service';
@@ -134,5 +137,65 @@ export class SubmissionsController {
     );
     if (!created) res.status(200);
     return submission;
+  }
+
+  @Get('me')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'Read my submission to an activity',
+    description:
+      "Student only. Returns the calling student's submission with a short-lived signed " +
+      '`downloadUrl` per file (lifetime from `STORAGE_SIGNED_URL_TTL`, reported in ' +
+      '`downloadUrlExpiresAt`). The response is not cacheable. A student who has not submitted ' +
+      'yet gets 404 `Submission not found`; unknown, draft or deactivated activities and ' +
+      'non-members get 404 `Activity not found`; staff and linked parents get 403.',
+  })
+  @ApiOkResponse({ type: SubmissionDownloadResponseDto })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Visible classroom but not a student (staff, linked parent).',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Invalid, nonexistent, draft or deactivated activity, not a member, or nothing submitted yet.',
+  })
+  readOwn(
+    @CurrentUser('userId') actorId: string,
+    @Param('activityId') activityId: string,
+  ): Promise<SubmissionDownloadResponseDto> {
+    return this.submissions.readOwn(actorId, activityId);
+  }
+}
+
+/** Reads one submission by id; access rules live in `SubmissionsService`. */
+@ApiTags('submissions')
+@ApiBearerAuth()
+@ApiUnauthorizedResponse({ type: ErrorEnvelopeDto, description: 'Authentication required.' })
+@Controller('submissions')
+export class SubmissionReadController {
+  constructor(private readonly submissions: SubmissionsService) {}
+
+  @Get(':submissionId')
+  @Header('Cache-Control', 'no-store')
+  @ApiParam({ name: 'submissionId', description: 'Submission UUID' })
+  @ApiOperation({
+    summary: 'Read a submission',
+    description:
+      "Readable by the student who submitted it and by teacher-level staff of the activity's " +
+      'classroom (teacher, school Owner or Admin). Returns a short-lived signed `downloadUrl` ' +
+      'per file; the response is not cacheable. Every other caller (another student, a linked ' +
+      'parent, a non-member) gets the same 404 as for an unknown id, so existence never leaks.',
+  })
+  @ApiOkResponse({ type: SubmissionDownloadResponseDto })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Malformed or unknown id, deactivated activity, or the caller may not read it.',
+  })
+  readById(
+    @CurrentUser('userId') actorId: string,
+    @Param('submissionId') submissionId: string,
+  ): Promise<SubmissionDownloadResponseDto> {
+    return this.submissions.readById(actorId, submissionId);
   }
 }

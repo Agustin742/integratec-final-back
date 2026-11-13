@@ -1,7 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ActivityFormat, ActivityState, Prisma } from '@prisma/client';
-import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
+import {
+  AccessVerificationService,
+  type ClassroomAccessRole,
+  UUID_PATTERN,
+} from '../access/access-verification.service';
+import type { ApiConfig } from '../config/api-config';
+import { API_CONFIG } from '../config/config.module';
 import { RequestConflictException } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
@@ -16,6 +22,7 @@ import {
 import {
   IDEMPOTENCY_KEY_HEADER,
   IDEMPOTENCY_KEY_MAX_LENGTH,
+  type SubmissionDownloadResponseDto,
   type SubmissionResponseDto,
 } from './submissions.dto';
 
@@ -30,6 +37,27 @@ const SUBMISSION_SELECT = {
     select: { id: true, originalName: true, contentType: true, sizeBytes: true, position: true },
   },
 } satisfies Prisma.SubmissionSelect;
+
+const READ_SELECT = {
+  id: true,
+  activityId: true,
+  studentId: true,
+  submittedAt: true,
+  isLate: true,
+  files: {
+    orderBy: { position: 'asc' },
+    select: {
+      id: true,
+      storageKey: true,
+      originalName: true,
+      contentType: true,
+      sizeBytes: true,
+      position: true,
+    },
+  },
+} satisfies Prisma.SubmissionSelect;
+
+type ReadRow = Prisma.SubmissionGetPayload<{ select: typeof READ_SELECT }>;
 
 type SubmissionRow = Prisma.SubmissionGetPayload<{ select: typeof SUBMISSION_SELECT }>;
 
@@ -124,6 +152,7 @@ export class SubmissionsService {
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
+    @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
 
   /**
@@ -176,6 +205,80 @@ export class SubmissionsService {
       return this.resolveExisting(outcome.row, key);
     }
     return { submission: toResponse(outcome.row), created: true };
+  }
+
+  /**
+   * The calling student's own submission to an activity, with fresh signed download URLs. The
+   * activity resolves exactly as for submitting (404 hidden, 403 non-student member); a student
+   * who has not submitted yet gets 404 `Submission not found`.
+   */
+  async readOwn(actorId: string, activityId: string): Promise<SubmissionDownloadResponseDto> {
+    const activity = await this.loadSubmittableActivity(actorId, activityId);
+    const row = await this.prisma.submission.findUnique({
+      where: { activityId_studentId: { activityId: activity.id, studentId: actorId } },
+      select: READ_SELECT,
+    });
+    if (!row) throw this.submissionNotFound();
+    return this.withDownloadUrls(row);
+  }
+
+  /**
+   * A submission by id for its own student or for teacher-level staff of the activity's
+   * classroom (teacher, school Owner or Admin: the `TEACHER` level of `verifyClassroomAccess`).
+   * Everyone else gets the same 404 as for an id that does not exist: another student, a linked
+   * parent (parents see the grade of the child, never the files, per activities-and-grading),
+   * a non-member, a malformed id, or a submission whose activity was deleted.
+   */
+  async readById(actorId: string, submissionId: string): Promise<SubmissionDownloadResponseDto> {
+    if (!UUID_PATTERN.test(submissionId)) throw this.submissionNotFound();
+    const row = await this.prisma.submission.findFirst({
+      where: { id: submissionId, activity: { deletedAt: null } },
+      select: { ...READ_SELECT, activity: { select: { classroomId: true } } },
+    });
+    if (!row) throw this.submissionNotFound();
+    const { activity, ...submission } = row;
+
+    let role: ClassroomAccessRole;
+    try {
+      ({ myRole: role } = await this.access.verifyClassroomAccess(actorId, activity.classroomId));
+    } catch (error) {
+      if (error instanceof NotFoundException) throw this.submissionNotFound();
+      throw error;
+    }
+    const isStaff = role === 'OWNER' || role === 'ADMIN' || role === 'TEACHER';
+    const isOwner = role === 'STUDENT' && submission.studentId === actorId;
+    if (!isStaff && !isOwner) throw this.submissionNotFound();
+    return this.withDownloadUrls(submission);
+  }
+
+  /**
+   * Signs every file with the configured lifetime. The expiry is computed from the instant taken
+   * before signing, so it never overstates how long a URL lives.
+   */
+  private async withDownloadUrls(row: ReadRow): Promise<SubmissionDownloadResponseDto> {
+    const ttlSeconds = this.config.storageSignedUrlTtlSeconds;
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    const files = await Promise.all(
+      row.files.map(async (file) => ({
+        id: file.id,
+        originalName: file.originalName,
+        contentType: file.contentType,
+        sizeBytes: file.sizeBytes,
+        position: file.position,
+        downloadUrl: await this.storage.getSignedDownloadUrl(file.storageKey, {
+          expiresInSeconds: ttlSeconds,
+        }),
+        downloadUrlExpiresAt: expiresAt,
+      })),
+    );
+    return {
+      id: row.id,
+      activityId: row.activityId,
+      submittedAt: row.submittedAt.toISOString(),
+      isLate: row.isLate,
+      status: 'submitted',
+      files,
+    };
   }
 
   /**
@@ -332,5 +435,9 @@ export class SubmissionsService {
 
   private notFound(): NotFoundException {
     return new NotFoundException('Activity not found');
+  }
+
+  private submissionNotFound(): NotFoundException {
+    return new NotFoundException('Submission not found');
   }
 }
