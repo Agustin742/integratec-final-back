@@ -85,3 +85,18 @@ ALTER TABLE "options" ADD CONSTRAINT "options_question_id_fkey" FOREIGN KEY ("qu
 ALTER TABLE "activities"
 ADD CONSTRAINT "activities_max_score_check"
 CHECK ("max_score" BETWEEN 0 AND 100);
+
+-- Agreed multiplier domain is 0.5-3; DECIMAL(3,2) alone would allow up to 9.99.
+ALTER TABLE "activities"
+ADD CONSTRAINT "activities_weight_multiplier_check"
+CHECK ("weight_multiplier" BETWEEN 0.5 AND 3);
+
+-- The availability window must open strictly before the due date (NULL opens_at means open now).
+ALTER TABLE "activities"
+ADD CONSTRAINT "activities_window_check"
+CHECK ("opens_at" IS NULL OR "opens_at" < "due_at");
+
+-- A published activity always records when it was published.
+ALTER TABLE "activities"
+ADD CONSTRAINT "activities_published_at_check"
+CHECK ("state" <> 'published' OR "published_at" IS NOT NULL);

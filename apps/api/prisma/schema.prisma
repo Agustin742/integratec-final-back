@@ -360,8 +360,9 @@ model ActivityMetric {
 
 /// Academic activity (TP or exam) published by a teacher to a classroom. It is unrelated to
 /// ActivityMetric, which aggregates connected time. Deletion is always logical (`deletedAt`).
-/// `maxScore` is bounded to 0-100 by a CHECK constraint; `weightMultiplier` bounds are
-/// validated in the service. Instants are UTC.
+/// Invariants enforced by CHECK constraints in the database (and validated again in the service):
+/// `maxScore` 0-100, `weightMultiplier` 0.5-3, `opensAt` (when set) strictly before `dueAt`, and
+/// `publishedAt` required whenever `state` is PUBLISHED. Instants are UTC.
 model Activity {
   id               String         @id @default(uuid()) @db.Uuid
   classroomId      String         @map("classroom_id") @db.Uuid
