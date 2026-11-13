@@ -497,6 +497,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       };
       let closed = false;
       return {
+        queued,
         async waitForQueue(count: number) {
           for (let i = 0; i < 200; i++) {
             if ((await queued()) >= count) return;
@@ -518,17 +519,25 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       const activityId = await publishedActivity();
       const lock = await holdRowLock(activityId, { mode: 'SHARE' });
       try {
-        const both = Promise.all([
-          submit(activityId, { actor: s1 }).then((res) => res),
-          submit(activityId, { actor: s2 }).then((res) => res),
-        ]);
-        const outcome = await Promise.race([
-          both,
-          new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 8_000)),
-        ]);
-        // Completed while another transaction still holds a shared lock on the activity row.
-        expect(outcome).not.toBe('blocked');
-        expect((outcome as { status: number }[]).map((r) => r.status)).toEqual([201, 201]);
+        // The shared lock is held until the finally block, so both requests finishing here proves
+        // they did not wait for it. The timeout only turns a hang into a failure, it asserts nothing.
+        let guard!: NodeJS.Timeout;
+        const hang = new Promise<never>((_, reject) => {
+          guard = setTimeout(
+            () => reject(new Error('submits blocked behind a shared lock')),
+            15_000,
+          );
+        });
+        const responses = await Promise.race([
+          Promise.all([
+            submit(activityId, { actor: s1 }).then((res) => res),
+            submit(activityId, { actor: s2 }).then((res) => res),
+          ]),
+          hang,
+        ]).finally(() => clearTimeout(guard));
+        expect(responses.map((r) => r.status)).toEqual([201, 201]);
+        // Postgres agrees: no backend is waiting on the lock holder, which is still holding it.
+        expect(await lock.queued()).toBe(0);
       } finally {
         await lock.release();
       }
@@ -545,8 +554,8 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
           settled = true;
           return res;
         });
+        // pg_blocking_pids shows the submit's backend waiting on the holder: it cannot have settled.
         await lock.waitForQueue(1);
-        await new Promise((resolve) => setTimeout(resolve, 300));
         expect(settled).toBe(false);
         await lock.release();
         expect((await pending).status).toBe(201);

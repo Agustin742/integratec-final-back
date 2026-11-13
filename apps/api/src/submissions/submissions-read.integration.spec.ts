@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, RegistrationPath } from '@prisma/client';
+import { ClassroomRole, RegistrationPath, SchoolRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -27,11 +27,34 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
   let app: INestApplication;
   let prisma: PrismaService;
   const storage = new InMemoryStorage();
-  const [teacher, s1, s2, stranger, parent, other, sElsewhere] = Array.from({ length: 7 }, () =>
-    randomUUID(),
-  );
-  const users = [teacher, s1, s2, stranger, parent, other, sElsewhere];
-  const [classroomA, classroomB] = [randomUUID(), randomUUID()];
+  const [
+    teacher,
+    s1,
+    s2,
+    stranger,
+    parent,
+    other,
+    sElsewhere,
+    owner,
+    admin,
+    schoolTeacher,
+    sSchool,
+  ] = Array.from({ length: 11 }, () => randomUUID());
+  const users = [
+    teacher,
+    s1,
+    s2,
+    stranger,
+    parent,
+    other,
+    sElsewhere,
+    owner,
+    admin,
+    schoolTeacher,
+    sSchool,
+  ];
+  const school = randomUUID();
+  const [classroomA, classroomB, classroomC] = [randomUUID(), randomUUID(), randomUUID()];
   let fixtureReady = false;
   const token = (actor: string) => `Bearer submissions-read-test:${actor}`;
 
@@ -141,8 +164,20 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
           registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
         })),
       });
+      await tx.school.create({
+        data: { id: school, name: `Read ${school}`, slug: `read-${school}` },
+      });
+      await tx.schoolMember.createMany({
+        data: [
+          { schoolId: school, userId: owner, role: SchoolRole.OWNER },
+          { schoolId: school, userId: admin, role: SchoolRole.ADMIN },
+          // A school teacher who is not a member of classroom C: no authority over it.
+          { schoolId: school, userId: schoolTeacher, role: SchoolRole.TEACHER },
+        ],
+      });
       await tx.classroom.createMany({
         data: [
+          { id: classroomC, name: `Read C ${classroomC}`, schoolId: school },
           { id: classroomA, name: `Read A ${classroomA}`, independentTeacherId: teacher },
           { id: classroomB, name: `Read B ${classroomB}`, independentTeacherId: other },
         ],
@@ -152,6 +187,7 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
           { classroomId: classroomA, userId: s1, role: ClassroomRole.STUDENT },
           { classroomId: classroomA, userId: s2, role: ClassroomRole.STUDENT },
           { classroomId: classroomB, userId: sElsewhere, role: ClassroomRole.STUDENT },
+          { classroomId: classroomC, userId: sSchool, role: ClassroomRole.STUDENT },
         ],
       });
       await tx.parentLink.create({
@@ -168,7 +204,7 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
   afterAll(async () => {
     try {
       if (fixtureReady) {
-        const classrooms = [classroomA, classroomB];
+        const classrooms = [classroomA, classroomB, classroomC];
         await prisma.$transaction(async (tx) => {
           const activity = { classroomId: { in: classrooms } };
           await tx.submissionFile.deleteMany({ where: { submission: { activity } } });
@@ -177,6 +213,8 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
           await tx.parentLink.deleteMany({ where: { classroomId: { in: classrooms } } });
           await tx.classroomMembership.deleteMany({ where: { classroomId: { in: classrooms } } });
           await tx.classroom.deleteMany({ where: { id: { in: classrooms } } });
+          await tx.schoolMember.deleteMany({ where: { schoolId: school } });
+          await tx.school.deleteMany({ where: { id: school } });
           await tx.user.deleteMany({ where: { id: { in: users } } });
         });
       }
@@ -281,6 +319,15 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
       }
     });
 
+    it('fails with a server error, not a partial body, when a URL cannot be signed', async () => {
+      const activityId = await activityOf();
+      await submissionOf(activityId, s1);
+      storage.failOn('getSignedDownloadUrl');
+      const res = await getMine(activityId).expect(500);
+      expect(res.body.files).toBeUndefined();
+      expect(res.body.id).toBeUndefined();
+    });
+
     it('requires authentication', async () => {
       const activityId = await activityOf();
       await request(app.getHttpServer())
@@ -325,6 +372,25 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
         const res = await getById(stored.id, actor).expect(404);
         expect(res.body.error.code).toBe('NOT_FOUND');
       }
+    });
+
+    it('lets the school Owner and Admin of the classroom read it (teacher-level authority)', async () => {
+      const activityId = await activityOf('PUBLISHED', classroomC);
+      const stored = await submissionOf(activityId, sSchool, classroomC);
+      for (const actor of [owner, admin]) {
+        const res = await getById(stored.id, actor).expect(200);
+        expect(res.body.id).toBe(stored.id);
+        expect(res.body.files.map((f: { downloadUrl: string }) => f.downloadUrl)).toEqual(
+          stored.keys.map((key) => `https://storage.test/${key}?expiresIn=${TTL_SECONDS}`),
+        );
+      }
+    });
+
+    it('answers 404 to a school teacher who does not teach the classroom (the only other staff-like role)', async () => {
+      const activityId = await activityOf('PUBLISHED', classroomC);
+      const stored = await submissionOf(activityId, sSchool, classroomC);
+      const res = await getById(stored.id, schoolTeacher).expect(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
     });
 
     it('answers 404 to a linked parent: parents see the grade of the child, never the files', async () => {
