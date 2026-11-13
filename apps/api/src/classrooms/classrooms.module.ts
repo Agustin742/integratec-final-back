@@ -7,6 +7,7 @@ import { ClassroomInvitationCreatedHandler } from './classroom-invitation-create
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { ClassroomsController } from './classrooms.controller';
 import { ClassroomsService } from './classrooms.service';
+import { ClassroomDesksModule } from './desks/desks.module';
 import { InvitationsController } from './invitations.controller';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
 import { MeClassroomsController } from './me-classrooms.controller';
@@ -23,6 +24,7 @@ import { ClassroomRosterModule } from './roster/roster.module';
     ClassroomRosterModule,
     ClassroomDirectoryModule,
     ClassroomRemovalModule,
+    ClassroomDesksModule,
   ],
   controllers: [ClassroomsController, MeClassroomsController, InvitationsController],
   providers: [

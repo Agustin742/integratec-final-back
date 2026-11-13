@@ -20,7 +20,12 @@ backend/
 
 - [Private student roster](docs/classroom-roster.md): `GET /classrooms/:id/roster`, paginated student state and guardian links for classroom staff only; separate from the D12 mention directory.
 - [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
-- The transactional outbox records `classroom.membership.removed`; live-room disconnection remains a separate transport follow-up.
+- The transactional outbox records `classroom.membership.removed`; the realtime eviction handler consumes it to disconnect the removed student's live connections in that classroom.
+
+## Classroom desk map
+
+- [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
+- [Resource authorization test pattern](docs/resource-authorization-testing.md): reusable public-request assertions for resource ID tampering and untrusted object interaction context.
 
 ## Local setup and development
 
@@ -170,7 +175,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 The `INTERNAL_SERVICE_SECRET` placeholder is deliberately too short to validate, so a service cannot start with it. Use the same value in the API and the realtime server.
 
-Service-to-service calls to the API send it in the `x-internal-service-secret` header. The only internal route today is `POST /internal/realtime/join-verification` (body `{ accessToken, classroomId }`), which the realtime server calls from `onAuth`; it is excluded from the public OpenAPI document and must not be routed by the reverse proxy (Caddy must never expose `/internal/*`; this is infrastructure work). If the internal call fails, times out, or returns a malformed response, the realtime server rejects the join (fail closed).
+Service-to-service calls to the API send it in the `x-internal-service-secret` header. The internal routes are `POST /internal/realtime/join-verification` (body `{ accessToken, classroomId }`), which the realtime server calls from `onAuth`, and `POST /internal/realtime/access-reverification` (body `{ userId, sessionId, classroomId }`, no token), which it calls when a dropped connection comes back inside the reconnection window and, since the seat reserved at `onAuth` can be consumed up to about 15 seconds later without a new token, once more when the join is admitted in `onJoin` (one extra API call per join). A third, `POST /internal/realtime/connected-time` (body `{ userId, classroomId, connectedSeconds, endedAt }`), receives the aggregate connected time when a user's presence ends and adds it to the per-user, per-classroom, per-UTC-day `activity_metrics` row (one row per day, never per movement or session). All three are excluded from the public OpenAPI document and must not be routed by the reverse proxy (Caddy must never expose `/internal/*`; this is infrastructure work). If a verification call fails, times out, or returns a malformed response, the realtime server rejects the join or the reconnection (fail closed; at admission, `4001` for a denial and the retryable `4100` for an unverifiable check); a failed connected-time report is logged without personal data and not retried.
+
+The flow in the other direction is `POST /internal/evictions` on the realtime server (body `{ userId, classroomId?, sessionId? }`, same `x-internal-service-secret` header, `204` whether or not anything matched). The API records an outbox event when a session is revoked (logout, refresh token reuse, password reset) and when a student is removed from a classroom (the `classroom.membership.removed` event that `ClassroomRemovalService` already records, which the eviction handler also consumes; any other membership deactivation must call `RealtimeEventsRecorder.recordClassroomAccessRevoked` in its transaction); the event handler calls that route, which closes the user's connections with code `4001`, refuses joins whose admission check is still in flight (a seat reserved before the revocation), and blocks their reconnection. Eviction events get their own retry budget of 12 attempts (5 s doubling, about 2.8 hours), longer than `OUTBOX_MAX_ATTEMPTS`, so a realtime restart or an outage of a few hours does not lose an eviction. An eviction that still fails is marked failed and logged at error level (`realtime.eviction.undelivered`), and each failed call logs its kind (`http` with the status, `timeout`, or `unreachable`) as `realtime.eviction.failed`; there is no periodic fallback, so a revoked connection can stay open after a longer outage until it reconnects (reconnection re-verifies access). The route lives on the realtime port, so the reverse proxy must route only the matchmaking and WebSocket paths there, never `/internal/*`.
 
 The client sets the access token with the Colyseus SDK (`client.auth.token`); it arrives as `Authorization: Bearer <access token>` on the matchmake request and as the `token` argument of `onAuth`. Join options carry only `classroomId`; the token is never read from options or URLs (see [D2](./docs/technical-justification.md#d2-nestjs-and-colyseus-integration)).
 
@@ -191,6 +198,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `INVITATION_TTL`          | Default `7d`; same format                         | Default invitation lifetime                                              | Public         | Yes     |
 | `OUTBOX_POLL_INTERVAL`    | Default `5s`; same format                         | How often the outbox dispatcher looks for pending events (not polled when `NODE_ENV=test`) | Public | Yes |
 | `OUTBOX_MAX_ATTEMPTS`     | Default `5`; integer 1-20                         | Delivery attempts per outbox event before it is marked failed            | Public         | Yes     |
+| `REALTIME_INTERNAL_URL`   | Required in production; default `http://localhost:2567`; absolute `http(s)` URL | Base URL of the realtime server on the private network, called to close the live connections of users who lose access | Private | Yes |
 | `AUTH_DATA_RETENTION`     | Default `30d`; same format; not shorter than `REFRESH_TOKEN_TTL` | How long past expiry (or rotation/use) sessions, rotated refresh tokens and reset tokens are kept before cleanup | Public | Yes |
 | `AUTH_CLEANUP_INTERVAL`   | Default `24h`, max `7d`; same format              | Pause between auth data cleanup runs (not scheduled when `NODE_ENV=test`) | Public         | Yes     |
 | `AUTH_CLEANUP_BATCH_SIZE` | Default `1000`; integer 1-10000                   | Maximum rows removed by one cleanup `DELETE` statement                   | Public         | Yes     |
@@ -214,6 +222,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `PORT`                    | Default `2567`; integer 1-65535                   | Colyseus and HTTP listen port                                            | Public         | Yes     |
 | `API_INTERNAL_URL`        | Required; absolute `http(s)` URL                  | Base URL of the API for internal calls                                   | Private        | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
+| `RECONNECTION_WINDOW_SECONDS` | Default `20`; integer 1-120                   | Seconds a dropped connection may reconnect before its avatar is removed  | Public         | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 
@@ -255,7 +264,7 @@ onModuleInit() {
 ```
 
 - Delivery is **at-least-once**: handlers **must be idempotent** (deduplicate on `event.id`). Throw to request a retry; never put personal data in the error, it is stored in `lastError`.
-- Retries back off 5s, 10s, 20s... up to 1h, for `OUTBOX_MAX_ATTEMPTS` attempts. An exhausted event keeps `failedAt` and stays in the table for inspection.
+- Retries back off 5s, 10s, 20s... up to 1h, for `OUTBOX_MAX_ATTEMPTS` attempts, unless the event type sets its own budget (realtime evictions use 12) and an exhaustion hook. An exhausted event keeps `failedAt` and stays in the table for inspection.
 - An event type with no registered handler counts as a failed attempt (it is not dropped), so a missing registration never loses events silently.
 - Handlers run outside any transaction with a 30s timeout; a timeout is a failed attempt. A claimed row is leased for 5 minutes, so a crashed process only delays redelivery.
 - Polling is off when `NODE_ENV=test`; tests call `OutboxDispatcher.dispatchPending()` explicitly.

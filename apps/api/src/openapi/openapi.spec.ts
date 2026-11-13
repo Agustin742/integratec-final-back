@@ -26,6 +26,7 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-secret-for-tests-only-0000',
   jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
   invitationTokenKey: Buffer.alloc(32, 1),
@@ -95,6 +96,36 @@ describe('OpenAPI document', () => {
     );
     // The enum is generated from the single source of truth, not retyped.
     expect(schemas.ErrorCode).toMatchObject({ enum: Object.values(ERROR_CODES) });
+  });
+
+  it('registers the protected, complete desk-map contract without directory data', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const operation = doc.paths['/classrooms/{id}/desks']?.get;
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(operation?.responses ?? {})).toEqual(['200', '401', '403', '404']);
+    expect(operation?.parameters).toEqual([
+      expect.objectContaining({ name: 'id', in: 'path', required: true }),
+    ]);
+    expect(operation?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/ClassroomDeskMapDto' } },
+      },
+    });
+    const desk = doc.components?.schemas?.ClassroomDeskDto;
+    expect(desk).toMatchObject({
+      required: ['id', 'deskIndex', 'membershipId', 'userId'],
+      properties: {
+        membershipId: { type: 'string', format: 'uuid', nullable: true },
+        userId: { type: 'string', format: 'uuid', nullable: true },
+      },
+    });
+    expect(desk && 'properties' in desk && Object.keys(desk.properties ?? {})).toEqual([
+      'id',
+      'deskIndex',
+      'membershipId',
+      'userId',
+    ]);
   });
 
   it('serves the JSON document and the Scalar UI outside production', async () => {

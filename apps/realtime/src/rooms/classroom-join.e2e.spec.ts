@@ -14,9 +14,13 @@ const IDENTITY = {
   userId: '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01',
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   role: 'STUDENT',
+  displayName: 'Ada Lovelace',
 };
 
-/** Stub of the NestJS endpoint: the token is valid only for classroom A. */
+/**
+ * Stub of the NestJS endpoints: the token is valid only for classroom A, and so is the user's
+ * access when it is checked again at admission.
+ */
 function startStubApi(): Promise<{ server: HttpServer; url: string; calls: string[] }> {
   const calls: string[] = [];
   const server = createServer((req, res) => {
@@ -24,10 +28,11 @@ function startStubApi(): Promise<{ server: HttpServer; url: string; calls: strin
     req.on('data', (chunk: Buffer) => (raw += chunk.toString()));
     req.on('end', () => {
       calls.push(raw);
-      const body = JSON.parse(raw) as { accessToken: string; classroomId: string };
+      const body = JSON.parse(raw) as { accessToken?: string; classroomId: string };
+      const reverification = req.url === '/internal/realtime/access-reverification';
       const authorized =
         req.headers['x-internal-service-secret'] === SECRET &&
-        body.accessToken === GOOD_TOKEN &&
+        (reverification || body.accessToken === GOOD_TOKEN) &&
         body.classroomId === CLASSROOM_A;
       res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' });
       res.end(JSON.stringify(authorized ? { ...IDENTITY, classroomId: CLASSROOM_A } : {}));
@@ -72,7 +77,15 @@ describe('ClassroomRoom join (real Colyseus server + stub API)', () => {
     expect(room.sessionId).toBeTruthy();
     const serverRoom = colyseus.getRoomById(room.roomId);
     expect(serverRoom.clients).toHaveLength(1);
-    expect(serverRoom.clients[0].auth).toMatchObject({ ...IDENTITY, classroomId: CLASSROOM_A });
+    expect(serverRoom.clients[0].auth).toMatchObject({
+      userId: IDENTITY.userId,
+      authSessionId: IDENTITY.sessionId,
+      role: IDENTITY.role,
+      displayName: IDENTITY.displayName,
+      classroomId: CLASSROOM_A,
+    });
+    // The Colyseus connection id must stay independent of the account session id.
+    expect(serverRoom.clients[0].sessionId).not.toBe(IDENTITY.sessionId);
   });
 
   it('rejects a join without a token', async () => {

@@ -35,7 +35,7 @@ One Prisma transaction:
 }
 ```
 
-Only the winning conditional transition records an event. Duplicate/concurrent losers do not rewrite timestamps or create events. A failure rolls back membership, desk, links and event together. Subsequent classroom HTTP reads return `404` for the student and a parent whose last active child link was removed.
+The realtime eviction handler consumes this event and closes the removed student's live connections in that classroom (same outbox retry budget as other evictions). Only the winning conditional transition records an event. Duplicate/concurrent losers do not rewrite timestamps or create events. A failure rolls back membership, desk, links and event together. Subsequent classroom HTTP reads return `404` for the student and a parent whose last active child link was removed.
 
 Historical memberships already INACTIVE or with nonnull `deletedAt` are terminal no-ops, including legacy INACTIVE rows without `deletedAt`. Repeating DELETE does not repair pre-existing inconsistent desks/links, reactivate, or reenroll. Such repair requires separate authorization.
 

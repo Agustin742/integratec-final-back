@@ -1,7 +1,12 @@
 import type { ClassroomJoinOptions } from '@aula/contracts';
 import { ServerError } from '@colyseus/core';
 import { z } from 'zod';
-import type { JoinVerifier, VerifiedJoin } from '../join/join-verifier';
+import {
+  toClassroomAuth,
+  type ClassroomAuth,
+  type JoinVerifier,
+  type VerifiedJoin,
+} from '../join/join-verifier';
 
 const UNAUTHORIZED = 401;
 const BAD_REQUEST = 400;
@@ -18,13 +23,14 @@ export function parseClassroomId(options: unknown): string | undefined {
 /**
  * Authenticates one join attempt. `token` is the Colyseus-native credential (the `Authorization`
  * header of the matchmake request); it is never read from `options`. Every denial is a
- * `ServerError` with a generic message so the client cannot tell why it was refused.
+ * `ServerError` with a generic message so the client cannot tell why it was refused. The result
+ * becomes `client.auth`.
  */
 export async function authenticateJoin(
   verifier: JoinVerifier,
   token: string | undefined,
   options: unknown,
-): Promise<VerifiedJoin> {
+): Promise<ClassroomAuth> {
   if (typeof token !== 'string' || token.trim() === '') {
     throw new ServerError(UNAUTHORIZED, 'Unauthorized');
   }
@@ -42,5 +48,5 @@ export async function authenticateJoin(
   if (identity.classroomId !== classroomId) {
     throw new ServerError(UNAUTHORIZED, 'Unauthorized');
   }
-  return identity;
+  return toClassroomAuth(identity);
 }

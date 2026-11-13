@@ -20,6 +20,25 @@ Frontend and backend must agree on observable contracts before either side treat
 - Frontend adapters **MUST** handle invalid or unsupported responses without silently treating them as valid domain data.
 - Mocks **MUST** reflect an identified contract and include relevant failures. A passing mock **MUST NOT** be claimed as proof of backend integration.
 
+## Realtime contract
+
+Approved by Agustin on 2026-11-10 ([D14](../docs/technical-justification.md#d14-realtime-presence-and-movement-policy)); the room behavior is in [Realtime and presence](./realtime-and-presence.md). The types live in `packages/contracts` and the room state types are generated with `@colyseus/schema` codegen.
+
+| Direction | Name | Kind | Payload | Failure or handling |
+|---|---|---|---|---|
+| Client to server | `avatar:input` | Command (no acknowledgement) | `{ x: number, z: number }`, each in `[-1, 1]`; `{ x: 0, z: 0 }` stops the avatar | A payload that fails validation closes the connection (Colyseus closes with its own code `4002`); a message over 30 per second per connection is dropped silently; a frozen avatar ignores it |
+| Server to client | state patches of `ClassroomState.avatars` | Notification | `MapSchema<Avatar>` keyed by `userId`; `Avatar { userId, displayName, role, x, z, rotation, status: 'online' \| 'reconnecting' }` | The newest state wins; there is nothing to reorder or deduplicate |
+
+| Close code | Constant | Meaning | Client action |
+|---|---|---|---|
+| `4001` | `CLOSE_CODE_ACCESS_REVOKED` | Access was revoked (membership removed or session ended); the close reason is `access_revoked` | Do not reconnect; refresh the session or leave the classroom |
+| `4002` | `CLOSE_CODE_TOO_MANY_CONNECTIONS` | The user already holds 3 connections; the close reason is `too_many_connections` | Do not retry automatically; close another screen first |
+| `4100` | `CLOSE_CODE_VERIFICATION_UNAVAILABLE` | A reconnection could not be verified because the API was unreachable, slow, or failing; the close reason is `verification_unavailable`. It says nothing about the user's access | Offer a retry (a fresh join, because the held connection is gone); do not show it as revoked access |
+
+Colyseus itself uses `4001` for a server shutdown and `4002` for protocol errors (an invalid message or a failed join). The close **reason** disambiguates: only the values above mean revoked access or too many connections. `4100` is outside every code Colyseus uses (`4000` to `4003` and `4010`). The frontend **MUST** read the reason, not only the code.
+
+The classroom layout (bounds and obstacle boxes) that the server uses for collisions is exported from `packages/contracts` (`CLASSROOM_LAYOUT`) so the frontend scene and the server agree. It is temporary and shared by every classroom until per-classroom layouts replace it (issue #79).
+
 ## Compatibility and verification
 
 - Producers **MUST** coordinate incompatible changes with consumers before adoption; adding a field **MUST NOT** silently change existing field meanings.

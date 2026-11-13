@@ -2,7 +2,10 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ClassroomRole, MembershipState, type Prisma } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { AccessVerificationService } from '../../access/access-verification.service';
+import {
+  AccessVerificationService,
+  deriveClassroomAccessRole,
+} from '../../access/access-verification.service';
 import { paginated, toSkipTake, type Paginated } from '../../http/pagination/paginated';
 import { PrismaService } from '../../prisma/prisma.service';
 import { compatibilityErrors } from '../../users/avatar-access.port';
@@ -37,12 +40,31 @@ export class ClassroomDirectoryService {
       );
     }
 
+    const schoolId = access.classroom.schoolId;
+
     const memberships = await this.prisma.classroomMembership.findMany({
       where: {
         classroomId,
         state: MembershipState.ACTIVE,
         deletedAt: null,
-        role: { in: [ClassroomRole.STUDENT, ClassroomRole.TEACHER] },
+        ...(schoolId === null
+          ? { role: { in: [ClassroomRole.STUDENT, ClassroomRole.TEACHER] } }
+          : {
+              OR: [
+                { role: ClassroomRole.STUDENT },
+                {
+                  role: ClassroomRole.TEACHER,
+                  user: {
+                    schoolMemberships: {
+                      some: {
+                        schoolId,
+                        state: MembershipState.ACTIVE,
+                      },
+                    },
+                  },
+                },
+              ],
+            }),
       },
       select: {
         role: true,
@@ -51,18 +73,43 @@ export class ClassroomDirectoryService {
             id: true,
             displayName: true,
             avatarConfig: { select: { appearance: true } },
+            ...(schoolId !== null
+              ? {
+                  schoolMemberships: {
+                    where: { schoolId, state: MembershipState.ACTIVE },
+                    select: { role: true },
+                    take: 1,
+                  },
+                }
+              : {}),
           },
         },
       },
     });
 
-    const members: ClassroomMemberDto[] = memberships.map((m) => ({
-      id: m.user.id,
-      userId: m.user.id,
-      displayName: m.user.displayName,
-      role: m.role as ClassroomMemberRole,
-      avatar: this.readAppearance(m.user.avatarConfig?.appearance),
-    }));
+    const members: ClassroomMemberDto[] = [];
+    for (const m of memberships) {
+      const schoolRole =
+        'schoolMemberships' in m.user && Array.isArray(m.user.schoolMemberships)
+          ? (m.user.schoolMemberships[0]?.role ?? null)
+          : null;
+      const derivedRole = deriveClassroomAccessRole({
+        actorUserId: m.user.id,
+        classroom: access.classroom,
+        schoolRole,
+        membershipRole: m.role,
+        hasActiveParentLink: false,
+      });
+      if (derivedRole === null) continue;
+
+      members.push({
+        id: m.user.id,
+        userId: m.user.id,
+        displayName: m.user.displayName,
+        role: m.role as ClassroomMemberRole,
+        avatar: this.readAppearance(m.user.avatarConfig?.appearance),
+      });
+    }
 
     const existingUserIds = new Set(members.map((m) => m.userId));
 

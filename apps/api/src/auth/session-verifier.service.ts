@@ -35,20 +35,27 @@ export class SessionVerifier {
   /** Verifies a bare access token. */
   async verifyToken(token: string): Promise<VerifiedSession> {
     const claims = await this.readClaims(token);
+    return this.verifySession(claims.sub, claims.sid);
+  }
 
+  /**
+   * Checks a session that was already verified once (the realtime server keeps the ids, not the
+   * token): it must still exist, belong to `userId`, not be revoked and not have expired.
+   */
+  async verifySession(userId: string, sessionId: string): Promise<VerifiedSession> {
     const session = await this.prisma.session.findUnique({
-      where: { id: claims.sid },
+      where: { id: sessionId },
       select: { userId: true, expiresAt: true, revokedAt: true },
     });
     if (
       session === null ||
-      session.userId !== claims.sub ||
+      session.userId !== userId ||
       session.revokedAt !== null ||
       session.expiresAt.getTime() <= Date.now()
     ) {
       throw new UnauthorizedException();
     }
-    return { userId: session.userId, sessionId: claims.sid };
+    return { userId: session.userId, sessionId };
   }
 
   private async readClaims(token: string): Promise<AccessTokenClaims> {

@@ -53,6 +53,7 @@ describe('ClassroomInvitationsService', () => {
     invitationTtlSeconds: 604800, // 7 days
     outboxPollIntervalSeconds: 5,
     outboxMaxAttempts: 5,
+    realtimeInternalUrl: 'http://localhost:2567',
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
     invitationTokenKey: Buffer.alloc(32, 7),

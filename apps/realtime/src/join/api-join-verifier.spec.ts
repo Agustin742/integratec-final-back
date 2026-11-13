@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiJoinVerifier } from './api-join-verifier';
-import { JoinDeniedError } from './join-verifier';
+import { JoinDeniedError, JoinVerificationUnavailableError } from './join-verifier';
 
 const SECRET = 'test-only-secret-with-at-least-32-characters';
 const TOKEN = 'super-secret-access-token';
@@ -10,6 +10,7 @@ const IDENTITY = {
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   classroomId: CLASSROOM_ID,
   role: 'TEACHER',
+  displayName: 'Ada Lovelace',
 };
 
 const json = (status: number, body: unknown): Response =>
@@ -86,6 +87,9 @@ describe('ApiJoinVerifier', () => {
     ['an unknown role', json(200, { ...IDENTITY, role: 'ROOT' })],
     ['a parent role (no live access)', json(200, { ...IDENTITY, role: 'PARENT' })],
     ['a missing sessionId', json(200, { ...IDENTITY, sessionId: undefined })],
+    ['a missing displayName', json(200, { ...IDENTITY, displayName: undefined })],
+    ['an empty displayName', json(200, { ...IDENTITY, displayName: '' })],
+    ['an oversized displayName', json(200, { ...IDENTITY, displayName: 'x'.repeat(101) })],
   ])('denies a 200 response with %s', async (_label, response) => {
     const fetchImpl = vi.fn().mockResolvedValue(response);
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(
@@ -109,6 +113,87 @@ describe('ApiJoinVerifier', () => {
     expect(String(error.message)).not.toContain(TOKEN);
     expect(String(error.message)).not.toContain(SECRET);
     expect(error.cause).toBeUndefined();
+  });
+
+  describe('reverify', () => {
+    const REQUEST = {
+      userId: IDENTITY.userId,
+      authSessionId: IDENTITY.sessionId,
+      classroomId: CLASSROOM_ID,
+    };
+
+    it('posts the verified ids, never a token, and returns the current identity', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(200, IDENTITY));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).resolves.toEqual(IDENTITY);
+
+      const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://api.internal:3000/internal/realtime/access-reverification');
+      expect(new Headers(init.headers).get('x-internal-service-secret')).toBe(SECRET);
+      expect(JSON.parse(init.body as string)).toEqual({
+        userId: IDENTITY.userId,
+        sessionId: IDENTITY.sessionId,
+        classroomId: CLASSROOM_ID,
+      });
+    });
+
+    it.each([400, 401, 403, 404])('denies on a definitive %i answer', async (status) => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(status, {}));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinDeniedError,
+      );
+    });
+
+    it.each([408, 429, 500, 502, 503, 504])(
+      'reports the verification as unavailable on a %i response',
+      async (status) => {
+        const fetchImpl = vi.fn().mockResolvedValue(json(status, {}));
+        await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+          JoinVerificationUnavailableError,
+        );
+      },
+    );
+
+    it('reports the verification as unavailable when the network call fails', async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinVerificationUnavailableError,
+      );
+    });
+
+    it('reports the verification as unavailable when the API does not answer in time', async () => {
+      const fetchImpl = vi.fn(
+        (_url: string, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('aborted', 'AbortError')),
+            );
+          }),
+      ) as unknown as typeof fetch;
+      await expect(makeVerifier(fetchImpl, 20).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinVerificationUnavailableError,
+      );
+    });
+
+    it('carries no cause or sensitive text in the unavailable error', async () => {
+      const fetchImpl = vi.fn().mockRejectedValue(new Error(`boom ${SECRET}`));
+      const error = (await makeVerifier(fetchImpl)
+        .reverify(REQUEST)
+        .catch((e: unknown) => e)) as Error;
+      expect(error.message).not.toContain(SECRET);
+      expect(error.cause).toBeUndefined();
+    });
+
+    it.each([
+      ['another user', { ...IDENTITY, userId: '11111111-1111-4111-8111-111111111111' }],
+      ['another session', { ...IDENTITY, sessionId: '11111111-1111-4111-8111-111111111111' }],
+      ['another classroom', { ...IDENTITY, classroomId: '11111111-1111-4111-8111-111111111111' }],
+      ['a malformed body', { nope: true }],
+    ])('denies an answer for %s', async (_label, body) => {
+      const fetchImpl = vi.fn().mockResolvedValue(json(200, body));
+      await expect(makeVerifier(fetchImpl).reverify(REQUEST)).rejects.toBeInstanceOf(
+        JoinDeniedError,
+      );
+    });
   });
 
   describe('verification URL', () => {

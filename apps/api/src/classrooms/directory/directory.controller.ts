@@ -25,7 +25,7 @@ export class ClassroomDirectoryController {
   @ApiOperation({
     summary: 'List classroom member directory readable by members',
     description:
-      'Provides public member cards (displayName, role, avatar) for classroom members. Accessible to active teachers and enrolled students (and school staff). Strict privacy: never leaks emails, parent links, password hashes, or grades.',
+      'Provides public member cards (displayName, role, avatar) for classroom members. Accessible to active teachers, enrolled students, and school staff. Ordered by displayName ascending, then user id ascending as tiebreaker (using localeCompare semantics). Supports pagination and optional case-insensitive displayName prefix filter q. Strict privacy: never leaks emails, parent links, password hashes, or grades.',
   })
   @ApiParam({ name: 'id', description: 'Classroom UUID' })
   @ApiPaginatedResponse(ClassroomMemberDto, 'Classroom member directory.')

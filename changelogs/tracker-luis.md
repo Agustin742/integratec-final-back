@@ -21,6 +21,10 @@
     - HTTP tests (`directory.http.spec.ts`) validating status codes (200, 400, 401, 403, 404), parameter validation, and privacy.
     - PostgreSQL integration tests (`directory.integration.spec.ts`) validating end-to-end database filtering, pagination, removed member exclusion, and mandatory concurrent read safety via `Promise.all`.
   - Exported updated OpenAPI specification to `apps/api/openapi.json`.
+- **Review refinements (PR #82 review, 2026-11-12):**
+  - **School-teacher eligibility aligned with shared authorization:** `ClassroomDirectoryService.list` now filters `ClassroomRole.TEACHER` memberships by active `SchoolMember` status when `classroom.schoolId !== null` and validates listed memberships through `deriveClassroomAccessRole`, while preserving independent-teacher inclusion, deduplication, and enrolled-student visibility. Added unit and PostgreSQL regression coverage for an inactive school member with an active classroom `TEACHER` membership.
+  - **Published ordering semantics in OpenAPI:** Updated `@ApiOperation` on `ClassroomDirectoryController.list` to state ascending `displayName` order with ascending `user id` tiebreaker (`localeCompare` semantics) per `rules/api-contracts.md`, and regenerated `apps/api/openapi.json`.
+  - **Develop merge integration:** Merged `origin/develop` (`#25`, `#26`), resolved `apps/api/openapi.json`, and added the missing `realtimeInternalUrl` field to `apps/api/src/classrooms/desks/desks.http.spec.ts` so workspace `typecheck` passes with `ApiConfig`.
 - **Reason:** Enable classroom members (students and teachers) to view their classmates and teachers for @mention autocomplete and class directory while enforcing strict privacy and contextual authorization boundaries.
 - **Next step:** Review verification results, open pull request targeting `develop`, and update issue board status.
 

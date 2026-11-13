@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { PasswordResetConfirmRequestDto } from './dto/password-reset-confirm-request.dto';
 import { PasswordResetRequestDto } from './dto/password-reset-request.dto';
@@ -18,6 +19,7 @@ export class PasswordResetService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxWriter,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   /**
@@ -77,10 +79,12 @@ export class PasswordResetService {
         data: { usedAt: now },
       });
       await tx.user.update({ where: { id: stored.userId }, data: { passwordHash } });
-      await tx.session.updateMany({
+      const revoked = await tx.session.updateMany({
         where: { userId: stored.userId, revokedAt: null },
         data: { revokedAt: now },
       });
+      // Every live connection of the account must close with its sessions.
+      if (revoked.count > 0) await this.realtimeEvents.recordAllSessionsRevoked(tx, stored.userId);
     });
   }
 }

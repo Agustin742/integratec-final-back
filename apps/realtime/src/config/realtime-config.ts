@@ -9,6 +9,8 @@ export interface RealtimeConfig {
   port: number;
   apiInternalUrl: string;
   internalServiceSecret: string;
+  /** How long a dropped connection may come back before its avatar is removed. */
+  reconnectionWindowSeconds: number;
 }
 
 export interface ConfigIssue {
@@ -33,6 +35,7 @@ export class ConfigValidationError extends Error {
 }
 
 const PORT_MESSAGE = 'must be an integer between 1 and 65535';
+const RECONNECTION_WINDOW_MESSAGE = 'must be an integer number of seconds between 1 and 120';
 const required = { error: 'is required' };
 
 const isHttpUrl = (value: string): boolean => {
@@ -61,6 +64,16 @@ const envSchema = z.object({
     .string(required)
     .refine(isHttpUrl, 'must be an absolute http:// or https:// URL'),
   INTERNAL_SERVICE_SECRET: z.string(required).min(32, 'must be at least 32 characters'),
+  RECONNECTION_WINDOW_SECONDS: z
+    .string()
+    .default('20')
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+$/, RECONNECTION_WINDOW_MESSAGE)
+        .transform(Number)
+        .pipe(z.number().min(1, RECONNECTION_WINDOW_MESSAGE).max(120, RECONNECTION_WINDOW_MESSAGE)),
+    ),
 });
 
 type Env = NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -96,5 +109,6 @@ export function loadRealtimeConfig(env: Env): RealtimeConfig {
     port: values.PORT,
     apiInternalUrl: values.API_INTERNAL_URL,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
+    reconnectionWindowSeconds: values.RECONNECTION_WINDOW_SECONDS,
   };
 }

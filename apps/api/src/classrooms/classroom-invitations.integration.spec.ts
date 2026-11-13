@@ -51,6 +51,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     invitationTtlSeconds: 604800,
     outboxPollIntervalSeconds: 5,
     outboxMaxAttempts: 5,
+    realtimeInternalUrl: 'http://localhost:2567',
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
     invitationTokenKey: randomBytes(32),

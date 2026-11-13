@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ClassroomRole } from '@prisma/client';
+import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AccessVerificationService,
@@ -259,6 +259,71 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
       const result = await service.list(studentId1, classroomId, { page: 1, pageSize: 20 });
       expect(prisma.user.findUnique).not.toHaveBeenCalled();
       expect(result.items.length).toBe(2);
+      expect(prisma.classroomMembership.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { role: ClassroomRole.STUDENT },
+              {
+                role: ClassroomRole.TEACHER,
+                user: {
+                  schoolMemberships: {
+                    some: { schoolId: 'school-1', state: MembershipState.ACTIVE },
+                  },
+                },
+              },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('excludes school classroom teachers without an active school membership while preserving active teachers and students', async () => {
+      access.verifyClassroomAccess.mockResolvedValueOnce({
+        ...defaultAccessResult,
+        classroom: {
+          ...defaultAccessResult.classroom,
+          schoolId: 'school-1',
+          independentTeacherId: null,
+        },
+      });
+
+      prisma.classroomMembership.findMany.mockResolvedValueOnce([
+        {
+          role: ClassroomRole.TEACHER,
+          user: {
+            id: 'active-school-teacher',
+            displayName: 'Prof Active',
+            avatarConfig: null,
+            schoolMemberships: [{ role: SchoolRole.TEACHER }],
+          },
+        },
+        {
+          role: ClassroomRole.TEACHER,
+          user: {
+            id: 'inactive-school-teacher',
+            displayName: 'Prof Inactive',
+            avatarConfig: null,
+            schoolMemberships: [],
+          },
+        },
+        {
+          role: ClassroomRole.STUDENT,
+          user: {
+            id: studentId1,
+            displayName: 'Alice Johnson',
+            avatarConfig: null,
+            schoolMemberships: [],
+          },
+        },
+      ]);
+
+      const result = await service.list(studentId1, classroomId, { page: 1, pageSize: 20 });
+      expect(result.total).toBe(2);
+      expect(result.items.map((item) => item.userId)).toEqual([
+        studentId1,
+        'active-school-teacher',
+      ]);
     });
   });
 

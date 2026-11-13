@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { MembershipState, RegistrationPath } from '@prisma/client';
+import { ClassroomRole, MembershipState, RegistrationPath, SchoolRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SessionAuthGuard } from '../../auth/session-auth.guard';
@@ -30,7 +30,10 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
     removedStudent,
     parentUser,
     strangerUser,
-  ] = Array.from({ length: 8 }, () => randomUUID());
+    schoolActiveTeacher,
+    schoolInactiveTeacher,
+    schoolStudent,
+  ] = Array.from({ length: 11 }, () => randomUUID());
 
   const users = [
     teacher,
@@ -41,17 +44,22 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
     removedStudent,
     parentUser,
     strangerUser,
+    schoolActiveTeacher,
+    schoolInactiveTeacher,
+    schoolStudent,
   ];
 
-  const [classroom, otherClassroom] = [randomUUID(), randomUUID()];
-  const memberships = Array.from({ length: 4 }, () => randomUUID());
+  const schoolId = randomUUID();
+  const [classroom, otherClassroom, schoolClassroom] = [randomUUID(), randomUUID(), randomUUID()];
+  const memberships = Array.from({ length: 7 }, () => randomUUID());
+  const schoolMembers = Array.from({ length: 2 }, () => randomUUID());
   const parentLinkId = randomUUID();
   const removedAt = new Date('2026-11-09T12:00:00.000Z');
 
   const token = (actor: string) => `Bearer directory-test:${actor}`;
-  const get = (query = '', actor = activeStudent1) =>
+  const get = (query = '', actor = activeStudent1, targetClassroom = classroom) =>
     request(app.getHttpServer())
-      .get(`/classrooms/${classroom}/members${query}`)
+      .get(`/classrooms/${targetClassroom}/members${query}`)
       .set('Authorization', token(actor));
 
   beforeAll(async () => {
@@ -142,6 +150,54 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
             passwordHash: 'secret-hash-stranger',
             registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
           },
+          {
+            id: schoolActiveTeacher,
+            displayName: 'Prof Active',
+            email: `school-active-${schoolActiveTeacher}@example.invalid`,
+            passwordHash: 'secret-hash-school-active',
+            registrationPath: RegistrationPath.SCHOOL,
+          },
+          {
+            id: schoolInactiveTeacher,
+            displayName: 'Prof Inactive',
+            email: `school-inactive-${schoolInactiveTeacher}@example.invalid`,
+            passwordHash: 'secret-hash-school-inactive',
+            registrationPath: RegistrationPath.SCHOOL,
+          },
+          {
+            id: schoolStudent,
+            displayName: 'School Student',
+            email: `school-student-${schoolStudent}@example.invalid`,
+            passwordHash: 'secret-hash-school-student',
+            registrationPath: RegistrationPath.SCHOOL,
+          },
+        ],
+      });
+
+      await tx.school.create({
+        data: {
+          id: schoolId,
+          name: 'Directory Test School',
+          slug: `directory-test-school-${schoolId}`,
+        },
+      });
+
+      await tx.schoolMember.createMany({
+        data: [
+          {
+            id: schoolMembers[0],
+            schoolId,
+            userId: schoolActiveTeacher,
+            role: SchoolRole.TEACHER,
+            state: MembershipState.ACTIVE,
+          },
+          {
+            id: schoolMembers[1],
+            schoolId,
+            userId: schoolInactiveTeacher,
+            role: SchoolRole.TEACHER,
+            state: MembershipState.INACTIVE,
+          },
         ],
       });
 
@@ -169,6 +225,11 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
             id: otherClassroom,
             name: 'Foreign Classroom',
             independentTeacherId: foreignTeacher,
+          },
+          {
+            id: schoolClassroom,
+            name: 'School Directory Classroom',
+            schoolId,
           },
         ],
       });
@@ -203,6 +264,30 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
             state: MembershipState.INACTIVE,
             deletedAt: removedAt,
           },
+          {
+            id: memberships[4],
+            classroomId: schoolClassroom,
+            userId: schoolActiveTeacher,
+            role: ClassroomRole.TEACHER,
+            state: MembershipState.ACTIVE,
+            deletedAt: null,
+          },
+          {
+            id: memberships[5],
+            classroomId: schoolClassroom,
+            userId: schoolInactiveTeacher,
+            role: ClassroomRole.TEACHER,
+            state: MembershipState.ACTIVE,
+            deletedAt: null,
+          },
+          {
+            id: memberships[6],
+            classroomId: schoolClassroom,
+            userId: schoolStudent,
+            role: ClassroomRole.STUDENT,
+            state: MembershipState.ACTIVE,
+            deletedAt: null,
+          },
         ],
       });
 
@@ -227,7 +312,11 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
           await tx.parentLink.deleteMany({ where: { id: parentLinkId } });
           await tx.classroomMembership.deleteMany({ where: { id: { in: memberships } } });
           await tx.avatarConfiguration.deleteMany({ where: { userId: activeStudent1 } });
-          await tx.classroom.deleteMany({ where: { id: { in: [classroom, otherClassroom] } } });
+          await tx.classroom.deleteMany({
+            where: { id: { in: [classroom, otherClassroom, schoolClassroom] } },
+          });
+          await tx.schoolMember.deleteMany({ where: { id: { in: schoolMembers } } });
+          await tx.school.deleteMany({ where: { id: schoolId } });
           await tx.user.deleteMany({ where: { id: { in: users } } });
         });
       }
@@ -347,5 +436,23 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
     await get('', strangerUser).expect(404);
     await get('', foreignTeacher).expect(404);
     await get('', removedStudent).expect(404);
+  });
+
+  it('aligns school-teacher directory eligibility with shared authorization (excludes inactive school membership)', async () => {
+    const res = await get('', schoolStudent, schoolClassroom).expect(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.items.map((i: { userId: string }) => i.userId)).toEqual([
+      schoolActiveTeacher,
+      schoolStudent,
+    ]);
+
+    const filtered = await get('?q=Prof', schoolStudent, schoolClassroom).expect(200);
+    expect(filtered.body.total).toBe(1);
+    expect(filtered.body.items.map((i: { userId: string }) => i.userId)).toEqual([
+      schoolActiveTeacher,
+    ]);
+
+    await get('', schoolActiveTeacher, schoolClassroom).expect(200);
+    await get('', schoolInactiveTeacher, schoolClassroom).expect(404);
   });
 });
