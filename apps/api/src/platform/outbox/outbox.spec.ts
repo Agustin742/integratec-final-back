@@ -42,6 +42,7 @@ const config: ApiConfig = {
   invitationTtlSeconds: 1,
   outboxPollIntervalSeconds: 1,
   outboxMaxAttempts: MAX_ATTEMPTS,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'outbox-spec-placeholder-not-a-secret',
   jwtSecret: 'outbox-jwt-placeholder-not-a-secret-000000',
   invitationTokenKey: Buffer.alloc(32, 1),
@@ -215,6 +216,48 @@ describe('transactional outbox (integration, real Postgres)', () => {
 
     await dispatch(new Date(t2.getTime() + 365 * 24 * 3600 * 1000));
     expect(handler).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+  });
+
+  it('honors a per-type attempt budget larger than the default one', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const budget = MAX_ATTEMPTS + 2;
+    registry.setRetryPolicy(type, { maxAttempts: budget });
+    const handler = vi.fn(() => Promise.reject(new Error('down')));
+    registry.register(type, handler);
+    await record();
+
+    let at = new Date();
+    for (let attempt = 1; attempt < budget; attempt += 1) {
+      const result = await dispatch(at);
+      expect(result).toMatchObject({ retried: 1, exhausted: 0 });
+      at = new Date(at.getTime() + backoffMs(attempt));
+    }
+    const last = await dispatch(at);
+
+    expect(last).toMatchObject({ retried: 0, exhausted: 1 });
+    const row = await prisma.outboxEvent.findFirstOrThrow({ where: { type } });
+    expect(row.attempts).toBe(budget);
+    expect(row.failedAt).not.toBeNull();
+    expect(handler).toHaveBeenCalledTimes(budget);
+  });
+
+  it('tells the type policy once when an event runs out of attempts', async () => {
+    vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const onExhausted = vi.fn();
+    registry.setRetryPolicy(type, { maxAttempts: 2, onExhausted });
+    registry.register(type, () => Promise.reject(new Error('down')));
+    const id = await recordId({ classroomId: 'c-9' });
+    const t0 = new Date();
+
+    await dispatch(t0);
+    expect(onExhausted).not.toHaveBeenCalled();
+    await dispatch(new Date(t0.getTime() + backoffMs(1)));
+
+    expect(onExhausted).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id, type, payload: { classroomId: 'c-9' } }),
+    );
   });
 
   it('delivers on a later attempt once the handler recovers', async () => {

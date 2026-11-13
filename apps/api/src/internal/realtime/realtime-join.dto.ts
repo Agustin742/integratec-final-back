@@ -18,6 +18,21 @@ export class JoinVerificationRequestDto {
   classroomId!: string;
 }
 
+/** Re-check of a user admitted earlier; carries ids, never a token. */
+export class AccessReverificationRequestDto {
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'userId must be a UUID' })
+  userId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'sessionId must be a UUID' })
+  sessionId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID(undefined, { message: 'classroomId must be a UUID' })
+  classroomId!: string;
+}
+
 export class JoinVerificationResponseDto {
   @ApiProperty({ format: 'uuid' })
   userId!: string;
@@ -31,4 +46,8 @@ export class JoinVerificationResponseDto {
   /** Parents never receive a live join (rules/realtime-and-presence.md). */
   @ApiProperty({ enum: ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] })
   role!: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT';
+
+  /** Name shown on the user's avatar in the live room. */
+  @ApiProperty({ maxLength: 100 })
+  displayName!: string;
 }

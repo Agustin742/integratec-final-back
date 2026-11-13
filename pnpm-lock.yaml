@@ -189,6 +189,10 @@ importers:
         version: 3.2.7(@types/node@22.20.5)
 
   packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@colyseus/schema':
         specifier: ^5.0.8

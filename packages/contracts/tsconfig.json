@@ -1,7 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./dist"
+    "outDir": "./dist",
+    // Colyseus schema decorators install accessors on the prototype; define semantics for class
+    // fields would shadow them and stop change tracking.
+    "useDefineForClassFields": false
   },
   "include": ["src/**/*"]
 }

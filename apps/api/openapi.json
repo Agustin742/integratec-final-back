@@ -1292,6 +1292,52 @@
         "summary": "Logically remove a student and revoke child-specific parent access",
         "tags": ["classrooms"]
       }
+    },
+    "/classrooms/{id}/desks": {
+      "get": {
+        "description": "Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.",
+        "operationId": "ClassroomDesksController_read",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassroomDeskMapDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent-only access to a visible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent, deleted or out-of-scope classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the complete classroom desk map",
+        "tags": ["classrooms"]
+      }
     }
   },
   "info": {
@@ -2262,6 +2308,45 @@
           }
         },
         "required": ["membershipId", "userId", "displayName", "state", "deletedAt", "guardians"]
+      },
+      "ClassroomDeskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable physical desk identifier."
+          },
+          "deskIndex": {
+            "type": "number",
+            "minimum": 1,
+            "description": "Persisted 1-based layout index; not a fixed seat count."
+          },
+          "membershipId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Assigned enrollment, or null for a free desk."
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Assigned student user identifier, or null for a free desk. No directory profile data."
+          }
+        },
+        "required": ["id", "deskIndex", "membershipId", "userId"]
+      },
+      "ClassroomDeskMapDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Complete physical layout ordered by deskIndex ascending, including unassigned desks. Unpaginated.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassroomDeskDto" }
+          }
+        },
+        "required": ["items"]
       }
     }
   }

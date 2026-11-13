@@ -5,6 +5,7 @@ import { type ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { EmailModule } from '../platform/email/email.module';
 import { OutboxModule } from '../platform/outbox/outbox.module';
+import { RealtimeEventsModule } from '../platform/realtime/realtime-events.module';
 import { AuthDataCleanupScheduler } from './auth-data-cleanup.scheduler';
 import { AuthDataCleanupService } from './auth-data-cleanup.service';
 import { AuthController } from './auth.controller';
@@ -18,6 +19,7 @@ import { SessionVerifier } from './session-verifier.service';
   imports: [
     EmailModule,
     OutboxModule,
+    RealtimeEventsModule,
     JwtModule.registerAsync({
       inject: [API_CONFIG],
       useFactory: (config: ApiConfig) => ({

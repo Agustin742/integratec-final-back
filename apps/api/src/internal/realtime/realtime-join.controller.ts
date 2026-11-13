@@ -1,18 +1,13 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  HttpCode,
-  HttpStatus,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import { AccessVerificationService } from '../../access/access-verification.service';
 import { Public } from '../../auth/public.decorator';
-import { SessionVerifier } from '../../auth/session-verifier.service';
 import { InternalServiceGuard } from './internal-service.guard';
-import { JoinVerificationRequestDto, JoinVerificationResponseDto } from './realtime-join.dto';
+import { RealtimeAccessService } from './realtime-access.service';
+import {
+  AccessReverificationRequestDto,
+  JoinVerificationRequestDto,
+  JoinVerificationResponseDto,
+} from './realtime-join.dto';
 
 /**
  * Called only by the realtime server from Colyseus `onAuth`: NestJS stays the single
@@ -25,22 +20,20 @@ import { JoinVerificationRequestDto, JoinVerificationResponseDto } from './realt
 @UseGuards(InternalServiceGuard)
 @Controller('internal/realtime')
 export class RealtimeJoinController {
-  constructor(
-    private readonly sessions: SessionVerifier,
-    private readonly access: AccessVerificationService,
-  ) {}
+  constructor(private readonly access: RealtimeAccessService) {}
 
   @Post('join-verification')
   @HttpCode(HttpStatus.OK)
   async verifyJoin(@Body() dto: JoinVerificationRequestDto): Promise<JoinVerificationResponseDto> {
-    const { userId, sessionId } = await this.sessions.verifyToken(dto.accessToken);
-    const { classroom, myRole } = await this.access.verifyClassroomAccess(userId, dto.classroomId, {
-      requiredRole: 'ANY',
-    });
-    // Parents have no live classroom access (rules/realtime-and-presence.md, Join authorization).
-    if (myRole === 'PARENT') {
-      throw new ForbiddenException('Live classroom access is not available for this role');
-    }
-    return { userId, sessionId, classroomId: classroom.id, role: myRole };
+    return this.access.verifyJoin(dto.accessToken, dto.classroomId);
+  }
+
+  /** Called when a dropped connection comes back: the access is checked again from persisted state. */
+  @Post('access-reverification')
+  @HttpCode(HttpStatus.OK)
+  async reverifyAccess(
+    @Body() dto: AccessReverificationRequestDto,
+  ): Promise<JoinVerificationResponseDto> {
+    return this.access.reverify(dto.userId, dto.sessionId, dto.classroomId);
   }
 }

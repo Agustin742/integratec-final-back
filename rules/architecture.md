@@ -24,7 +24,7 @@ NestJS and Colyseus are separate responsibilities and, from the start, separate 
 
 ## Integration between NestJS and Colyseus
 
-Both directions are internal, server-to-server contracts. Decision D2 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d2-nestjs-and-colyseus-integration)): Colyseus `onAuth` calls an internal NestJS endpoint, authenticated with a service secret stored in AWS Secrets Manager. The transport for NestJS-to-Colyseus announcements is **open**.
+Both directions are internal, server-to-server contracts. Decision D2 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d2-nestjs-and-colyseus-integration)): Colyseus `onAuth` calls an internal NestJS endpoint, authenticated with a service secret stored in AWS Secrets Manager. The transport for NestJS-to-Colyseus access changes is decided (approved by Agustin on 2026-11-10): an outbox event handled by NestJS, which calls an internal Colyseus HTTP endpoint ([Realtime and presence](./realtime-and-presence.md#live-access-eviction)). The transport for other announcements of committed changes is **open**.
 
 | Direction | Purpose | Requirements |
 |---|---|---|
@@ -64,4 +64,4 @@ NestJS integrates these services; each is a candidate pending a decision and jus
 
 ## Open decisions
 
-- Transport for NestJS-to-Colyseus announcements of committed changes.
+- Transport for NestJS-to-Colyseus announcements of committed changes other than access evictions.

@@ -22,7 +22,7 @@ Missing/invalid credentials return `401 UNAUTHENTICATED`. Single-read requests w
 
 Every request re-evaluates persisted access through `NotificationsService.hasCurrentAccess` and the shared authorization service, including exact child context, active child enrollment/link and adult mode. Parent announcements remain denied pending #37. School Owner/Admin authority is preserved without classroom enrollment. Nullable stored `studentId` is normalized to an absent optional value for the shared check.
 
-Listing and mark-all group only the recipient's distinct `(classroomId, studentId, kind)` contexts. Each is checked once, with at most four concurrent shared-service calls, before constructing the database predicate used for counting, pagination or update. There is no page-then-filter operation or full-notice scan. This deliberately reuses the shared matrix rather than duplicating it in a notification-specific SQL policy. Cost and predicate size scale with distinct historical contexts, not notice count; exceptionally large context histories may eventually need a shared bulk authorization boundary. No new shared-access API or arbitrary visibility cap is introduced here.
+Listing and mark-all group only the recipient's distinct `(classroomId, studentId, kind)` contexts. Each is checked once, with at most four concurrent shared-service calls, before constructing the database predicate used for counting, pagination or update. There is no page-then-filter operation or application-side loading of every notice. The database `groupBy` still reads the recipient's matching notification rows to discover contexts; this is not a guarantee against scanning those rows. This deliberately reuses the shared matrix rather than duplicating it in a notification-specific SQL policy. Authorization calls and predicate size scale with distinct historical contexts, while context discovery also depends on the recipient's stored notices; exceptionally large context histories may eventually need a shared bulk authorization boundary. No new shared-access API or arbitrary visibility cap is introduced here.
 
 Count and page rows share a repeatable-read transaction snapshot. Access checks precede that transaction and read mutations, matching the shared service's existing consistency boundary: they are not serializably coordinated with simultaneous membership/link/adult-mode changes. A change committed before a subsequent request is observed; a revocation racing an in-flight request is not claimed to cancel it. Source resources remain independently protected.
 
@@ -86,6 +86,8 @@ Only `in_app` receipts are created. A receipt's `deliveredAt` means the durable 
 | Index `(recipientId, createdAt, id)` | Supports deterministic newest-first ordering `createdAt DESC, id DESC`; UUID tie-breaker is opaque, not chronological |
 | Restrictive foreign keys | Preserve history; no cascading deletion or retention policy is invented |
 | Unique `sourceEventId` | One recipient/request; notification identity survives retries |
+
+The existing `source_event_id` foreign key uses `ON DELETE RESTRICT`: an outbox event referenced by a notification cannot be purged independently. Any future outbox retention work must account for that constraint; this feature defines no purge or deletion policy.
 
 The root app imports `NotificationsModule`; explicit DTO projections and OpenAPI decorators define the public contract. Existing global session authentication and `@CurrentUser` supply identity. Producer APIs and outbox event behavior are unchanged by REST integration.
 

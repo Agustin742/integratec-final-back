@@ -21,6 +21,7 @@ export const authTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =>
   invitationTtlSeconds: 604800,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-internal-secret-for-auth-specs-0000',
   jwtSecret: AUTH_TEST_JWT_SECRET,
   invitationTokenKey: Buffer.alloc(32, 1),
