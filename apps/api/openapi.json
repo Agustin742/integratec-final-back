@@ -1151,6 +1151,93 @@
         "tags": ["notifications"]
       }
     },
+    "/activities/{activityId}/submissions": {
+      "post": {
+        "description": "Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes) to a published FILE activity of the student's classroom. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new; a different key after a submission exists is 409. Unknown, draft or deactivated activities and non-members answer 404; staff and linked parents answer 403.",
+        "operationId": "SubmissionsController_create",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key, 1-255 characters (a UUID is recommended).",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/CreateSubmissionBodyDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay: the existing submission, nothing new stored.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionResponseDto" }
+              }
+            }
+          },
+          "201": {
+            "description": "Submission stored.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid `Idempotency-Key`, no files, disallowed or empty files (`VALIDATION_FAILED` with details), or too many files / unexpected field (`BAD_REQUEST`).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but not a student (staff, linked parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent, draft or deactivated activity, or not a member.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Already submitted with another key, window closed or not yet open, or not a file activity (`details` names the reason).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "413": {
+            "description": "A file exceeds 10 MB.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Submit files to an activity",
+        "tags": ["submissions"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -2764,6 +2851,68 @@
           }
         },
         "required": ["updated"]
+      },
+      "CreateSubmissionBodyDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": { "type": "string", "format": "binary" },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX."
+          }
+        },
+        "required": ["files"]
+      },
+      "SubmissionFileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "originalName": {
+            "type": "string",
+            "description": "Sanitized display name (no path, no control characters)."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Detected from the file bytes, never from the client-declared type.",
+            "example": "application/pdf"
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4,
+            "description": "Zero-based order in which the files were sent."
+          }
+        },
+        "required": ["id", "originalName", "contentType", "sizeBytes", "position"]
+      },
+      "SubmissionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server clock, ISO 8601 UTC, taken once the activity row was locked."
+          },
+          "isLate": {
+            "type": "boolean",
+            "description": "True when submitted after `dueAt` on an activity with `allowLate`."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["submitted"],
+            "description": "Derived state of the work."
+          },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionFileResponseDto" }
+          }
+        },
+        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
       },
       "RosterGuardianDto": {
         "type": "object",
