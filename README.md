@@ -32,6 +32,10 @@ backend/
 - [Notification API and producer integration](docs/notifications.md): authenticated `GET /notifications`, `PATCH /notifications/:id/read` and `PATCH /notifications/read-all`, with current recipient/child access, paginated navigation metadata and idempotent persisted read state.
 - Frontend display, live push, email delivery and feature producers remain out of scope; parent announcements are deferred pending #37.
 
+## Points wallet and ledger
+
+- [Points wallet and immutable ledger](docs/points-ledger.md): authenticated `GET /classrooms/:id/points` and `GET /classrooms/:id/students/:studentId/points` with server-derived balances (`SUM(amount)`), PostgreSQL immutability trigger, `FOR UPDATE` concurrency locking, and `PointsLedgerService` for future grading (`#32`) and shop (`#34`) producers.
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.
