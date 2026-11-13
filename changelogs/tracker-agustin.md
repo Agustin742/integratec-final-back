@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-13 — Publish activities, server side (#28)
+
+- **Status:** in-progress (PR #86 into `develop` opened, in review)
+- **Area / files:** `apps/api/src/activities/` (module, controller, service, DTOs, specs), `apps/api/src/access/access-verification.service.ts` (`listActiveStudentIds`), `apps/api/src/classrooms/classrooms.module.ts`, `apps/api/prisma/` (`activities`, `questions`, `options` migration `20261113000000_create_activities`), `apps/api/openapi.json`, `apps/api/src/testing/relative-dates.ts`, `docs/activities.md`, `docs/technical-justification.md` (D15), `README.md`
+- **Change:** Added activities (TP and exams, file or multiple choice) under `/classrooms/:id/activities`: create, list, read, update, publish and logical deactivation. Staff get a teacher view with `isCorrect`; students get a view without it and only see published activities; linked parents receive 403. Instants are stored in UTC and returned with the school time zone. Updates and publishing lock the activity row, and publishing records one `activity_published` notification per active student (excluding the actor) in the same transaction through the outbox. Database `CHECK` constraints back the score, weight, window and publish invariants. Recorded the approved defaults as D15 and documented the module in `docs/activities.md`. Test fixtures use dates relative to now.
+- **Reason:** Activities are the root of the academic domain and unblock the inbox (#29), submissions (#30), auto-graded multiple choice (#47), grading (#32) and points (#31).
+- **Open points for the PR:** question edits are not locked after the first submission yet (to be added with #30); study material upload (#46), the realtime `activity:published` event and unpublishing are out of scope. Known flaky specs that also fail on `develop` under load: outbox, concurrent login and refresh, password reset concurrency.
+- **Next step:** Address review feedback on PR #86 and confirm Linux CI; merge after approval.
+
 ## 2026-11-10 — Classroom presence and movement, server side (#25)
 
 - **Status:** in-progress (seven work-unit commits on `feat/25-classroom-presence`; PR not opened yet)
