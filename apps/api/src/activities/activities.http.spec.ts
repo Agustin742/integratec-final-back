@@ -8,6 +8,8 @@ import { AuthModule } from '../auth/auth.module';
 import { SessionVerifier } from '../auth/session-verifier.service';
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../config/config.module';
+import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import { OutboxDispatcher } from '../platform/outbox/outbox.dispatcher';
 import { configureHttp } from '../http/configure-http';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -54,7 +56,7 @@ const prisma = {
   classroom: { findFirst: vi.fn() },
   school: { findFirst: vi.fn() },
   schoolMember: { findFirst: vi.fn() },
-  classroomMembership: { findFirst: vi.fn() },
+  classroomMembership: { findFirst: vi.fn(), findMany: vi.fn() },
   parentLink: { findMany: vi.fn() },
   activity: {
     create: vi.fn(),
@@ -69,6 +71,7 @@ const prisma = {
   $transaction: vi.fn(),
   $queryRaw: vi.fn(),
 };
+const recorder = { record: vi.fn() };
 
 function actAs(actor: Actor) {
   prisma.schoolMember.findFirst.mockResolvedValue(
@@ -102,6 +105,11 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideProvider(NotificationRecorder)
+      .useValue(recorder)
+      // The polling dispatcher must not touch the mocked client.
+      .overrideProvider(OutboxDispatcher)
+      .useValue({})
       .overrideProvider(SessionVerifier)
       .useValue({
         verifyAuthorizationHeader: async (header?: string) => {
@@ -137,6 +145,8 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     prisma.activity.count.mockResolvedValue(1);
     prisma.activity.update.mockResolvedValue(row);
     prisma.activity.updateMany.mockResolvedValue({ count: 1 });
+    prisma.classroomMembership.findMany.mockResolvedValue([]);
+    recorder.record.mockResolvedValue('44444444-4444-4444-8444-4444444444aa');
     actAs('teacher');
   });
 
@@ -156,13 +166,6 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
   it.each(routes)('%s requires authentication', async (_n, m, url, b) => {
     await call(m, url, null).send(b).expect(401);
     expect(prisma.activity.create).not.toHaveBeenCalled();
-  });
-
-  it('publish stays a stub until T4: mounted behind authentication, answers INTERNAL_ERROR', async () => {
-    // The global AllExceptionsFilter has no 501 mapping, so NotImplementedException surfaces as 500.
-    const res = await call('post', `${base}/${activityId}/publish`);
-    expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe('INTERNAL_ERROR');
   });
 
   describe('create', () => {
@@ -492,6 +495,152 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
       expect(prisma.activity.findFirst).not.toHaveBeenCalled();
       expect(prisma.activity.update).not.toHaveBeenCalled();
       expect(prisma.question.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('publish', () => {
+    const url = `${base}/${activityId}/publish`;
+    const future = () => new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const draft = (overrides: object = {}) => ({ ...row, dueAt: future(), ...overrides });
+    const validQuestion = { options: [{ isCorrect: true }, { isCorrect: false }] };
+    const students = [
+      '55555555-5555-4555-8555-555555555551',
+      '55555555-5555-4555-8555-555555555552',
+      '55555555-5555-4555-8555-555555555553',
+    ];
+    beforeEach(() => {
+      prisma.activity.findFirst.mockResolvedValue(draft());
+      prisma.activity.update.mockResolvedValue(
+        draft({ state: 'PUBLISHED', publishedAt: new Date() }),
+      );
+      prisma.classroomMembership.findMany.mockResolvedValue(students.map((userId) => ({ userId })));
+    });
+
+    it('teacher publishes: locks the row, flips state with a server timestamp, answers 200', async () => {
+      const res = await call('post', url).expect(200);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const arg = prisma.activity.update.mock.calls[0][0];
+      expect(arg.where).toEqual({ id: activityId, classroomId, deletedAt: null });
+      expect(arg.data).toEqual({ state: 'PUBLISHED', publishedAt: expect.any(Date) });
+      expect(res.body).toMatchObject({ id: activityId, state: 'PUBLISHED', questions: [] });
+    });
+
+    it('records one activity_published notification per active student, inside the transaction', async () => {
+      await call('post', url).expect(200);
+      expect(recorder.record).toHaveBeenCalledTimes(students.length);
+      for (const [tx, request] of recorder.record.mock.calls) {
+        expect(tx).toBe(prisma);
+        expect(request).toEqual({
+          kind: 'activity_published',
+          classroomId,
+          resourceId: activityId,
+          recipientId: expect.any(String),
+        });
+      }
+      expect(recorder.record.mock.calls.map(([, r]) => r.recipientId)).toEqual(students);
+    });
+
+    it('selects only active, non-deleted students other than the actor', async () => {
+      await call('post', url).expect(200);
+      expect(prisma.classroomMembership.findMany.mock.calls[0][0].where).toEqual({
+        classroomId,
+        role: ClassroomRole.STUDENT,
+        state: 'ACTIVE',
+        deletedAt: null,
+        userId: { not: actorId },
+      });
+    });
+
+    it('a classroom without students publishes with no notifications', async () => {
+      prisma.classroomMembership.findMany.mockResolvedValue([]);
+      await call('post', url).expect(200);
+      expect(recorder.record).not.toHaveBeenCalled();
+    });
+
+    it('answers 500 when recording a notification fails (the transaction callback rejects)', async () => {
+      recorder.record.mockRejectedValueOnce(new Error('Invalid notification request'));
+      const res = await call('post', url).expect(500);
+      expect(res.body.error.code).toBe('INTERNAL_ERROR');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers 409 CONFLICT when already published, with no write and no notification', async () => {
+      prisma.activity.findFirst.mockResolvedValue(draft({ state: 'PUBLISHED' }));
+      const res = await call('post', url).expect(409);
+      expect(res.body.error.code).toBe('CONFLICT');
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(recorder.record).not.toHaveBeenCalled();
+    });
+
+    it('rejects a dueAt already in the past with 400 on dueAt', async () => {
+      prisma.activity.findFirst.mockResolvedValue(draft({ dueAt: new Date(Date.now() - 60_000) }));
+      const res = await call('post', url).expect(400);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual([{ field: 'dueAt', messages: expect.any(Array) }]);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(recorder.record).not.toHaveBeenCalled();
+    });
+
+    it('rejects a MULTIPLE_CHOICE activity without questions with 400 on questions', async () => {
+      prisma.activity.findFirst.mockResolvedValue(
+        draft({ format: 'MULTIPLE_CHOICE', questions: [] }),
+      );
+      const res = await call('post', url).expect(400);
+      expect(res.body.error.details).toEqual([{ field: 'questions', messages: expect.any(Array) }]);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(recorder.record).not.toHaveBeenCalled();
+    });
+
+    it('rejects a question whose options are not 2+ with exactly one correct', async () => {
+      prisma.activity.findFirst.mockResolvedValue(
+        draft({ format: 'MULTIPLE_CHOICE', questions: [{ options: [{ isCorrect: true }] }] }),
+      );
+      await call('post', url).expect(400);
+      prisma.activity.findFirst.mockResolvedValue(
+        draft({
+          format: 'MULTIPLE_CHOICE',
+          questions: [{ options: [{ isCorrect: false }, { isCorrect: false }] }],
+        }),
+      );
+      await call('post', url).expect(400);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+    });
+
+    it('publishes a valid MULTIPLE_CHOICE activity', async () => {
+      prisma.activity.findFirst.mockResolvedValue(
+        draft({ format: 'MULTIPLE_CHOICE', questions: [validQuestion] }),
+      );
+      await call('post', url).expect(200);
+      expect(prisma.activity.update).toHaveBeenCalledTimes(1);
+    });
+
+    it.each<Actor>(['student', 'parent'])(
+      '%s receives 403 without lock, write or notification',
+      async (actor) => {
+        actAs(actor);
+        await call('post', url).expect(403);
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+        expect(recorder.record).not.toHaveBeenCalled();
+      },
+    );
+
+    it('stranger gets 404', async () => {
+      actAs('stranger');
+      await call('post', url).expect(404);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('unknown, deactivated or foreign activity gets 404 (the lock matches nothing)', async () => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      await call('post', url).expect(404);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+      expect(recorder.record).not.toHaveBeenCalled();
+    });
+
+    it('a non-UUID activity id gets 404 without opening a transaction', async () => {
+      await call('post', `${base}/not-a-uuid/publish`).expect(404);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
   });
 

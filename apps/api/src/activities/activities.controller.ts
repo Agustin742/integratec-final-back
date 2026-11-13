@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  NotImplementedException,
-  Param,
-  Patch,
-  Post,
-  Query,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -39,11 +28,9 @@ import {
 } from './activities.dto';
 import { ActivitiesService } from './activities.service';
 
-const NOT_IMPLEMENTED = 'Publishing is implemented in a later task.';
-
 /**
  * Transport adapter only: authorization and business rules live in `ActivitiesService`.
- * `publish` is still a stub (answers 501-style `NotImplementedException`). Activities are the academic assignments (TP/exam); they are unrelated to `ActivityMetric`,
+ * Activities are the academic assignments (TP/exam); they are unrelated to `ActivityMetric`,
  * which aggregates connected time.
  */
 @ApiTags('activities')
@@ -161,15 +148,25 @@ export class ActivitiesController {
   @ApiOperation({
     summary: 'Publish a draft activity',
     description:
-      'Teacher-level staff only. Moves DRAFT to PUBLISHED and notifies active students after ' +
-      'commit. Multiple-choice activities need valid questions.',
+      'Teacher-level staff only. Moves DRAFT to PUBLISHED (one way) and records one ' +
+      '`activity_published` notification per active student in the same transaction, so ' +
+      'notices are delivered only after the publish commits. `dueAt` must still be in the ' +
+      'future and multiple-choice activities need valid questions (400).',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiOkResponse({ type: TeacherActivityResponseDto })
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
   @ApiConflictResponse({ type: ErrorEnvelopeDto, description: 'Activity is already published.' })
-  publish(@Param('id') _classroomId: string, @Param('activityId') _activityId: string): never {
-    throw new NotImplementedException(NOT_IMPLEMENTED);
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description: 'The activity is not publishable (past `dueAt`, invalid questions).',
+  })
+  publish(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('activityId') activityId: string,
+  ) {
+    return this.activities.publish(actorId, classroomId, activityId);
   }
 
   @Delete(':activityId')

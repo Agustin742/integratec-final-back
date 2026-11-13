@@ -1,5 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ActivityState, ActivityType, Prisma } from '@prisma/client';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ActivityFormat, ActivityState, ActivityType, Prisma } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessResult,
@@ -8,6 +13,7 @@ import {
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
+import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ACTIVITY_LIMITS,
@@ -176,11 +182,53 @@ function assertValidWindow(type: ActivityType, opensAt: Date | null, dueAt: Date
   }
 }
 
+/**
+ * Publishing re-checks, against the locked row, what input validation already enforced on
+ * create/update, so a row that reached the database another way can never be published broken.
+ */
+function assertPublishable(
+  existing: {
+    format: ActivityFormat;
+    dueAt: Date;
+    questions: { options: { isCorrect: boolean }[] }[];
+  },
+  now: Date,
+): void {
+  // A deadline that already passed would publish an activity nobody can answer on time.
+  if (existing.dueAt.getTime() <= now.getTime()) {
+    throw new RequestValidationException([
+      { field: 'dueAt', messages: ['dueAt must be in the future to publish the activity'] },
+    ]);
+  }
+  if (existing.format !== ActivityFormat.MULTIPLE_CHOICE) return;
+  const { questions: qLimits, options: oLimits } = ACTIVITY_LIMITS;
+  const valid =
+    existing.questions.length >= qLimits.min &&
+    existing.questions.length <= qLimits.max &&
+    existing.questions.every(
+      (q) =>
+        q.options.length >= oLimits.min &&
+        q.options.length <= oLimits.max &&
+        q.options.filter((o) => o.isCorrect).length === 1,
+    );
+  if (!valid) {
+    throw new RequestValidationException([
+      {
+        field: 'questions',
+        messages: [
+          'a multiple-choice activity needs at least one question, each with 2-6 options and exactly one correct',
+        ],
+      },
+    ]);
+  }
+}
+
 @Injectable()
 export class ActivitiesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
+    private readonly notifications: NotificationRecorder,
   ) {}
 
   async create(
@@ -327,6 +375,69 @@ export class ActivitiesService {
         data,
         select: TEACHER_SELECT,
       });
+    });
+    return toTeacherView(row);
+  }
+
+  /**
+   * Publishes a draft and records one `activity_published` notification request per active
+   * student, all in ONE transaction: the outbox rows exist if and only if the publish commits
+   * (docs/notifications.md), so nothing is announced for a publish that rolled back. The row lock
+   * serializes concurrent publishes: the loser re-reads PUBLISHED and gets 409, so recipients
+   * are notified exactly once.
+   */
+  async publish(
+    actorId: string,
+    classroomId: string,
+    activityId: string,
+  ): Promise<TeacherActivityResponseDto> {
+    await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'TEACHER' });
+    if (!UUID_PATTERN.test(activityId)) throw this.notFound();
+
+    const row = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM activities
+        WHERE id = ${activityId}::uuid AND classroom_id = ${classroomId}::uuid
+          AND deleted_at IS NULL
+        FOR UPDATE`;
+      if (locked.length === 0) throw this.notFound();
+      const existing = await tx.activity.findFirst({
+        where: { id: activityId, classroomId, deletedAt: null },
+        select: {
+          state: true,
+          format: true,
+          dueAt: true,
+          questions: { select: { options: { select: { isCorrect: true } } } },
+        },
+      });
+      if (!existing) throw this.notFound();
+      if (existing.state === ActivityState.PUBLISHED) {
+        throw new ConflictException('Activity is already published');
+      }
+      // Server clock, read once: the same instant validates the deadline and stamps the row.
+      const now = new Date();
+      assertPublishable(existing, now);
+
+      const published = await tx.activity.update({
+        where: { id: activityId, classroomId, deletedAt: null },
+        data: { state: ActivityState.PUBLISHED, publishedAt: now },
+        select: TEACHER_SELECT,
+      });
+      // Recipients come from the shared access service (it owns membership reads). The acting
+      // user is excluded; staff are never STUDENT members, and adult mode only affects parents.
+      const recipients = await this.access.listActiveStudentIds(classroomId, {
+        excludeUserId: actorId,
+        client: tx,
+      });
+      for (const recipientId of recipients) {
+        await this.notifications.record(tx, {
+          kind: 'activity_published',
+          classroomId,
+          resourceId: activityId,
+          recipientId,
+        });
+      }
+      return published;
     });
     return toTeacherView(row);
   }

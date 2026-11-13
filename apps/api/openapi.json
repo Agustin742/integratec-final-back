@@ -1760,7 +1760,7 @@
     },
     "/classrooms/{id}/activities/{activityId}/publish": {
       "post": {
-        "description": "Teacher-level staff only. Moves DRAFT to PUBLISHED and notifies active students after commit. Multiple-choice activities need valid questions.",
+        "description": "Teacher-level staff only. Moves DRAFT to PUBLISHED (one way) and records one `activity_published` notification per active student in the same transaction, so notices are delivered only after the publish commits. `dueAt` must still be in the future and multiple-choice activities need valid questions (400).",
         "operationId": "ActivitiesController_publish",
         "parameters": [
           {
@@ -1785,6 +1785,12 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/TeacherActivityResponseDto" }
               }
+            }
+          },
+          "400": {
+            "description": "The activity is not publishable (past `dueAt`, invalid questions).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
           },
           "401": {
