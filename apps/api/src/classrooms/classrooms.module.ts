@@ -11,6 +11,7 @@ import { ClassroomDesksModule } from './desks/desks.module';
 import { InvitationsController } from './invitations.controller';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
 import { MeClassroomsController } from './me-classrooms.controller';
+import { ClassroomDirectoryModule } from './directory/directory.module';
 import { ClassroomRemovalModule } from './removal/classroom-removal.module';
 import { ClassroomRosterModule } from './roster/roster.module';
 
@@ -21,6 +22,7 @@ import { ClassroomRosterModule } from './roster/roster.module';
     OutboxModule,
     EmailModule,
     ClassroomRosterModule,
+    ClassroomDirectoryModule,
     ClassroomRemovalModule,
     ClassroomDesksModule,
   ],

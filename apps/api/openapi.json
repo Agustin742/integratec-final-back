@@ -1120,6 +1120,96 @@
         "tags": ["classrooms"]
       }
     },
+    "/classrooms/{id}/members": {
+      "get": {
+        "description": "Provides public member cards (displayName, role, avatar) for classroom members. Accessible to active teachers, enrolled students, and school staff. Ordered by displayName ascending, then user id ascending as tiebreaker (using localeCompare semantics). Supports pagination and optional case-insensitive displayName prefix filter q. Strict privacy: never leaks emails, parent links, password hashes, or grades.",
+        "operationId": "ClassroomDirectoryController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive display-name prefix.",
+            "schema": { "maxLength": 100, "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Classroom member directory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ClassroomMemberDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Classroom member directory is only accessible to classroom members.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List classroom member directory readable by members",
+        "tags": ["classrooms"]
+      }
+    },
     "/classrooms/{id}/students/{studentId}": {
       "delete": {
         "operationId": "ClassroomRemovalController_remove",
@@ -2149,6 +2239,28 @@
           }
         },
         "required": ["membershipId", "userId", "displayName", "state", "deletedAt", "guardians"]
+      },
+      "ClassroomMemberDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "User identifier." },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "User identifier (matches id)."
+          },
+          "displayName": { "type": "string", "description": "Display name." },
+          "role": {
+            "type": "string",
+            "enum": ["TEACHER", "STUDENT"],
+            "description": "Classroom member role (Teacher or Student)."
+          },
+          "avatar": {
+            "description": "Avatar appearance configuration.",
+            "allOf": [{ "$ref": "#/components/schemas/AvatarDto" }]
+          }
+        },
+        "required": ["id", "userId", "displayName", "role", "avatar"]
       },
       "ClassroomDeskDto": {
         "type": "object",

@@ -34,6 +34,7 @@ const config: ApiConfig = {
   invitationTtlSeconds: 3600,
   outboxPollIntervalSeconds: 5,
   outboxMaxAttempts: 5,
+  realtimeInternalUrl: 'http://localhost:2567',
   internalServiceSecret: 'synthetic-internal-secret-for-tests-0000',
   jwtSecret: 'synthetic-jwt-secret-for-tests-only-0000',
   invitationTokenKey: Buffer.alloc(32, 1),
