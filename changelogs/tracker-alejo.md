@@ -2,14 +2,15 @@
 
 ## 2026-11-14 — Scope integration outbox dispatch to owned events (#90)
 
-- **Status:** blocked (implementation and functional verification complete; native assessment unavailable, delivery decision pending).
+- **Status:** in-progress (implementation and functional verification complete; PR publication authorized, team review and merge pending).
 - **Area / files:** `apps/api/src/platform/outbox/`, integration-spec dispatch callers, test documentation.
 - **Change:** Created `fix/90-outbox-spec-isolation` from freshly fetched `develop` at `d3b04e8` in a separate worktree, preserving dirty PR #88 review changes. Added optional ownership-ID dispatch filtering; narrowed notification/reset/realtime/outbox fixtures and removed activity per-test cleanup/locking workaround. Production polling and omitted-filter behavior remain unchanged. AI-assisted work directed by Alejo.
 - **Reason:** Prevent specs sharing an outbox event type from consuming each other's events; unblock reliable verification of PR #88 without its fixture scheduling workaround.
 - **Evidence:** Real-PostgreSQL RED: 2 failed / 20 passed (foreign event consumed; empty IDs ignored). Focused GREEN: 126/126 plus three-workspace typecheck. Linux Node22 full API passed **1,511/1,511 twice** on fresh databases with `--maxWorkers=2`; typecheck, lint, source/config formatting, all three builds, contracts26/26 and realtime248/248 passed (parent job6 exit0). Guide/tracker links and whitespace passed.
 - **Retained failures / limits:** Initial Docker formatting command failed cwd path conversion before checks; scoped formatting then warned on two specs; worktree-local formatter was unavailable. Root-installed Prettier normalized only those files and subsequent checks passed. Native ASSESS unavailable (`package-local-binary-missing`); RDD state unknown, no native review verdict claimed. Earlier PR #88 verification failures and limits remain separate and unchanged.
 - **Independent verification:** S1–S6 PASS; separate Linux Node22 container/fresh database, five specs126/126 and all three workspace typechecks (job7 exit0). Parent repeated full-suite evidence is explicitly distinct from independent execution. No code blockers; no native approval or teammate approval inferred.
-- **Next step:** Resolve unavailable native assessment (repair tooling, or explicitly leave this exact candidate unreviewed) before delivery/PR #88 integration. Local coherent work-unit commit only; no push, PR creation or merge performed.
+- **Delivery:** Alejo explicitly authorized publishing the verified `312b6ab` implementation without native review. Fresh fetch confirms `develop` at `d3b04e8` is an ancestor; no upstream commits are missing. No review-mode or authority changes, merge, issue closure or deployment authorized.
+- **Next step:** Publish the separate PR into `develop`, observe exact-head CI and obtain another team member's approval before a separately authorized merge; then resume PR #88 integration. The PR records current delivery/CI state.
 
 ## 2026-11-13 — PR #84 develop integration follow-up
 
