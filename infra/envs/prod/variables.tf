@@ -55,7 +55,18 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 
   validation {
-    condition     = can(cidrhost(var.vpc_cidr, 0)) && try(tonumber(split("/", var.vpc_cidr)[1]) == 16, false)
-    error_message = "vpc_cidr must be a valid IPv4 CIDR block with a /16 prefix, such as 10.0.0.0/16."
+    condition     = try(can(cidrnetmask(var.vpc_cidr)) && cidrsubnet(var.vpc_cidr, 0, 0) == var.vpc_cidr && split("/", var.vpc_cidr)[1] == "16", false)
+    error_message = "vpc_cidr must be an IPv4 network address with a /16 prefix, such as 10.0.0.0/16 (no host bits set)."
+  }
+}
+
+variable "availability_zones" {
+  description = "Availability zones for the prod network: the public subnet goes in the first one and one private subnet is created per zone (at least two, for RDS)."
+  type        = list(string)
+  default     = ["us-east-2a", "us-east-2b"]
+
+  validation {
+    condition     = length(var.availability_zones) >= 2 && length(distinct(var.availability_zones)) == length(var.availability_zones)
+    error_message = "availability_zones must list at least two distinct availability zones."
   }
 }

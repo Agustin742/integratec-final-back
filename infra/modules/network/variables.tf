@@ -14,18 +14,18 @@ variable "vpc_cidr" {
   default     = "10.0.0.0/16"
 
   validation {
-    condition     = can(cidrhost(var.vpc_cidr, 0)) && try(tonumber(split("/", var.vpc_cidr)[1]) == 16, false)
-    error_message = "vpc_cidr must be a valid IPv4 CIDR block with a /16 prefix, such as 10.0.0.0/16."
+    condition     = try(can(cidrnetmask(var.vpc_cidr)) && cidrsubnet(var.vpc_cidr, 0, 0) == var.vpc_cidr && split("/", var.vpc_cidr)[1] == "16", false)
+    error_message = "vpc_cidr must be an IPv4 network address with a /16 prefix, such as 10.0.0.0/16 (no host bits set)."
   }
 }
 
-variable "private_subnet_count" {
-  description = "Number of private subnets (one per availability zone) for the RDS subnet group; between 2 and 3."
-  type        = number
-  default     = 2
+variable "availability_zones" {
+  description = "Availability zones to use, in order: the public subnet goes in the first one and one private subnet is created per zone. At least two distinct zones (RDS subnet group requirement)."
+  type        = list(string)
+  default     = ["us-east-2a", "us-east-2b"]
 
   validation {
-    condition     = var.private_subnet_count >= 2 && var.private_subnet_count <= 3 && floor(var.private_subnet_count) == var.private_subnet_count
-    error_message = "private_subnet_count must be an integer between 2 and 3."
+    condition     = length(var.availability_zones) >= 2 && length(distinct(var.availability_zones)) == length(var.availability_zones)
+    error_message = "availability_zones must list at least two distinct availability zones."
   }
 }

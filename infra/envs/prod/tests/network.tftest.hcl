@@ -1,11 +1,4 @@
-mock_provider "aws" {
-  override_data {
-    target = module.network.data.aws_availability_zones.available
-    values = {
-      names = ["us-east-2a", "us-east-2b", "us-east-2c"]
-    }
-  }
-}
+mock_provider "aws" {}
 
 run "vpc_has_dns_support_and_hostnames" {
   command = apply
@@ -85,7 +78,34 @@ run "network_module_declares_no_nat_gateway" {
   }
 }
 
-run "rejects_invalid_vpc_cidr" {
+run "private_subnets_land_exactly_in_the_given_availability_zones" {
+  command = apply
+
+  variables {
+    availability_zones = ["us-east-2b", "us-east-2c"]
+  }
+
+  assert {
+    condition     = module.network.private_subnet_availability_zones == ["us-east-2b", "us-east-2c"]
+    error_message = "Private subnets must land exactly in the listed availability zones, in order."
+  }
+
+  assert {
+    condition     = module.network.public_subnet_availability_zone == "us-east-2b"
+    error_message = "The public subnet must be in the first listed availability zone."
+  }
+}
+
+run "defaults_pin_us_east_2a_and_2b" {
+  command = apply
+
+  assert {
+    condition     = module.network.private_subnet_availability_zones == ["us-east-2a", "us-east-2b"]
+    error_message = "The default availability zones must be us-east-2a and us-east-2b."
+  }
+}
+
+run "rejects_non_ipv4_vpc_cidr" {
   command = plan
 
   variables {
@@ -93,4 +113,54 @@ run "rejects_invalid_vpc_cidr" {
   }
 
   expect_failures = [var.vpc_cidr]
+}
+
+run "rejects_vpc_cidr_with_wrong_prefix_length" {
+  command = plan
+
+  variables {
+    vpc_cidr = "10.0.0.0/24"
+  }
+
+  expect_failures = [var.vpc_cidr]
+}
+
+run "rejects_non_canonical_vpc_cidr" {
+  command = plan
+
+  variables {
+    vpc_cidr = "10.0.0.1/16"
+  }
+
+  expect_failures = [var.vpc_cidr]
+}
+
+run "rejects_ipv6_vpc_cidr" {
+  command = plan
+
+  variables {
+    vpc_cidr = "2001:db8::/16"
+  }
+
+  expect_failures = [var.vpc_cidr]
+}
+
+run "rejects_single_availability_zone" {
+  command = plan
+
+  variables {
+    availability_zones = ["us-east-2a"]
+  }
+
+  expect_failures = [var.availability_zones]
+}
+
+run "rejects_duplicate_availability_zones" {
+  command = plan
+
+  variables {
+    availability_zones = ["us-east-2a", "us-east-2a"]
+  }
+
+  expect_failures = [var.availability_zones]
 }

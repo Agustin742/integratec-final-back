@@ -3,14 +3,6 @@
 # NAT and no load balancer (cost decision): private subnets have no route to the
 # internet.
 
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, var.private_subnet_count)
-}
-
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
@@ -34,24 +26,26 @@ resource "aws_internet_gateway" "this" {
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.this.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, 0)
-  availability_zone       = local.azs[0]
+  availability_zone       = var.availability_zones[0]
   map_public_ip_on_launch = false
 
   tags = {
-    Name = "${var.name_prefix}-public-${local.azs[0]}"
+    Name = "${var.name_prefix}-public-${var.availability_zones[0]}"
   }
 }
 
-# Private subnets (10.0.10.0/24, 10.0.11.0/24, ... by default), one per availability zone.
+# Private subnets (10.0.10.0/24, 10.0.11.0/24, ... by default), one per listed
+# availability zone. Zones are pinned by variable so a plan never depends on the
+# order the provider lists them in.
 resource "aws_subnet" "private" {
-  count = var.private_subnet_count
+  count = length(var.availability_zones)
 
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10 + count.index)
-  availability_zone = local.azs[count.index]
+  availability_zone = var.availability_zones[count.index]
 
   tags = {
-    Name = "${var.name_prefix}-private-${local.azs[count.index]}"
+    Name = "${var.name_prefix}-private-${var.availability_zones[count.index]}"
   }
 }
 
@@ -85,7 +79,7 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  count = var.private_subnet_count
+  count = length(var.availability_zones)
 
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
