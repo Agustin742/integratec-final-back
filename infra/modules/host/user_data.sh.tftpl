@@ -1,0 +1,47 @@
+#!/bin/bash
+# First-boot provisioning of the host (cloud-init runs it once, as root).
+# Installs Docker and the pinned Docker Compose v2 plugin. Administration is only
+# through SSM Session Manager; this script does not touch remote login settings.
+set -euo pipefail
+exec > >(tee -a /var/log/host-bootstrap.log) 2>&1
+echo "host bootstrap started: $(date -u +%FT%TZ)"
+
+# The instance has no public address until the Elastic IP is associated, which
+# Terraform does after the instance exists, so first boot may run with no internet.
+# Wait (bounded, about 10 minutes) for outbound HTTPS before installing anything.
+attempt=0
+until curl -fsS -o /dev/null --max-time 10 https://github.com; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    echo "no outbound HTTPS after $attempt attempts, giving up" >&2
+    exit 1
+  fi
+  echo "waiting for outbound HTTPS (attempt $attempt)"
+  sleep 10
+done
+
+# No full package update on purpose: Amazon Linux 2023 pins its repositories to
+# the AMI release, so an update here would change nothing. Patching is a
+# deliberate instance replacement onto a newer AMI.
+dnf -y install docker
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# Docker Compose v2 is not in the Amazon Linux 2023 repositories: install the
+# pinned upstream binary and refuse it if its checksum does not match.
+compose_plugin=/usr/local/lib/docker/cli-plugins/docker-compose
+compose_tmp="$(mktemp)"
+install -d -m 0755 "$(dirname "$compose_plugin")"
+curl -fsSL --retry 5 -o "$compose_tmp" \
+  "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-x86_64"
+echo "${compose_sha256}  $compose_tmp" | sha256sum -c -
+install -m 0755 "$compose_tmp" "$compose_plugin"
+rm -f "$compose_tmp"
+docker compose version
+
+# The SSM agent is preinstalled on Amazon Linux 2023; make sure it is running.
+systemctl enable --now amazon-ssm-agent
+
+# Seam for the reverse proxy task: the public entry is added later, not here.
+
+echo "host bootstrap finished: $(date -u +%FT%TZ)"

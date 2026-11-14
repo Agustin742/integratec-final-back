@@ -28,6 +28,21 @@ output "private_subnet_ids" {
   value       = module.network.private_subnet_ids
 }
 
+output "host_instance_id" {
+  description = "ID of the EC2 host (target of SSM Session Manager and Run Command)."
+  value       = module.host.instance_id
+}
+
+output "host_public_ip" {
+  description = "Elastic IP of the EC2 host."
+  value       = module.host.public_ip
+}
+
+output "host_sslip_domain" {
+  description = "Interim DNS name of the host: sslip.io resolves it to the Elastic IP, so Let's Encrypt can issue a certificate until a domain is chosen."
+  value       = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
+}
+
 output "host_security_group_id" {
   description = "ID of the EC2 host security group; the intended source for the RDS ingress rule added in #60."
   value       = module.host.security_group_id

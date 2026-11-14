@@ -60,6 +60,28 @@ variable "vpc_cidr" {
   }
 }
 
+variable "host_instance_type" {
+  description = "EC2 instance type of the prod host (x86_64 burstable only)."
+  type        = string
+  default     = "t3.small"
+
+  validation {
+    condition     = contains(["t3.small", "t3.medium", "t3.large", "t3a.small", "t3a.medium", "t3a.large"], var.host_instance_type)
+    error_message = "host_instance_type must be an x86_64 burstable type: t3.small, t3.medium, t3.large, t3a.small, t3a.medium or t3a.large."
+  }
+}
+
+variable "host_root_volume_size_gb" {
+  description = "Size in GiB of the encrypted gp3 root volume of the prod host."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.host_root_volume_size_gb == floor(var.host_root_volume_size_gb) && var.host_root_volume_size_gb >= 20 && var.host_root_volume_size_gb <= 100
+    error_message = "host_root_volume_size_gb must be a whole number between 20 and 100."
+  }
+}
+
 variable "availability_zones" {
   description = "Availability zones for the prod network: the public subnet goes in the first one and one private subnet is created per zone (at least two, for RDS)."
   type        = list(string)
