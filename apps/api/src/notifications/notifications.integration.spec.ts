@@ -51,6 +51,7 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
   let service: NotificationsService;
   let dispatcher: OutboxDispatcher;
   let ids: ReturnType<typeof identifiers>;
+  let eventIds: string[];
 
   const request = (overrides: Partial<NotificationRequest> = {}): NotificationRequest => ({
     kind: 'mention',
@@ -59,9 +60,13 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
     recipientId: ids.student,
     ...overrides,
   });
-  const record = (input = request()) => prisma.$transaction((tx) => recorder.record(tx, input));
+  const record = async (input = request()) => {
+    const id = await prisma.$transaction((tx) => recorder.record(tx, input));
+    eventIds.push(id);
+    return id;
+  };
   const dispatch = () =>
-    dispatcher.dispatchPending(1000, new Date(), [NOTIFICATION_REQUESTED_EVENT]);
+    dispatcher.dispatchPending(1000, new Date(), [NOTIFICATION_REQUESTED_EVENT], eventIds);
   const notices = () =>
     prisma.notification.findMany({
       where: { resourceId: ids.resource },
@@ -86,6 +91,7 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
 
   beforeEach(async () => {
     ids = identifiers();
+    eventIds = [];
     await prisma.$transaction(async (tx) => {
       const users = [
         ids.owner,
@@ -176,6 +182,7 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
   it('does not create or dispatch before commit, even if the service receives the event id', async () => {
     await prisma.$transaction(async (tx) => {
       const eventId = await recorder.record(tx, request());
+      eventIds.push(eventId);
       expect(await tx.outboxEvent.count({ where: { id: eventId } })).toBe(1);
       await service.materializeCommittedEvent(eventId);
       expect((await dispatch()).delivered).toBe(0);
@@ -461,7 +468,6 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
     );
     expect(await notices()).toEqual([]);
     expect((await prisma.outboxEvent.findUniqueOrThrow({ where: { id } })).processedAt).toBeNull();
-    // Keep the deliberately invalid fixture out of later test dispatch batches.
-    await prisma.outboxEvent.update({ where: { id }, data: { failedAt: new Date() } });
+    // Later tests dispatch only their own event IDs; this fixture stays pending.
   });
 });

@@ -106,19 +106,21 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Claims up to `batchSize` due events (optionally only of the given `types`), runs
-   * their handlers and records each outcome. `now` is injectable for tests.
+   * Claims up to `batchSize` due events, intersecting optional `types` and `eventIds`
+   * filters. Omitted filters are unrestricted; empty filters claim nothing.
+   * Runs handlers and records each outcome. `now` is injectable for tests.
    */
   async dispatchPending(
     batchSize = DEFAULT_BATCH_SIZE,
     now = new Date(),
     types?: readonly string[],
+    eventIds?: readonly string[],
   ): Promise<OutboxDispatchResult> {
     const outcome: OutboxDispatchResult = { delivered: 0, retried: 0, exhausted: 0 };
-    if (types?.length === 0) return outcome;
+    if (types?.length === 0 || eventIds?.length === 0) return outcome;
     const startedAt = Date.now();
     const leaseUntil = new Date(now.getTime() + this.leaseMs);
-    const rows = await this.claim(batchSize, now, leaseUntil, types);
+    const rows = await this.claim(batchSize, now, leaseUntil, types, eventIds);
     const skipped: string[] = [];
     for (const row of rows) {
       if (!this.fitsInLease(row, startedAt)) {
@@ -152,13 +154,15 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
     now: Date,
     leaseUntil: Date,
     types?: readonly string[],
+    eventIds?: readonly string[],
   ): Promise<ClaimedRow[]> {
     const typeFilter = types ? Prisma.sql`AND type = ANY(${[...types]}::text[])` : Prisma.empty;
+    const idFilter = eventIds ? Prisma.sql`AND id = ANY(${[...eventIds]}::uuid[])` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<ClaimedRow[]>`
       UPDATE outbox_events SET available_at = ${leaseUntil}
       WHERE id IN (
         SELECT id FROM outbox_events
-        WHERE processed_at IS NULL AND failed_at IS NULL AND available_at <= ${now} ${typeFilter}
+        WHERE processed_at IS NULL AND failed_at IS NULL AND available_at <= ${now} ${typeFilter} ${idFilter}
         ORDER BY available_at, occurred_at
         LIMIT ${batchSize}
         FOR UPDATE SKIP LOCKED)
