@@ -167,7 +167,7 @@ export class ClassroomsService {
 
     return {
       ...this.toDetailResponse(classroom, access.myRole, access.capabilities),
-      availablePanels: computeClassroomPanels(access.myRole),
+      availablePanels: computeClassroomPanels(access.capabilities),
     };
   }
 

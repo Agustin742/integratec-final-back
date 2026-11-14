@@ -183,7 +183,11 @@ describe('OpenAPI document', () => {
     expect(schemas.ClassroomContextResponseDto).toMatchObject({
       required: expect.arrayContaining(['myRole', 'capabilities', 'availablePanels']),
       properties: {
-        availablePanels: { type: 'array', items: { $ref: panelRef } },
+        availablePanels: {
+          type: 'array',
+          description: expect.stringContaining('not action permissions'),
+          items: { $ref: panelRef },
+        },
       },
     });
     expect(schemas.ClassroomPanelKey).toMatchObject({
@@ -200,6 +204,7 @@ describe('OpenAPI document', () => {
         'pet',
       ],
     });
+    expect(schemas.ClassroomPanelKey).not.toHaveProperty('description');
     for (const name of ['ClassroomListItemDto', 'ClassroomDetailResponseDto']) {
       const schema = schemas[name];
       const properties = schema && 'properties' in schema && schema.properties;

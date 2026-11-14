@@ -2504,22 +2504,6 @@
         },
         "required": ["classroomId", "membershipId", "role", "desk", "alreadyMember"]
       },
-      "ClassroomPanelKey": {
-        "type": "string",
-        "enum": [
-          "activities",
-          "material",
-          "grades",
-          "chat",
-          "notices",
-          "shop",
-          "bot",
-          "members",
-          "settings",
-          "pet"
-        ],
-        "description": "Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted."
-      },
       "ClassroomContextResponseDto": {
         "type": "object",
         "properties": {
@@ -2631,9 +2615,9 @@
           },
           "availablePanels": {
             "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassroomPanelKey" },
             "description": "Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted.",
-            "example": ["grades"],
-            "items": { "$ref": "#/components/schemas/ClassroomPanelKey" }
+            "example": ["grades"]
           }
         },
         "required": [
@@ -3349,6 +3333,21 @@
             "items": { "$ref": "#/components/schemas/QuestionInputDto" }
           }
         }
+      },
+      "ClassroomPanelKey": {
+        "type": "string",
+        "enum": [
+          "activities",
+          "material",
+          "grades",
+          "chat",
+          "notices",
+          "shop",
+          "bot",
+          "members",
+          "settings",
+          "pet"
+        ]
       }
     }
   }

@@ -15,37 +15,35 @@ import {
 import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassroomPanelKey } from './classroom-panel-key';
+
+export { ClassroomPanelKey } from './classroom-panel-key';
 
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type ClassroomAccessRole = 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
 
-export enum ClassroomPanelKey {
-  ACTIVITIES = 'activities',
-  MATERIAL = 'material',
-  GRADES = 'grades',
-  CHAT = 'chat',
-  NOTICES = 'notices',
-  SHOP = 'shop',
-  BOT = 'bot',
-  MEMBERS = 'members',
-  SETTINGS = 'settings',
-  PET = 'pet',
-}
-
-/** UI availability only: call after authorization with the persisted, resolved role. */
-export function computeClassroomPanels(role: ClassroomAccessRole): ClassroomPanelKey[] {
+/** UI hints from already-authorized capabilities, never an independent role table. */
+export function computeClassroomPanels(
+  capabilities: readonly ClassroomCapability[],
+): ClassroomPanelKey[] {
   const panel = ClassroomPanelKey;
-  if (role === 'PARENT') return [panel.GRADES];
-  const common = [panel.ACTIVITIES, panel.MATERIAL, panel.GRADES, panel.CHAT, panel.NOTICES];
-  switch (role) {
-    case 'OWNER':
-    case 'ADMIN':
-    case 'TEACHER':
-      return [...common, panel.BOT, panel.MEMBERS, panel.SETTINGS];
-    case 'STUDENT':
-      return [...common, panel.SHOP, panel.BOT, panel.MEMBERS];
-  }
+  const content: readonly ClassroomCapability[] = ['publish_content', 'participate_activities'];
+  const requirements: readonly [ClassroomPanelKey, readonly ClassroomCapability[]][] = [
+    [panel.ACTIVITIES, content],
+    [panel.MATERIAL, content],
+    [panel.GRADES, ['view_metrics']],
+    [panel.CHAT, ['chat_classmates']],
+    [panel.NOTICES, content],
+    [panel.SHOP, ['participate_activities']],
+    [panel.BOT, ['configure_bot', 'participate_activities']],
+    [panel.MEMBERS, ['list_directory']],
+    [panel.SETTINGS, ['configure_classroom']],
+  ];
+  // Teacher messaging has no agreed classroom-shell panel; it never grants classroom chat.
+  return requirements
+    .filter(([, required]) => required.some((capability) => capabilities.includes(capability)))
+    .map(([key]) => key);
 }
 
 export type ClassroomCapability =

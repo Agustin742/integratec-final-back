@@ -4,7 +4,7 @@
 
 ## Role projection
 
-The shared access module projects panels from the already-authorized role derived from persisted school membership, classroom membership or parent links. It adds no query or stored state and never trusts a client-supplied role.
+The shared access module projects panels from already-authorized capabilities, derived from persisted school membership, classroom membership or parent links. It adds no query or stored state and never trusts a client-supplied role. Capabilities remain the single role-to-permission mapping: content panels use `publish_content` or `participate_activities`, grades uses `view_metrics`, chat uses `chat_classmates`, shop uses `participate_activities`, bot uses `configure_bot` or `participate_activities`, members uses `list_directory`, and settings uses `configure_classroom`.
 
 | Resolved role | Exact panel order |
 | --- | --- |
@@ -20,7 +20,7 @@ Only `GET /classrooms/:id` acquires this field. Classroom creation, updates, `GE
 
 An absent panel is not offered. A present panel may be empty and does **not** authorize all its operations. For example, staff see activities for management without gaining student submission authority; a student sees members without gaining the private staff roster. The members panel refers to the [D12 directory](../rules/classrooms-and-roles.md#member-directory), not guardian or private roster data.
 
-Parents receive no shell panel outside grades. Every child-resource endpoint must still enforce the current linked-child check; this list neither grants access to other children nor adds parent access to material, chat, notices, bot or directory. Existing classroom state fields are unchanged. See the [permission rules](../rules/classrooms-and-roles.md) and [master role matrix](../master-document.md#22-roles-permisos-e-invitaciones).
+Parents receive no shell panel outside grades. Their existing `message_teacher` capability is preserved, but it does not map to classroom chat or a new shell panel. Placement of parent-to-teacher messaging remains an open frontend/team confirmation for frontend #26; this delivery neither implements that conversation nor declares a UI location agreed. Every child-resource endpoint must still enforce the current linked-child check; this list neither grants access to other children nor adds parent access to material, chat, notices, bot or directory. Existing classroom state fields are unchanged. See the [permission rules](../rules/classrooms-and-roles.md) and [master role matrix](../master-document.md#22-roles-permisos-e-invitaciones).
 
 ## Access and failures
 

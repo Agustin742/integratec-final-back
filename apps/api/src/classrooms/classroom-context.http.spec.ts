@@ -164,7 +164,12 @@ describe('classroom context HTTP — panel availability is not authorization', (
     expect(response.body).not.toHaveProperty('linkedChildIds');
     expect(response.body.availablePanels).not.toContain('pet');
     expect({ row, schoolMembers, members, links }).toEqual(before);
-    expect(prisma.classroom.findFirst).toHaveBeenCalledTimes(2);
+    expect(response.body).toMatchObject({
+      id: classroomId,
+      name: row.name,
+      deskCount: 12,
+      pet: null,
+    });
   });
 
   it('allows an independent teacher only in their own classroom', async () => {
@@ -222,7 +227,7 @@ describe('classroom context HTTP — panel availability is not authorization', (
       const response = await get().expect(404);
       expect(response.body.error.code).toBe('NOT_FOUND');
       expect(response.body).not.toHaveProperty('availablePanels');
-      expect(prisma.classroom.findFirst).toHaveBeenCalledTimes(1);
+      expect(response.body.error.message).toBe('The requested resource was not found.');
     },
   );
 

@@ -81,15 +81,28 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
     ])(
       'returns a stable, fresh, unique array for $role without reserved pet',
       ({ role, expected }) => {
-        const panels = computeClassroomPanels(role);
+        const capabilities = computeClassroomCapabilities(role);
+        const panels = computeClassroomPanels(capabilities);
         expect(panels).toEqual(expected);
         expect(new Set(panels).size).toBe(panels.length);
         expect(panels).not.toContain('pet');
-        expect(computeClassroomPanels(role)).not.toBe(panels);
+        expect(computeClassroomPanels(capabilities)).not.toBe(panels);
         panels.splice(0, panels.length);
-        expect(computeClassroomPanels(role)).toEqual(expected);
+        expect(computeClassroomPanels(capabilities)).toEqual(expected);
       },
     );
+  });
+
+  it('projects only panels supported by the supplied capabilities, not teacher messaging', () => {
+    expect(computeClassroomPanels([])).toEqual([]);
+    expect(computeClassroomPanels(['message_teacher'])).toEqual([]);
+    expect(computeClassroomPanels(['list_directory', 'configure_classroom'])).toEqual([
+      'members',
+      'settings',
+    ]);
+    expect(computeClassroomPanels(['view_metrics', 'view_metrics', 'message_teacher'])).toEqual([
+      'grades',
+    ]);
   });
 
   describe('Capabilities calculation helper (Permission Matrix)', () => {
