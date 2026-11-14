@@ -1,11 +1,21 @@
 output "security_group_id" {
-  description = "ID of the host security group (RDS allows 5432 only from it)."
+  description = "ID of the host security group; the intended source for the RDS ingress rule added in #60."
   value       = aws_security_group.host.id
 }
 
 output "security_group_name" {
-  description = "Name of the host security group."
+  description = "Generated name of the host security group."
   value       = aws_security_group.host.name
+}
+
+output "security_group_name_prefix" {
+  description = "Name prefix of the host security group."
+  value       = aws_security_group.host.name_prefix
+}
+
+output "security_group_tags" {
+  description = "Tags set on the host security group."
+  value       = aws_security_group.host.tags
 }
 
 output "security_group_vpc_id" {
@@ -14,9 +24,9 @@ output "security_group_vpc_id" {
 }
 
 output "ingress_rules" {
-  description = "Ingress rules of the host security group (protocol, ports and source), for tests and review."
+  description = "Ingress rules of the host security group (protocol, ports and source), derived from the single ingress rule resource, for tests and review."
   value = [
-    for r in [aws_vpc_security_group_ingress_rule.https, aws_vpc_security_group_ingress_rule.http] : {
+    for r in values(aws_vpc_security_group_ingress_rule.this) : {
       ip_protocol = r.ip_protocol
       from_port   = r.from_port
       to_port     = r.to_port

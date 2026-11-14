@@ -1,33 +1,54 @@
-# Security group of the EC2 host. Rules are standalone resources (not inline
-# blocks) so other modules and later issues can add rules without fighting this one.
+locals {
+  # Single source of truth for the public ingress of the host. Anything not listed
+  # here is closed, and there is deliberately no SSH (access is through SSM Session
+  # Manager).
+  ingress_rules = {
+    https = {
+      port        = 443
+      description = "HTTPS and WSS from the internet (Caddy)"
+    }
+    http = {
+      port        = 80
+      description = "HTTP from the internet (redirect to HTTPS and ACME HTTP-01 challenge)"
+    }
+  }
+}
+
+# Security group of the EC2 host. It uses name_prefix with create_before_destroy so
+# a change that forces replacement (for example a new description) builds the new
+# group first: a fixed name would clash with the old group, and the old one cannot
+# be deleted while the instance and RDS rules still reference it. The standalone
+# rule resources below reference the group id, so they are recreated on the new
+# group automatically.
 resource "aws_security_group" "host" {
-  name        = "${var.name_prefix}-host-sg"
+  name_prefix = "${var.name_prefix}-host-sg-"
   description = "EC2 host: public HTTP/HTTPS only, no SSH (access is through SSM Session Manager)"
   vpc_id      = var.vpc_id
 
   tags = {
     Name = "${var.name_prefix}-host-sg"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# HTTPS and WSS, terminated by Caddy.
-resource "aws_vpc_security_group_ingress_rule" "https" {
-  security_group_id = aws_security_group.host.id
-  description       = "HTTPS and WSS from the internet (Caddy)"
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-}
+# Rules are standalone resources (not inline blocks) so later issues can add rules
+# without fighting this group. Ingress is the only ingress resource of the module.
+resource "aws_vpc_security_group_ingress_rule" "this" {
+  for_each = local.ingress_rules
 
-# HTTP is needed for the redirect to HTTPS and the Let's Encrypt HTTP-01 challenge.
-resource "aws_vpc_security_group_ingress_rule" "http" {
   security_group_id = aws_security_group.host.id
-  description       = "HTTP from the internet (redirect to HTTPS and ACME HTTP-01 challenge)"
+  description       = each.value.description
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "tcp"
-  from_port         = 80
-  to_port           = 80
+  from_port         = each.value.port
+  to_port           = each.value.port
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # All outbound IPv4 is allowed on purpose: the host must reach Let's Encrypt, ECR,
@@ -39,4 +60,8 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   description       = "All outbound IPv4 (ACME, ECR, SSM, package repos, DNS)"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }

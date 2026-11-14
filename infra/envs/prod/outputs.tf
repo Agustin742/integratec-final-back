@@ -29,6 +29,6 @@ output "private_subnet_ids" {
 }
 
 output "host_security_group_id" {
-  description = "ID of the EC2 host security group (RDS allows 5432 only from it)."
+  description = "ID of the EC2 host security group; the intended source for the RDS ingress rule added in #60."
   value       = module.host.security_group_id
 }

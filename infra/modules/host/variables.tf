@@ -4,7 +4,7 @@ variable "name_prefix" {
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]{1,60}[a-z0-9]$", var.name_prefix))
-    error_message = "name_prefix must be lowercase letters, digits and hyphens."
+    error_message = "name_prefix must be 3 to 62 characters: lowercase letters, digits and hyphens only, starting with a letter and ending with a letter or digit."
   }
 }
 
