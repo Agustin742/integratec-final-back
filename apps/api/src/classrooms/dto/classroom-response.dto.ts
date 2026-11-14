@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ClassroomPanelKey } from '../../access/access-verification.service';
 import type {
   ClassroomAccessRole,
   ClassroomCapability,
@@ -150,4 +151,17 @@ export class ClassroomDetailResponseDto extends ClassroomListItemDto {
     description: 'The classroom pet state',
   })
   pet!: ClassroomPetSummaryDto | null;
+}
+
+/** GET context only; creation, updates and classroom lists keep their existing shapes. */
+export class ClassroomContextResponseDto extends ClassroomDetailResponseDto {
+  @ApiProperty({
+    enum: ClassroomPanelKey,
+    enumName: 'ClassroomPanelKey',
+    isArray: true,
+    description:
+      'Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted.',
+    example: ['grades'],
+  })
+  availablePanels!: ClassroomPanelKey[];
 }

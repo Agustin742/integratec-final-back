@@ -20,6 +20,34 @@ export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0
 
 export type ClassroomAccessRole = 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
 
+export enum ClassroomPanelKey {
+  ACTIVITIES = 'activities',
+  MATERIAL = 'material',
+  GRADES = 'grades',
+  CHAT = 'chat',
+  NOTICES = 'notices',
+  SHOP = 'shop',
+  BOT = 'bot',
+  MEMBERS = 'members',
+  SETTINGS = 'settings',
+  PET = 'pet',
+}
+
+/** UI availability only: call after authorization with the persisted, resolved role. */
+export function computeClassroomPanels(role: ClassroomAccessRole): ClassroomPanelKey[] {
+  const panel = ClassroomPanelKey;
+  if (role === 'PARENT') return [panel.GRADES];
+  const common = [panel.ACTIVITIES, panel.MATERIAL, panel.GRADES, panel.CHAT, panel.NOTICES];
+  switch (role) {
+    case 'OWNER':
+    case 'ADMIN':
+    case 'TEACHER':
+      return [...common, panel.BOT, panel.MEMBERS, panel.SETTINGS];
+    case 'STUDENT':
+      return [...common, panel.SHOP, panel.BOT, panel.MEMBERS];
+  }
+}
+
 export type ClassroomCapability =
   | 'manage_school'
   | 'configure_classroom'

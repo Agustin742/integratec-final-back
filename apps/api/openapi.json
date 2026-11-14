@@ -488,7 +488,7 @@
     },
     "/classrooms/{id}": {
       "get": {
-        "description": "Returns the persistent state of a virtual classroom, its pet, desk count, and the server-derived role and capabilities for the authenticated caller.",
+        "description": "Returns persistent classroom state, pet, desk count, and the server-derived role, capabilities and availablePanels. Panels are UI availability, not operation authorization; pet is reserved and never available. Linked parents receive only the grades panel; adult mode disables parent access.",
         "operationId": "ClassroomsController_findOne",
         "parameters": [
           {
@@ -501,10 +501,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Classroom details and caller capabilities.",
+            "description": "Classroom details, caller capabilities and available panels.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ClassroomDetailResponseDto" }
+                "schema": { "$ref": "#/components/schemas/ClassroomContextResponseDto" }
               }
             }
           },
@@ -2652,6 +2652,157 @@
           }
         },
         "required": ["classroomId", "membershipId", "role", "desk", "alreadyMember"]
+      },
+      "ClassroomPanelKey": {
+        "type": "string",
+        "enum": [
+          "activities",
+          "material",
+          "grades",
+          "chat",
+          "notices",
+          "shop",
+          "bot",
+          "members",
+          "settings",
+          "pet"
+        ],
+        "description": "Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted."
+      },
+      "ClassroomContextResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "4e5f6a7b-0000-4000-8000-000000000002",
+            "description": "Unique classroom identifier (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática",
+            "description": "Display name of the virtual classroom"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true,
+            "example": "Matemática y Geometría",
+            "description": "Optional subject or course description"
+          },
+          "schoolId": {
+            "type": "string",
+            "nullable": true,
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Owning school UUID when the classroom belongs to a school, or null"
+          },
+          "independentTeacherId": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Owning independent teacher user UUID when the classroom belongs to an independent teacher, or null"
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom runs in adult education mode"
+          },
+          "chatMuted": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom student chat is muted"
+          },
+          "collaborationLocked": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether collaborative editing is locked"
+          },
+          "gamesDisabled": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether interactive classroom games are disabled"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
+            "example": "TEACHER",
+            "description": "Resolved role of the authenticated caller in this classroom"
+          },
+          "capabilities": {
+            "type": "array",
+            "example": [
+              "configure_classroom",
+              "invite_members",
+              "publish_content",
+              "moderate_chat",
+              "configure_bot",
+              "view_metrics",
+              "chat_classmates",
+              "list_directory",
+              "message_teacher"
+            ],
+            "description": "Server-derived capabilities granted to the caller in this classroom",
+            "items": {
+              "type": "string",
+              "enum": [
+                "manage_school",
+                "configure_classroom",
+                "invite_members",
+                "publish_content",
+                "moderate_chat",
+                "configure_bot",
+                "view_metrics",
+                "participate_activities",
+                "chat_classmates",
+                "list_directory",
+                "message_teacher"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom creation timestamp in UTC (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom last update timestamp in UTC (ISO 8601)"
+          },
+          "deskCount": {
+            "type": "number",
+            "example": 12,
+            "description": "Total number of desks provisioned in the classroom"
+          },
+          "pet": {
+            "nullable": true,
+            "description": "The classroom pet state",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ClassroomPetSummaryDto" }]
+          },
+          "availablePanels": {
+            "type": "array",
+            "description": "Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted.",
+            "example": ["grades"],
+            "items": { "$ref": "#/components/schemas/ClassroomPanelKey" }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subject",
+          "schoolId",
+          "independentTeacherId",
+          "adultMode",
+          "chatMuted",
+          "collaborationLocked",
+          "gamesDisabled",
+          "myRole",
+          "capabilities",
+          "createdAt",
+          "updatedAt",
+          "deskCount",
+          "pet",
+          "availablePanels"
+        ]
       },
       "UpdateClassroomDto": {
         "type": "object",

@@ -6,6 +6,8 @@ import type { PrismaService } from '../prisma/prisma.service';
 import {
   AccessVerificationService,
   computeClassroomCapabilities,
+  computeClassroomPanels,
+  type ClassroomAccessRole,
   deriveClassroomAccessRole,
   type ClassroomCapability,
   type ClassroomRoleFacts,
@@ -47,6 +49,47 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
     };
 
     service = new AccessVerificationService(prismaMock as unknown as PrismaService);
+  });
+
+  describe('Panel projection (not operation authorization)', () => {
+    const staff = [
+      'activities',
+      'material',
+      'grades',
+      'chat',
+      'notices',
+      'bot',
+      'members',
+      'settings',
+    ];
+    const student = [
+      'activities',
+      'material',
+      'grades',
+      'chat',
+      'notices',
+      'shop',
+      'bot',
+      'members',
+    ];
+    it.each<{ role: ClassroomAccessRole; expected: string[] }>([
+      { role: 'OWNER', expected: staff },
+      { role: 'ADMIN', expected: staff },
+      { role: 'TEACHER', expected: staff },
+      { role: 'STUDENT', expected: student },
+      { role: 'PARENT', expected: ['grades'] },
+    ])(
+      'returns a stable, fresh, unique array for $role without reserved pet',
+      ({ role, expected }) => {
+        const panels = computeClassroomPanels(role);
+        expect(panels).toEqual(expected);
+        expect(new Set(panels).size).toBe(panels.length);
+        expect(panels).not.toContain('pet');
+        expect(computeClassroomPanels(role)).not.toBe(panels);
+        panels.splice(0, panels.length);
+        expect(computeClassroomPanels(role)).toEqual(expected);
+      },
+    );
   });
 
   describe('Capabilities calculation helper (Permission Matrix)', () => {

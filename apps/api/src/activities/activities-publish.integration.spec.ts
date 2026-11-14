@@ -10,7 +10,7 @@ import {
   type Prisma,
 } from '@prisma/client';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
 import { SessionVerifier } from '../auth/session-verifier.service';
 import { authTestConfig } from '../auth/testing/auth-test-config';
@@ -33,6 +33,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
   let app: INestApplication;
   let prisma: PrismaService;
   let recorder: NotificationRecorder;
+  let recordNotification: NotificationRecorder['record'];
   let notifications: NotificationsService;
   let fixtureReady = false;
   const [teacher, coTeacher, s1, s2, sInactive, sRemoved, sElsewhere, parent, stranger, other] =
@@ -51,6 +52,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
   ];
   const activeStudents = [s1, s2].sort();
   const [classroomA, classroomB] = [randomUUID(), randomUUID()];
+  const ownedClassroomIds: readonly string[] = [classroomA, classroomB];
   const token = (actor: string) => `Bearer publish-test:${actor}`;
   const publish = (id: string, actor = teacher, classroom = classroomA) =>
     request(app.getHttpServer())
@@ -108,6 +110,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     await app.init();
     prisma = app.get(PrismaService);
     recorder = app.get(NotificationRecorder);
+    recordNotification = recorder.record.bind(recorder);
     notifications = app.get(NotificationsService);
     await prisma.$transaction(async (tx) => {
       await tx.user.createMany({
@@ -152,9 +155,34 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     fixtureReady = true;
   }, 30_000);
 
+  beforeEach(() => {
+    // Shared dispatchers must not claim these events while teardown deletes their dependents.
+    // Defer only owned fixtures in the producer transaction: a post-commit update is too late.
+    // Keep a plain wrapper so the rollback test can spy on it without binding a mutable spy.
+    recorder.record = async (tx, input) => {
+      const eventId = await recordNotification(tx, input);
+      if (
+        input.kind === 'activity_published' &&
+        ownedClassroomIds.includes(input.classroomId) &&
+        (await tx.activity.findFirst({
+          where: { id: input.resourceId, classroomId: input.classroomId },
+          select: { id: true },
+        }))
+      ) {
+        await tx.outboxEvent.update({
+          where: { id: eventId, type: NOTIFICATION_REQUESTED_EVENT },
+          data: { availableAt: inDays(365) },
+        });
+      }
+      return eventId;
+    };
+  });
+
   /**
    * Outbox rows are shared by every spec file running on this database and the notification
    * specs count what their own dispatch delivers, so this file never leaves its events behind.
+   * Owned events stay unavailable to shared dispatchers until this cleanup; tests that need
+   * notifications await materializeCommittedEvent directly before deleting deliveries/events.
    */
   const dropOwnNotificationEvents = async () => {
     const ids = (
@@ -189,6 +217,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    recorder.record = recordNotification;
     await dropOwnNotificationEvents();
   });
 
@@ -266,6 +295,51 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
         list.body.items.filter((n: { resourceId: string }) => n.resourceId === id),
       ).toHaveLength(0);
     }
+  });
+
+  it('isolates owned notification events from shared dispatch until fixture cleanup', async () => {
+    const id = await draft();
+    await publish(id).expect(200);
+    const events = await requests(id);
+    const eventIds = events.map((event) => event.id);
+    expect(events).toHaveLength(2);
+    expect(await recipientsOf(id)).toEqual(activeStudents);
+    for (const event of events) {
+      expect(event).toMatchObject({
+        type: NOTIFICATION_REQUESTED_EVENT,
+        processedAt: null,
+        failedAt: null,
+        payload: { kind: 'activity_published', classroomId: classroomA, resourceId: id },
+      });
+    }
+    // The dispatcher's claim predicate must not select these fixtures while other specs run.
+    expect(
+      await prisma.outboxEvent.count({
+        where: {
+          id: { in: eventIds },
+          processedAt: null,
+          failedAt: null,
+          availableAt: { lte: new Date() },
+        },
+      }),
+    ).toBe(0);
+    for (const event of events) await notifications.materializeCommittedEvent(event.id);
+    const notices = await prisma.notification.findMany({
+      where: { sourceEventId: { in: eventIds } },
+      include: { deliveries: true },
+    });
+    expect(notices.map((notice) => notice.recipientId).sort()).toEqual(activeStudents);
+    expect(notices.every((notice) => notice.deliveries.length === 1)).toBe(true);
+    expect((await requests(id)).map((event) => event.id).sort()).toEqual(eventIds.sort());
+
+    await dropOwnNotificationEvents();
+    expect(await requests(id)).toHaveLength(0);
+    expect(await prisma.notification.count({ where: { sourceEventId: { in: eventIds } } })).toBe(0);
+    expect(
+      await prisma.notificationDelivery.count({
+        where: { notificationId: { in: notices.map((notice) => notice.id) } },
+      }),
+    ).toBe(0);
   });
 
   it('a second publish answers 409 and creates no new notification', async () => {
