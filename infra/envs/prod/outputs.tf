@@ -27,3 +27,8 @@ output "private_subnet_ids" {
   description = "IDs of the private subnets (one per availability zone) for the RDS subnet group."
   value       = module.network.private_subnet_ids
 }
+
+output "host_security_group_id" {
+  description = "ID of the EC2 host security group (RDS allows 5432 only from it)."
+  value       = module.host.security_group_id
+}

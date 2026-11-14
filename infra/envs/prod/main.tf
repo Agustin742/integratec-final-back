@@ -14,3 +14,10 @@ module "network" {
 
   availability_zones = var.availability_zones
 }
+
+module "host" {
+  source = "../../modules/host"
+
+  name_prefix = "${var.project}-${local.environment}"
+  vpc_id      = module.network.vpc_id
+}
