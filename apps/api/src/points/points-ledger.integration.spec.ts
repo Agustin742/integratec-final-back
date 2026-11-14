@@ -400,4 +400,122 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
     const persisted = await prisma.pointTransaction.findUniqueOrThrow({ where: { id: entry.id } });
     expect(persisted.amount).toBe(30);
   });
+
+  it('allows idempotent replay of credit, debit, and compensate after student membership becomes inactive', async () => {
+    const debitKey = `debit-after-leave-${randomUUID()}`;
+    const compKey = `comp-after-leave-${randomUUID()}`;
+    const firstCredit = await ledger.credit({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      amount: 100,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      reason: 'Initial grade',
+    });
+    const firstDebit = await ledger.debit({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      amount: 30,
+      sourceType: 'shop_purchase',
+      sourceId: ids.purchaseSource,
+      idempotencyKey: debitKey,
+      reason: 'Avatar purchase',
+    });
+    const firstCompensate = await ledger.compensate({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      delta: -10,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      idempotencyKey: compKey,
+      reason: 'Regrade correction',
+      actorId: ids.teacher,
+    });
+
+    await prisma.classroomMembership.updateMany({
+      where: { classroomId: ids.classroom, userId: ids.student },
+      data: { state: 'INACTIVE', deletedAt: new Date() },
+    });
+
+    const replayCredit = await ledger.credit({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      amount: 100,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      reason: 'Initial grade',
+    });
+    const replayDebit = await ledger.debit({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      amount: 30,
+      sourceType: 'shop_purchase',
+      sourceId: ids.purchaseSource,
+      idempotencyKey: debitKey,
+      reason: 'Avatar purchase',
+    });
+    const replayCompensate = await ledger.compensate({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      delta: -10,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      idempotencyKey: compKey,
+      reason: 'Regrade correction',
+      actorId: ids.teacher,
+    });
+
+    expect(replayCredit).toEqual(
+      expect.objectContaining({
+        created: false,
+        entry: expect.objectContaining({ id: firstCredit.entry.id }),
+      }),
+    );
+    expect(replayDebit).toEqual(
+      expect.objectContaining({
+        created: false,
+        entry: expect.objectContaining({ id: firstDebit.entry.id }),
+      }),
+    );
+    expect(replayCompensate).toEqual(
+      expect.objectContaining({
+        created: false,
+        entry: expect.objectContaining({ id: firstCompensate.entry.id }),
+      }),
+    );
+
+    await expect(
+      ledger.credit({
+        classroomId: ids.classroom,
+        studentId: ids.student,
+        amount: 20,
+        sourceType: 'submission_grade',
+        sourceId: randomUUID(),
+        reason: 'New credit after leaving',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('allows TRUNCATE TABLE "point_transactions" for dev/test seeding resets', async () => {
+    await ledger.credit({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      amount: 40,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      reason: 'Seed reset check',
+    });
+    expect(
+      await prisma.pointTransaction.count({
+        where: { classroomId: ids.classroom, studentId: ids.student },
+      }),
+    ).toBe(1);
+
+    await prisma.$executeRaw`TRUNCATE TABLE "point_transactions"`;
+    expect(
+      await prisma.pointTransaction.count({
+        where: { classroomId: ids.classroom, studentId: ids.student },
+      }),
+    ).toBe(0);
+  });
 });

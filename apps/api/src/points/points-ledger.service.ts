@@ -62,19 +62,34 @@ export interface LedgerWriteResult {
   created: boolean;
 }
 
-interface RawPointRow {
+type PointRow = {
   id: string;
   classroomId: string;
   studentId: string;
   actorId: string | null;
-  entryKind: string;
+  entryKind: PointEntryKind | string;
   amount: number;
   sourceType: string;
   sourceId: string;
   idempotencyKey: string | null;
   reason: string;
   createdAt: Date | string;
-}
+};
+
+const POINT_ROW_RETURNING = Prisma.sql`
+  RETURNING
+    "id",
+    "classroom_id" AS "classroomId",
+    "student_id" AS "studentId",
+    "actor_id" AS "actorId",
+    "entry_kind"::text AS "entryKind",
+    "amount",
+    "source_type" AS "sourceType",
+    "source_id" AS "sourceId",
+    "idempotency_key" AS "idempotencyKey",
+    "reason",
+    "created_at" AS "createdAt"
+`;
 
 const movementSelect = {
   id: true,
@@ -88,20 +103,6 @@ const movementSelect = {
 } satisfies Prisma.PointTransactionSelect;
 
 type MovementRow = Prisma.PointTransactionGetPayload<{ select: typeof movementSelect }>;
-
-type TransactionRow = {
-  id: string;
-  classroomId: string;
-  studentId: string;
-  actorId: string | null;
-  entryKind: PointEntryKind | string;
-  amount: number;
-  sourceType: string;
-  sourceId: string;
-  idempotencyKey: string | null;
-  reason: string;
-  createdAt: Date | string;
-};
 
 function mapEntryKind(raw: PointEntryKind | string): PointEntryKind {
   switch (raw) {
@@ -123,7 +124,7 @@ function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
-function toTransactionDto(row: TransactionRow): PointTransactionDto {
+function toTransactionDto(row: PointRow): PointTransactionDto {
   return {
     id: row.id,
     classroomId: row.classroomId,
@@ -201,7 +202,7 @@ function normalizeOptionalIdempotencyKey(value: string | undefined): string | nu
 }
 
 function assertIdempotentMatch(
-  existing: TransactionRow,
+  existing: PointRow,
   expected: {
     classroomId: string;
     studentId: string;
@@ -258,44 +259,42 @@ export class PointsLedgerService {
     const reason = normalizeText(input.reason, 'reason', MAX_REASON_LENGTH);
 
     return this.withTransaction(tx, async (client) => {
+      // Check earning replay before locking membership so retries return the stored entry even
+      // if the student later left the classroom.
+      const existingBeforeLock = await client.pointTransaction.findFirst({
+        where: { sourceType, sourceId, entryKind: PointEntryKind.EARNING },
+      });
+      if (existingBeforeLock) {
+        if (
+          existingBeforeLock.classroomId !== classroomId ||
+          existingBeforeLock.studentId !== studentId ||
+          existingBeforeLock.amount !== amount
+        ) {
+          throw new ConflictException('Earning source already recorded with different parameters');
+        }
+        return { entry: toTransactionDto(existingBeforeLock), created: false };
+      }
+
       await this.lockActiveStudentMembership(client, classroomId, studentId);
 
-      const id = randomUUID();
-      const inserted = await client.$queryRaw<RawPointRow[]>`
-        INSERT INTO "point_transactions" (
-          "id", "classroom_id", "student_id", "actor_id", "entry_kind",
-          "amount", "source_type", "source_id", "idempotency_key", "reason"
-        )
-        VALUES (
-          ${id}::uuid,
-          ${classroomId}::uuid,
-          ${studentId}::uuid,
-          ${actorId}::uuid,
-          'earning'::"point_entry_kind",
-          ${amount}::integer,
-          ${sourceType}::varchar(40),
-          ${sourceId}::uuid,
-          NULL,
-          ${reason}::varchar(240)
-        )
-        ON CONFLICT ("source_type", "source_id") WHERE "entry_kind" = 'earning'
-        DO NOTHING
-        RETURNING
-          "id",
-          "classroom_id" AS "classroomId",
-          "student_id" AS "studentId",
-          "actor_id" AS "actorId",
-          "entry_kind"::text AS "entryKind",
-          "amount",
-          "source_type" AS "sourceType",
-          "source_id" AS "sourceId",
-          "idempotency_key" AS "idempotencyKey",
-          "reason",
-          "created_at" AS "createdAt"
-      `;
+      const inserted = await this.insertIdempotentRow(
+        client,
+        {
+          classroomId,
+          studentId,
+          actorId,
+          entryKind: PointEntryKind.EARNING,
+          amount,
+          sourceType,
+          sourceId,
+          idempotencyKey: null,
+          reason,
+        },
+        'earning_source',
+      );
 
-      if (inserted.length > 0) {
-        return { entry: toTransactionDto(inserted[0]), created: true };
+      if (inserted) {
+        return { entry: toTransactionDto(inserted), created: true };
       }
 
       const existing = await client.pointTransaction.findFirst({
@@ -330,8 +329,6 @@ export class PointsLedgerService {
     const idempotencyKey = normalizeOptionalIdempotencyKey(input.idempotencyKey);
 
     return this.withTransaction(tx, async (client) => {
-      await this.lockActiveStudentMembership(client, classroomId, studentId);
-
       if (idempotencyKey !== null) {
         const existing = await client.pointTransaction.findUnique({ where: { idempotencyKey } });
         if (existing) {
@@ -346,6 +343,8 @@ export class PointsLedgerService {
           return { entry: toTransactionDto(existing), created: false };
         }
       }
+
+      await this.lockActiveStudentMembership(client, classroomId, studentId);
 
       const balance = await this.readLockedBalance(client, classroomId, studentId);
       if (balance - amount < 0) {
@@ -384,8 +383,6 @@ export class PointsLedgerService {
     const idempotencyKey = normalizeOptionalIdempotencyKey(input.idempotencyKey);
 
     const result = await this.withTransaction(tx, async (client) => {
-      await this.lockActiveStudentMembership(client, classroomId, studentId);
-
       if (idempotencyKey !== null) {
         const existing = await client.pointTransaction.findUnique({ where: { idempotencyKey } });
         if (existing) {
@@ -401,6 +398,8 @@ export class PointsLedgerService {
           return { entry: toTransactionDto(existing), created: false };
         }
       }
+
+      await this.lockActiveStudentMembership(client, classroomId, studentId);
 
       const balance = await this.readLockedBalance(client, classroomId, studentId);
       if (balance + delta < 0) {
@@ -552,13 +551,63 @@ export class PointsLedgerService {
     classroomId: string,
     studentId: string,
   ): Promise<number> {
-    const rows = await client.$queryRaw<Array<{ balance: number }>>`
-      SELECT COALESCE(SUM("amount"), 0)::int AS "balance"
+    const rows = await client.$queryRaw<Array<{ balance: bigint | number }>>`
+      SELECT COALESCE(SUM("amount"), 0)::bigint AS "balance"
       FROM "point_transactions"
       WHERE "classroom_id" = ${classroomId}::uuid
         AND "student_id" = ${studentId}::uuid
     `;
     return Number(rows[0]?.balance ?? 0);
+  }
+
+  private async insertIdempotentRow(
+    client: Prisma.TransactionClient,
+    data: {
+      classroomId: string;
+      studentId: string;
+      actorId: string | null;
+      entryKind: PointEntryKind;
+      amount: number;
+      sourceType: string;
+      sourceId: string;
+      idempotencyKey: string | null;
+      reason: string;
+    },
+    conflictMode: 'earning_source' | 'idempotency_key',
+  ): Promise<PointRow | null> {
+    const pgKind =
+      data.entryKind === PointEntryKind.EARNING
+        ? 'earning'
+        : data.entryKind === PointEntryKind.DEBIT
+          ? 'debit'
+          : 'compensation';
+    const conflictClause =
+      conflictMode === 'earning_source'
+        ? Prisma.sql`ON CONFLICT ("source_type", "source_id") WHERE "entry_kind" = 'earning' DO NOTHING`
+        : Prisma.sql`ON CONFLICT ("idempotency_key") DO NOTHING`;
+    const id = randomUUID();
+    const inserted = await client.$queryRaw<PointRow[]>(Prisma.sql`
+      INSERT INTO "point_transactions" (
+        "id", "classroom_id", "student_id", "actor_id", "entry_kind",
+        "amount", "source_type", "source_id", "idempotency_key", "reason"
+      )
+      VALUES (
+        ${id}::uuid,
+        ${data.classroomId}::uuid,
+        ${data.studentId}::uuid,
+        ${data.actorId}::uuid,
+        ${pgKind}::"point_entry_kind",
+        ${data.amount}::integer,
+        ${data.sourceType}::varchar(40),
+        ${data.sourceId}::uuid,
+        ${data.idempotencyKey}::varchar(128),
+        ${data.reason}::varchar(240)
+      )
+      ${conflictClause}
+      ${POINT_ROW_RETURNING}
+    `);
+
+    return inserted[0] ?? null;
   }
 
   private async insertNonEarningEntry(
@@ -580,42 +629,9 @@ export class PointsLedgerService {
       return { entry: toTransactionDto(created), created: true };
     }
 
-    const pgKind = data.entryKind === PointEntryKind.DEBIT ? 'debit' : 'compensation';
-    const id = randomUUID();
-    const inserted = await client.$queryRaw<RawPointRow[]>`
-      INSERT INTO "point_transactions" (
-        "id", "classroom_id", "student_id", "actor_id", "entry_kind",
-        "amount", "source_type", "source_id", "idempotency_key", "reason"
-      )
-      VALUES (
-        ${id}::uuid,
-        ${data.classroomId}::uuid,
-        ${data.studentId}::uuid,
-        ${data.actorId}::uuid,
-        ${pgKind}::"point_entry_kind",
-        ${data.amount}::integer,
-        ${data.sourceType}::varchar(40),
-        ${data.sourceId}::uuid,
-        ${data.idempotencyKey}::varchar(128),
-        ${data.reason}::varchar(240)
-      )
-      ON CONFLICT ("idempotency_key") DO NOTHING
-      RETURNING
-        "id",
-        "classroom_id" AS "classroomId",
-        "student_id" AS "studentId",
-        "actor_id" AS "actorId",
-        "entry_kind"::text AS "entryKind",
-        "amount",
-        "source_type" AS "sourceType",
-        "source_id" AS "sourceId",
-        "idempotency_key" AS "idempotencyKey",
-        "reason",
-        "created_at" AS "createdAt"
-    `;
-
-    if (inserted.length > 0) {
-      return { entry: toTransactionDto(inserted[0]), created: true };
+    const inserted = await this.insertIdempotentRow(client, data, 'idempotency_key');
+    if (inserted) {
+      return { entry: toTransactionDto(inserted), created: true };
     }
 
     const existing = await client.pointTransaction.findUnique({

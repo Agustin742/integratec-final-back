@@ -1,5 +1,22 @@
 # Tracker — Luis
 
+## 2026-11-14 — PR #87 review fixes for points ledger & seed reset (Issue #31)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/seed.ts`, `apps/api/src/points/points-ledger.service.ts`, `apps/api/src/points/points-ledger.spec.ts`, `apps/api/src/points/points-ledger.integration.spec.ts`, `docs/points-ledger.md`, `changelogs/tracker-luis.md`
+- **Change:** Addressed PR #87 code-review feedback on `feat/31-points-wallet-ledger`:
+  - **`apps/api/prisma/seed.ts` & `docs/points-ledger.md`:** Added `TRUNCATE TABLE "point_transactions"` before `deleteMany()` so dev/test seeding resets cleanly despite restrictive foreign keys and the `BEFORE UPDATE OR DELETE` immutability trigger, and documented that `TRUNCATE` is intentionally left unrestricted under `assertSafeToSeed`.
+  - **`apps/api/src/points/points-ledger.service.ts`:**
+    - Checked idempotent replay (`credit`, `debit`, `compensate`) before `lockActiveStudentMembership` so valid retries succeed even if the student later left the classroom.
+    - Updated `readLockedBalance` to aggregate with `COALESCE(SUM("amount"), 0)::bigint` to prevent `int32` sum overflow.
+    - Unified `RawPointRow`/`TransactionRow` into `PointRow` and extracted `POINT_ROW_RETURNING` and `insertIdempotentRow` (fixing `ON CONFLICT ("source_type", "source_id") WHERE "entry_kind" = 'earning' DO NOTHING`).
+  - **Tests:** Added unit test for pre-lock replay in `points-ledger.spec.ts` (`33` tests) and integration tests for post-leave idempotent replay and `TRUNCATE TABLE "point_transactions"` in `points-ledger.integration.spec.ts` (`10` tests).
+- **Verification observed (2026-11-14):**
+  - `pnpm --dir backend --filter @aula/api typecheck` and `pnpm --dir backend --filter @aula/api build` — passed (exit 0).
+  - `pnpm --dir backend exec eslint apps/api/src/points apps/api/prisma/seed.ts` and `prettier --check apps/api/src/points apps/api/prisma/seed.ts` — passed (exit 0).
+  - `python scripts/ci/check_docs.py` — passed (`Documentation checks passed (70 files)`).
+  - `pnpm --dir backend --filter @aula/api exec vitest run src/points/points-ledger.spec.ts src/points/points-ledger.integration.spec.ts src/points/points.http.spec.ts src/openapi/openapi.spec.ts --no-file-parallelism` (against isolated PostgreSQL 16 `aula-postgres` on `127.0.0.1:5433`, database `points_test_isolated`) — passed **56/56 tests** across 4 files (`33` unit, `10` DB integration, `6` HTTP, `7` OpenAPI).
+
 ## 2026-11-13 — Weighted points wallet and immutable ledger (Issue #31)
 
 - **Status:** completed

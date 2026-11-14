@@ -219,7 +219,7 @@ describe('PointsLedgerService (unit)', () => {
 
     it('throws ConflictException when an existing earning source is reused with mismatched parameters', async () => {
       txClient.$queryRaw.mockResolvedValueOnce([{ id: 'membership-id' }]).mockResolvedValueOnce([]);
-      txClient.pointTransaction.findFirst.mockResolvedValueOnce({
+      txClient.pointTransaction.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({
         id: entryId,
         classroomId,
         studentId,
@@ -429,6 +429,99 @@ describe('PointsLedgerService (unit)', () => {
       await expect(service.getBalance(classroomId, studentId, txClient as never)).resolves.toBe(0);
 
       await expect(service.getBalance('bad-uuid', studentId)).rejects.toThrow(BadRequestException);
+    });
+
+    it('replays credit, debit, and compensate before locking active student membership', async () => {
+      txClient.pointTransaction.findFirst.mockResolvedValueOnce({
+        id: entryId,
+        classroomId,
+        studentId,
+        actorId: null,
+        entryKind: PointEntryKind.EARNING,
+        amount: 100,
+        sourceType: 'submission_grade',
+        sourceId,
+        idempotencyKey: null,
+        reason: 'Grade 100',
+        createdAt: now,
+      });
+
+      const creditReplay = await service.credit({
+        classroomId,
+        studentId,
+        amount: 100,
+        sourceType: 'submission_grade',
+        sourceId,
+        reason: 'Grade 100',
+      });
+      expect(creditReplay).toEqual(
+        expect.objectContaining({
+          created: false,
+          entry: expect.objectContaining({ id: entryId }),
+        }),
+      );
+
+      txClient.pointTransaction.findUnique.mockResolvedValueOnce({
+        id: entryId,
+        classroomId,
+        studentId,
+        actorId: null,
+        entryKind: PointEntryKind.DEBIT,
+        amount: -25,
+        sourceType: 'shop_purchase',
+        sourceId,
+        idempotencyKey: 'debit-replay-key',
+        reason: 'Shop item',
+        createdAt: now,
+      });
+
+      const debitReplay = await service.debit({
+        classroomId,
+        studentId,
+        amount: 25,
+        sourceType: 'shop_purchase',
+        sourceId,
+        idempotencyKey: 'debit-replay-key',
+        reason: 'Shop item',
+      });
+      expect(debitReplay).toEqual(
+        expect.objectContaining({
+          created: false,
+          entry: expect.objectContaining({ id: entryId }),
+        }),
+      );
+
+      txClient.pointTransaction.findUnique.mockResolvedValueOnce({
+        id: entryId,
+        classroomId,
+        studentId,
+        actorId,
+        entryKind: PointEntryKind.COMPENSATION,
+        amount: -10,
+        sourceType: 'grade_regrade',
+        sourceId,
+        idempotencyKey: 'comp-replay-key',
+        reason: 'Adjustment',
+        createdAt: now,
+      });
+
+      const compensateReplay = await service.compensate({
+        classroomId,
+        studentId,
+        delta: -10,
+        sourceType: 'grade_regrade',
+        sourceId,
+        idempotencyKey: 'comp-replay-key',
+        reason: 'Adjustment',
+        actorId,
+      });
+      expect(compensateReplay).toEqual(
+        expect.objectContaining({
+          created: false,
+          entry: expect.objectContaining({ id: entryId }),
+        }),
+      );
+      expect(txClient.$queryRaw).not.toHaveBeenCalled();
     });
   });
 });
