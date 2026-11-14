@@ -33,6 +33,11 @@ output "host_instance_id" {
   value       = module.host.instance_id
 }
 
+output "host_bootstrap_check_command" {
+  description = "AWS CLI command that verifies the first-boot provisioning of the host (prints the done marker) through SSM Run Command."
+  value       = module.host.bootstrap_check_command
+}
+
 output "host_public_ip" {
   description = "Elastic IP of the EC2 host."
   value       = module.host.public_ip

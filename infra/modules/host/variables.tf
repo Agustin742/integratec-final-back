@@ -43,18 +43,18 @@ variable "root_volume_size_gb" {
 variable "docker_compose_version" {
   description = "Pinned docker/compose release installed as the Docker CLI plugin (not packaged in Amazon Linux 2023)."
   type        = string
-  default     = "v5.7.1"
+  default     = "v5.6.1"
 
   validation {
     condition     = can(regex("^v[0-9]+[.][0-9]+[.][0-9]+$", var.docker_compose_version))
-    error_message = "docker_compose_version must be a release tag such as v5.7.1."
+    error_message = "docker_compose_version must be a release tag such as v5.6.1."
   }
 }
 
 variable "docker_compose_sha256" {
   description = "SHA-256 of the docker-compose-linux-x86_64 asset of docker_compose_version, taken from the release .sha256 asset; the user data refuses to install a binary that does not match. Update it together with the version."
   type        = string
-  default     = "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf"
+  default     = "47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0"
 
   validation {
     condition     = can(regex("^[0-9a-f]{64}$", var.docker_compose_sha256))

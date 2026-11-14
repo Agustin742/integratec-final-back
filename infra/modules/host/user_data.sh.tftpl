@@ -4,6 +4,15 @@
 # through SSM Session Manager; this script does not touch remote login settings.
 set -euo pipefail
 exec > >(tee -a /var/log/host-bootstrap.log) 2>&1
+
+# Outcome markers, read through SSM Run Command (see the bootstrap_check_command
+# output): "done" on success, "failed" with the failing line otherwise. Without
+# them a failed first boot would leave a host that looks healthy but has no Docker.
+marker_dir=/var/lib/host-bootstrap
+mkdir -p "$marker_dir"
+rm -f "$marker_dir/done" "$marker_dir/failed"
+trap 'echo "$(date -u +%FT%TZ) line $LINENO: $BASH_COMMAND" > "$marker_dir/failed"' ERR
+
 echo "host bootstrap started: $(date -u +%FT%TZ)"
 
 # The instance has no public address until the Elastic IP is associated, which
@@ -14,6 +23,7 @@ until curl -fsS -o /dev/null --max-time 10 https://github.com; do
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 60 ]; then
     echo "no outbound HTTPS after $attempt attempts, giving up" >&2
+    echo "$(date -u +%FT%TZ) no outbound HTTPS after $attempt attempts" > "$marker_dir/failed"
     exit 1
   fi
   echo "waiting for outbound HTTPS (attempt $attempt)"
@@ -44,4 +54,5 @@ systemctl enable --now amazon-ssm-agent
 
 # Seam for the reverse proxy task: the public entry is added later, not here.
 
+echo "$(date -u +%FT%TZ) compose ${compose_version}" > "$marker_dir/done"
 echo "host bootstrap finished: $(date -u +%FT%TZ)"

@@ -150,3 +150,8 @@ output "eip_tags" {
   description = "Tags set on the Elastic IP."
   value       = aws_eip.host.tags
 }
+
+output "bootstrap_check_command" {
+  description = "AWS CLI command that prints the first-boot outcome marker of the host through SSM Run Command: the done marker on success; when it is missing, read /var/lib/host-bootstrap/failed instead."
+  value       = "aws ssm send-command --instance-ids ${aws_instance.host.id} --document-name AWS-RunShellScript --parameters 'commands=[\"cat /var/lib/host-bootstrap/done\"]' --region us-east-2"
+}

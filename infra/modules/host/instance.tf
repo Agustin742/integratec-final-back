@@ -42,11 +42,14 @@ resource "aws_instance" "host" {
   }
 
   lifecycle {
-    # The AMI parameter moves whenever AWS publishes a new image; without this
-    # every plan would propose replacing the host (and its running containers).
-    # An AMI upgrade is a deliberate replacement:
+    # Both are applied deliberately, never as drift:
+    # - ami moves whenever AWS publishes a new image; without ignoring it every
+    #   plan would propose replacing the host (and its running containers).
+    # - user_data (script or Compose version bump) only runs on first boot, so an
+    #   in-place update would stop and start the host and change nothing.
+    # To roll out either, replace the instance:
     #   terraform apply -replace=module.host.aws_instance.host
-    ignore_changes = [ami]
+    ignore_changes = [ami, user_data]
   }
 }
 

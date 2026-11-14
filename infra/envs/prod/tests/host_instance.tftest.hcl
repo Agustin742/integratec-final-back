@@ -156,8 +156,8 @@ run "user_data_installs_docker_and_verifies_compose" {
     condition = (
       strcontains(module.host.user_data, "/usr/local/lib/docker/cli-plugins/docker-compose") &&
       strcontains(module.host.user_data, "sha256sum -c") &&
-      strcontains(module.host.user_data, "docker/compose/releases/download/v5.7.1/") &&
-      strcontains(module.host.user_data, "af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf")
+      strcontains(module.host.user_data, "docker/compose/releases/download/v5.6.1/") &&
+      strcontains(module.host.user_data, "47737f4236e6d3ccea7291995203f8f018058783b4c3a9469119811a0b5db8c0")
     )
     error_message = "User data must download the pinned Compose release and verify its sha256."
   }
@@ -178,6 +178,39 @@ run "user_data_installs_docker_and_verifies_compose" {
       strcontains(module.host.user_data, "https://github.com")
     )
     error_message = "User data must log to a file and wait for outbound HTTPS before installing."
+  }
+}
+
+run "user_data_records_bootstrap_outcome" {
+  command = apply
+
+  assert {
+    condition = (
+      strcontains(module.host.user_data, "trap ") &&
+      strcontains(module.host.user_data, " ERR") &&
+      strcontains(module.host.user_data, "marker_dir=/var/lib/host-bootstrap") &&
+      strcontains(module.host.user_data, "> \"$marker_dir/failed\"")
+    )
+    error_message = "User data must install an ERR trap that writes the failed marker."
+  }
+
+  assert {
+    condition = (
+      strcontains(module.host.user_data, "compose v5.6.1\" > \"$marker_dir/done\"") &&
+      strcontains(module.host.user_data, "v5.6.1") &&
+      strcontains(module.host.user_data, "set -euo pipefail")
+    )
+    error_message = "User data must write the done marker with the timestamp and the Compose version."
+  }
+
+  assert {
+    condition     = strcontains(module.host.bootstrap_check_command, "aws ssm send-command") && strcontains(module.host.bootstrap_check_command, module.host.instance_id) && strcontains(module.host.bootstrap_check_command, "/var/lib/host-bootstrap/done") && strcontains(module.host.bootstrap_check_command, "--region us-east-2")
+    error_message = "The check command must read the done marker through SSM Run Command on the host in us-east-2."
+  }
+
+  assert {
+    condition     = output.host_bootstrap_check_command == module.host.bootstrap_check_command
+    error_message = "The prod root must expose the bootstrap check command."
   }
 }
 
@@ -215,6 +248,11 @@ run "host_module_has_no_extra_iam_or_key_resources" {
   }
 
   assert {
+    condition     = var.project != "" && can(regex("ignore_changes[[:space:]]*=[[:space:]]*[[]ami,[[:space:]]*user_data[]]", file("../../modules/host/instance.tf"))) && !can(regex("user_data_replace_on_change", file("../../modules/host/instance.tf")))
+    error_message = "The instance must ignore changes to ami and user_data (changes are applied by a deliberate replace) and must not set user_data_replace_on_change."
+  }
+
+  assert {
     condition = var.project != "" && length([
       for f in fileset("../../modules/host", "*.tf") : f
       if can(regex("(?m)^[[:space:]]*key_name[[:space:]]*=", file("../../modules/host/${f}")))
@@ -228,7 +266,7 @@ run "sslip_domain_is_derived_from_the_elastic_ip" {
 
   assert {
     condition     = output.host_public_ip == "203.0.113.10"
-    error_message = "The interim DNS name must be the dashed Elastic IP under sslip.io."
+    error_message = "The prod root must expose the Elastic IP as host_public_ip."
   }
 
   assert {
