@@ -170,7 +170,15 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     const mine = events
       .filter((e) => ids.includes((e.payload as { resourceId?: string }).resourceId ?? ''))
       .map((e) => e.id);
+    if (mine.length === 0) return;
     await prisma.$transaction(async (tx) => {
+      // Lock parent outbox rows before deleting children so parallel notification
+      // dispatchers cannot materialize a new notification between deletes.
+      await tx.$queryRaw`
+        SELECT "id" FROM "outbox_events"
+        WHERE "id" = ANY(${mine}::uuid[])
+        FOR UPDATE
+      `;
       await tx.notificationDelivery.deleteMany({
         where: { notification: { sourceEventId: { in: mine } } },
       });
