@@ -42,9 +42,24 @@ describe('Auth / Password reset (HU-AUT-002)', () => {
   const login = (password: string) =>
     request(app.getHttpServer()).post('/auth/login').send({ email, password });
 
-  /** Delivers pending reset events, as the polling dispatcher does in production. */
-  const deliver = () =>
-    dispatcher.dispatchPending(50, new Date(), [PASSWORD_RESET_REQUESTED_EVENT]);
+  const ownEvents = () => ({
+    type: PASSWORD_RESET_REQUESTED_EVENT,
+    payload: { path: ['userId'], equals: userId },
+  });
+
+  /** The HTTP producer returns no event IDs: select only this fixture user's events. */
+  const deliver = async () => {
+    const events = await prisma.outboxEvent.findMany({
+      where: ownEvents(),
+      select: { id: true },
+    });
+    return dispatcher.dispatchPending(
+      50,
+      new Date(),
+      [PASSWORD_RESET_REQUESTED_EVENT],
+      events.map((event) => event.id),
+    );
+  };
 
   /** Requests a reset, delivers the event and returns the raw token found in the email. */
   const issueToken = async (): Promise<string> => {
@@ -76,7 +91,7 @@ describe('Auth / Password reset (HU-AUT-002)', () => {
     });
     await prisma.passwordResetToken.deleteMany({ where: { userId } });
     await prisma.session.deleteMany({ where: { userId } });
-    await prisma.outboxEvent.deleteMany({ where: { type: PASSWORD_RESET_REQUESTED_EVENT } });
+    await prisma.outboxEvent.deleteMany({ where: ownEvents() });
   };
 
   beforeAll(async () => {
@@ -124,7 +139,7 @@ describe('Auth / Password reset (HU-AUT-002)', () => {
       await requestReset({ email }).expect(202);
 
       const events = await prisma.outboxEvent.findMany({
-        where: { type: PASSWORD_RESET_REQUESTED_EVENT },
+        where: ownEvents(),
       });
       expect(events).toHaveLength(1);
       expect(events[0].payload).toEqual({ userId });
@@ -133,17 +148,13 @@ describe('Auth / Password reset (HU-AUT-002)', () => {
     it('records nothing for an unknown email', async () => {
       await requestReset({ email: `nobody.${Date.now()}@example.com` }).expect(202);
 
-      expect(
-        await prisma.outboxEvent.count({ where: { type: PASSWORD_RESET_REQUESTED_EVENT } }),
-      ).toBe(0);
+      expect(await prisma.outboxEvent.count({ where: ownEvents() })).toBe(0);
     });
 
     it('matches the email regardless of case and surrounding spaces', async () => {
       await requestReset({ email: `  ${email.toUpperCase()} ` }).expect(202);
 
-      expect(
-        await prisma.outboxEvent.count({ where: { type: PASSWORD_RESET_REQUESTED_EVENT } }),
-      ).toBe(1);
+      expect(await prisma.outboxEvent.count({ where: ownEvents() })).toBe(1);
     });
 
     it.each([
@@ -180,7 +191,7 @@ describe('Auth / Password reset (HU-AUT-002)', () => {
       const token = await issueToken();
 
       const events = await prisma.outboxEvent.findMany({
-        where: { type: PASSWORD_RESET_REQUESTED_EVENT },
+        where: ownEvents(),
       });
       const serialized = JSON.stringify(events);
       expect(serialized).not.toContain(token);
