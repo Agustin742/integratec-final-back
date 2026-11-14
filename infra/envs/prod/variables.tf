@@ -48,3 +48,14 @@ variable "enable_github_oidc" {
   default     = false
   nullable    = false
 }
+
+variable "vpc_cidr" {
+  description = "IPv4 CIDR block of the prod VPC (a /16)."
+  type        = string
+  default     = "10.0.0.0/16"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0)) && try(tonumber(split("/", var.vpc_cidr)[1]) == 16, false)
+    error_message = "vpc_cidr must be a valid IPv4 CIDR block with a /16 prefix, such as 10.0.0.0/16."
+  }
+}

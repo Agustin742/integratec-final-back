@@ -1,4 +1,11 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  override_data {
+    target = module.network.data.aws_availability_zones.available
+    values = {
+      names = ["us-east-2a", "us-east-2b", "us-east-2c"]
+    }
+  }
+}
 
 run "defaults_target_prod_in_us_east_2" {
   command = plan

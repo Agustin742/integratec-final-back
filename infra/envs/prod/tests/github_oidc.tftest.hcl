@@ -4,6 +4,13 @@ variables {
 
 mock_provider "aws" {
   override_data {
+    target = module.network.data.aws_availability_zones.available
+    values = {
+      names = ["us-east-2a", "us-east-2b", "us-east-2c"]
+    }
+  }
+
+  override_data {
     target = data.aws_caller_identity.current
     values = {
       account_id = "123456789012"
