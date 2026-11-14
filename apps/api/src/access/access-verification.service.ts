@@ -584,6 +584,31 @@ export class AccessVerificationService {
   }
 
   /**
+   * Ids of the students currently enrolled in the classroom (role STUDENT, ACTIVE, not deleted),
+   * optionally excluding one user. Owned here so producers (for example activity publishing) fan
+   * out to recipients without querying membership tables themselves. Pass the caller's
+   * transaction client so the read joins that transaction; ordered by id for determinism.
+   */
+  async listActiveStudentIds(
+    classroomId: string,
+    options: { excludeUserId?: string; client?: Prisma.TransactionClient } = {},
+  ): Promise<string[]> {
+    const client = options.client ?? this.prisma;
+    const rows = await client.classroomMembership.findMany({
+      where: {
+        classroomId,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+        ...(options.excludeUserId === undefined ? {} : { userId: { not: options.excludeUserId } }),
+      },
+      select: { userId: true },
+      orderBy: { userId: 'asc' },
+    });
+    return rows.map((row) => row.userId);
+  }
+
+  /**
    * Whether the actor is an enrolled student or a linked parent (outside adult
    * mode, where the parent cannot see the classroom) in a live classroom, in the
    * given school or in any when `schoolId` is omitted. Only a visible relation
