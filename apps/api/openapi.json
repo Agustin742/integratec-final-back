@@ -1818,7 +1818,7 @@
         "tags": ["activities"]
       },
       "patch": {
-        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists.",
+        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists (409 afterwards); title, description and dates remain editable.",
         "operationId": "ActivitiesController_update",
         "parameters": [
           {
@@ -1887,7 +1887,7 @@
         "tags": ["activities"]
       },
       "delete": {
-        "description": "Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed.",
+        "description": "Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed. Refused (409) once any student has submitted.",
         "operationId": "ActivitiesController_deactivate",
         "parameters": [
           {
@@ -1921,6 +1921,12 @@
           },
           "404": {
             "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "The activity has submissions and cannot be deleted.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }

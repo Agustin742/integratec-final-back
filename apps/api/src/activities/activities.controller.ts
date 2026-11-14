@@ -124,7 +124,8 @@ export class ActivitiesController {
     summary: 'Update an activity',
     description:
       'Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` ' +
-      'replaces all questions and stays editable only until the first submission exists.',
+      'replaces all questions and stays editable only until the first submission exists (409 ' +
+      'afterwards); title, description and dates remain editable.',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiOkResponse({ type: TeacherActivityResponseDto })
@@ -174,11 +175,16 @@ export class ActivitiesController {
   @ApiOperation({
     summary: 'Deactivate an activity',
     description:
-      'Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed.',
+      'Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically ' +
+      'removed. Refused (409) once any student has submitted.',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiNoContentResponse({ description: 'Deactivated.' })
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description: 'The activity has submissions and cannot be deleted.',
+  })
   async deactivate(
     @CurrentUser('userId') actorId: string,
     @Param('id') classroomId: string,

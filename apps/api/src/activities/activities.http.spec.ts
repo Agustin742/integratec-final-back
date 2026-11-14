@@ -70,6 +70,7 @@ const prisma = {
     updateMany: vi.fn(),
   },
   question: { deleteMany: vi.fn() },
+  submission: { findFirst: vi.fn() },
   option: { deleteMany: vi.fn() },
   $transaction: vi.fn(),
   $queryRaw: vi.fn(),
@@ -148,6 +149,7 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
     prisma.activity.count.mockResolvedValue(1);
     prisma.activity.update.mockResolvedValue(row);
     prisma.activity.updateMany.mockResolvedValue({ count: 1 });
+    prisma.submission.findFirst.mockResolvedValue(null);
     prisma.classroomMembership.findMany.mockResolvedValue([]);
     recorder.record.mockResolvedValue('44444444-4444-4444-8444-4444444444aa');
     actAs('teacher');
@@ -648,24 +650,30 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
   describe('deactivate', () => {
     it('sets deletedAt scoped by classroom + id and answers 204', async () => {
       await call('delete', `${base}/${activityId}`).expect(204);
-      expect(prisma.activity.updateMany).toHaveBeenCalledWith({
+      expect(prisma.activity.update).toHaveBeenCalledWith({
         where: { id: activityId, classroomId, deletedAt: null },
         data: { deletedAt: expect.any(Date) },
       });
     });
     it('answers 404 when nothing matches (already deleted or foreign)', async () => {
-      prisma.activity.updateMany.mockResolvedValue({ count: 0 });
+      prisma.$queryRaw.mockResolvedValue([]);
       await call('delete', `${base}/${activityId}`).expect(404);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
+    });
+    it('answers 409 without writing when a submission exists', async () => {
+      prisma.submission.findFirst.mockResolvedValue({ id: 'sub' });
+      await call('delete', `${base}/${activityId}`).expect(409);
+      expect(prisma.activity.update).not.toHaveBeenCalled();
     });
     it.each<Actor>(['student', 'parent'])('%s receives 403 without writes', async (actor) => {
       actAs(actor);
       await call('delete', `${base}/${activityId}`).expect(403);
-      expect(prisma.activity.updateMany).not.toHaveBeenCalled();
+      expect(prisma.activity.update).not.toHaveBeenCalled();
     });
     it('stranger receives 404 without writes', async () => {
       actAs('stranger');
       await call('delete', `${base}/${activityId}`).expect(404);
-      expect(prisma.activity.updateMany).not.toHaveBeenCalled();
+      expect(prisma.activity.update).not.toHaveBeenCalled();
     });
   });
 
