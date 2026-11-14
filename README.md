@@ -30,6 +30,7 @@ backend/
 ## Activities
 
 - [Activities (TP and exams)](docs/activities.md): `/classrooms/:id/activities` create, list, read, update, publish and logical deactivation; teacher and student views (the student view never carries `isCorrect`); publishing records the student notifications in the same transaction.
+- [File submissions](docs/submissions.md): `POST /activities/:activityId/submissions` (multipart, `Idempotency-Key`), `GET /activities/:activityId/submissions/me` and `GET /submissions/:submissionId`; content-detected PDF, PNG, JPEG and DOCX, private storage with signed download URLs, window and late handling on the server clock, and the question and deletion lock on activities.
 
 ## Notification center
 

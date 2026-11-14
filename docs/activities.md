@@ -1,6 +1,6 @@
 # Activities (TP and exams)
 
-`ActivitiesModule` lets classroom staff create, edit, publish and deactivate activities (practical work, "TP", and exams) in a classroom. Enrolled students see published activities and are notified when one is published. Submissions, grading, points and study material are **not** part of this module yet (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService` (see [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md)); the academic rules are in [Activities and grading](../rules/activities-and-grading.md).
+`ActivitiesModule` lets classroom staff create, edit, publish and deactivate activities (practical work, "TP", and exams) in a classroom. Enrolled students see published activities and are notified when one is published. File submissions live in their own module ([File submissions](submissions.md)); grading, points and study material are **not** part of this module yet (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService` (see [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md)); the academic rules are in [Activities and grading](../rules/activities-and-grading.md).
 
 An activity is an academic assignment. It is **unrelated** to `ActivityMetric` (the per-user, per-classroom, per-day aggregate of connected time described in [D14](technical-justification.md#d14-realtime-presence-and-movement-policy)); the two share only a word.
 
@@ -44,7 +44,7 @@ All routes live under `/classrooms/:id/activities`, require a Bearer session and
 | `401` | Missing or invalid session |
 | `403` | The classroom is visible to the caller but the role is not allowed: a student on a mutation, or a linked parent on any activity route |
 | `404` | Malformed UUID, unknown or foreign classroom or activity, a deactivated activity, a draft requested by a student, or a stranger |
-| `409` | Publishing an activity that is already published; questions locked by a submission (planned, see [Decisions and defaults](#decisions-and-defaults)) |
+| `409` | Publishing an activity that is already published; `PATCH` with `questions` and `DELETE` once a submission exists (reason in `details`, see [Concurrency](#concurrency)) |
 
 Linked parents are not part of the activity row of the permission matrix (they only see the grades of their linked child), so they receive `403`; the matrix is not extended here.
 
@@ -96,6 +96,8 @@ Publishing is one way: there is no unpublish.
 
 `PATCH` and publish take the same row lock before reading the state they overwrite, so concurrent writers are serialized rather than racing. A `PATCH` queued behind a `DELETE` returns `404` and never writes to the deactivated row; two `PATCH` requests that are each valid alone but not together produce one `200` and one `400`, never a `500` from a database `CHECK`; concurrent question replacements never interleave. `DELETE` waits for a pending lock and then deactivates.
 
+**Submission lock.** `PATCH`, publish and `DELETE` all take `FOR UPDATE` on the row (`DELETE` used to be a bare update and now does too); a submission takes `FOR SHARE` on it ([File submissions](submissions.md#concurrency)). After the lock, `PATCH` with `questions` returns `409` (field `questions`) and `DELETE` returns `409` (field `state`) if any submission exists, so a submit cannot commit between the check and the write. Title, description, dates, `allowLate`, `maxScore` and `weightMultiplier` stay editable. A `FILE` activity carries no questions, so the questions lock is reachable once multiple choice answers exist (#47); the deletion lock applies to every format.
+
 ## Time zone
 
 Instants are stored in UTC and returned as ISO 8601 UTC ([D10](technical-justification.md#d10-deadline-time-zone)). Each response also carries `timeZone`, the IANA zone of the classroom's school, falling back to `America/Argentina/Buenos_Aires` for independent teachers and schools without one. Clients render deadlines in that zone; the server decides lateness on UTC instants. See [Data and time](../rules/data-and-time.md).
@@ -105,7 +107,7 @@ Instants are stored in UTC and returned as ISO 8601 UTC ([D10](technical-justifi
 Recorded as [D15](technical-justification.md#d15-activity-publishing-defaults) and approved on 2026-11-13:
 
 - Deletion is always logical.
-- Questions and options are editable until the first submission exists. The lock is pending in issue #30 (`TODO(#30)` in `ActivitiesService.update`); until then they are always editable.
+- Questions and options are editable until the first submission exists; the lock (`409`) landed with #30 (see [Concurrency](#concurrency)). An activity with submissions can no longer be deactivated either ([D16](technical-justification.md#d16-file-submission-defaults)).
 - Defaults: title 1-120 characters, description at most 5000, 1-50 questions, 2-6 options with exactly one correct, `weightMultiplier` 0.5-3 defaulting to 1, an exam has an optional `opensAt` and a required `dueAt`, a TP has only `dueAt`, a single attempt, and the whole classroom as audience.
 
 ## Out of scope and follow-ups
@@ -113,7 +115,7 @@ Recorded as [D15](technical-justification.md#d15-activity-publishing-defaults) a
 - Study material upload (#46).
 - The realtime `activity:published` event; its transport is still open. Only the persisted notification exists.
 - Unpublishing a published activity.
-- Submissions, auto-grading and grades (#30, #47, #32) and the points wallet (#31). The questions lock lands with #30.
+- Multiple-choice answers and auto-grading (#47), grades (#32) and the points wallet (#31). File submissions are documented in [File submissions](submissions.md).
 
 ## Verification
 
