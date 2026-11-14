@@ -10,8 +10,10 @@ import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { RequestConflictException } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
+import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
+import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
 import {
   type AcceptedSubmissionFile,
   type SubmissionFileInput,
@@ -153,6 +155,7 @@ export class SubmissionsService {
     private readonly access: AccessVerificationService,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly outbox: OutboxWriter,
   ) {}
 
   /**
@@ -429,6 +432,18 @@ export class SubmissionsService {
         },
         select: SUBMISSION_SELECT,
       });
+      if (!isLate) {
+        // Same transaction as the row: the event exists if and only if the submission commits.
+        const payload: SubmissionOnTimePayload = {
+          version: 1,
+          submissionId: row.id,
+          activityId,
+          classroomId,
+          studentId,
+          submittedAt: row.submittedAt.toISOString(),
+        };
+        await this.outbox.record(tx, { type: SUBMISSION_ON_TIME_EVENT, payload });
+      }
       return { created: true, row };
     });
   }
