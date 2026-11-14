@@ -231,8 +231,26 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
   4. **Out of scope:** study material upload (#46) and the realtime `activity:published` emission (transport open).
 - **Rationale:** Logical deletion satisfies "do not delete activities with submissions or grades" now and later without a special case; the freeze-on-first-answer rule keeps teacher fixes possible until students answer, without changing answers already given.
 - **Alternatives:** Physical deletion when no submissions exist (rejected: two deletion paths and a race with the first submission); freezing questions at publish (rejected: blocks fixing typos after publishing).
-- **Trade-off:** Until #30 lands nothing locks the questions, and a published activity can still be edited and cannot be unpublished.
+- **Trade-off:** A published activity can still be edited and cannot be unpublished. The questions lock was added with #30 ([D16](#d16-file-submission-defaults)).
 - **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), [Communication and notifications](../rules/communication-and-notifications.md), and the [activities guide](activities.md).
+- **Approval:** Approved by Agustin (decision owner) on 2026-11-13.
+
+### D16. File submission defaults
+
+- **Question:** How do students submit files to an activity (RF-ACT-001, HU-ACT-003, issue #30): how many submissions, which files, how they are uploaded, what happens after the deadline, how retries are handled and what freezes once someone submitted?
+- **Outcome:**
+  1. **One submission per (activity, student)** in the MVP, with no resubmission or history.
+  2. **Files:** content-detected allow-list of PDF, PNG, JPEG and DOCX (the client MIME type is not trusted), at most 10 MB each, 1 to 5 files, name at most 255 characters. Malware scanning is out of scope.
+  3. **Upload:** multipart through the API, not a presigned PUT, so the server validates the real bytes. Objects are private, and reads return short-lived signed URLs (`STORAGE_SIGNED_URL_TTL`).
+  4. **Late policy:** the server clock decides. After `dueAt` with `allowLate = false` the submission is rejected; with `allowLate = true` it is stored with `isLate = true`. Before `opensAt` it is rejected.
+  5. **Idempotency:** the `Idempotency-Key` header is required. The same key returns the stored submission (`200`), a different key after a submission exists is `409`, and a race is resolved by the unique index.
+  6. **Conflicts:** rule violations are `409` with the reason in `details` through `RequestConflictException`, so the envelope message stays fixed.
+  7. **Shared lock:** submitting takes `FOR SHARE` on the activity row; teacher update, publish and deactivate take `FOR UPDATE`. Once any submission exists, question edits and deletion are `409`.
+  8. **Event:** a timely submission records the outbox event `submission.submitted-on-time` (payload version 1) in the same transaction. A no-op handler acknowledges it until the streak engine (HU-GAM-002), which must backfill from `submissions`.
+- **Rationale:** Validating bytes on the server is the only way to enforce the allow-list; a single submission keeps the grading model simple and matches the single-attempt default of D15; a deadline decided on the server clock cannot be bypassed by the client; a client-generated key makes network retries safe; a shared lock lets a deadline rush proceed in parallel while still freezing teacher edits; the dispatcher treats an event without a handler as a failure, so a no-op handler avoids five failed attempts and error logs per submission.
+- **Alternatives:** Presigned PUT directly to S3 (rejected: the server would see the bytes only afterwards, so an invalid file would already be stored); an exclusive row lock on submit (rejected: all students of one activity serialize and a rush exceeds the transaction timeout); `422` or `403` for window violations (rejected: `409` with details is the project's conflict shape); recording no event until HU-GAM-002 (rejected: issue #30 requires the event now, so HU-GAM-002 builds against an existing, tested contract, type `submission.submitted-on-time` with payload v1 recorded atomically with the submission, instead of changing the submission write path later; history comes from the `submissions` table either way).
+- **Trade-off:** Files pass through API memory (at most 5 x 10 MB per request). Resubmission and history are not possible yet. More than 5 files returns multer's generic `400`. A connection lost after the commit can make the error path delete the objects of a stored submission (accepted edge case). Events recorded before HU-GAM-002 are acknowledged without effect and cannot be replayed, so that story backfills from `submissions`.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), the [activities guide](activities.md) and the [submissions guide](submissions.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-13.
 
 ## 8. Known conflicts and notes

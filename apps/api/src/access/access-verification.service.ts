@@ -609,6 +609,30 @@ export class AccessVerificationService {
   }
 
   /**
+   * Whether the user is currently an enrolled student of the classroom (role STUDENT, ACTIVE, not
+   * deleted). Pass the caller's transaction client to re-check inside a transaction after a row
+   * lock, so a removal that committed meanwhile is seen.
+   */
+  async isActiveStudent(
+    classroomId: string,
+    userId: string,
+    options: { client?: Prisma.TransactionClient } = {},
+  ): Promise<boolean> {
+    const client = options.client ?? this.prisma;
+    const row = await client.classroomMembership.findFirst({
+      where: {
+        classroomId,
+        userId,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  /**
    * Whether the actor is an enrolled student or a linked parent (outside adult
    * mode, where the parent cannot see the classroom) in a live classroom, in the
    * given school or in any when `schoolId` is omitted. Only a visible relation
