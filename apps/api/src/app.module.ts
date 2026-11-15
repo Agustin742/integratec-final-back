@@ -7,6 +7,7 @@ import { ApiConfigModule } from './config/config.module';
 import { HealthController } from './health.controller';
 import { RealtimeJoinModule } from './internal/realtime/realtime-join.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SubmissionsModule } from './submissions/submissions.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PointsModule } from './points/points.module';
@@ -29,6 +30,7 @@ export class AppModule {
         RealtimeJoinModule,
         ClassroomsModule,
         NotificationsModule,
+        SubmissionsModule,
         PointsModule,
         ShopModule,
         MaterialsModule,
