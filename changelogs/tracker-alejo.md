@@ -2,11 +2,18 @@
 
 ## 2026-11-15 — Card #35 pre-PR review correction (inactive-item behavior)
 
-- **Status:** completed (local; PR publication pending).
+- **Status:** completed.
 - **Area / files:** `apps/api/src/equipment/equipment.service.ts`, `apps/api/src/equipment/equipment.integration.spec.ts`.
 - **Change:** Pre-PR review (AI-assisted, directed by Alejo) found `docs/equipment.md` contradicting the service: the doc states the purchase is the entitlement, but `setSlot` rejected every inactive item with `404` whether or not it was purchased. Alejo decided the documentation governs, so the service no longer rejects inactive items; an unknown item still returns `404`, an unpurchased item (active or not) still returns `403` inside the transaction, and the state projection never filtered by `isActive`. Two RED→GREEN integration tests added: a purchased item stays equipable after deactivation, and an unpurchased deactivated item is rejected with `403` persisting nothing.
-- **Evidence:** Observed RED (2 new tests failed, 12 passed), then GREEN 14/14 integration, 6/6 HTTP, `typecheck`, eslint and prettier on the equipment module all pass on disposable PostgreSQL (`odd35-postgres`).
-- **Next step:** Publish PR into `develop` per the agreed delivery strategy.
+- **Evidence:** Observed RED (2 new tests failed, 12 passed), then GREEN 14/14 integration, 6/6 HTTP, `typecheck`, eslint and prettier on the equipment module all pass on disposable PostgreSQL (`odd35-postgres`). Commit `e6c4130`.
+
+## 2026-11-15 — Publish card #35 PR #94
+
+- **Status:** completed (publication done; team review pending).
+- **Area / files:** branch `feat/35-equip-items` (9 commits), [PR #94](https://github.com/Agustin742/integratec-final-back/pull/94) into `develop`, issue #35.
+- **Change:** Alejo authorized publishing a single PR after confirming `develop` was unchanged (merge-base `4242ce9` = `origin/develop` tip). Branch pushed as-is, PR opened with issue linkage, changes table, observed verification results and disclosures. Repo has no `type:*` labels (only GitHub defaults) and CI is Backend CI only, so no label was added. Board state of issue #35 was not modified; Alejo updates the board himself.
+- **Evidence (observed post-correction):** full suite 74/74 files, 1590/1590 tests (dot reporter, 54s); `typecheck`, `build`, `check_docs.py` (73 files) and `git diff --check` pass. Disclosed in the PR: D16 awaits team approval (the ownership-port bullet is realized via the classroom-scoped redesign, `AvatarAccessPort` remains unwired with a now-stale comment); Windows vitest/tinypool teardown crash (`ERR_IPC_CHANNEL_CLOSED`) makes some full-suite runs exit 1 after all tests pass, reproduced on base `4242ce9`; rate-limiter minors (no key eviction, rejected attempts consume quota); repo-wide eslint failure caused only by untracked `odd/` files.
+- **Next step:** CI on PR #94 and team review; merge remains a human decision.
 
 ## 2026-11-15 — Card #35 (HU-ESP-004): equip purchased items — completed (local; publication pending)
 
