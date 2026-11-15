@@ -107,6 +107,16 @@ enum ClassroomItemState {
   @@map("classroom_item_state")
 }
 
+/// Equipment slots derived from ShopItem.metadata.slot at equip time.
+enum EquippedSlot {
+  HEAD       @map("head")
+  FACE       @map("face")
+  BACK       @map("back")
+  DESK_DECOR @map("desk_decor")
+
+  @@map("equipped_slot")
+}
+
 model User {
   id               String           @id @default(uuid()) @db.Uuid
   email            String           @unique @db.VarChar(255)
@@ -133,6 +143,7 @@ model User {
   actorPointTransactions   PointTransaction[]    @relation("ActorPointTransactions")
   studentPurchases         StudentPurchase[]     @relation("StudentPurchases")
   createdActivities        Activity[]
+  equippedItems            EquippedItem[]
 
   @@map("users")
 }
@@ -264,6 +275,7 @@ model Classroom {
   classroomItems     ClassroomItem[]
   studentPurchases   StudentPurchase[]
   activities         Activity[]
+  equippedItems      EquippedItem[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -570,6 +582,7 @@ model ShopItem {
   classroomOverrides ClassroomShopItem[]
   classroomItems     ClassroomItem[]
   purchases          StudentPurchase[]
+  equippedItems      EquippedItem[]
 
   @@index([kind, isActive])
   @@index([defaultPrice, id])
@@ -637,4 +650,25 @@ model ClassroomItem {
   @@index([classroomId, state])
   @@index([shopItemId])
   @@map("classroom_items")
+}
+
+/// One equipped purchase per (classroom, student, slot). Classroom-scoped so an accessory
+/// bought in one classroom never leaks into another; the desk decoration belongs to the
+/// student's own desk in that classroom implicitly (the membership holds the desk).
+model EquippedItem {
+  id          String        @id @default(uuid()) @db.Uuid
+  classroomId String        @map("classroom_id") @db.Uuid
+  studentId   String        @map("student_id") @db.Uuid
+  slot        EquippedSlot
+  shopItemId  String        @map("shop_item_id") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student   User      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  shopItem  ShopItem  @relation(fields: [shopItemId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, studentId, slot])
+  @@index([shopItemId])
+  @@map("equipped_items")
 }
