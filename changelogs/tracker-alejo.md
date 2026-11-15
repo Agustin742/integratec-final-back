@@ -2,6 +2,15 @@
 
 # Tracker — Alejo
 
+## 2026-11-14 — Classroom context invalidation (B)
+
+- **Status:** in-progress (backend implementation and verification complete; local closure authorized, publication and team approval pending)
+- **Area / files:** authenticated classroom context stream, transactional config/enrollment signals, existing revocation-event delivery, API/OpenAPI and context documentation.
+- **Change:** With AI assistance directed by Alejo: implemented backend B on `feat/classroom-context-b` from PR #88, preserving A. SSE hints require authoritative REST reload on connect/reconnect; parent/2D clients are supported without Colyseus. Durable replay and frontend implementation remain out of scope.
+- **Verification:** Linux Node 22 full suite 1,850/1,850, workspace typechecks, lint and all three builds passed. An added API-root SSE/PostgreSQL case passed with synthetic session verification. Independent review passed S1–S4 with 221/221 tests, no skips and three typechecks (numeric exit codes not exposed). Initial module-guard/fixture failures were corrected; code/docs formatting and links passed.
+- **Reason:** Clients must refresh context after access changes. A process-local broker, 15-second access checks and 60-second renewal do not prove frontend/proxy behavior or immediate distributed delivery.
+- **Next step:** Keep B in one PR as Alejo selected. PR #88 remains open, so a PR to `develop` would also show A until it merges. Alejo explicitly chose local closure without the unavailable native review; no global sync or review-mode change was applied. Publication/base selection remains separate; no native approval, B push, PR or merge is claimed.
+
 ## 2026-11-14 — Merge PR #91 into develop
 
 - **Status:** completed
