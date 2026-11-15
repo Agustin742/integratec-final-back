@@ -1,5 +1,31 @@
 # Tracker — Luis
 
+## 2026-11-14 — Classroom shop catalog, overrides, and atomic purchases (Issue #34)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261114000000_create_classroom_shop/`, `apps/api/prisma/seed.ts`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/.env.example`, `apps/api/src/shop/`, `apps/api/src/points/points-ledger.integration.spec.ts`, `apps/api/src/app.module.ts`, `apps/api/src/openapi/openapi.spec.ts`, `apps/api/openapi.json`, `rules/data.md`, `docs/shop.md`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #34 (`HU-GAM-003: Purchase classroom shop items`) on `feat/34-shop-purchases`:
+  - **Prisma schema & additive migration (`20261114000000_create_classroom_shop`):**
+    - Added `ShopItemKind` (`classroom_item`, `avatar_accessory`, `desk_upgrade`, `pet_accessory`) and `ClassroomItemState` (`unlocked`, `active`, `disabled`) enums.
+    - Added `ShopItem` (`shop_items`), `ClassroomShopItem` (`classroom_shop_items` with `(classroomId, shopItemId)` unique, optional positive `priceOverride`, and `isEnabled`), `StudentPurchase` (`student_purchases` with unique constraints on `(classroomId, studentId, shopItemId)` and `(classroomId, studentId, idempotencyKey)`), and `ClassroomItem` (`classroom_items` with `(classroomId, shopItemId)` unique), all with `ON DELETE RESTRICT` foreign keys and PostgreSQL `CHECK` constraints (`default_price > 0`, `price_override IS NULL OR price_override > 0`, `price_paid > 0`, trimmed non-empty `code`, `name`, `idempotency_key`).
+  - **Seed reset & synthetic catalog (`apps/api/prisma/seed.ts`):**
+    - Updated cleanup order to `TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"` together (respecting the new restrictive foreign key from `student_purchases` to `point_transactions`) before deleting `classroomShopItem`, `shopItem`, and `classroom`.
+    - Seeded synthetic `isImplemented: true` items (`cap_blue`, `headphones_studio`, `glasses_round`, `backpack_explorer`, `desk_plant`, `classroom_theme_warm`) and `isImplemented: false` items (`minigame_pong`, `pet_scarf`) under `assertSafeToSeed`.
+  - **`ShopModule`, `ShopController`, `ShopService`, `ShopPurchaseRateLimiter` (`apps/api/src/shop/`):**
+    - Wired `ShopModule` into `AppModule` and added `SHOP_PURCHASE_RATE_LIMIT_WINDOW` / `SHOP_PURCHASE_RATE_LIMIT_MAX` to `ApiConfig` (`.env.example`, `README.md`).
+    - Student-only endpoints (`verifyClassroomAccess(..., { requiredRole: 'STUDENT' })`): `GET /classrooms/:id/shop/items` (kind filter, `parseSort` over `defaultPrice` | `name` | `createdAt` + `id` tiebreaker, effective price & ownership flags), `GET /classrooms/:id/shop/purchases` (`parseSort` over `createdAt` | `pricePaid` + `id` tiebreaker), and `POST /classrooms/:id/shop/purchase`.
+    - Atomic purchase flow inside `prisma.$transaction`: locks `classroom_memberships` `FOR UPDATE OF cm`, resolves idempotent replay by `(classroomId, studentId, idempotencyKey)` (`200 OK`, `replayed: true`, `409 Conflict` if `shopItemId` differs) before debiting, locks `shop_items` `FOR SHARE` with `classroom_shop_items` override (`404` when inactive/disabled, `409` when `!isImplemented`), verifies unique ownership (`409`), derives `shop:<sha256>` ledger key, calls `PointsLedgerService.debit`, inserts `StudentPurchase` (and `ClassroomItem` with `ACTIVE` state for `CLASSROOM_ITEM`), maps `P2002` to `409 Conflict`, and logs non-PII `shop_item_purchased`.
+  - **Docs, OpenAPI & tests:**
+    - Updated `rules/data.md`, added `docs/shop.md` (linked in `README.md`), regenerated `apps/api/openapi.json`, and added `shop.spec.ts` (14 unit tests), `shop.integration.spec.ts` (10 PostgreSQL concurrency/atomicity/rollback/CHECK tests), `shop.http.spec.ts` (4 Supertest auth matrix, `#26` `assertResourceAuthorization`, validation/tampering, catalog override/filtering isolation, replay, rate-limit `429` tests), and OpenAPI contract checks in `openapi.spec.ts`.
+    - Updated the `TRUNCATE` reset integration test in `points-ledger.integration.spec.ts` to truncate `"classroom_items", "student_purchases", "point_transactions"` together.
+- **Verification observed (2026-11-14):**
+  - `pnpm.cmd --dir backend --filter @aula/api prisma:migrate:deploy` against isolated PostgreSQL 16 `aula-postgres` (`127.0.0.1:5433`, database `shop_test_isolated`, dropped afterward) — passed: all 12 migrations applied cleanly.
+  - `ALLOW_DESTRUCTIVE_SEED=true pnpm.cmd --dir backend --filter @aula/api prisma:seed` against `shop_test_isolated` — passed (`Seed applied successfully with synthetic school domain data.`).
+  - `pnpm.cmd --dir backend --filter @aula/api exec vitest run src/shop/shop.spec.ts src/shop/shop.integration.spec.ts src/shop/shop.http.spec.ts src/points/points-ledger.spec.ts src/points/points-ledger.integration.spec.ts src/points/points.http.spec.ts src/openapi/openapi.spec.ts src/config/api-config.spec.ts --no-file-parallelism` against `shop_test_isolated` — passed **201/201 tests across 8 files** (`shop.spec.ts` 14/14, `shop.integration.spec.ts` 10/10, `shop.http.spec.ts` 4/4, `points-ledger.spec.ts` 33/33, `points-ledger.integration.spec.ts` 10/10, `points.http.spec.ts` 6/6, `openapi.spec.ts` 8/8, `api-config.spec.ts` 116/116).
+  - `pnpm.cmd --dir backend lint` (`eslint .`), `pnpm.cmd --dir backend typecheck`, `pnpm.cmd --dir backend build`, and `pnpm.cmd --dir backend openapi:export` — passed (exit 0).
+  - `pnpm.cmd --dir backend exec prettier --check ...`, `python scripts/ci/check_docs.py` (`71 files`), and `git -C backend diff --check` — passed (exit 0).
+- **Next step:** Stage, commit in logical commits (without AI attribution), push, and open the PR targeting `develop` once approved by the user.
+
 ## 2026-11-14 — PR #87 review fixes for points ledger & seed reset (Issue #31)
 
 - **Status:** completed
