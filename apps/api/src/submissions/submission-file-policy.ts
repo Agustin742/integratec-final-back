@@ -3,7 +3,7 @@ import type { ErrorDetail } from '../http/error-envelope';
 
 /**
  * Submission file policy. These limits mirror the CHECK constraints of the
- * `submission_files` table (migration 20261113150000_create_submissions); change both together.
+ * `submission_files` table (migration 20261115000000_create_submissions); change both together.
  * The multipart layer reuses the numeric limits so oversized uploads are cut off early.
  */
 export const SUBMISSION_ALLOWED_CONTENT_TYPES = [
