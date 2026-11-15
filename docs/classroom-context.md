@@ -6,11 +6,11 @@
 
 The shared access module projects panels from already-authorized capabilities, derived from persisted school membership, classroom membership or parent links. It adds no query or stored state and never trusts a client-supplied role. Capabilities remain the single role-to-permission mapping: content panels use `publish_content` or `participate_activities`, grades uses `view_metrics`, chat uses `chat_classmates`, shop uses `participate_activities`, bot uses `configure_bot` or `participate_activities`, members uses `list_directory`, and settings uses `configure_classroom`.
 
-| Resolved role | Exact panel order |
-| --- | --- |
+| Resolved role           | Exact panel order                                                                   |
+| ----------------------- | ----------------------------------------------------------------------------------- |
 | OWNER / ADMIN / TEACHER | `activities`, `material`, `grades`, `chat`, `notices`, `bot`, `members`, `settings` |
-| STUDENT | `activities`, `material`, `grades`, `chat`, `notices`, `shop`, `bot`, `members` |
-| PARENT | `grades` |
+| STUDENT                 | `activities`, `material`, `grades`, `chat`, `notices`, `shop`, `bot`, `members`     |
+| PARENT                  | `grades`                                                                            |
 
 Arrays are unique, deterministic and freshly projected. Their order is stable for the contract; the frontend registry decides visual order. `pet` is the tenth known key, reserved and **never emitted** in delivery A, even when existing classroom pet summary data is present.
 
@@ -31,7 +31,7 @@ The existing global session guard and shared authorization remain authoritative:
 - `404`: malformed/missing classroom, deleted classroom/school, stranger, foreign-school actor, another classroom's teacher, removed member or unlinked parent. Parent access is also absent in adult mode.
 - Insufficient operation role remains `403` on visible resources (for example, a parent's classroom update). Panel availability does not change endpoint status semantics.
 
-Delivery B (context invalidation/SSE) is **unimplemented**. This REST projection adds no subscriptions, invalidation, transport, D14 or frontend changes. Clients can refetch the detail endpoint; no push freshness guarantee is introduced.
+Backend delivery B adds authenticated [context invalidation hints](classroom-context-stream.md) at `GET /classrooms/:id/context-events`, independently of Colyseus and without changing this REST shape. Clients refetch this endpoint on every connection/reconnection and invalidation; the current response replaces cached context (`401` clears authentication, `404` closes unavailable classroom content). The frontend implementation remains separate. Hints are not permission grants, and no delivery is guaranteed during a network outage. See [transactional producers](classroom-context-events.md) for mutation coverage and future integration obligations.
 
 ## Verification boundary
 

@@ -77,6 +77,16 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
       where: { id },
       data: { state: 'PUBLISHED', publishedAt: new Date() },
     });
+  /** Submissions are FILE-only today, so the lock rule is exercised by seeding the row directly. */
+  const seedSubmission = (activityId: string, studentId: string = student) =>
+    prisma.submission.create({
+      data: {
+        activityId,
+        studentId,
+        submittedAt: new Date(),
+        idempotencyKey: `lock-${randomUUID()}`,
+      },
+    });
   const rowCounts = async () => ({
     activities: await prisma.activity.count({ where: { classroomId: { in: classrooms } } }),
     questions: await prisma.question.count({
@@ -161,6 +171,7 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
       if (fixtureReady)
         await prisma.$transaction(async (tx) => {
           const where = { activity: { classroomId: { in: classrooms } } };
+          await tx.submission.deleteMany({ where });
           await tx.option.deleteMany({ where: { question: where } });
           await tx.question.deleteMany({ where });
           await tx.activity.deleteMany({ where: { classroomId: { in: classrooms } } });
@@ -562,6 +573,94 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     expect(res.body.questions[0].prompt).toBe('pub2 question 1');
   });
 
+  describe('submissions freeze the questions and the deletion of an activity', () => {
+    const questionsOf = async (activityId: string) =>
+      (
+        await prisma.question.findMany({
+          where: { activityId },
+          orderBy: { position: 'asc' },
+          select: { prompt: true },
+        })
+      ).map((q) => q.prompt);
+
+    it('PATCH questions after a submission exists is 409 with a reason and leaves the DB unchanged', async () => {
+      const created = await createAs(
+        teacher,
+        classroomA,
+        mcBody({ questions: mcQuestions('frozen', 2) }),
+      );
+      await seedSubmission(created.id);
+      const before = await rowCounts();
+
+      const res = await api('patch', `/${created.id}`, teacher)
+        .send({ questions: mcQuestions('other', 3) })
+        .expect(409);
+
+      expect(res.body.error).toMatchObject({
+        code: 'CONFLICT',
+        details: [{ field: 'questions', messages: [expect.stringContaining('submitted')] }],
+      });
+      expect(await questionsOf(created.id)).toEqual(['frozen question 1', 'frozen question 2']);
+      expect(await rowCounts()).toEqual(before);
+    });
+
+    it('PATCH title, description and dates stay editable after a submission exists', async () => {
+      const created = await createAs(teacher, classroomA, mcBody());
+      await seedSubmission(created.id);
+
+      const res = await api('patch', `/${created.id}`, teacher)
+        .send({
+          title: 'Renamed',
+          description: 'New text',
+          dueAt: futureInstant(40, 15).toISOString(),
+        })
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        title: 'Renamed',
+        description: 'New text',
+        dueAt: futureInstant(40, 15).toISOString(),
+      });
+    });
+
+    it('PATCH questions with no submission still replaces them (regression)', async () => {
+      const created = await createAs(
+        teacher,
+        classroomA,
+        mcBody({ questions: mcQuestions('old', 2) }),
+      );
+      // A submission on ANOTHER activity must not freeze this one.
+      await seedSubmission((await createAs(teacher, classroomA, mcBody())).id);
+
+      await api('patch', `/${created.id}`, teacher)
+        .send({ questions: mcQuestions('fresh', 1) })
+        .expect(200);
+
+      expect(await questionsOf(created.id)).toEqual(['fresh question 1']);
+    });
+
+    it('DELETE with a submission is 409 and the activity stays active', async () => {
+      const created = await createAs(teacher, classroomA, tpBody());
+      await seedSubmission(created.id);
+
+      const res = await api('delete', `/${created.id}`, teacher).expect(409);
+
+      expect(res.body.error).toMatchObject({
+        code: 'CONFLICT',
+        details: [{ field: 'state', messages: [expect.stringContaining('submission')] }],
+      });
+      const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.deletedAt).toBeNull();
+    });
+
+    it('DELETE without submissions still deactivates (204)', async () => {
+      const created = await createAs(teacher, classroomA, tpBody());
+      await api('delete', `/${created.id}`, teacher).expect(204);
+      const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.deletedAt).toBeInstanceOf(Date);
+    });
+  });
+
   describe(
     'concurrent writers are serialized by a row lock on the activity',
     { timeout: 20_000 },
@@ -571,7 +670,12 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
        * are launched, so each one is provably queued behind it (pg_blocking_pids) before the lock
        * is released. No sleeps decide the outcome; polling only waits for the queue to form.
        */
-      const holdRowLock = async (activityId: string) => {
+      const holdRowLock = async (
+        activityId: string,
+        // `SHARE` plays a concurrent submit: it holds FOR SHARE and inserts its submission,
+        // visible to others only once `release()` commits.
+        opts: { mode?: 'UPDATE' | 'SHARE'; submitAs?: string } = {},
+      ) => {
         const blocker = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
         let release!: () => void;
         const released = new Promise<void>((resolve) => {
@@ -583,7 +687,21 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
         });
         const done = blocker.$transaction(
           async (tx) => {
-            await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR UPDATE`;
+            if (opts.mode === 'SHARE') {
+              await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR SHARE`;
+            } else {
+              await tx.$queryRaw`SELECT id FROM activities WHERE id = ${activityId}::uuid FOR UPDATE`;
+            }
+            if (opts.submitAs) {
+              await tx.submission.create({
+                data: {
+                  activityId,
+                  studentId: opts.submitAs,
+                  submittedAt: new Date(),
+                  idempotencyKey: `lock-${randomUUID()}`,
+                },
+              });
+            }
             const [{ pid }] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
             ready(pid);
             await released;
@@ -658,6 +776,49 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
         const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
         expect(row.deletedAt).toBeInstanceOf(Date);
         expect(row.title).toBe('Edited');
+      });
+
+      it('DELETE queued behind a submit that holds FOR SHARE waits, then sees the submission and gets 409', async () => {
+        const created = await createAs(teacher, classroomA, mcBody());
+        const lock = await holdRowLock(created.id, { mode: 'SHARE', submitAs: student });
+        try {
+          const del = fire(api('delete', `/${created.id}`, teacher));
+          await lock.waitForQueue(1);
+          await lock.release();
+          const res = await del;
+          expect(res.status).toBe(409);
+          expect(res.body.error).toMatchObject({ code: 'CONFLICT', details: [{ field: 'state' }] });
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+        expect(row.deletedAt).toBeNull();
+        expect(await prisma.submission.count({ where: { activityId: created.id } })).toBe(1);
+      });
+
+      it('PATCH of questions queued behind a submit that holds FOR SHARE waits, then gets 409 and keeps the questions', async () => {
+        const created = await createAs(
+          teacher,
+          classroomA,
+          mcBody({ questions: mcQuestions('keep', 2) }),
+        );
+        const lock = await holdRowLock(created.id, { mode: 'SHARE', submitAs: student });
+        try {
+          const patch = fire(
+            api('patch', `/${created.id}`, teacher).send({ questions: mcQuestions('new', 1) }),
+          );
+          await lock.waitForQueue(1);
+          await lock.release();
+          expect((await patch).status).toBe(409);
+        } finally {
+          await lock.release().catch(() => undefined);
+        }
+        const prompts = await prisma.question.findMany({
+          where: { activityId: created.id },
+          orderBy: { position: 'asc' },
+          select: { prompt: true },
+        });
+        expect(prompts.map((q) => q.prompt)).toEqual(['keep question 1', 'keep question 2']);
       });
 
       it('two PATCHes that are each valid alone but not together: one 200, one 400, never 500', async () => {

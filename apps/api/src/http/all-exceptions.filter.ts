@@ -6,6 +6,7 @@ import {
   type ErrorCode,
   type ErrorEnvelope,
 } from './error-envelope';
+import { RequestConflictException } from './conflict';
 import { RequestValidationException } from './validation';
 
 const CODE_BY_STATUS: Record<number, ErrorCode> = {
@@ -109,6 +110,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof RequestValidationException) {
       body.error.code = ERROR_CODES.VALIDATION_FAILED;
       body.error.message = SAFE_MESSAGES.VALIDATION_FAILED;
+      body.error.details = exception.details;
+    } else if (exception instanceof RequestConflictException) {
       body.error.details = exception.details;
     }
 
