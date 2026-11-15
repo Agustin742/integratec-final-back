@@ -1473,6 +1473,278 @@
         "tags": ["points"]
       }
     },
+    "/classrooms/{id}/shop/items": {
+      "get": {
+        "description": "Returns paginated active shop items available in the classroom for an active enrolled student, resolving per-classroom price overrides and availability, student/classroom ownership flags, and server-side purchasability. Supports optional kind filter and sort=defaultPrice|name|createdAt (default createdAt) with a matching id tiebreaker.",
+        "operationId": "ShopController_listItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Optional filter by shop item kind.",
+            "schema": { "$ref": "#/components/schemas/ShopItemKind" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated classroom shop catalog items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ShopCatalogItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, kind filter, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List classroom shop catalog items",
+        "tags": ["shop"]
+      }
+    },
+    "/classrooms/{id}/shop/purchases": {
+      "get": {
+        "description": "Returns paginated immutable purchase records for the authenticated active student in the classroom. Supports sort=createdAt|pricePaid (default -createdAt) with a matching id tiebreaker.",
+        "operationId": "ShopController_listPurchases",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated student shop purchases.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StudentPurchaseDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List authenticated student shop purchases in the classroom",
+        "tags": ["shop"]
+      }
+    },
+    "/classrooms/{id}/shop/purchase": {
+      "post": {
+        "description": "Atomically validates student membership, catalog availability, implementation status, and unique ownership; debits the server-derived effective price from the points ledger; and records the purchase (plus ClassroomItem for classroom_item kinds). Requires an Idempotency-Key header (1-128 trimmed characters): returns 201 Created on new purchases and 200 OK on idempotent replays.",
+        "operationId": "ShopController_purchase",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated idempotency key (1-128 trimmed non-empty characters).",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseShopItemDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of a previous purchase; no second debit occurred.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseResponseDto" }
+              }
+            }
+          },
+          "201": {
+            "description": "New purchase recorded and points debited from the student ledger.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/invalid Idempotency-Key header, invalid shopItemId, or extra body fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Insufficient points balance, unimplemented item, duplicate ownership, or Idempotency-Key reused with another item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Per-user purchase rate limit exceeded.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Purchase a classroom shop item atomically",
+        "tags": ["shop"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -3413,6 +3685,139 @@
           }
         },
         "required": ["classroomId", "studentId", "balance", "items", "page", "pageSize", "total"]
+      },
+      "ShopItemKind": {
+        "type": "string",
+        "enum": ["CLASSROOM_ITEM", "AVATAR_ACCESSORY", "DESK_UPGRADE", "PET_ACCESSORY"]
+      },
+      "ShopCatalogItemDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "name": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "description": {
+            "type": "string",
+            "example": "Classic blue cap accessory for your 3D avatar."
+          },
+          "kind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Effective server price in this classroom (override when set, else defaultPrice).",
+            "example": 50
+          },
+          "isImplemented": {
+            "type": "boolean",
+            "description": "Whether this catalog item has a working server/client implementation."
+          },
+          "isPurchasable": {
+            "type": "boolean",
+            "description": "True when implemented and not already owned by the student or classroom."
+          },
+          "ownedByStudent": { "type": "boolean" },
+          "ownedByClassroom": { "type": "boolean" },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": { "assetId": "cap", "slot": "head" },
+            "description": "Server-defined item metadata for client asset rendering."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "kind",
+          "price",
+          "isImplemented",
+          "isPurchasable",
+          "ownedByStudent",
+          "ownedByClassroom",
+          "metadata",
+          "createdAt"
+        ]
+      },
+      "StudentPurchaseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "shopItemKind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] },
+          "pointTransactionId": { "type": "string", "format": "uuid" },
+          "pricePaid": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Server-recorded points paid at purchase time.",
+            "example": 50
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "studentId",
+          "shopItemId",
+          "shopItemCode",
+          "shopItemName",
+          "shopItemKind",
+          "pointTransactionId",
+          "pricePaid",
+          "createdAt"
+        ]
+      },
+      "PurchaseShopItemDto": {
+        "type": "object",
+        "properties": {
+          "shopItemId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the catalog shop item to purchase.",
+            "example": "00000000-0000-4000-8000-000000000101"
+          }
+        },
+        "required": ["shopItemId"]
+      },
+      "ClassroomItemState": { "type": "string", "enum": ["UNLOCKED", "ACTIVE", "DISABLED"] },
+      "ClassroomItemDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "purchaseId": { "type": "string", "format": "uuid" },
+          "state": { "allOf": [{ "$ref": "#/components/schemas/ClassroomItemState" }] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "classroomId", "shopItemId", "purchaseId", "state", "createdAt"]
+      },
+      "PurchaseResponseDto": {
+        "type": "object",
+        "properties": {
+          "purchase": { "$ref": "#/components/schemas/StudentPurchaseDto" },
+          "classroomItem": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ClassroomItemDto" }]
+          },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Server-derived student points balance after this operation.",
+            "example": 70
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when the response replays an earlier purchase for the same Idempotency-Key."
+          }
+        },
+        "required": ["purchase", "classroomItem", "balance", "replayed"]
       },
       "RosterGuardianDto": {
         "type": "object",

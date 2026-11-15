@@ -60,6 +60,10 @@ export interface ApiConfig {
   authCleanupIntervalSeconds: number;
   /** Maximum rows removed by one cleanup DELETE statement. */
   authCleanupBatchSize: number;
+  /** Sliding window for per-user shop purchase rate limiting (defaults to 60s when omitted). */
+  shopPurchaseRateLimitWindowSeconds?: number;
+  /** Maximum shop purchase attempts per user inside the sliding window (defaults to 20). */
+  shopPurchaseRateLimitMaxAttempts?: number;
 }
 
 /** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
@@ -84,6 +88,12 @@ export const MAX_AUTH_CLEANUP_INTERVAL_SECONDS = 7 * 86400;
 export const DEFAULT_AUTH_DATA_RETENTION_SECONDS = 30 * 86400;
 export const DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS = 86400;
 export const DEFAULT_AUTH_CLEANUP_BATCH_SIZE = 1000;
+
+/** Shop purchase rate limiter bounds and defaults. */
+export const MAX_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 3600;
+export const MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS = 1000;
+export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 60;
+export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_MAX_ATTEMPTS = 20;
 
 /** Local realtime server, used when `REALTIME_INTERNAL_URL` is unset outside production. */
 export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
@@ -133,6 +143,8 @@ const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m
 
 const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, such as 24h';
 const BATCH_SIZE_MESSAGE = `must be an integer between 1 and ${MAX_AUTH_CLEANUP_BATCH_SIZE}`;
+const SHOP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
+const SHOP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS}`;
 
 const required = { error: 'is required' };
 
@@ -316,6 +328,26 @@ const envSchema = z
     S3_ACCESS_KEY_ID: z.string().optional(),
     S3_SECRET_ACCESS_KEY: z.string().optional(),
     STORAGE_SIGNED_URL_TTL: duration('5m', MAX_SIGNED_URL_TTL_SECONDS, SIGNED_URL_TTL_MESSAGE),
+    SHOP_PURCHASE_RATE_LIMIT_WINDOW: duration(
+      '1m',
+      MAX_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS,
+      SHOP_RATE_LIMIT_WINDOW_MESSAGE,
+    ),
+    SHOP_PURCHASE_RATE_LIMIT_MAX: z
+      .string()
+      .default(String(DEFAULT_SHOP_PURCHASE_RATE_LIMIT_MAX_ATTEMPTS))
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, SHOP_RATE_LIMIT_MAX_MESSAGE)
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, SHOP_RATE_LIMIT_MAX_MESSAGE)
+              .max(MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS, SHOP_RATE_LIMIT_MAX_MESSAGE),
+          ),
+      ),
   })
   .superRefine((env, ctx) => {
     // A production link must point at the real frontend, never silently at localhost.
@@ -428,5 +460,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     authDataRetentionSeconds: values.AUTH_DATA_RETENTION,
     authCleanupIntervalSeconds: values.AUTH_CLEANUP_INTERVAL,
     authCleanupBatchSize: values.AUTH_CLEANUP_BATCH_SIZE,
+    shopPurchaseRateLimitWindowSeconds: values.SHOP_PURCHASE_RATE_LIMIT_WINDOW,
+    shopPurchaseRateLimitMaxAttempts: values.SHOP_PURCHASE_RATE_LIMIT_MAX,
   };
 }

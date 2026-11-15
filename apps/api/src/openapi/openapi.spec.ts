@@ -168,6 +168,43 @@ describe('OpenAPI document', () => {
     ]);
   });
 
+  it('publishes the classroom shop catalog, purchase history, and idempotent purchase contracts', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+
+    const itemsOp = doc.paths['/classrooms/{id}/shop/items']?.get;
+    expect(itemsOp?.security).toEqual([{ bearer: [] }]);
+    expect(itemsOp?.responses?.['200']).toBeDefined();
+
+    const purchasesOp = doc.paths['/classrooms/{id}/shop/purchases']?.get;
+    expect(purchasesOp?.security).toEqual([{ bearer: [] }]);
+    expect(purchasesOp?.responses?.['200']).toBeDefined();
+
+    const purchaseOp = doc.paths['/classrooms/{id}/shop/purchase']?.post;
+    expect(purchaseOp?.security).toEqual([{ bearer: [] }]);
+    expect(purchaseOp?.responses?.['201']).toBeDefined();
+    expect(purchaseOp?.responses?.['200']).toBeDefined();
+    expect(purchaseOp?.responses?.['409']).toBeDefined();
+    expect(purchaseOp?.responses?.['429']).toBeDefined();
+    expect(purchaseOp?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+      ]),
+    );
+
+    const schemas = doc.components?.schemas ?? {};
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining([
+        'ShopCatalogItemDto',
+        'StudentPurchaseDto',
+        'ClassroomItemDto',
+        'PurchaseResponseDto',
+        'ShopItemKind',
+        'ClassroomItemState',
+      ]),
+    );
+  });
+
   it('adds panel availability only to the classroom GET context', async () => {
     app = await createApp('test');
     const doc = buildOpenApiDocument(app);
