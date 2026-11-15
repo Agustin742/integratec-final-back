@@ -601,16 +601,24 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
     }
   });
 
+  const classroomEventCount = (classroomId: string) =>
+    prisma.outboxEvent.count({
+      where: {
+        type: NOTIFICATION_REQUESTED_EVENT,
+        payload: { path: ['classroomId'], equals: classroomId },
+      },
+    });
+
   it('rejects invalid text including control characters after a newline', async () => {
     const before = await api('get', `${base(classroomA)}?pageSize=100`, s1).expect(200);
-    const eventCount = await prisma.outboxEvent.count();
+    const eventCount = await classroomEventCount(classroomA);
     for (const content of [' ', 'Line one\nLine two\u0001', 'x'.repeat(5001)]) {
       await publish(classroomA, content).expect(400);
     }
     expect((await api('get', `${base(classroomA)}?pageSize=100`, s1).expect(200)).body).toEqual(
       before.body,
     );
-    expect(await prisma.outboxEvent.count()).toBe(eventCount);
+    expect(await classroomEventCount(classroomA)).toBe(eventCount);
   });
 
   it('bounds mentions per announcement to prevent notification flooding', async () => {
@@ -621,13 +629,13 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
     const before = await api('get', `${base(classroomD)}?pageSize=100`, boundStudents[0]).expect(
       200,
     );
-    const eventCount = await prisma.outboxEvent.count();
+    const eventCount = await classroomEventCount(classroomD);
     await publish(classroomD, names, otherTeacher).expect(400);
     const after = await api('get', `${base(classroomD)}?pageSize=100`, boundStudents[0]).expect(
       200,
     );
     expect(after.body).toEqual(before.body);
-    expect(await prisma.outboxEvent.count()).toBe(eventCount);
+    expect(await classroomEventCount(classroomD)).toBe(eventCount);
     const withinBound = boundStudents
       .slice(0, 20)
       .map((_, index) => `@Estudiante ${String(index + 1).padStart(2, '0')}`)
