@@ -2,7 +2,7 @@
 
 ## 2026-11-15 — Study material upload and signed downloads (#46)
 
-- **Status:** completed (implementation verified and PR published; CI and team approval remain in the PR).
+- **Status:** in-progress (integrating freshly merged PR #89 from `develop` under Alejo's explicit request; previous verification is historical, integrated proof pending).
 - **Area / files:** study-material domain, Prisma schema/migration, storage port integration, HTTP/OpenAPI contracts and feature documentation.
 - **Change:** With AI assistance directed by Alejo, implemented classroom material upload/list/signed download/logical removal on `feat/46-study-material`, in isolated `odd/worktrees/issue-46` from freshly fetched `origin/develop` at `4242ce9`. Reused the storage port and shared authorization; added an additive migration and explicit OpenAPI/documentation. Main checkout and concurrent #37 work remain untouched.
 - **Reason:** Deliver issue #46 independently of unmerged submissions, frontend, bot and S3 infrastructure work.
@@ -11,7 +11,8 @@
 - **Retained failures / limitations:** Initial GREEN31/34 exposed a test-only Prisma spy contamination, corrected without production changes; initial type/lint errors corrected. A formatter command rejected the Prisma filename before later checks ran; corrected targeted checks passed. Independent real-S3 first execution failed in a later Supertest eager-request loop after successful storage checks; one preparation correction (explicit listener/lazy request factories) passed. No prior failure erased. Byte signatures are not malware scanning/full parsing; private objects/history are retained, and already signed URLs survive until expiry. AWS deployment is not verified.
 - **Delivery:** Alejo selected one PR into `develop` despite the ~1,000 authored-line forecast, then separately authorized push and PR creation. Non-force push succeeded and [PR #96](https://github.com/Agustin742/integratec-final-back/pull/96) is open from `feat/46-study-material`, assigned to Alejo with `enhancement`. The body records tests, corrected failures and provisional policy. No merge, deployment or native review consent is inferred.
 - **Local commit / assessment:** `e73cd44` (`feat(materials): add private classroom study material`), 1,055 authored + 313 generated lines. Committed-range native ASSESS: nativeRisk medium; explicit security item2 escalation high with independent verification already satisfied; `reviewDue=false`, `reviewDueReason=under_budget`. No native review started or approval claimed.
-- **Next step:** Observe exact-head CI and obtain another team member's approval on PR #96 before any separately authorized merge. File-policy assumptions await team review; AWS deployment remains unverified.
+- **Integration follow-up:** Confirmed PR #89 (issue #30) merged as `60fb2c2`; fetched `origin/develop` and reproduced additive conflicts in Prisma schema and this tracker. Preserve both submissions and material data/contracts/history; work only in the dedicated #46 worktree.
+- **Next step:** Merge `origin/develop` into the feature branch, resolve conflicts additively, verify the integrated candidate and update PR #96 without force push. No PR merge or deployment authorized.
 
 # Tracker — Alejo
 
