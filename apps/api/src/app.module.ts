@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { AccessModule } from './access/access.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassroomsModule } from './classrooms/classrooms.module';
 import type { ApiConfig } from './config/api-config';
@@ -28,6 +29,7 @@ export class AppModule {
         RealtimeJoinModule,
         ClassroomsModule,
         NotificationsModule,
+        AnnouncementsModule,
         PointsModule,
         ShopModule,
       ],

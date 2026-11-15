@@ -30,7 +30,7 @@ Chat history, announcements, direct messages with parents, mentions, and notific
 
 - `@` mentions in a message or announcement refer to members of the same classroom. The server **MUST** resolve mentions against the classroom roster and persist a Mention for each resolved member; unresolved text stays plain text.
 - A mention creates a notification for the mentioned user only if that user currently has access to the classroom. Mentions **MUST NOT** reveal content to users without access.
-- A bound on mentions per message is **open** and **MUST** exist to prevent notification flooding.
+- Announcements **MUST** resolve at most **20 distinct mentioned users** per announcement (approved by Alejo for #37). Repeated tokens count once; matching multiple users counts each resolved user. An announcement exceeding the bound **MUST** be rejected without persisting the announcement, mentions, or notification requests. The bound for classroom chat messages remains **open** and **MUST** exist to prevent notification flooding.
 - Mention autocomplete uses the classroom member directory (`GET /classrooms/:id/members`, decision D12; see [Classrooms, roles, and permissions](./classrooms-and-roles.md#member-directory)), which exposes only id, display name, role, and avatar summary to classroom members.
 
 ## Announcements

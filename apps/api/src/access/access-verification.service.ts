@@ -615,6 +615,21 @@ export class AccessVerificationService {
    * out to recipients without querying membership tables themselves. Pass the caller's
    * transaction client so the read joins that transaction; ordered by id for determinism.
    */
+  async listActiveMentionCandidates(
+    classroomId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<{ userId: string; displayName: string }[]> {
+    const members = await client.classroomMembership.findMany({
+      where: { classroomId, state: MembershipState.ACTIVE, deletedAt: null },
+      select: { userId: true, user: { select: { displayName: true } } },
+    });
+    return members.map((member) => ({
+      userId: member.userId,
+      displayName: member.user.displayName,
+    }));
+  }
+
+  /** Active students for a producer that already authorized its classroom mutation. */
   async listActiveStudentIds(
     classroomId: string,
     options: { excludeUserId?: string; client?: Prisma.TransactionClient } = {},
