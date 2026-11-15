@@ -40,6 +40,10 @@ backend/
 
 - [Points wallet and immutable ledger](docs/points-ledger.md): authenticated `GET /classrooms/:id/points` and `GET /classrooms/:id/students/:studentId/points` with server-derived balances (`SUM(amount)`), PostgreSQL immutability trigger, `FOR UPDATE` concurrency locking, and `PointsLedgerService` for future grading (`#32`) and shop (`#34`) producers.
 
+## Classroom shop
+
+- [Classroom shop and purchases](docs/shop.md): student-only `GET /classrooms/:id/shop/items`, `GET /classrooms/:id/shop/purchases`, and idempotent `POST /classrooms/:id/shop/purchase` with per-classroom overrides, `isImplemented` enforcement, atomic `PointsLedgerService.debit` integration, unique ownership (`409 Conflict`), and per-user rate limiting (`429 TOO_MANY_REQUESTS`).
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.
@@ -226,6 +230,8 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `S3_ACCESS_KEY_ID`        | Optional; set together with `S3_SECRET_ACCESS_KEY` | Static storage credential for local MinIO; leave both unset in AWS so the EC2 instance role is used | Private | Yes |
 | `S3_SECRET_ACCESS_KEY`    | Optional; set together with `S3_ACCESS_KEY_ID`    | Static storage credential for local MinIO; never commit a real value     | Private        | Yes     |
 | `STORAGE_SIGNED_URL_TTL`  | Default `5m`; same format, 1s to 1h               | Default lifetime of signed download URLs                                 | Public         | Yes     |
+| `SHOP_PURCHASE_RATE_LIMIT_WINDOW` | Default `1m`; same format, 1s to 1h       | Sliding-window duration for per-user shop purchase rate limiting         | Public         | Yes     |
+| `SHOP_PURCHASE_RATE_LIMIT_MAX` | Default `20`; integer 1-1000               | Maximum shop purchase attempts per user inside the sliding window        | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 
