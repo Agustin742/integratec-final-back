@@ -1,6 +1,50 @@
 # Tracker — Alejo
 
-# Tracker — Alejo
+## 2026-11-15 — Investigate card #31 (HU-GAM-001) status
+
+- **Status:** completed (investigation only; no source changes, no PR).
+- **Area / files:** none (remote issue/PR reads plus local code reads on a throwaway branch).
+- **Change:** With AI assistance directed by Alejo: investigated issue #31 before implementing it and found it already delivered by Calegaris via [PR #87](https://github.com/Agustin742/integratec-final-back/pull/87) (`feat/31-points-wallet-ledger`, merged into `develop` 2026-11-14, CI 3/3 success). Verified in the merged code that all four review points Agustin left on PR #87 are addressed: seed truncates the ledger with its dependents first (`prisma/seed.ts:10-12`), `TRUNCATE` is documented as the intentional dev-reset escape hatch (same comment), `SUM("amount")::bigint` avoids the int32 overflow (`points-ledger.service.ts:555`), and idempotent replay is resolved before the membership lock (`points-ledger.service.ts:332-345`). An intermediate "seed is broken" finding was retracted after re-reading the seed: the initial grep missed the `TRUNCATE` line. Dependencies #22 and #19 are closed. Issue #31 remains open with unchecked acceptance criteria because the board was not updated.
+- **Reason:** Alejo asked to implement card #31 believing it was pending; verification showed duplicating merged work would be wasted effort.
+- **Next step:** Alejo moves card #31 on the board himself; no issue comment is posted. Throwaway branch `feat/31-points-ledger` (0 unique commits) deleted.
+
+## 2026-11-15 — Publish backend B after PR #88
+
+- **Status:** completed (publication and current-head CI; team review pending).
+- **Area / files:** `feat/classroom-context-b`, PR metadata and this tracker; no source changes.
+- **Change:** Non-force pushed exact candidate `0bd2c7336a093be43f396e55fce6c938bcac1a6c` and opened [PR #93](https://github.com/Agustin742/integratec-final-back/pull/93) into `develop`, one B-only commit, 25 files +1484/-14. Fresh fetch confirms merged PR #88 at `1f7bf1fdd7bf3c1f8be715b896b05886a75ac6d0` has the same tree as A; no rebase/base integration or test rerun needed. Whitespace check passed. Prior 1850-test suite and 221-test independent verification, historical corrected failures and unavailable native review are disclosed in the PR. Exact committed-range ASSESS: medium, reviewDue false / under_budget.
+- **Reason:** Alejo explicitly authorized publishing B after #88; preserve A/B separation and unrelated local tracker entries.
+- **CI / base confirmation:** Run `43726034386` exited 0; all three checks passed on the published head. Fresh fetch after publication confirms develop is unchanged: divergence is 1/1, with only PR #88's merge commit on develop and B's implementation commit on B. Develop's tree equals A's base exactly; no develop content is missing, although its merge commit was not incorporated into B's history. CI reports non-blocking runner/action deprecation notices.
+- **Next step:** Obtain team review; no merge or deployment authorized. This publication log remains local/uncommitted, preserving other ongoing tracker entries.
+
+## 2026-11-15 — Review PR #92 (feat/34-shop-purchases, Issue #34)
+
+- **Status:** completed (PR #92 approved by AlejoElPaisano and merged into `develop` as merge commit `4242ce9` after CI 3/3 green on `e05b214`; review submitted with non-blocking notes).
+- **Area / files:** none (remote PR operations plus isolated `odd/worktrees/pr92-update` worktree, removed after merge; no changes to this workspace's source).
+- **Update 2026-11-15:** Alejo authorized updating Calegaris's branch. Fetched, added worktree `odd/worktrees/pr92-update` on `feat/34-shop-purchases`, merged `origin/develop` (head `1f7bf1f`, PR #88 merged concurrently). Only one conflict: `apps/api/src/openapi/openapi.spec.ts` (both PRs added a test at the same spot); resolved by keeping both tests. `openapi.json` auto-merged and verified: fresh `pnpm openapi:export` is byte-identical to the committed file, both shop and panel schemas/paths present, valid JSON. Merge commit `e05b214` pushed. Verification observed in the worktree: `pnpm --filter @aula/api typecheck` exit 0 (after `prisma:generate`; fresh worktree had no generated client), `vitest run src/openapi/openapi.spec.ts src/shop/shop.spec.ts` 23/23, `prettier --check` and `eslint` on the resolved file and shop module exit 0.
+- **Area / files:** none (remote PR review only; no source changes in this workspace).
+- **Change:** With AI assistance directed by Alejo: reviewed [PR #92](https://github.com/Agustin742/integratec-final-back/pull/92) (`feat/34-shop-purchases`, base `develop`, 22 files, +3413/-9) against issue #34 (`HU-GAM-003`). Verified per `rules/index.md`: acceptance criteria A1-A5 covered by `shop.integration.spec.ts` (atomicity, `Promise.all` negative-balance races, idempotent replay without double charge, rollback) and `shop.http.spec.ts` (#26 auth matrix, 404 non-member, 409 conflicts, 429 rate limit); transaction in `shop.service.ts` uses `FOR UPDATE OF cm` membership serialization, pre-debit idempotency resolution, `FOR SHARE` catalog lock, `PointsLedgerService.debit`, and `P2002` -> 409 mapping; migration is additive with CHECK constraints and restrict FKs; `rules/data.md`, `docs/shop.md` and tracker updated as the card required. CI 3/3 green, `mergeable_state: clean`, no out-of-scope items (no teacher catalog config, no refunds, no UI).
+- **Reason:** Alejo requested the review of Calegaris's PR for card #34 and authorized approval plus merge if it checks out.
+- **Next step:** Conflict resolution pending a team decision: Calegaris updates `feat/34-shop-purchases` from `develop` (or Alejo resolves locally and pushes with consent). Minors noted (in-memory rate limiter never evicts stale user keys; replays count toward the rate-limit window; synthetic seed prices await team decision per the card's open decisions).
+
+## 2026-11-15 — Merge PR #88 into develop
+
+- **Status:** blocked (renewed human-authorized attempt also stopped before execution: host bounded preflight cancelled or timed out).
+- **Area / files:** remote PR #88; this tracker only. Backend B is preserved.
+- **Change:** Alejo authorized fetching, bringing any missing develop commits into A, and merging PR #88. Fetch succeeded; origin/develop is fully included in origin/feat/classroom-panels-a (0 upstream-only commits). Head c6f472c has Calegaris approval, all three CI checks successful and MERGEABLE/CLEAN status. TheKade's earlier CHANGES_REQUESTED review remains recorded; no administrative bypass or review dismissal is authorized.
+- **Reason:** Integrate the reviewed A contract before publishing B and completing frontend #26.
+- **Evidence:** Initial delivery guard requested an exact committed range. Registered isolated A worktree `odd/worktrees/pr88-merge`; ASSESS against develop `0ea54e39f8185ada0152e907edf12c3f9c85bedb` returned medium, reviewDue false (under_budget). The subsequent guarded normal merge was not executed: host bounded preflight cancelled or timed out. No merge, administrative override, review dismissal or B publication occurred.
+- **Renewed attempt:** Alejo explicitly requested completing the original operation. Fresh fetch again showed 0 upstream-only commits and unchanged c6f472c with all three CI checks successful. Exact committed-range ASSESS again returned medium/reviewDue false. The normal exact-head merge command was again not executed by the host due to cancelled/timed-out bounded preflight. No GitHub merge refusal is established.
+- **Next step:** Merge through GitHub manually, or resolve the host pre-delivery failure before another tool attempt. No bypass, review dismissal, branch deletion or B publication.
+
+## 2026-11-14 — Classroom context invalidation (B)
+
+- **Status:** in-progress (backend implementation and verification complete; local closure authorized, publication and team approval pending)
+- **Area / files:** authenticated classroom context stream, transactional config/enrollment signals, existing revocation-event delivery, API/OpenAPI and context documentation.
+- **Change:** With AI assistance directed by Alejo: implemented backend B on `feat/classroom-context-b` from PR #88, preserving A. SSE hints require authoritative REST reload on connect/reconnect; parent/2D clients are supported without Colyseus. Durable replay and frontend implementation remain out of scope.
+- **Verification:** Linux Node 22 full suite 1,850/1,850, workspace typechecks, lint and all three builds passed. An added API-root SSE/PostgreSQL case passed with synthetic session verification. Independent review passed S1–S4 with 221/221 tests, no skips and three typechecks (numeric exit codes not exposed). Initial module-guard/fixture failures were corrected; code/docs formatting and links passed.
+- **Reason:** Clients must refresh context after access changes. A process-local broker, 15-second access checks and 60-second renewal do not prove frontend/proxy behavior or immediate distributed delivery.
+- **Next step:** Keep B in one PR as Alejo selected. PR #88 remains open, so a PR to `develop` would also show A until it merges. Alejo explicitly chose local closure without the unavailable native review; no global sync or review-mode change was applied. Publication/base selection remains separate; no native approval, B push, PR or merge is claimed.
 
 ## 2026-11-14 — Merge PR #91 into develop
 
