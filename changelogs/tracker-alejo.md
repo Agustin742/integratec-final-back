@@ -1,5 +1,13 @@
 # Tracker — Alejo
 
+## 2026-11-15 — Implement card #39 (HU-COM-003 activity forum)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/src/notifications/`, new `apps/api/src/activities/forum/`, `apps/api/openapi.json`, `odd/tasks/activity-forum.md`
+- **Change:** With AI assistance directed by Alejo: card #39 (activity query forum, MVP Core) implemented on branch `feat/activity-forum` from `origin/develop` (`4242ce9`). Migration `20261115171516_activity_forum_tables` (additive, reviewed); notification kind `activity_forum_reply` (outbox, recorded only when staff replies and author != replier); forum module with create/reply/paginated list; students only on PUBLISHED non-deleted activities (404), parents 403 (activities precedent), non-members 404; bodies trim + 2000-char bound, plain text, never logged. Post rate limiting not in card scope (follow-up to disclose in PR).
+- **Reason:** Alejo requested starting card #39.
+- **Next step:** Commit slices, open PR to `develop` (disclose full-suite transport crash `ERR_IPC_CHANNEL_CLOSED` 3x + `points-ledger` 2 pre-existing concurrency flakiness reproduced on clean develop).
+
 # Tracker — Alejo
 
 ## 2026-11-14 — Merge PR #91 into develop
