@@ -304,6 +304,9 @@ export class SubmissionsService {
       },
     });
     if (!activity) throw this.notFound();
+    // Students never see drafts: check the state before classroom access so a linked
+    // parent on a DRAFT activity gets the same 404 as an unknown id (no existence leak).
+    if (activity.state !== ActivityState.PUBLISHED) throw this.notFound();
     try {
       await this.access.verifyClassroomAccess(actorId, activity.classroomId, {
         requiredRole: 'STUDENT',
@@ -312,8 +315,6 @@ export class SubmissionsService {
       if (error instanceof NotFoundException) throw this.notFound();
       throw error;
     }
-    // Students never see drafts.
-    if (activity.state !== ActivityState.PUBLISHED) throw this.notFound();
     return activity;
   }
 

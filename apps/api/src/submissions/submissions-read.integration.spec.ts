@@ -319,6 +319,12 @@ describe('GET submissions PostgreSQL HTTP — activities-and-grading (signed URL
       }
     });
 
+    it('answers 404, not 403, to a linked parent on a draft activity (no existence leak)', async () => {
+      const draft = await activityOf('DRAFT');
+      const res = await getMine(draft, parent).expect(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    });
+
     it('fails with a server error, not a partial body, when a URL cannot be signed', async () => {
       const activityId = await activityOf();
       await submissionOf(activityId, s1);

@@ -344,6 +344,13 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       }
       expect(await rowsOf(draft)).toHaveLength(0);
     });
+
+    it('answers 404, not 403, to a linked parent on a draft activity (no existence leak)', async () => {
+      const draft = await publishedActivity({ state: 'DRAFT', publishedAt: null });
+      const res = await submit(draft, { actor: parent }).expect(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+      expect(await rowsOf(draft)).toHaveLength(0);
+    });
   });
 
   describe('activity state and window (server clock)', () => {

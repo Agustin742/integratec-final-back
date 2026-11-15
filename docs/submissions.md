@@ -29,12 +29,12 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 |---|---|---|
 | Enrolled student (own work) | `201`/`200`, or the rules below | `200` |
 | Another student of the classroom | n/a (own submission only) | `404` |
-| Teacher-level staff of the classroom | `403` | `200` |
-| Linked parent | `403` | `404` (parents see the grade of the child, never the files) |
+| Teacher-level staff of the classroom | `403` (published activities); `404` on draft or deactivated | `200` |
+| Linked parent | `403` on published activities; `404` on draft or deactivated (no existence leak) | `404` (parents see the grade of the child, never the files) |
 | Non-member, teacher of another classroom | `404` | `404` |
 | Unknown, malformed, draft or deactivated activity; unknown submission | `404` | `404` |
 
-`404` is used wherever a different status would reveal that an activity or a submission exists. A student who has not submitted yet gets `404 Submission not found` from `.../me`. Staff and parents are visible members of the classroom, so the upload route answers them `403` like the rest of the activity routes.
+`404` is used wherever a different status would reveal that an activity or a submission exists. A student who has not submitted yet gets `404 Submission not found` from `.../me`. Staff and parents are visible members of the classroom, so the upload route answers them `403` on published activities; the submission state is checked before classroom access, so a draft or deactivated activity answers everyone `404` instead of leaking its existence.
 
 ## File rules
 

@@ -78,8 +78,9 @@ export class SubmissionsController {
       '`dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` ' +
       'is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the ' +
       'stored submission (200) without storing anything new; a different key after a ' +
-      'submission exists is 409. Unknown, draft or deactivated activities and non-members ' +
-      'answer 404; staff and linked parents answer 403.',
+      'submission exists is 409. Unknown, malformed, draft or deactivated activities and ' +
+      'non-members answer 404, so an unpublished activity never leaks its existence; staff ' +
+      'and linked parents answer 403 on published activities only.',
   })
   @ApiHeader({
     name: IDEMPOTENCY_KEY_HEADER,
@@ -147,8 +148,9 @@ export class SubmissionsController {
       "Student only. Returns the calling student's submission with a short-lived signed " +
       '`downloadUrl` per file (lifetime from `STORAGE_SIGNED_URL_TTL`, reported in ' +
       '`downloadUrlExpiresAt`). The response is not cacheable. A student who has not submitted ' +
-      'yet gets 404 `Submission not found`; unknown, draft or deactivated activities and ' +
-      'non-members get 404 `Activity not found`; staff and linked parents get 403.',
+      'yet gets 404 `Submission not found`; unknown, malformed, draft or deactivated activities ' +
+      'and non-members get 404 `Activity not found` (a draft never leaks its existence), and ' +
+      'staff and linked parents get 403 on published activities only.',
   })
   @ApiOkResponse({ type: SubmissionDownloadResponseDto })
   @ApiForbiddenResponse({
