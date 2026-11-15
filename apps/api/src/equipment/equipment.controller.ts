@@ -1,10 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Put,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Put } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -20,10 +14,7 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
-import {
-  EquipItemDto,
-  EquipmentStateDto,
-} from './equipment.dto';
+import { EquipItemDto, EquipmentStateDto } from './equipment.dto';
 import { EquipmentService } from './equipment.service';
 
 @ApiTags('equipment')
@@ -56,7 +47,7 @@ export class EquipmentController {
   @ApiOperation({
     summary: "Read the authenticated student's classroom-scoped equipment state",
     description:
-      "Returns one equipped purchase per slot (head, face, back, desk_decor) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.",
+      'Returns one equipped purchase per slot (head, face, back, desk_decor) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.',
   })
   @ApiOkResponse({
     type: EquipmentStateDto,
@@ -73,7 +64,7 @@ export class EquipmentController {
   @ApiOperation({
     summary: 'Equip a purchased item in a slot, or unequip the slot',
     description:
-      "Atomically saves `EquippedItem` for the authenticated active student after validating the slot (404), the shop item (404), its kind/slot compatibility (409), and classroom-scoped ownership against StudentPurchase (403). Body `{ shopItemId: string | null }`; null (or an absent field) unequips the slot. Idempotent.",
+      'Atomically saves `EquippedItem` for the authenticated active student after validating the slot (404), the shop item (404), its kind/slot compatibility (409), and classroom-scoped ownership against StudentPurchase (403). Body `{ shopItemId: string | null }`; null (or an absent field) unequips the slot. Idempotent.',
   })
   @ApiOkResponse({
     type: EquipmentStateDto,

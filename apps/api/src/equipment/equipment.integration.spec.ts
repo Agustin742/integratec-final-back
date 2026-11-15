@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
   ClassroomRole,
@@ -456,8 +452,6 @@ describe('EquipmentService (real PostgreSQL)', () => {
     const crossClassroom = await equipment.getEquipment(ids.student, ids.otherClassroom);
     expect(crossClassroom.slots.head).toBeNull();
 
-    expect(
-      await prisma.equippedItem.count({ where: { shopItemId: ids.capItem } }),
-    ).toBe(1);
+    expect(await prisma.equippedItem.count({ where: { shopItemId: ids.capItem } })).toBe(1);
   });
 });

@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { EquippedSlot, Prisma, ShopItemKind } from '@prisma/client';
+import { Prisma, ShopItemKind } from '@prisma/client';
 import { AccessVerificationService } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
