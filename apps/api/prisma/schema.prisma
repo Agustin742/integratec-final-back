@@ -133,6 +133,8 @@ model User {
   actorPointTransactions   PointTransaction[]    @relation("ActorPointTransactions")
   studentPurchases         StudentPurchase[]     @relation("StudentPurchases")
   createdActivities        Activity[]
+  authoredStudyMaterials   StudyMaterial[]       @relation("MaterialAuthor")
+  removedStudyMaterials    StudyMaterial[]       @relation("MaterialRemover")
 
   @@map("users")
 }
@@ -264,10 +266,35 @@ model Classroom {
   classroomItems     ClassroomItem[]
   studentPurchases   StudentPurchase[]
   activities         Activity[]
+  studyMaterials     StudyMaterial[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
   @@map("classrooms")
+}
+
+/// Private classroom files. Logical removal keeps author/history and the private object.
+model StudyMaterial {
+  id          String    @id @default(uuid()) @db.Uuid
+  classroomId String    @map("classroom_id") @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
+  objectKey   String    @unique @map("object_key") @db.VarChar(255)
+  filename    String    @db.VarChar(120)
+  contentType String    @map("content_type") @db.VarChar(32)
+  sizeBytes   Int       @map("size_bytes")
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
+  removedById String?   @map("removed_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  author    User      @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  removedBy User?     @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
+
+  @@index([classroomId, removedAt, createdAt, id])
+  @@index([authorId])
+  @@index([removedById])
+  @@map("study_materials")
 }
 
 model ClassroomMembership {
