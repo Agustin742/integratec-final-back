@@ -1,6 +1,12 @@
 # Tracker — Alejo
 
-# Tracker — Alejo
+## 2026-11-15 — Review fixes for PR #89 (#30, Agustín's branch)
+
+- **Status:** in-progress (fixes applied locally on `feat/30-file-submissions`; push pending)
+- **Area / files:** `apps/api/prisma/migrations/20261113150000_create_submissions` (renamed from `20261113120000_*`), `apps/api/prisma/schema.prisma`, `apps/api/src/app.module.ts`, `apps/api/openapi.json` (merge conflicts resolved), `apps/api/src/submissions/submissions.service.ts` (`loadSubmittableActivity` state check before classroom access), `submissions.controller.ts`, `submissions.integration.spec.ts`, `submissions-read.integration.spec.ts` (new parent-on-draft 404 tests), `submission-file-policy.ts` (migration comment), `docs/submissions.md`, `changelogs/tracker-agustin.md` (status + migration name, as requested in review).
+- **Change:** With AI assistance directed by Alejo: merged `origin/develop` into `feat/30-file-submissions` (PR #87's `20261113144500_create_point_transactions` had landed; no force-push per `rules/git-workflow.md`), renamed the submissions migration to `20261113150000_create_submissions` so the Prisma history stays in order, resolved the three merge conflicts, and reordered the `PUBLISHED` check before `verifyClassroomAccess` in `loadSubmittableActivity` so a linked parent on a draft activity gets `404` instead of `403` (existence leak from Calegaris's review, blocker 2). Added integration tests for POST and `GET .../me` asserting the parent-on-draft `404`, updated controller OpenAPI wording and `docs/submissions.md`, and fixed the stale tracker status/migration name (blocker 3). OpenAPI regenerated from source.
+- **Reason:** PR #89 review (Calegaris) left three blockers: out-of-order migration against post-#87 `develop`, the 403 draft-existence leak, and a stale tracker; Agustín did not address them, so Alejo asked to apply the corrections ourselves.
+- **Next step:** verify locally (lint/typecheck/tests/build) and push the merge commit to `feat/30-file-submissions`, then re-request review.
 
 ## 2026-11-14 — Merge PR #91 into develop
 
