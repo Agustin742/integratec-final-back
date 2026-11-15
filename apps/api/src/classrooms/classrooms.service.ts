@@ -16,6 +16,7 @@ import { paginated, toSkipTake, type Paginated } from '../http/pagination/pagina
 import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import {
   DEFAULT_CLASSROOM_CONTROL_STATES,
   DEFAULT_INITIAL_DESK_COUNT,
@@ -60,6 +61,7 @@ export class ClassroomsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessService: AccessVerificationService,
+    private readonly contextRecorder: ClassroomContextRecorder,
   ) {}
 
   /**
@@ -219,13 +221,21 @@ export class ClassroomsService {
       updateData.gamesDisabled = dto.gamesDisabled;
     }
 
-    const updated = await this.prisma.classroom.update({
-      where: { id: classroomId },
-      data: updateData,
-      include: {
-        pet: true,
-        _count: { select: { desks: true } },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const classroom = await tx.classroom.update({
+        where: { id: classroomId },
+        data: updateData,
+        include: {
+          pet: true,
+          _count: { select: { desks: true } },
+        },
+      });
+      // Null-only ignored fields still retain their previous update response behavior.
+      // Any effective update input may invalidate, even if its value is unchanged.
+      if (Object.keys(updateData).length > 0) {
+        await this.contextRecorder.recordChanged(tx, classroomId);
+      }
+      return classroom;
     });
 
     return this.toDetailResponse(updated, access.myRole, access.capabilities);

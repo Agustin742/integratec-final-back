@@ -19,6 +19,7 @@ import { AccessVerificationService } from '../access/access-verification.service
 import type { ApiConfig } from '../config/api-config';
 import { decryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
@@ -139,6 +140,7 @@ describe('ClassroomInvitationsService', () => {
       mockOutbox as unknown as OutboxWriter,
       rateLimiter,
       dummyConfig,
+      new ClassroomContextRecorder(mockOutbox as unknown as OutboxWriter),
     );
   });
 
@@ -399,6 +401,13 @@ describe('ClassroomInvitationsService', () => {
     });
   });
 
+  const expectContextChanged = () => {
+    expect(mockOutbox.record).toHaveBeenCalledExactlyOnceWith(mockPrisma, {
+      type: 'classroom.context.changed',
+      payload: { classroomId: CLASSROOM_ID },
+    });
+  };
+
   describe('joinWithCode', () => {
     it('returns existing membership idempotently without consuming uses or reassigning desk', async () => {
       const rawCode = 'ABC1234';
@@ -438,6 +447,7 @@ describe('ClassroomInvitationsService', () => {
       expect(res.alreadyMember).toBe(true);
       expect(res.membershipId).toBe(membershipId);
       expect(res.desk?.deskIndex).toBe(3);
+      expect(mockOutbox.record).not.toHaveBeenCalled();
       expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
       expect(mockPrisma.joinCodeUsage.create).not.toHaveBeenCalled();
     });
@@ -487,6 +497,7 @@ describe('ClassroomInvitationsService', () => {
 
       expect(res.alreadyMember).toBe(false);
       expect(res.desk?.deskIndex).toBe(1);
+      expectContextChanged();
       expect(mockPrisma.joinCodeUsage.create).toHaveBeenCalledWith({
         data: { invitationId, userId: STUDENT_ID },
       });
@@ -651,6 +662,7 @@ describe('ClassroomInvitationsService', () => {
       expect(res.alreadyMember).toBe(false);
       expect(res.membershipId).toBe(membershipId);
       expect(res.desk?.deskIndex).toBe(5);
+      expectContextChanged();
       expect(mockPrisma.classroomMembership.update).toHaveBeenCalledWith({
         where: { id: membershipId },
         data: {
@@ -849,6 +861,82 @@ describe('ClassroomInvitationsService', () => {
     });
   });
 
+  describe.each(['code', 'email'] as const)('%s context-change atomicity', (kind) => {
+    const accept = () =>
+      kind === 'code'
+        ? service.joinWithCode(STUDENT_ID, { code: 'ABC1234' })
+        : service.acceptEmailInvitation(STUDENT_ID, { token: 'synthetic-invitation' });
+
+    beforeEach(() => {
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: kind === 'code' ? InvitationKind.JOIN_CODE : InvitationKind.EMAIL,
+        role: InvitationRole.STUDENT,
+        classroomId: CLASSROOM_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 100000),
+        maxUses: null,
+        useCount: 0,
+        classroom: { id: CLASSROOM_ID, deletedAt: null, school: null },
+      });
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue(null);
+      mockPrisma.classroomMembership.create.mockResolvedValue({ id: 'membership' });
+      mockPrisma.desk.findFirst.mockResolvedValue({ id: 'desk', deskIndex: 1 });
+    });
+
+    it('propagates outbox failure through the owning transaction instead of reporting success', async () => {
+      const failure = new Error('Outbox unavailable');
+      mockOutbox.record.mockRejectedValueOnce(failure);
+      const transactionRejected = vi.fn();
+      mockPrisma.$transaction.mockImplementation(async (cb) => {
+        try {
+          return await cb(mockPrisma);
+        } catch (error) {
+          transactionRejected(error);
+          throw error;
+        }
+      });
+      await expect(accept()).rejects.toBe(failure);
+      expect(transactionRejected).toHaveBeenCalledWith(failure);
+      expectContextChanged();
+    });
+
+    it('records nothing when membership creation fails', async () => {
+      mockPrisma.classroomMembership.create.mockRejectedValueOnce(new Error('Write failed'));
+      await expect(accept()).rejects.toThrow('Write failed');
+      expect(mockOutbox.record).not.toHaveBeenCalled();
+    });
+
+    it('does not consume counters, allocate desks or record events for an active enrollment', async () => {
+      mockPrisma.classroomMembership.findUnique.mockResolvedValue({
+        id: 'membership',
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+        desk: { id: 'desk', deskIndex: 1 },
+      });
+      await expect(accept()).resolves.toMatchObject({ alreadyMember: true });
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.desk.updateMany).not.toHaveBeenCalled();
+      expect(mockOutbox.record).not.toHaveBeenCalled();
+    });
+
+    it('does not write memberships, counters, desks or events for a revoked invitation', async () => {
+      const invitation = await mockPrisma.invitation.findUnique();
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        ...invitation,
+        state: InvitationState.REVOKED,
+      });
+      await expect(accept()).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+      expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.desk.updateMany).not.toHaveBeenCalled();
+      expect(mockOutbox.record).not.toHaveBeenCalled();
+    });
+  });
+
   describe('acceptEmailInvitation', () => {
     it('accepts valid invitation, creates membership, and allocates desk', async () => {
       const token = 'token-1234567890123456';
@@ -887,6 +975,7 @@ describe('ClassroomInvitationsService', () => {
 
       expect(res.alreadyMember).toBe(false);
       expect(res.desk?.deskIndex).toBe(1);
+      expectContextChanged();
       expect(mockPrisma.invitation.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ id: invitationId }),
@@ -981,6 +1070,7 @@ describe('ClassroomInvitationsService', () => {
       expect(res.alreadyMember).toBe(false);
       expect(res.membershipId).toBe(membershipId);
       expect(res.desk?.deskIndex).toBe(2);
+      expectContextChanged();
       expect(mockPrisma.classroomMembership.update).toHaveBeenCalled();
       expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
     });

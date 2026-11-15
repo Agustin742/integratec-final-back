@@ -2,6 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { AccessModule } from './access/access.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassroomsModule } from './classrooms/classrooms.module';
+import { ClassroomContextDeliveryModule } from './classrooms/context-delivery.module';
 import type { ApiConfig } from './config/api-config';
 import { ApiConfigModule } from './config/config.module';
 import { HealthController } from './health.controller';
@@ -29,6 +30,7 @@ export class AppModule {
         UsersModule,
         RealtimeJoinModule,
         ClassroomsModule,
+        ClassroomContextDeliveryModule,
         NotificationsModule,
         SubmissionsModule,
         PointsModule,

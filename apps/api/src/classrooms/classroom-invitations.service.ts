@@ -22,6 +22,7 @@ import { API_CONFIG } from '../config/config.module';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { encryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
@@ -47,6 +48,7 @@ export class ClassroomInvitationsService {
     private readonly outbox: OutboxWriter,
     private readonly rateLimiter: JoinCodeRateLimiter,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly contextRecorder: ClassroomContextRecorder,
   ) {}
 
   /**
@@ -558,6 +560,8 @@ export class ClassroomInvitationsService {
           desk = await this.assignDesk(tx, classroomId, membershipId);
         }
 
+        await this.contextRecorder.recordChanged(tx, classroomId);
+
         return {
           classroomId,
           membershipId,
@@ -775,6 +779,8 @@ export class ClassroomInvitationsService {
           membershipId = created.id;
           desk = await this.assignDesk(tx, classroomId, membershipId);
         }
+
+        await this.contextRecorder.recordChanged(tx, classroomId);
 
         return {
           classroomId,
