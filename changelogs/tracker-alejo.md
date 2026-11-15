@@ -1,5 +1,12 @@
 # Tracker — Alejo
 
+## 2026-11-15 — Card #35 (HU-ESP-004): equip purchased items — in progress
+
+- **Status:** in-progress (branch created, feature document written, design resolved; implementation starting).
+- **Area / files:** new branch `feat/35-equip-items` from fresh `origin/develop` (4242ce9); planned: Prisma migration + new equipment module in `apps/api/src`, OpenAPI export, docs.
+- **Change:** Card #29 was found blocked (needs `Submission` from PR #89 / card #30 and `Grade` from card #32); Alejo picked dependency-free card #35 from the backlog instead. Design (D16 draft): classroom-scoped `EquippedItem` (unique per classroom/student/slot), student-only endpoints `GET /classrooms/:id/me/equipment` and `PUT /classrooms/:id/me/equipment/:slot`, 403 for unpurchased items, per-user rate limit.
+- **Next step:** migration T1, then RED tests, then module implementation.
+
 ## 2026-11-15 — Investigate card #31 (HU-GAM-001) status
 
 - **Status:** completed (investigation only; no source changes, no PR).
