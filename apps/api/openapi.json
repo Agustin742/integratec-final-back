@@ -2422,6 +2422,31 @@
         "summary": "Publish a draft activity",
         "tags": ["activities"]
       }
+    },
+    "/classrooms/{id}/context-events": {
+      "get": {
+        "operationId": "ClassroomContextEventsController_connect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "classroom.context-invalidated events with JSON data {classroomId}; no replay",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          },
+          "401": { "description": "Missing, invalid, expired or revoked session" },
+          "404": { "description": "Classroom unavailable or inaccessible" },
+          "503": { "description": "Authorization setup timed out or service is stopping" }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Subscribe to live context hints; refetch classroom context on every connection and hint",
+        "tags": ["Classrooms"]
+      }
     }
   },
   "info": {

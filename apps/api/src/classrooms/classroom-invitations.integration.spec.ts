@@ -19,6 +19,7 @@ import { AccessVerificationService } from '../access/access-verification.service
 import type { ApiConfig } from '../config/api-config';
 import { InMemoryEmailAdapter } from '../platform/email/in-memory-email.adapter';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import { OutboxHandlerRegistry } from '../platform/outbox/outbox.registry';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
@@ -90,6 +91,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
       outboxWriter,
       rateLimiter,
       dummyConfig,
+      new ClassroomContextRecorder(outboxWriter),
     );
 
     const ts = Date.now();
