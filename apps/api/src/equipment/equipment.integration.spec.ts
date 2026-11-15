@@ -7,6 +7,7 @@ import {
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
   ClassroomRole,
+  EquippedSlot,
   MembershipState,
   RegistrationPath,
   ShopItemKind,
@@ -316,7 +317,7 @@ describe('EquipmentService (real PostgreSQL)', () => {
         where: {
           classroomId: ids.classroom,
           studentId: ids.student,
-          slot: 'head',
+          slot: EquippedSlot.HEAD,
         },
       }),
     ).toBe(1);

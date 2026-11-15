@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { UnauthorizedException, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, SchoolRole, ShopItemKind } from '@prisma/client';
+import { ClassroomRole, EquippedSlot, SchoolRole, ShopItemKind } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../app.module';
@@ -246,7 +246,9 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
   });
 
   it('enforces 401, 403 for staff and non-adult parents, 404 for strangers/adult-mode parents, and resource isolation', async () => {
-    const unauth = await getEquipment(ids.classroom, 'no-token');
+    const unauth = await request(app.getHttpServer()).get(
+      `/classrooms/${ids.classroom}/me/equipment`,
+    );
     expect(unauth.status).toBe(401);
     assertEnvelope(unauth.body, 'UNAUTHENTICATED');
 
@@ -343,8 +345,9 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
     expect(before.status).toBe(200);
     const beforeBody = before.body;
 
+    // headphonesItem declares slot 'head' but was never purchased by the student.
     const rejected = await putEquipment(ids.classroom, ids.student, 'head', {
-      shopItemId: ids.backpackItem,
+      shopItemId: ids.headphonesItem,
     });
     expect(rejected.status).toBe(403);
     assertEnvelope(rejected.body, 'FORBIDDEN');
@@ -392,7 +395,11 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
     expect(replay.status).toBe(200);
     expect(
       await prisma.equippedItem.count({
-        where: { classroomId: ids.classroom, studentId: ids.student, slot: 'head' },
+        where: {
+          classroomId: ids.classroom,
+          studentId: ids.student,
+          slot: EquippedSlot.HEAD,
+        },
       }),
     ).toBe(1);
 
