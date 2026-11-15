@@ -251,6 +251,7 @@ describe('Outbox to realtime eviction (integration)', () => {
   let outbox: OutboxWriter;
   /** Unique per test: other spec files write the same event types into the shared database. */
   let user: string;
+  let eventIds: string[];
 
   beforeAll(async () => {
     realtime = createServer((req, res) => {
@@ -284,6 +285,7 @@ describe('Outbox to realtime eviction (integration)', () => {
     received = [];
     realtimeStatus = 204;
     user = randomUUID();
+    eventIds = [];
   });
 
   // Only this test's own rows are removed: a type-wide delete would race with the other suites.
@@ -306,17 +308,24 @@ describe('Outbox to realtime eviction (integration)', () => {
     payload: { path: ['userId'], equals: userId },
   });
   const ownRow = () => prisma.outboxEvent.findFirstOrThrow({ where: ownRows(user) });
-  /** What the stub received for this test's user; strangers' events may pass through it too. */
-  const ownReceived = () => received.filter((call) => call.body.userId === user);
-  const record = (type: string, payload: object) =>
-    prisma.$transaction((tx) => outbox.record(tx, { type, payload }));
+  const ownReceived = () => received;
+  const record = async (type: string, payload: object) => {
+    const id = await prisma.$transaction((tx) => outbox.record(tx, { type, payload }));
+    eventIds.push(id);
+    return id;
+  };
 
   const dispatch = (now = new Date()) =>
-    dispatcher.dispatchPending(50, now, [
-      REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
-      REALTIME_SESSIONS_REVOKED_EVENT,
-      CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
-    ]);
+    dispatcher.dispatchPending(
+      50,
+      now,
+      [
+        REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+        REALTIME_SESSIONS_REVOKED_EVENT,
+        CLASSROOM_MEMBERSHIP_REMOVED_EVENT,
+      ],
+      eventIds,
+    );
 
   it('delivers a recorded event to the realtime server with the service secret', async () => {
     await record(REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, { userId: user, classroomId: CLASSROOM });
@@ -335,13 +344,23 @@ describe('Outbox to realtime eviction (integration)', () => {
 
   it('is not disturbed by a pending event of another user in the same table', async () => {
     const stranger = randomUUID();
-    await record(REALTIME_SESSIONS_REVOKED_EVENT, { userId: stranger });
+    const foreignId = await prisma.$transaction((tx) =>
+      outbox.record(tx, {
+        type: REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+        payload: { userId: stranger, classroomId: CLASSROOM },
+      }),
+    );
+    const foreign = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: foreignId } });
     await record(REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT, { userId: user, classroomId: CLASSROOM });
 
     try {
-      await dispatch();
+      expect(await dispatch()).toEqual({ delivered: 1, retried: 0, exhausted: 0 });
 
       expect(ownReceived()).toHaveLength(1);
+      expect(ownReceived()[0].body).toEqual({ userId: user, classroomId: CLASSROOM });
+      expect(await prisma.outboxEvent.findUniqueOrThrow({ where: { id: foreignId } })).toEqual(
+        foreign,
+      );
       expect((await ownRow()).processedAt).not.toBeNull();
     } finally {
       await prisma.outboxEvent.deleteMany({ where: ownRows(stranger) });

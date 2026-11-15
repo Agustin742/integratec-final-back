@@ -10,6 +10,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { SubmissionsModule } from './submissions/submissions.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PointsModule } from './points/points.module';
 
 @Module({
   controllers: [HealthController],
@@ -28,6 +29,7 @@ export class AppModule {
         ClassroomsModule,
         NotificationsModule,
         SubmissionsModule,
+        PointsModule,
       ],
     };
   }

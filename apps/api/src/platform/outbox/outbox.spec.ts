@@ -67,6 +67,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
   let registry: OutboxHandlerRegistry;
   let dispatcher: OutboxDispatcher;
   let type: string;
+  let eventIds: string[];
 
   beforeAll(async () => {
     fixture = new PrismaClient({ datasources: { db: { url: config.databaseUrl } } });
@@ -126,6 +127,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
   // Each test uses its own event type, so rows and handlers never overlap.
   beforeEach(() => {
     type = `spec.${randomUUID()}`;
+    eventIds = [];
   });
 
   afterEach(async () => {
@@ -133,15 +135,90 @@ describe('transactional outbox (integration, real Postgres)', () => {
     await prisma.outboxEvent.deleteMany({ where: { type } });
   });
 
-  const record = (payload: Prisma.InputJsonObject = { classroomId: 'c-1' }) =>
-    prisma.$transaction((tx) => writer.record(tx, { type, payload }));
+  const record = async (payload: Prisma.InputJsonObject = { classroomId: 'c-1' }) => {
+    const id = await prisma.$transaction((tx) => writer.record(tx, { type, payload }));
+    eventIds.push(id);
+    return id;
+  };
 
-  // Scoped to this test's type so rows of other types in the shared database are never claimed.
   const dispatch = (now?: Date, batchSize = 10, target: OutboxDispatcher = dispatcher) =>
-    target.dispatchPending(batchSize, now, [type]);
+    target.dispatchPending(batchSize, now, [type], eventIds);
 
-  const recordId = async (payload: Prisma.InputJsonObject): Promise<string> =>
-    prisma.$transaction((tx) => writer.record(tx, { type, payload }));
+  const recordId = record;
+
+  it('claims only selected IDs and leaves a same-type foreign event entirely untouched', async () => {
+    const owned = await record();
+    const foreign = await record({ classroomId: 'foreign' });
+    const before = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: foreign } });
+    const received: string[] = [];
+    registry.register(type, async (event) => {
+      received.push(event.id);
+    });
+
+    expect(await dispatcher.dispatchPending(10, new Date(), [type], [owned])).toEqual({
+      delivered: 1,
+      retried: 0,
+      exhausted: 0,
+    });
+    expect(received).toEqual([owned]);
+    expect(await prisma.outboxEvent.findUniqueOrThrow({ where: { id: foreign } })).toEqual(before);
+    expect(
+      (await prisma.outboxEvent.findUniqueOrThrow({ where: { id: owned } })).processedAt,
+    ).not.toBeNull();
+  });
+
+  it('claims nothing for an explicitly empty ID filter', async () => {
+    const id = await record();
+    const before = await prisma.outboxEvent.findUniqueOrThrow({ where: { id } });
+    const handler = vi.fn(async () => undefined);
+    registry.register(type, handler);
+
+    expect(await dispatcher.dispatchPending(10, new Date(), undefined, [])).toEqual({
+      delivered: 0,
+      retried: 0,
+      exhausted: 0,
+    });
+    expect(handler).not.toHaveBeenCalled();
+    expect(await prisma.outboxEvent.findUniqueOrThrow({ where: { id } })).toEqual(before);
+  });
+
+  it('intersects type and ID filters, and permits IDs without a type filter', async () => {
+    const id = await record();
+    const before = await prisma.outboxEvent.findUniqueOrThrow({ where: { id } });
+    const received: string[] = [];
+    registry.register(type, async (event) => {
+      received.push(event.id);
+    });
+    for (const types of [[`other.${type}`], []]) {
+      expect(await dispatcher.dispatchPending(10, new Date(), types, [id])).toEqual({
+        delivered: 0,
+        retried: 0,
+        exhausted: 0,
+      });
+      expect(received).toEqual([]);
+      expect(await prisma.outboxEvent.findUniqueOrThrow({ where: { id } })).toEqual(before);
+    }
+    expect(await dispatcher.dispatchPending(10, new Date(), undefined, [id])).toEqual({
+      delivered: 1,
+      retried: 0,
+      exhausted: 0,
+    });
+    expect(received).toEqual([id]);
+  });
+
+  it('preserves production dispatch when both filters are omitted', async () => {
+    // This suite owns the entire private schema, so unfiltered dispatch is safe here only.
+    const ids = [await record(), await record()];
+    const received: string[] = [];
+    registry.register(type, async (event) => {
+      received.push(event.id);
+    });
+    expect(await dispatcher.dispatchPending()).toEqual({ delivered: 2, retried: 0, exhausted: 0 });
+    expect(received.sort()).toEqual(ids.sort());
+    expect(await prisma.outboxEvent.count({ where: { id: { in: ids }, processedAt: null } })).toBe(
+      0,
+    );
+  });
 
   it('delivers a committed event exactly once', async () => {
     const received: OutboxEventEnvelope[] = [];
@@ -301,8 +378,10 @@ describe('transactional outbox (integration, real Postgres)', () => {
       entered += 1;
       await gate;
     });
-    await prisma.$transaction(async (tx) => {
-      for (let i = 0; i < 6; i += 1) await writer.record(tx, { type, payload: { n: i } });
+    eventIds = await prisma.$transaction(async (tx) => {
+      const ids: string[] = [];
+      for (let i = 0; i < 6; i += 1) ids.push(await writer.record(tx, { type, payload: { n: i } }));
+      return ids;
     });
     // Use one database-observed cutoff after commit, including sub-millisecond
     // PostgreSQL defaults that could still be ahead of a JavaScript Date's cutoff.
@@ -379,7 +458,7 @@ describe('transactional outbox (integration, real Postgres)', () => {
       // The poller is unscoped; keep this test off rows of other types in the shared database.
       const later = vi
         .spyOn(fast, 'dispatchPending')
-        .mockImplementation((batchSize, now) => original(batchSize, now, [type]));
+        .mockImplementation((batchSize, now) => original(batchSize, now, [type], eventIds));
 
       tick();
       await fast.onModuleDestroy();

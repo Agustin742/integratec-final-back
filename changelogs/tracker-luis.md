@@ -1,5 +1,55 @@
 # Tracker — Luis
 
+## 2026-11-14 — PR #87 review fixes for points ledger & seed reset (Issue #31)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/seed.ts`, `apps/api/src/points/points-ledger.service.ts`, `apps/api/src/points/points-ledger.spec.ts`, `apps/api/src/points/points-ledger.integration.spec.ts`, `docs/points-ledger.md`, `changelogs/tracker-luis.md`
+- **Change:** Addressed PR #87 code-review feedback on `feat/31-points-wallet-ledger`:
+  - **`apps/api/prisma/seed.ts` & `docs/points-ledger.md`:** Added `TRUNCATE TABLE "point_transactions"` before `deleteMany()` so dev/test seeding resets cleanly despite restrictive foreign keys and the `BEFORE UPDATE OR DELETE` immutability trigger, and documented that `TRUNCATE` is intentionally left unrestricted under `assertSafeToSeed`.
+  - **`apps/api/src/points/points-ledger.service.ts`:**
+    - Checked idempotent replay (`credit`, `debit`, `compensate`) before `lockActiveStudentMembership` so valid retries succeed even if the student later left the classroom.
+    - Updated `readLockedBalance` to aggregate with `COALESCE(SUM("amount"), 0)::bigint` to prevent `int32` sum overflow.
+    - Unified `RawPointRow`/`TransactionRow` into `PointRow` and extracted `POINT_ROW_RETURNING` and `insertIdempotentRow` (fixing `ON CONFLICT ("source_type", "source_id") WHERE "entry_kind" = 'earning' DO NOTHING`).
+  - **Tests:** Added unit test for pre-lock replay in `points-ledger.spec.ts` (`33` tests) and integration tests for post-leave idempotent replay and `TRUNCATE TABLE "point_transactions"` in `points-ledger.integration.spec.ts` (`10` tests).
+- **Verification observed (2026-11-14):**
+  - `pnpm --dir backend --filter @aula/api typecheck` and `pnpm --dir backend --filter @aula/api build` — passed (exit 0).
+  - `pnpm --dir backend exec eslint apps/api/src/points apps/api/prisma/seed.ts` and `prettier --check apps/api/src/points apps/api/prisma/seed.ts` — passed (exit 0).
+  - `python scripts/ci/check_docs.py` — passed (`Documentation checks passed (70 files)`).
+  - `pnpm --dir backend --filter @aula/api exec vitest run src/points/points-ledger.spec.ts src/points/points-ledger.integration.spec.ts src/points/points.http.spec.ts src/openapi/openapi.spec.ts --no-file-parallelism` (against isolated PostgreSQL 16 `aula-postgres` on `127.0.0.1:5433`, database `points_test_isolated`) — passed **56/56 tests** across 4 files (`33` unit, `10` DB integration, `6` HTTP, `7` OpenAPI).
+
+## 2026-11-13 — Weighted points wallet and immutable ledger (Issue #31)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261113144500_create_point_transactions/`, `apps/api/src/points/`, `apps/api/src/app.module.ts`, `apps/api/src/classrooms/desks/desks.http.spec.ts`, `apps/api/openapi.json`, `docs/points-ledger.md`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #31 (`HU-GAM-001: Weighted points wallet and ledger`):
+  - **Prisma schema & additive migration (`20261113144500_create_point_transactions`):**
+    - Added `PointEntryKind` enum (`EARNING`, `DEBIT`, `COMPENSATION` mapped to `earning`, `debit`, `compensation`) and `PointTransaction` model (`point_transactions`) with restrictive foreign keys to `Classroom` and `User` (`studentId`, optional `actorId`) and indexes on `(classroomId, studentId, createdAt, id)` and `(studentId)`.
+    - Added partial unique index `point_transactions_earning_source_uidx` on `(source_type, source_id) WHERE entry_kind = 'earning'`.
+    - Added PostgreSQL `CHECK` constraints (`amount <> 0`, `earning => amount > 0`, `debit => amount < 0`, non-empty trimmed `reason` and `source_type`).
+    - Added PostgreSQL `BEFORE UPDATE OR DELETE` trigger `point_transactions_immutable_trg` calling `prevent_point_transaction_mutation()` to reject any raw SQL mutation.
+  - **`PointsModule` & `PointsLedgerService` (`apps/api/src/points/`):**
+    - Wired `PointsModule` into `AppModule` and exported `PointsLedgerService` for future grading (`#32`) and shop (`#34`) producers.
+    - `credit(input, tx?)`: locks the student's active `classroom_memberships` row `FOR UPDATE`, inserts idempotently with `INSERT ... ON CONFLICT ("source_type", "source_id") WHERE "entry_kind" = 'earning' DO NOTHING RETURNING ...` so duplicate earnings never abort an outer caller `$transaction` (`25P02`), and throws `ConflictException` if an earning source is reused with mismatched `(classroomId, studentId, amount)`.
+    - `debit(input, tx?)`: locks the active student membership row `FOR UPDATE`, supports idempotent replay via `idempotencyKey` (rejecting mismatched parameters with `409 Conflict`), checks `COALESCE(SUM(amount), 0)::int - amount >= 0`, and inserts `-amount`.
+    - `compensate(input, tx?)`: locks the active student membership row `FOR UPDATE`, supports `idempotencyKey`, enforces non-negative balance, allows multiple adjustments on the same `(sourceType, sourceId)`, and logs `points_compensation_recorded` with non-PII IDs (`classroomId`, `entryId`, `actorId`, `amount`, `sourceType`, `sourceId`).
+    - `getBalance(classroomId, studentId, tx?)`, `getOwnWallet`, and `getStudentWallet`: expose internal balance lookup inside optional transactions, delegate HTTP authorization exclusively to `AccessVerificationService` (`verifyClassroomAccess(..., { requiredRole: 'STUDENT' })` and `verifyStudentResourceAccess(...)`), and read `(SUM(amount), count, rows)` in a `RepeatableRead` `$transaction` using `parseSort(query.sort, { allowed: ['createdAt', 'amount'], default: { field: 'createdAt', direction: 'desc' } })` with `{ id: sort.direction }` tiebreaker.
+  - **`PointsController` & DTOs:**
+    - Exposed `GET /classrooms/:id/points` and `GET /classrooms/:id/students/:studentId/points` returning `StudentWalletDto` (`classroomId`, `studentId`, `balance`, `items`, `page`, `pageSize`, `total`). No balance write or student-to-student transfer routes exist.
+  - **Documentation, OpenAPI, merge-conflict cleanup & tests:**
+    - Regenerated `apps/api/openapi.json` via `pnpm --filter @aula/api openapi:export`.
+    - Added `docs/points-ledger.md` and linked it in `README.md`.
+    - Removed the duplicate `realtimeInternalUrl` property at `apps/api/src/classrooms/desks/desks.http.spec.ts` left by merging #82 and #84 into `develop` (`d1646c4`).
+    - Added `points-ledger.spec.ts` (32 unit tests), `points-ledger.integration.spec.ts` (8 PostgreSQL concurrency, idempotency, rollback, and trigger tests), and `points.http.spec.ts` (6 Supertest HTTP & authorization matrix tests).
+- **Verification observed (2026-11-13):**
+  - `pnpm --filter @aula/api prisma:migrate:deploy` (against isolated PostgreSQL 16 `aula-postgres` on `127.0.0.1:5433`, database `points_test_isolated`, dropped afterward) — passed: all 10 migrations applied on empty DB (and verified idempotent no-op earlier).
+  - `pnpm --filter @aula/api typecheck` and `pnpm --filter @aula/api build` — passed (exit 0).
+  - `pnpm --filter @aula/api exec vitest run src/points/points-ledger.spec.ts src/points/points-ledger.integration.spec.ts src/points/points.http.spec.ts src/openapi/openapi.spec.ts src/classrooms/desks/desks.http.spec.ts --pool=threads --maxWorkers=2 --minWorkers=1` — passed **73/73 tests** across 5 files against real PostgreSQL 16 (`32` unit in `points-ledger.spec.ts`, `8` DB integration in `points-ledger.integration.spec.ts`, `6` HTTP in `points.http.spec.ts`, `7` OpenAPI in `openapi.spec.ts`, `20` desks HTTP in `desks.http.spec.ts`).
+  - `pnpm exec eslint apps/api/src/points apps/api/src/app.module.ts apps/api/src/classrooms/desks/desks.http.spec.ts` — passed (0 errors).
+  - `pnpm exec prettier --check apps/api/src/points apps/api/src/app.module.ts apps/api/src/classrooms/desks/desks.http.spec.ts` — passed.
+  - `python scripts/ci/check_docs.py` — passed (68 files) after final tracker update.
+- **Reason:** Provide the immutable, server-owned points ledger and student wallet read API required by gamification (`#31`) and future grading (`#32`) and shop (`#34`) modules, while unblocking API build/typecheck on `develop`.
+- **Next step:** Stage, commit (`feat(points): add immutable points ledger and student wallet (#31)`), and open PR targeting `develop` once approved by user.
+
 ## 2026-11-11 — Classroom member directory readable by members (Issue #52)
 
 - **Status:** completed

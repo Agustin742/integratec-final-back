@@ -21,7 +21,7 @@ import {
   NOTIFICATION_REQUESTED_EVENT,
   NotificationRecorder,
 } from '../notifications/notification-recorder.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { OutboxDispatcher } from '../platform/outbox/outbox.dispatcher';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivitiesModule } from './activities.module';
 
@@ -33,7 +33,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
   let app: INestApplication;
   let prisma: PrismaService;
   let recorder: NotificationRecorder;
-  let notifications: NotificationsService;
+  let dispatcher: OutboxDispatcher;
   let fixtureReady = false;
   const [teacher, coTeacher, s1, s2, sInactive, sRemoved, sElsewhere, parent, stranger, other] =
     Array.from({ length: 10 }, () => randomUUID());
@@ -77,6 +77,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
         type: NOTIFICATION_REQUESTED_EVENT,
         payload: { path: ['resourceId'], equals: activityId },
       },
+      orderBy: { id: 'asc' },
     });
   const recipientsOf = async (activityId: string) =>
     (await requests(activityId))
@@ -108,7 +109,7 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     await app.init();
     prisma = app.get(PrismaService);
     recorder = app.get(NotificationRecorder);
-    notifications = app.get(NotificationsService);
+    dispatcher = app.get(OutboxDispatcher);
     await prisma.$transaction(async (tx) => {
       await tx.user.createMany({
         data: users.map((id) => ({
@@ -152,24 +153,19 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     fixtureReady = true;
   }, 30_000);
 
-  /**
-   * Outbox rows are shared by every spec file running on this database and the notification
-   * specs count what their own dispatch delivers, so this file never leaves its events behind.
-   */
+  /** Final teardown removes only this file's fixture events and their dependent notices. */
   const dropOwnNotificationEvents = async () => {
-    const ids = (
-      await prisma.activity.findMany({
-        where: { classroomId: { in: [classroomA, classroomB] } },
-        select: { id: true },
-      })
-    ).map((a) => a.id);
     const events = await prisma.outboxEvent.findMany({
-      where: { type: NOTIFICATION_REQUESTED_EVENT },
-      select: { id: true, payload: true },
+      where: {
+        type: NOTIFICATION_REQUESTED_EVENT,
+        OR: [classroomA, classroomB].map((classroomId) => ({
+          payload: { path: ['classroomId'], equals: classroomId },
+        })),
+      },
+      select: { id: true },
     });
-    const mine = events
-      .filter((e) => ids.includes((e.payload as { resourceId?: string }).resourceId ?? ''))
-      .map((e) => e.id);
+    const mine = events.map((event) => event.id);
+    if (mine.length === 0) return;
     await prisma.$transaction(async (tx) => {
       await tx.notificationDelivery.deleteMany({
         where: { notification: { sourceEventId: { in: mine } } },
@@ -179,9 +175,8 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
     });
   };
 
-  afterEach(async () => {
+  afterEach(() => {
     vi.restoreAllMocks();
-    await dropOwnNotificationEvents();
   });
 
   afterAll(async () => {
@@ -230,11 +225,24 @@ describe('activity publishing PostgreSQL HTTP — activities-and-grading, commun
   });
 
   it('once materialized, each active student sees one activity_published notification', async () => {
+    const foreignActivity = await draft();
+    await publish(foreignActivity).expect(200);
+    const foreignEvents = await requests(foreignActivity);
+    expect(foreignEvents).toHaveLength(2);
     const id = await draft();
     await publish(id).expect(200);
-    // Materialize only this test's events: the shared dispatcher would also claim the pending
-    // events of other spec files running against the same database.
-    for (const event of await requests(id)) await notifications.materializeCommittedEvent(event.id);
+    // The HTTP producer returns no event IDs: resolve them by this activity's payload ownership.
+    const events = await requests(id);
+    expect(
+      await dispatcher.dispatchPending(
+        100,
+        new Date(),
+        [NOTIFICATION_REQUESTED_EVENT],
+        events.map((event) => event.id),
+      ),
+    ).toEqual({ delivered: 2, retried: 0, exhausted: 0 });
+    expect(await requests(foreignActivity)).toEqual(foreignEvents);
+    expect(await prisma.notification.count({ where: { resourceId: foreignActivity } })).toBe(0);
     const rows = await prisma.notification.findMany({ where: { resourceId: id } });
     expect(rows.map((n) => n.recipientId).sort()).toEqual(activeStudents);
     expect(rows.every((n) => n.kind === 'activity_published' && n.classroomId === classroomA)).toBe(

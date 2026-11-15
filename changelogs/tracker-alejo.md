@@ -1,5 +1,36 @@
 # Tracker — Alejo
 
+# Tracker — Alejo
+
+## 2026-11-14 — Merge PR #91 into develop
+
+- **Status:** completed
+- **Area / files:** none (remote PR operation only; no source changes in this workspace).
+- **Change:** With AI assistance directed by Alejo: verified [PR #91](https://github.com/Agustin742/integratec-final-back/pull/91) (`fix/90-outbox-spec-isolation`, base `develop`, 2 commits) reported `MERGEABLE`/`CLEAN`, confirmed `origin/develop` was fully contained in the branch (0 commits to bring in, so no develop sync was needed), and merged it with a merge commit `0ea54e3` after Alejo confirmed team review and explicitly authorized the merge.
+- **Reason:** #91 is the required dependency for PR #88 and Alejo requested its merge once reviewed.
+- **Next step:** Integrate the merged #91 dependency into the #88 candidate on `feat/classroom-panels-a` and verify #88's complete suite (see the 2026-11-14 classroom panel entry below).
+
+## 2026-11-14 — Classroom panel availability (PR #88 review corrections)
+
+- **Status:** in-progress (corrections committed; integrating the merged #91 dependency from `origin/develop` and verifying #88's complete suite; publication and approval pending)
+- **Area / files:** shared panel projection, classroom DTO/service, HTTP/OpenAPI tests, `docs/classroom-context.md`, activity-publication fixtures.
+- **Change:** Derived panels from capabilities with unchanged role outputs, extracted the lightweight enum, kept OpenAPI descriptions property-local, removed query-count coupling and exactly reverted the fixture workaround now handled in #90. Parent messaging placement remains a frontend follow-up, not a new permission.
+- **Verification:** Independent focused S3/S4/S7/S10 PASS: 165/165 tests across access, real PostgreSQL access, classroom/activity HTTP and OpenAPI, plus all three workspace typechecks. Integrated candidate on `c74daa0` (corrections `c93d137`/`26ea55b` plus `origin/develop` merge with #91/#87): full suite in a fresh dedicated Linux Node 22.23.5 container (`odd88-*`, fresh PostgreSQL 16 database and MinIO, bounded `--pool=threads --maxWorkers=2`) passed **1,806/1,806** — contracts 26/26, realtime 248/248, API 1,532/1,532 (exit 0). Typecheck, lint, `format:check`, all three builds and `check_docs.py changelogs/tracker-alejo.md` passed (exit 0 each). `pnpm openapi:export` wrote a byte-identical `openapi.json`. The merged `activities-publish.integration.spec.ts` exactly equals the #91 version.
+- **Reason:** Keep the panel contract focused and ready for frontend integration. Historical checks passed 1,741/1,741 plus independent verification; earlier Windows runner, Linux setup/formatting, provider and integrated fixture failures remain recorded in Git and PR #88. Those results do not verify these new corrections.
+- **Next step:** Publish (push) the integrated, suite-green head `c74daa0` when Alejo returns, observe CI and request team approval on [PR #88](https://github.com/Agustin742/integratec-final-back/pull/88). Push is deferred by Alejo; nothing was pushed.
+
+## 2026-11-14 — Scope integration outbox dispatch to owned events (#90)
+
+- **Status:** in-progress (implementation and functional verification complete; PR publication authorized, team review and merge pending).
+- **Area / files:** `apps/api/src/platform/outbox/`, integration-spec dispatch callers, test documentation.
+- **Change:** Created `fix/90-outbox-spec-isolation` from freshly fetched `develop` at `d3b04e8` in a separate worktree, preserving dirty PR #88 review changes. Added optional ownership-ID dispatch filtering; narrowed notification/reset/realtime/outbox fixtures and removed activity per-test cleanup/locking workaround. Production polling and omitted-filter behavior remain unchanged. AI-assisted work directed by Alejo.
+- **Reason:** Prevent specs sharing an outbox event type from consuming each other's events; unblock reliable verification of PR #88 without its fixture scheduling workaround.
+- **Evidence:** Real-PostgreSQL RED: 2 failed / 20 passed (foreign event consumed; empty IDs ignored). Focused GREEN: 126/126 plus three-workspace typecheck. Linux Node22 full API passed **1,511/1,511 twice** on fresh databases with `--maxWorkers=2`; typecheck, lint, source/config formatting, all three builds, contracts26/26 and realtime248/248 passed (parent job6 exit0). Guide/tracker links and whitespace passed.
+- **Retained failures / limits:** Initial Docker formatting command failed cwd path conversion before checks; scoped formatting then warned on two specs; worktree-local formatter was unavailable. Root-installed Prettier normalized only those files and subsequent checks passed. Native ASSESS unavailable (`package-local-binary-missing`); RDD state unknown, no native review verdict claimed. Earlier PR #88 verification failures and limits remain separate and unchanged.
+- **Independent verification:** S1–S6 PASS; separate Linux Node22 container/fresh database, five specs126/126 and all three workspace typechecks (job7 exit0). Parent repeated full-suite evidence is explicitly distinct from independent execution. No code blockers; no native approval or teammate approval inferred.
+- **Delivery:** Alejo explicitly authorized publishing the verified `312b6ab` implementation without native review. Fresh fetch confirms `develop` at `d3b04e8` is an ancestor; no upstream commits are missing. No review-mode or authority changes, merge, issue closure or deployment authorized.
+- **Next step:** Publish the separate PR into `develop`, observe exact-head CI and obtain another team member's approval before a separately authorized merge; then resume PR #88 integration. The PR records current delivery/CI state.
+
 ## 2026-11-13 — PR #84 develop integration follow-up
 
 - **Status:** in-progress (additive resolutions complete; parent integration checks running; PR #84 awaits final-head CI and approval)

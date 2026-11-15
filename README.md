@@ -22,6 +22,10 @@ backend/
 - [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
 - The transactional outbox records `classroom.membership.removed`; the realtime eviction handler consumes it to disconnect the removed student's live connections in that classroom.
 
+## Classroom context
+
+- [Panel availability contract](docs/classroom-context.md): `GET /classrooms/:id` adds role-scoped `availablePanels`, separate from action authorization; Pet is reserved and disabled. Context invalidation (delivery B) is not implemented.
+
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
@@ -36,6 +40,10 @@ backend/
 
 - [Notification API and producer integration](docs/notifications.md): authenticated `GET /notifications`, `PATCH /notifications/:id/read` and `PATCH /notifications/read-all`, with current recipient/child access, paginated navigation metadata and idempotent persisted read state.
 - Frontend display, live push, email delivery and feature producers remain out of scope; parent announcements are deferred pending #37.
+
+## Points wallet and ledger
+
+- [Points wallet and immutable ledger](docs/points-ledger.md): authenticated `GET /classrooms/:id/points` and `GET /classrooms/:id/students/:studentId/points` with server-derived balances (`SUM(amount)`), PostgreSQL immutability trigger, `FOR UPDATE` concurrency locking, and `PointsLedgerService` for future grading (`#32`) and shop (`#34`) producers.
 
 ## Local setup and development
 
