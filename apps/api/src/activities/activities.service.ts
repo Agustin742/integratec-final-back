@@ -10,6 +10,7 @@ import {
   type ClassroomAccessResult,
   UUID_PATTERN,
 } from '../access/access-verification.service';
+import { RequestConflictException } from '../http/conflict';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
@@ -361,8 +362,17 @@ export class ActivitiesService {
         ...(dto.weightMultiplier !== undefined ? { weightMultiplier: dto.weightMultiplier } : {}),
       };
       if (dto.questions !== undefined) {
-        // TODO(#30): once Submission exists, refuse replacing questions (409) when the activity
-        // already has a submission ("freeze after the first answer"). Nothing to check yet.
+        // Freeze after the first submission: replacing questions would change what stored answers
+        // mean and retroactively change grades. The row lock above keeps a submit (FOR SHARE)
+        // from committing between this check and the delete.
+        if (await tx.submission.findFirst({ where: { activityId }, select: { id: true } })) {
+          throw new RequestConflictException([
+            {
+              field: 'questions',
+              messages: ['questions cannot change after students have submitted'],
+            },
+          ]);
+        }
         await tx.option.deleteMany({ where: { question: { activityId } } });
         await tx.question.deleteMany({ where: { activityId } });
         data.questions = { create: toQuestionCreates(dto.questions) };
@@ -442,15 +452,35 @@ export class ActivitiesService {
     return toTeacherView(row);
   }
 
-  /** Logical deactivation (RN-18): the row and its questions stay; it only stops being visible. */
+  /**
+   * Logical deactivation (RN-18): the row and its questions stay; it only stops being visible.
+   * Refused once a submission exists (data rules: submissions are never orphaned). The same row
+   * lock as `update` is taken first, so a concurrent submit (FOR SHARE) is either committed and
+   * counted here, or queued behind this commit and then gets 404.
+   */
   async deactivate(actorId: string, classroomId: string, activityId: string): Promise<void> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'TEACHER' });
     if (!UUID_PATTERN.test(activityId)) throw this.notFound();
-    const { count } = await this.prisma.activity.updateMany({
-      where: { id: activityId, classroomId, deletedAt: null },
-      data: { deletedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM activities
+        WHERE id = ${activityId}::uuid AND classroom_id = ${classroomId}::uuid
+          AND deleted_at IS NULL
+        FOR UPDATE`;
+      if (locked.length === 0) throw this.notFound();
+      if (await tx.submission.findFirst({ where: { activityId }, select: { id: true } })) {
+        throw new RequestConflictException([
+          {
+            field: 'state',
+            messages: ['an activity with submissions cannot be deleted'],
+          },
+        ]);
+      }
+      await tx.activity.update({
+        where: { id: activityId, classroomId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
     });
-    if (count === 0) throw this.notFound();
   }
 
   /**
