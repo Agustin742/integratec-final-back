@@ -1,5 +1,13 @@
 # Tracker — Alejo
 
+## 2026-11-15 — Card #35 pre-PR review correction (inactive-item behavior)
+
+- **Status:** completed (local; PR publication pending).
+- **Area / files:** `apps/api/src/equipment/equipment.service.ts`, `apps/api/src/equipment/equipment.integration.spec.ts`.
+- **Change:** Pre-PR review (AI-assisted, directed by Alejo) found `docs/equipment.md` contradicting the service: the doc states the purchase is the entitlement, but `setSlot` rejected every inactive item with `404` whether or not it was purchased. Alejo decided the documentation governs, so the service no longer rejects inactive items; an unknown item still returns `404`, an unpurchased item (active or not) still returns `403` inside the transaction, and the state projection never filtered by `isActive`. Two RED→GREEN integration tests added: a purchased item stays equipable after deactivation, and an unpurchased deactivated item is rejected with `403` persisting nothing.
+- **Evidence:** Observed RED (2 new tests failed, 12 passed), then GREEN 14/14 integration, 6/6 HTTP, `typecheck`, eslint and prettier on the equipment module all pass on disposable PostgreSQL (`odd35-postgres`).
+- **Next step:** Publish PR into `develop` per the agreed delivery strategy.
+
 ## 2026-11-15 — Card #35 (HU-ESP-004): equip purchased items — completed (local; publication pending)
 
 - **Status:** completed locally (implementation + DoD checks pass; PR publication and team approval of D16 pending). Next step: publish PR, await review.

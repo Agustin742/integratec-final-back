@@ -142,9 +142,9 @@ export class EquipmentService {
       const shopItemId: string = dto.shopItemId;
       const item = await tx.shopItem.findUnique({
         where: { id: shopItemId },
-        select: { kind: true, metadata: true, isActive: true },
+        select: { kind: true, metadata: true },
       });
-      if (!item || !item.isActive) {
+      if (!item) {
         throw new NotFoundException('Shop item is not available in this classroom');
       }
 

@@ -357,6 +357,46 @@ describe('EquipmentService (real PostgreSQL)', () => {
     ).toBe(0);
   });
 
+  it('keeps a purchased item equipable after it is deactivated (the purchase is the entitlement)', async () => {
+    await fundStudent(ids.student, 500);
+    await purchaseItem(ids.student, ids.capItem);
+    await prisma.shopItem.update({
+      where: { id: ids.capItem },
+      data: { isActive: false },
+    });
+
+    const state = await equipment.setSlot(ids.student, ids.classroom, 'head', {
+      shopItemId: ids.capItem,
+    });
+    expect(state.slots.head).toMatchObject({ shopItemId: ids.capItem });
+    expect(
+      await prisma.equippedItem.count({
+        where: {
+          classroomId: ids.classroom,
+          studentId: ids.student,
+          slot: EquippedSlot.HEAD,
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it('rejects an unpurchased deactivated item with 403 and persists nothing', async () => {
+    await prisma.shopItem.update({
+      where: { id: ids.backpackItem },
+      data: { isActive: false },
+    });
+
+    await expect(
+      equipment.setSlot(ids.student, ids.classroom, 'back', { shopItemId: ids.backpackItem }),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(
+      await prisma.equippedItem.count({
+        where: { classroomId: ids.classroom, studentId: ids.student },
+      }),
+    ).toBe(0);
+  });
+
   it('does not accept a purchase made in another classroom (data must not cross classrooms)', async () => {
     await fundStudent(ids.student, 500);
     await purchaseItem(ids.student, ids.capItem);
