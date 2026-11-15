@@ -73,7 +73,8 @@ A replay compares the key only, not the file contents.
 - Files go to the private bucket through the `StoragePort`; there is no public object access.
 - Key shape: `submissions/<classroomId>/<activityId>/<studentId>/<fileId>`, ids only.
 - Upload goes through the API (not a presigned PUT) so the server validates the real bytes before anything is stored. Uploads happen **outside** any transaction, then one short transaction writes the rows.
-- Cleanup: on every path that stores no submission (upload error, transaction failure, lost race) the uploaded objects are deleted, best effort; a failed delete is logged and never replaces the original error.
+- Cleanup: upload errors before any transaction delete the planned objects, best effort. After a persistence error, the service re-reads the student's submission and compares the complete file-ID set with this request's plan. Its own committed result returns `201` without deleting files or recording another event. A different winner permits deleting only this request's unlinked objects and returns `200` (same key) or `409` (different key).
+- An empty nonlocking read does **not** prove rollback: commit may still be in flight. Cleanup after an empty read requires a rejected transaction callback (no COMMIT requested) or a unique-constraint rejection. If the outcome cannot be established, including a failed reconciliation read, objects are retained and the original error is propagated. Retry with the same key once the database is readable; a committed result returns `200` without another upload or event. Unknown outcomes can leave orphan objects; no orphan cleanup worker is implemented. A failed cleanup delete is logged and never replaces the original error.
 - Download: reads sign each file URL through the storage port with `STORAGE_SIGNED_URL_TTL` (default 5 minutes) and return `downloadUrlExpiresAt`. Responses send `Cache-Control: no-store`, and never contain the storage key or the idempotency key.
 
 ## Concurrency
@@ -101,7 +102,7 @@ Once any submission exists for an activity ([Activities](activities.md)):
 - Resubmission and submission history (MVP is one submission per student and activity).
 - Multiple-choice answers (#47), grading and grades (#32), points (#31) and the streak engine (HU-GAM-002).
 - Malware scanning of uploads.
-- Edge case: if the connection is lost after the transaction commits, the error path can delete objects of a stored submission. Accepted for the MVP; the unlikely window is documented, not mitigated.
+- Reconciliation/retention tooling for orphan objects left by unknown transaction outcomes or failed cleanup (potentially linked files are never deleted merely because a transaction promise rejected).
 - More than 5 files returns multer's generic `400 BAD_REQUEST` instead of `VALIDATION_FAILED`.
 - Retention of submissions and files ([Data](../rules/data.md) leaves it open).
 

@@ -165,7 +165,7 @@ export class SubmissionsService {
    * and format (409) -> file content (400) -> upload -> ONE short transaction. The transaction
    * share-locks the activity row (blocking teacher edits, not other students), then re-checks
    * everything against committed state and stamps `submittedAt` from the server clock. Uploads happen outside any
-   * transaction; whatever was uploaded is deleted again on every path that stores no submission.
+   * transaction; cleanup requires evidence that the objects cannot belong to a committed submission.
    */
   async submit(
     actorId: string,
@@ -188,17 +188,46 @@ export class SubmissionsService {
     }
     const planned = this.plan(activity.classroomId, activity.id, actorId, validation.files);
 
-    let outcome: TransactionOutcome;
     try {
       await this.uploadAll(planned);
-      outcome = await this.persist(activity, actorId, key, planned);
     } catch (error) {
+      // No transaction has started: none of these objects can be linked by this invocation.
       await this.discard(planned);
-      if (isUniqueViolation(error)) {
-        // A racing request stored its submission first (the unique index is the last guard).
-        const winner = await this.findExisting(activity.id, actorId);
-        if (winner) return this.resolveExisting(winner, key);
+      throw error;
+    }
+
+    let outcome: TransactionOutcome;
+    let callbackRejected = false;
+    try {
+      outcome = await this.persist(activity, actorId, key, planned, () => {
+        callbackRejected = true;
+      });
+    } catch (error) {
+      let winner: SubmissionRow | null;
+      try {
+        winner = await this.findExisting(activity.id, actorId);
+      } catch {
+        // Preserve both the objects and the original error if reconciliation is unavailable.
+        throw error;
       }
+      if (winner) {
+        const plannedIds = new Set(planned.map((file) => file.id));
+        const ownsAllFiles =
+          winner.files.length === planned.length &&
+          winner.files.every((file) => plannedIds.has(file.id));
+        if (ownsAllFiles && winner.idempotencyKey === key) {
+          // COMMIT succeeded, but its response was lost. The event committed with this row.
+          return { submission: toResponse(winner), created: true };
+        }
+        // A different winner rules out our commit via (activity, student) uniqueness. Never
+        // discard even a partially overlapping set: linked objects must always survive.
+        if (winner.files.some((file) => plannedIds.has(file.id))) throw error;
+        await this.discard(planned);
+        return this.resolveExisting(winner, key);
+      }
+      // An empty nonlocking read alone is NOT proof of rollback: COMMIT may still be in flight.
+      // A rejected callback never requests COMMIT; P2002 definitively aborts the transaction.
+      if (callbackRejected || isUniqueViolation(error)) await this.discard(planned);
       throw error;
     }
 
@@ -380,72 +409,80 @@ export class SubmissionsService {
     studentId: string,
     key: string,
     planned: PlannedFile[],
+    onCallbackRejected: () => void,
   ): Promise<TransactionOutcome> {
     const { id: activityId, classroomId } = activity;
     return this.prisma.$transaction(async (tx) => {
-      // Shared row lock first. Submitting never changes the activity, so students must not queue
-      // behind each other (a deadline rush would outlast the transaction timeout), but the lock
-      // still conflicts with the FOR UPDATE that update/publish/deactivate take: a teacher change
-      // waits for in-flight submits and a submit queued behind one reads the committed result.
-      // One submission per student stays guaranteed by the unique index (P2002 handled by the caller).
-      const locked = await tx.$queryRaw<{ id: string }[]>`
+      try {
+        // Shared row lock first. Submitting never changes the activity, so students must not queue
+        // behind each other (a deadline rush would outlast the transaction timeout), but the lock
+        // still conflicts with the FOR UPDATE that update/publish/deactivate take: a teacher change
+        // waits for in-flight submits and a submit queued behind one reads the committed result.
+        // One submission per student stays guaranteed by the unique index (P2002 handled by the caller).
+        const locked = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM activities
         WHERE id = ${activityId}::uuid AND classroom_id = ${classroomId}::uuid
           AND deleted_at IS NULL
         FOR SHARE`;
-      if (locked.length === 0) throw this.notFound();
-      const current = await tx.activity.findFirst({
-        where: { id: activityId, classroomId, deletedAt: null },
-        select: { state: true, format: true, opensAt: true, dueAt: true, allowLate: true },
-      });
-      if (!current || current.state !== ActivityState.PUBLISHED) throw this.notFound();
-      if (!(await this.access.isActiveStudent(classroomId, studentId, { client: tx }))) {
-        throw this.notFound();
-      }
+        if (locked.length === 0) throw this.notFound();
+        const current = await tx.activity.findFirst({
+          where: { id: activityId, classroomId, deletedAt: null },
+          select: { state: true, format: true, opensAt: true, dueAt: true, allowLate: true },
+        });
+        if (!current || current.state !== ActivityState.PUBLISHED) throw this.notFound();
+        if (!(await this.access.isActiveStudent(classroomId, studentId, { client: tx }))) {
+          throw this.notFound();
+        }
 
-      // A winner that committed while this request was uploading or queued: replay, not insert.
-      const existing = await tx.submission.findUnique({
-        where: { activityId_studentId: { activityId, studentId } },
-        select: SUBMISSION_SELECT,
-      });
-      if (existing) return { created: false, row: existing };
+        // A winner that committed while this request was uploading or queued: replay, not insert.
+        const existing = await tx.submission.findUnique({
+          where: { activityId_studentId: { activityId, studentId } },
+          select: SUBMISSION_SELECT,
+        });
+        if (existing) return { created: false, row: existing };
 
-      // Server clock, read once after the lock: it decides lateness and stamps the row.
-      const now = new Date();
-      const { isLate } = assertAcceptsSubmission(current, now);
-      const row = await tx.submission.create({
-        data: {
-          activityId,
-          studentId,
-          submittedAt: now,
-          isLate,
-          idempotencyKey: key,
-          files: {
-            create: planned.map((file) => ({
-              id: file.id,
-              storageKey: file.storageKey,
-              originalName: file.originalName,
-              contentType: file.contentType,
-              sizeBytes: file.sizeBytes,
-              position: file.position,
-            })),
+        // Server clock, read once after the lock: it decides lateness and stamps the row.
+        const now = new Date();
+        const { isLate } = assertAcceptsSubmission(current, now);
+        const row = await tx.submission.create({
+          data: {
+            activityId,
+            studentId,
+            submittedAt: now,
+            isLate,
+            idempotencyKey: key,
+            files: {
+              create: planned.map((file) => ({
+                id: file.id,
+                storageKey: file.storageKey,
+                originalName: file.originalName,
+                contentType: file.contentType,
+                sizeBytes: file.sizeBytes,
+                position: file.position,
+              })),
+            },
           },
-        },
-        select: SUBMISSION_SELECT,
-      });
-      if (!isLate) {
-        // Same transaction as the row: the event exists if and only if the submission commits.
-        const payload: SubmissionOnTimePayload = {
-          version: 1,
-          submissionId: row.id,
-          activityId,
-          classroomId,
-          studentId,
-          submittedAt: row.submittedAt.toISOString(),
-        };
-        await this.outbox.record(tx, { type: SUBMISSION_ON_TIME_EVENT, payload });
+          select: SUBMISSION_SELECT,
+        });
+        if (!isLate) {
+          // Same transaction as the row: the event exists if and only if the submission commits.
+          const payload: SubmissionOnTimePayload = {
+            version: 1,
+            submissionId: row.id,
+            activityId,
+            classroomId,
+            studentId,
+            submittedAt: row.submittedAt.toISOString(),
+          };
+          await this.outbox.record(tx, { type: SUBMISSION_ON_TIME_EVENT, payload });
+        }
+        return { created: true, row };
+      } catch (error) {
+        // Only callback rejection establishes that this invocation will not request COMMIT.
+        // Do not mark an outer $transaction rejection: it can happen after a successful COMMIT.
+        onCallbackRejected();
+        throw error;
       }
-      return { created: true, row };
     });
   }
 

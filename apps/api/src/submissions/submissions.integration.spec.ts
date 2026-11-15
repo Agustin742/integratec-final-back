@@ -17,6 +17,7 @@ import { docxBytes, exeBytes, jpegBytes, pdfBytes, pngBytes } from '../testing/f
 import { InMemoryStorage } from '../testing/in-memory-storage';
 import { futureInstant } from '../testing/relative-dates';
 import { SubmissionsModule } from './submissions.module';
+import { SubmissionsService } from './submissions.service';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -689,6 +690,144 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
     });
   });
 
+  describe('uncertain commit recovery', () => {
+    const eventsOf = (activityId: string) =>
+      prisma.outboxEvent.findMany({
+        where: {
+          type: 'submission.submitted-on-time',
+          payload: { path: ['activityId'], equals: activityId },
+        },
+      });
+
+    it('recovers a real committed transaction after its response is lost without deleting files', async () => {
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      const original = prisma.$transaction.bind(prisma);
+      vi.spyOn(prisma, '$transaction').mockImplementationOnce(async (callback) => {
+        await original(callback);
+        throw new Error('commit response lost');
+      });
+      const files = [
+        { name: 'a.pdf', bytes: pdfBytes() },
+        { name: 'b.png', bytes: pngBytes() },
+      ];
+      const res = await submit(activityId, { key, files }).expect(201);
+      expect(res.body).toMatchObject({ activityId, status: 'submitted', isLate: false });
+      const rows = await rowsOf(activityId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(res.body.id);
+      expect(rows[0].files.map((file) => file.id)).toEqual(
+        res.body.files.map((file: { id: string }) => file.id),
+      );
+      rows[0].files.forEach((file, index) => {
+        expect(Buffer.from(storage.peek(file.storageKey)!.body)).toEqual(
+          Buffer.from(files[index].bytes),
+        );
+      });
+      expect(
+        storage.calls.filter(
+          (call) => call.operation === 'delete' && call.key.includes(`/${activityId}/`),
+        ),
+      ).toEqual([]);
+      const puts = putCalls();
+      const retry = await submit(activityId, { key }).expect(200);
+      expect(retry.body).toEqual(res.body);
+      expect(putCalls()).toBe(puts);
+      const events = await eventsOf(activityId);
+      expect(events).toHaveLength(1);
+      expect(events[0].payload).toMatchObject({ submissionId: rows[0].id });
+      const read = await request(app.getHttpServer())
+        .get(`/activities/${activityId}/submissions/me`)
+        .set('Authorization', token(s1))
+        .expect(200);
+      expect(read.body.id).toBe(rows[0].id);
+      expect(read.body.files.map((file: { id: string }) => file.id)).toEqual(
+        rows[0].files.map((file) => file.id),
+      );
+    });
+
+    it('preserves the original error and objects when reconciliation is unavailable, then replays once readable', async () => {
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      const error = new Error('commit response lost');
+      const original = prisma.$transaction.bind(prisma);
+      vi.spyOn(prisma, '$transaction').mockImplementationOnce(async (callback) => {
+        await original(callback);
+        // Prisma delegates are dynamic proxies: spying on them can break restoration and
+        // contaminate later tests. Inject only this service's reconciliation read failure.
+        vi.spyOn(
+          app.get(SubmissionsService) as unknown as {
+            findExisting: () => Promise<unknown>;
+          },
+          'findExisting',
+        ).mockRejectedValueOnce(new Error('read unavailable'));
+        throw error;
+      });
+      await expect(
+        app
+          .get(SubmissionsService)
+          .submit(s1, activityId, key, [{ originalName: 'a.pdf', bytes: pdfBytes() }]),
+      ).rejects.toBe(error);
+      const [row] = await rowsOf(activityId);
+      expect(Buffer.from(storage.peek(row.files[0].storageKey)!.body)).toEqual(
+        Buffer.from(pdfBytes()),
+      );
+      expect(
+        storage.calls.filter(
+          (call) => call.operation === 'delete' && call.key.includes(`/${activityId}/`),
+        ),
+      ).toEqual([]);
+      const puts = putCalls();
+      const retry = await submit(activityId, { key }).expect(200);
+      expect(retry.body.id).toBe(row.id);
+      expect(putCalls()).toBe(puts);
+      expect(await eventsOf(activityId)).toHaveLength(1);
+    });
+
+    it('retains files when an empty reconciliation read precedes an in-flight commit', async () => {
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      const original = prisma.$transaction.bind(prisma);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let ready!: () => void;
+      const callbackReady = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      let pending!: Promise<unknown>;
+      vi.spyOn(prisma, '$transaction').mockImplementationOnce(async (callback) => {
+        pending = original(async (tx) => {
+          const result = await callback(tx);
+          ready();
+          await gate;
+          return result;
+        });
+        await callbackReady;
+        throw new Error('response lost before commit settled');
+      });
+      try {
+        await submit(activityId, { key }).expect(500);
+        expect(await rowsOf(activityId)).toHaveLength(0);
+        expect(storage.keys().filter((key) => key.includes(`/${activityId}/`))).toHaveLength(1);
+        expect(
+          storage.calls.filter(
+            (call) => call.operation === 'delete' && call.key.includes(`/${activityId}/`),
+          ),
+        ).toEqual([]);
+      } finally {
+        release();
+        await pending;
+      }
+      const retry = await submit(activityId, { key }).expect(200);
+      const [row] = await rowsOf(activityId);
+      expect(retry.body.id).toBe(row.id);
+      expect(storage.peek(row.files[0].storageKey)).toBeDefined();
+      expect(await eventsOf(activityId)).toHaveLength(1);
+    });
+  });
+
   describe('failure cleanup', () => {
     it('a storage failure mid-upload leaves no rows and deletes the objects already stored', async () => {
       const activityId = await publishedActivity();
@@ -711,7 +850,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       }
     });
 
-    it('a database failure after the upload leaves no rows and deletes the uploaded objects', async () => {
+    it('an unclassified database rejection retains objects even when a read finds no row', async () => {
       const activityId = await publishedActivity();
       vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('simulated database loss'));
       const res = await submit(activityId, {
@@ -722,8 +861,10 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       }).expect(500);
       expect(res.body.error.code).toBe('INTERNAL_ERROR');
       expect(await rowsOf(activityId)).toHaveLength(0);
-      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(0);
-      expect(storage.calls.filter((c) => c.operation === 'delete')).not.toHaveLength(0);
+      expect(storage.keys().filter((k) => k.includes(`/${activityId}/`))).toHaveLength(2);
+      expect(
+        storage.calls.filter((c) => c.operation === 'delete' && c.key.includes(`/${activityId}/`)),
+      ).toEqual([]);
     });
 
     const deletesFor = (activityId: string) =>
@@ -767,7 +908,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
 
     it('does not mask the original error when a cleanup delete also fails', async () => {
       const activityId = await publishedActivity();
-      vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('simulated database loss'));
+      storage.failOn('put', { times: 1 });
       storage.failOn('delete');
       const res = await submit(activityId).expect(500);
       expect(res.body.error.code).toBe('INTERNAL_ERROR');

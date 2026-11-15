@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-15 — Preserve submission files after uncertain commit (PR #89)
+
+- **Status:** completed (correction verified; Alejo authorized commit and push to the existing PR branch)
+- **Area / files:** `apps/api/src/submissions/submissions.service.ts`, submission integration tests, `docs/submissions.md`, D16.
+- **Change:** With AI assistance directed by Alejo: separated upload cleanup from transaction recovery, reconciled exact planned file IDs before deleting objects, and retained files/original errors when the commit outcome cannot be established. Added real-transaction fault tests for lost commit responses, unavailable reconciliation and a commit still in flight; updated the submissions guide and D16 without claiming new team approval.
+- **Reason:** A rejected transaction promise does not prove rollback; unconditional cleanup can delete a student's committed attachments.
+- **Verification:** Corrected submissions suite 163/163 and workspace typecheck passed. Full isolated PostgreSQL/MinIO workspace suite passed 1,985/1,985 (API 1,711, realtime 248, contracts 26); format, lint, build, three-file documentation and whitespace checks passed. Independent verification PASS with no findings; focused tests passed 48/48 on a separately migrated database. Native ASSESS: agent-escalated high risk (persistent data), reviewDue false / under budget, independent verification required.
+- **Limitations:** Pre-fix RED timed out after 30 seconds before a verdict. First changed-candidate suite had six failures caused by an unsafe Prisma-delegate test spy and native runner exit 3221226505; one correction switched the spy to an ordinary service method, then focused and full checks passed. Initial MinIO setup failed because Git Bash converted Linux paths; corrected MSYS path handling succeeded with separate task-only containers. Uncertain outcomes may retain orphan objects; no cleanup worker or production AWS verification is claimed.
+- **Next step:** Publish this verified correction on `feat/30-file-submissions` under Alejo's explicit authorization and confirm fresh PR CI. Teammate approvals and merge remain separate; no merge authorized.
+
 ## 2026-11-15 — Review fixes for PR #89 (#30, Agustín's branch)
 
 - **Status:** completed (pushed to Agustín's `feat/30-file-submissions` as `9ae87ea`+`df450bd`+`cbfb052`; PR #89 comment posted and review re-requested from Calegaris and TheKade)
