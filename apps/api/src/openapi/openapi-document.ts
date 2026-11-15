@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
+import { ClassroomPanelKey } from '../access/classroom-panel-key';
 import { ErrorBodyDto, ErrorDetailDto, ErrorEnvelopeDto } from '../http/error-envelope.dto';
 
 /**
@@ -30,7 +31,15 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
     .setVersion(API_VERSION)
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' })
     .build();
-  return SwaggerModule.createDocument(app, options, {
+  const document = SwaggerModule.createDocument(app, options, {
     extraModels: [ErrorEnvelopeDto, ErrorBodyDto, ErrorDetailDto],
   });
+  // Register the enum separately so property-specific descriptions stay on their properties.
+  document.components ??= {};
+  document.components.schemas ??= {};
+  document.components.schemas.ClassroomPanelKey = {
+    type: 'string',
+    enum: Object.values(ClassroomPanelKey),
+  };
+  return document;
 }

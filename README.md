@@ -22,6 +22,10 @@ backend/
 - [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
 - The transactional outbox records `classroom.membership.removed`; the realtime eviction handler consumes it to disconnect the removed student's live connections in that classroom.
 
+## Classroom context
+
+- [Panel availability contract](docs/classroom-context.md): `GET /classrooms/:id` adds role-scoped `availablePanels`, separate from action authorization; Pet is reserved and disabled. Context invalidation (delivery B) is not implemented.
+
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.

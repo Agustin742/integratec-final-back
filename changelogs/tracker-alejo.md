@@ -1,5 +1,24 @@
 # Tracker — Alejo
 
+# Tracker — Alejo
+
+## 2026-11-14 — Merge PR #91 into develop
+
+- **Status:** completed
+- **Area / files:** none (remote PR operation only; no source changes in this workspace).
+- **Change:** With AI assistance directed by Alejo: verified [PR #91](https://github.com/Agustin742/integratec-final-back/pull/91) (`fix/90-outbox-spec-isolation`, base `develop`, 2 commits) reported `MERGEABLE`/`CLEAN`, confirmed `origin/develop` was fully contained in the branch (0 commits to bring in, so no develop sync was needed), and merged it with a merge commit `0ea54e3` after Alejo confirmed team review and explicitly authorized the merge.
+- **Reason:** #91 is the required dependency for PR #88 and Alejo requested its merge once reviewed.
+- **Next step:** Integrate the merged #91 dependency into the #88 candidate on `feat/classroom-panels-a` and verify #88's complete suite (see the 2026-11-14 classroom panel entry below).
+
+## 2026-11-14 — Classroom panel availability (PR #88 review corrections)
+
+- **Status:** in-progress (corrections committed; integrating the merged #91 dependency from `origin/develop` and verifying #88's complete suite; publication and approval pending)
+- **Area / files:** shared panel projection, classroom DTO/service, HTTP/OpenAPI tests, `docs/classroom-context.md`, activity-publication fixtures.
+- **Change:** Derived panels from capabilities with unchanged role outputs, extracted the lightweight enum, kept OpenAPI descriptions property-local, removed query-count coupling and exactly reverted the fixture workaround now handled in #90. Parent messaging placement remains a frontend follow-up, not a new permission.
+- **Verification:** Independent focused S3/S4/S7/S10 PASS: 165/165 tests across access, real PostgreSQL access, classroom/activity HTTP and OpenAPI, plus all three workspace typechecks. Integrated candidate on `c74daa0` (corrections `c93d137`/`26ea55b` plus `origin/develop` merge with #91/#87): full suite in a fresh dedicated Linux Node 22.23.5 container (`odd88-*`, fresh PostgreSQL 16 database and MinIO, bounded `--pool=threads --maxWorkers=2`) passed **1,806/1,806** — contracts 26/26, realtime 248/248, API 1,532/1,532 (exit 0). Typecheck, lint, `format:check`, all three builds and `check_docs.py changelogs/tracker-alejo.md` passed (exit 0 each). `pnpm openapi:export` wrote a byte-identical `openapi.json`. The merged `activities-publish.integration.spec.ts` exactly equals the #91 version.
+- **Reason:** Keep the panel contract focused and ready for frontend integration. Historical checks passed 1,741/1,741 plus independent verification; earlier Windows runner, Linux setup/formatting, provider and integrated fixture failures remain recorded in Git and PR #88. Those results do not verify these new corrections.
+- **Next step:** Publish (push) the integrated, suite-green head `c74daa0` when Alejo returns, observe CI and request team approval on [PR #88](https://github.com/Agustin742/integratec-final-back/pull/88). Push is deferred by Alejo; nothing was pushed.
+
 ## 2026-11-14 — Scope integration outbox dispatch to owned events (#90)
 
 - **Status:** in-progress (implementation and functional verification complete; PR publication authorized, team review and merge pending).
