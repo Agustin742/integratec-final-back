@@ -1,11 +1,12 @@
 # Tracker — Alejo
 
-## 2026-11-15 — Card #35 (HU-ESP-004): equip purchased items — in progress
+## 2026-11-15 — Card #35 (HU-ESP-004): equip purchased items — completed (local; publication pending)
 
-- **Status:** in-progress (branch created, feature document written, design resolved; implementation starting).
-- **Area / files:** new branch `feat/35-equip-items` from fresh `origin/develop` (4242ce9); planned: Prisma migration + new equipment module in `apps/api/src`, OpenAPI export, docs.
-- **Change:** Card #29 was found blocked (needs `Submission` from PR #89 / card #30 and `Grade` from card #32); Alejo picked dependency-free card #35 from the backlog instead. Design (D16 draft): classroom-scoped `EquippedItem` (unique per classroom/student/slot), student-only endpoints `GET /classrooms/:id/me/equipment` and `PUT /classrooms/:id/me/equipment/:slot`, 403 for unpurchased items, per-user rate limit.
-- **Next step:** migration T1, then RED tests, then module implementation.
+- **Status:** completed locally (implementation + DoD checks pass; PR publication and team approval of D16 pending). Next step: publish PR, await review.
+- **Area / files:** branch `feat/35-equip-items` from fresh `origin/develop` (4242ce9), commits `9115f46` (schema `EquippedItem`/`EquippedSlot` + migration), `81302dc` (19 RED tests), `8681c80`/`206ca96` (equipment module + limiter + config keys, wired into `AppModule`), `1bf2406` (OpenAPI export, `docs/equipment.md`, D16 in `docs/technical-justification.md`, `rules/data.md` entity row).
+- **Change:** Card #29 was found blocked (needs `Submission` from PR #89 / card #30 and `Grade` from card #32); Alejo picked dependency-free card #35 from the backlog instead. Classroom-scoped `EquippedItem` (unique per classroom/student/slot, slots from `ShopItem.metadata.slot`), student-only `GET /classrooms/:id/me/equipment` and `PUT /classrooms/:id/me/equipment/:slot` with `{ shopItemId: string | null }`; 403 unpurchased (checked in-transaction, AC2), 404 unknown item/slot, 409 kind/slot mismatch, 429 per-user limit (`EQUIP_RATE_LIMIT_WINDOW`/`EQUIP_RATE_LIMIT_MAX`).
+- **Evidence:** TDD RED→GREEN (18/18 equipment tests); full suite 74/74 files green with disposable PostgreSQL (`odd35-postgres`, port 55490) and MinIO via `docker compose`; `typecheck`, `build`, eslint, prettier, `check_docs.py` all pass. Disclosure for PR: full-suite run exits 1 after all tests pass due to a pre-existing vitest/tinypool teardown crash (`ERR_IPC_CHANNEL_CLOSED` on Windows) reproduced identically on base `4242ce9`.
+- **Next step:** ask the team about PR chaining (delivery strategy ask-on-risk, forecast ~600 authored lines) before publishing.
 
 ## 2026-11-15 — Investigate card #31 (HU-GAM-001) status
 
