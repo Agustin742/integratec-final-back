@@ -1,4 +1,4 @@
-import { PrismaClient, RegistrationPath } from '@prisma/client';
+import { PrismaClient, RegistrationPath, ShopItemKind } from '@prisma/client';
 import { assertSafeToSeed } from './seed-guard';
 
 const prisma = new PrismaClient();
@@ -7,8 +7,11 @@ async function main(): Promise<void> {
   assertSafeToSeed(process.env);
 
   // Clean existing seed data
-  // point_transactions is append-only against UPDATE/DELETE; TRUNCATE is allowed for dev/test seed resets.
-  await prisma.$executeRaw`TRUNCATE TABLE "point_transactions"`;
+  // point_transactions is append-only against UPDATE/DELETE, and student_purchases / classroom_items
+  // reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
+  await prisma.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+  await prisma.classroomShopItem.deleteMany();
+  await prisma.shopItem.deleteMany();
   await prisma.joinCodeUsage.deleteMany();
   await prisma.invitation.deleteMany();
   await prisma.desk.deleteMany();
@@ -150,6 +153,92 @@ async function main(): Promise<void> {
         useCount: 0,
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         createdById: teacher.id,
+      },
+    ],
+  });
+
+  // 6. Synthetic classroom shop catalog (never seeded in production or SQL migrations)
+  await prisma.shopItem.createMany({
+    data: [
+      {
+        code: 'cap_blue',
+        name: 'Blue Classroom Cap',
+        description: 'Classic blue cap accessory for your 3D avatar.',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 50,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'cap', slot: 'head', color: '#1E3A8A' },
+      },
+      {
+        code: 'headphones_studio',
+        name: 'Studio Headphones',
+        description: 'Over-ear headphones accessory for your 3D avatar.',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 80,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'headphones', slot: 'head' },
+      },
+      {
+        code: 'glasses_round',
+        name: 'Round Reading Glasses',
+        description: 'Lightweight round glasses for your 3D avatar.',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 40,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'glasses', slot: 'face' },
+      },
+      {
+        code: 'backpack_explorer',
+        name: 'Explorer Backpack',
+        description: 'Campus backpack accessory for your 3D avatar.',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 100,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'backpack', slot: 'back' },
+      },
+      {
+        code: 'desk_plant',
+        name: 'Desk Succulent Plant',
+        description: 'Small potted succulent upgrade for your classroom desk.',
+        kind: ShopItemKind.DESK_UPGRADE,
+        defaultPrice: 60,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'desk_plant', slot: 'desk_decor' },
+      },
+      {
+        code: 'classroom_theme_warm',
+        name: 'Warm Classroom Theme',
+        description: 'Unlocks a warm lighting and accent theme for the whole classroom.',
+        kind: ShopItemKind.CLASSROOM_ITEM,
+        defaultPrice: 150,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: 'classroom_theme_warm', effect: 'theme_warm' },
+      },
+      {
+        code: 'minigame_pong',
+        name: 'Classroom Pong Mini-Game',
+        description: 'Planned classroom mini-game (not yet implemented and unpurchasable).',
+        kind: ShopItemKind.CLASSROOM_ITEM,
+        defaultPrice: 200,
+        isActive: true,
+        isImplemented: false,
+        metadata: { assetId: 'minigame_pong', planned: true },
+      },
+      {
+        code: 'pet_scarf',
+        name: 'Classroom Pet Scarf',
+        description: 'Planned pet accessory (not yet implemented and unpurchasable).',
+        kind: ShopItemKind.PET_ACCESSORY,
+        defaultPrice: 45,
+        isActive: true,
+        isImplemented: false,
+        metadata: { assetId: 'pet_scarf', planned: true },
       },
     ],
   });
