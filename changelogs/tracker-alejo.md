@@ -2,7 +2,7 @@
 
 ## 2026-11-15 — Study material upload and signed downloads (#46)
 
-- **Status:** in-progress.
+- **Status:** completed (local implementation and verification; unpublished).
 - **Area / files:** study-material domain, Prisma schema/migration, storage port integration, HTTP/OpenAPI contracts and feature documentation.
 - **Change:** With AI assistance directed by Alejo, implemented classroom material upload/list/signed download/logical removal on `feat/46-study-material`, in isolated `odd/worktrees/issue-46` from freshly fetched `origin/develop` at `4242ce9`. Reused the storage port and shared authorization; added an additive migration and explicit OpenAPI/documentation. Main checkout and concurrent #37 work remain untouched.
 - **Reason:** Deliver issue #46 independently of unmerged submissions, frontend, bot and S3 infrastructure work.
@@ -10,7 +10,8 @@
 - **Independent evidence:** Isolated snapshot/fresh DB/bucket: focused44/44 and workspace typecheck pass. Real MinIO public-HTTP probe passes1/1 with 25 evidence records: exact PDF bytes through signed URL, unsigned403, student403, foreign/revoked404, removal204 followed by fresh-download404; rejected public lists and storage object lists unchanged. Candidate407 files unchanged, SHA256 `400e9077789d113e64fa3086fbeb66876727e8f94263790bad76c4a55f6da63e`. Only documentation/tracking changed after this proof.
 - **Retained failures / limitations:** Initial GREEN31/34 exposed a test-only Prisma spy contamination, corrected without production changes; initial type/lint errors corrected. A formatter command rejected the Prisma filename before later checks ran; corrected targeted checks passed. Independent real-S3 first execution failed in a later Supertest eager-request loop after successful storage checks; one preparation correction (explicit listener/lazy request factories) passed. No prior failure erased. Byte signatures are not malware scanning/full parsing; private objects/history are retained, and already signed URLs survive until expiry. AWS deployment is not verified.
 - **Delivery:** Alejo selected one eventual PR into `develop` despite ~1,000 authored-line forecast. No push, PR creation, merge, AWS apply or native review consent is inferred from that shape decision.
-- **Next step:** Finish local work-unit commit and applicable native review, then hand off for separately authorized publication and team approval. No deployment authorized.
+- **Local commit / assessment:** `e73cd44` (`feat(materials): add private classroom study material`), 1,055 authored + 313 generated lines. Committed-range native ASSESS: nativeRisk medium; explicit security item2 escalation high with independent verification already satisfied; `reviewDue=false`, `reviewDueReason=under_budget`. No native review started or approval claimed.
+- **Next step:** Obtain Alejo's separate authorization before push/PR into `develop`, then team review and exact-head CI before any separately authorized merge. File-policy assumptions await team review; AWS deployment remains unverified.
 
 # Tracker — Alejo
 
