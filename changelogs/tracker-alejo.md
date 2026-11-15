@@ -2,6 +2,14 @@
 
 # Tracker — Alejo
 
+## 2026-11-15 — Issue #37: announcements backend (HU-COM-001)
+
+- **Status:** in-progress (planning complete; implementation starting)
+- **Area / files:** `apps/api/prisma/schema.prisma`, new `apps/api/src/announcements/` module, `apps/api/src/notifications/`, `apps/api/src/platform/email/`, `openapi.json`.
+- **Change:** With AI assistance directed by Alejo: read issue #37 and the binding rules (communication, data, quality, authorization), created `feat/37-announcements` from freshly fetched `origin/develop` at `4242ce9` (post PR 92), mapped the reusable pieces (outbox notification flow, `EMAIL_PORT`, `NotificationDelivery` unique constraint, #26 resource-authorization test pattern), and wrote the local plan `odd/tasks/37-announcements.md`.
+- **Reason:** Card #37 (HU-COM-001) is next in the backlog; its dependencies (#19/#27/#45/#26) are all Done. #35 remains in review (PR 94) and #39 continues separately on `feat/activity-forum`.
+- **Next step:** Implement Prisma `Announcement` + `Mention` models with migration, then the announcements module (CRUD, mentions, notifications, idempotent email job), then tests and OpenAPI export.
+
 ## 2026-11-14 — Merge PR #91 into develop
 
 - **Status:** completed
