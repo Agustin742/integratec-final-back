@@ -27,6 +27,7 @@ resource "aws_vpc_security_group_ingress_rule" "postgres_from_host" {
   from_port                    = 5432
   to_port                      = 5432
 
+  # Recreated before the old rule goes away when the group is replaced.
   lifecycle {
     create_before_destroy = true
   }

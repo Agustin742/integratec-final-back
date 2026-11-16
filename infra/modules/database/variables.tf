@@ -19,7 +19,22 @@ variable "private_subnet_ids" {
 
   validation {
     condition     = length(var.private_subnet_ids) >= 2
-    error_message = "private_subnet_ids must contain at least 2 subnet ids (RDS needs two availability zones)."
+    error_message = "private_subnet_ids must contain at least 2 subnet ids."
+  }
+}
+
+variable "private_subnet_availability_zones" {
+  description = "Availability zone of each subnet in private_subnet_ids, in the same order."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.private_subnet_availability_zones) == length(var.private_subnet_ids)
+    error_message = "private_subnet_availability_zones must have one entry per subnet in private_subnet_ids."
+  }
+
+  validation {
+    condition     = length(toset(var.private_subnet_availability_zones)) >= 2
+    error_message = "The private subnets must span at least 2 distinct availability zones (an RDS requirement)."
   }
 }
 

@@ -18,19 +18,22 @@ output "security_group_vpc_id" {
   value       = aws_security_group.database.vpc_id
 }
 
-output "ingress_rules" {
-  description = "Ingress rules of the database security group (protocol, ports and source), derived from the single ingress rule resource, for tests and review."
-  value = [
-    for r in [aws_vpc_security_group_ingress_rule.postgres_from_host] : {
-      ip_protocol                  = r.ip_protocol
-      from_port                    = r.from_port
-      to_port                      = r.to_port
-      referenced_security_group_id = r.referenced_security_group_id
-      cidr_ipv4                    = r.cidr_ipv4
-      cidr_ipv6                    = r.cidr_ipv6
-      prefix_list_id               = r.prefix_list_id
-    }
-  ]
+output "postgres_ingress_rule" {
+  description = "The PostgreSQL ingress rule (protocol, ports and source) as declared, for tests and review. Not a listing of every rule on the group; a static test guards that this is the only one."
+  value = {
+    ip_protocol                  = aws_vpc_security_group_ingress_rule.postgres_from_host.ip_protocol
+    from_port                    = aws_vpc_security_group_ingress_rule.postgres_from_host.from_port
+    to_port                      = aws_vpc_security_group_ingress_rule.postgres_from_host.to_port
+    referenced_security_group_id = aws_vpc_security_group_ingress_rule.postgres_from_host.referenced_security_group_id
+    cidr_ipv4                    = aws_vpc_security_group_ingress_rule.postgres_from_host.cidr_ipv4
+    cidr_ipv6                    = aws_vpc_security_group_ingress_rule.postgres_from_host.cidr_ipv6
+    prefix_list_id               = aws_vpc_security_group_ingress_rule.postgres_from_host.prefix_list_id
+  }
+}
+
+output "subnet_group_name_prefix" {
+  description = "Name prefix of the DB subnet group."
+  value       = aws_db_subnet_group.this.name_prefix
 }
 
 output "subnet_group_name" {
