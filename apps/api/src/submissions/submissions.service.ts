@@ -34,6 +34,7 @@ const SUBMISSION_SELECT = {
   submittedAt: true,
   isLate: true,
   idempotencyKey: true,
+  grade: { select: { id: true } },
   files: {
     orderBy: { position: 'asc' },
     select: { id: true, originalName: true, contentType: true, sizeBytes: true, position: true },
@@ -46,6 +47,7 @@ const READ_SELECT = {
   studentId: true,
   submittedAt: true,
   isLate: true,
+  grade: { select: { id: true } },
   files: {
     orderBy: { position: 'asc' },
     select: {
@@ -90,7 +92,7 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
     activityId: row.activityId,
     submittedAt: row.submittedAt.toISOString(),
     isLate: row.isLate,
-    status: 'submitted',
+    status: row.grade !== null ? 'graded' : 'submitted',
     files: row.files.map((file) => ({
       id: file.id,
       originalName: file.originalName,
@@ -308,7 +310,7 @@ export class SubmissionsService {
       activityId: row.activityId,
       submittedAt: row.submittedAt.toISOString(),
       isLate: row.isLate,
-      status: 'submitted',
+      status: row.grade !== null ? 'graded' : 'submitted',
       files,
     };
   }
