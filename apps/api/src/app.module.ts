@@ -2,13 +2,17 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { AccessModule } from './access/access.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassroomsModule } from './classrooms/classrooms.module';
+import { ClassroomContextDeliveryModule } from './classrooms/context-delivery.module';
 import type { ApiConfig } from './config/api-config';
 import { ApiConfigModule } from './config/config.module';
 import { HealthController } from './health.controller';
 import { RealtimeJoinModule } from './internal/realtime/realtime-join.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SubmissionsModule } from './submissions/submissions.module';
 import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PointsModule } from './points/points.module';
+import { ShopModule } from './shop/shop.module';
 
 @Module({
   controllers: [HealthController],
@@ -25,7 +29,11 @@ export class AppModule {
         UsersModule,
         RealtimeJoinModule,
         ClassroomsModule,
+        ClassroomContextDeliveryModule,
         NotificationsModule,
+        SubmissionsModule,
+        PointsModule,
+        ShopModule,
       ],
     };
   }

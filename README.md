@@ -22,6 +22,10 @@ backend/
 - [Logical student removal](docs/classroom-removal.md): `DELETE /classrooms/:id/students/:studentId`, preserving history, releasing the desk and revoking parent access derived from that child in one transaction.
 - The transactional outbox records `classroom.membership.removed`; the realtime eviction handler consumes it to disconnect the removed student's live connections in that classroom.
 
+## Classroom context
+
+- [Panel availability contract](docs/classroom-context.md): `GET /classrooms/:id` adds role-scoped `availablePanels`, separate from action authorization; Pet is reserved and disabled. Context invalidation (delivery B) is not implemented.
+
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
@@ -30,11 +34,20 @@ backend/
 ## Activities
 
 - [Activities (TP and exams)](docs/activities.md): `/classrooms/:id/activities` create, list, read, update, publish and logical deactivation; teacher and student views (the student view never carries `isCorrect`); publishing records the student notifications in the same transaction.
+- [File submissions](docs/submissions.md): `POST /activities/:activityId/submissions` (multipart, `Idempotency-Key`), `GET /activities/:activityId/submissions/me` and `GET /submissions/:submissionId`; content-detected PDF, PNG, JPEG and DOCX, private storage with signed download URLs, window and late handling on the server clock, and the question and deletion lock on activities.
 
 ## Notification center
 
 - [Notification API and producer integration](docs/notifications.md): authenticated `GET /notifications`, `PATCH /notifications/:id/read` and `PATCH /notifications/read-all`, with current recipient/child access, paginated navigation metadata and idempotent persisted read state.
 - Frontend display, live push, email delivery and feature producers remain out of scope; parent announcements are deferred pending #37.
+
+## Points wallet and ledger
+
+- [Points wallet and immutable ledger](docs/points-ledger.md): authenticated `GET /classrooms/:id/points` and `GET /classrooms/:id/students/:studentId/points` with server-derived balances (`SUM(amount)`), PostgreSQL immutability trigger, `FOR UPDATE` concurrency locking, and `PointsLedgerService` for future grading (`#32`) and shop (`#34`) producers.
+
+## Classroom shop
+
+- [Classroom shop and purchases](docs/shop.md): student-only `GET /classrooms/:id/shop/items`, `GET /classrooms/:id/shop/purchases`, and idempotent `POST /classrooms/:id/shop/purchase` with per-classroom overrides, `isImplemented` enforcement, atomic `PointsLedgerService.debit` integration, unique ownership (`409 Conflict`), and per-user rate limiting (`429 TOO_MANY_REQUESTS`).
 
 ## Local setup and development
 
@@ -222,6 +235,8 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `S3_ACCESS_KEY_ID`        | Optional; set together with `S3_SECRET_ACCESS_KEY` | Static storage credential for local MinIO; leave both unset in AWS so the EC2 instance role is used | Private | Yes |
 | `S3_SECRET_ACCESS_KEY`    | Optional; set together with `S3_ACCESS_KEY_ID`    | Static storage credential for local MinIO; never commit a real value     | Private        | Yes     |
 | `STORAGE_SIGNED_URL_TTL`  | Default `5m`; same format, 1s to 1h               | Default lifetime of signed download URLs                                 | Public         | Yes     |
+| `SHOP_PURCHASE_RATE_LIMIT_WINDOW` | Default `1m`; same format, 1s to 1h       | Sliding-window duration for per-user shop purchase rate limiting         | Public         | Yes     |
+| `SHOP_PURCHASE_RATE_LIMIT_MAX` | Default `20`; integer 1-1000               | Maximum shop purchase attempts per user inside the sliding window        | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 

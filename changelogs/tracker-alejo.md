@@ -1,5 +1,61 @@
 # Tracker — Alejo
 
+## 2026-11-15 — Preserve submission files after uncertain commit (PR #89)
+
+- **Status:** completed (correction verified; Alejo authorized commit and push to the existing PR branch)
+- **Area / files:** `apps/api/src/submissions/submissions.service.ts`, submission integration tests, `docs/submissions.md`, D16.
+- **Change:** With AI assistance directed by Alejo: separated upload cleanup from transaction recovery, reconciled exact planned file IDs before deleting objects, and retained files/original errors when the commit outcome cannot be established. Added real-transaction fault tests for lost commit responses, unavailable reconciliation and a commit still in flight; updated the submissions guide and D16 without claiming new team approval.
+- **Reason:** A rejected transaction promise does not prove rollback; unconditional cleanup can delete a student's committed attachments.
+- **Verification:** Corrected submissions suite 163/163 and workspace typecheck passed. Full isolated PostgreSQL/MinIO workspace suite passed 1,985/1,985 (API 1,711, realtime 248, contracts 26); format, lint, build, three-file documentation and whitespace checks passed. Independent verification PASS with no findings; focused tests passed 48/48 on a separately migrated database. Native ASSESS: agent-escalated high risk (persistent data), reviewDue false / under budget, independent verification required.
+- **Limitations:** Pre-fix RED timed out after 30 seconds before a verdict. First changed-candidate suite had six failures caused by an unsafe Prisma-delegate test spy and native runner exit 3221226505; one correction switched the spy to an ordinary service method, then focused and full checks passed. Initial MinIO setup failed because Git Bash converted Linux paths; corrected MSYS path handling succeeded with separate task-only containers. Uncertain outcomes may retain orphan objects; no cleanup worker or production AWS verification is claimed.
+- **Next step:** Publish this verified correction on `feat/30-file-submissions` under Alejo's explicit authorization and confirm fresh PR CI. Teammate approvals and merge remain separate; no merge authorized.
+
+## 2026-11-15 — Review fixes for PR #89 (#30, Agustín's branch)
+
+- **Status:** completed (pushed to Agustín's `feat/30-file-submissions` as `9ae87ea`+`df450bd`+`cbfb052`; PR #89 comment posted and review re-requested from Calegaris and TheKade)
+- **Area / files:** `apps/api/prisma/migrations/20261113150000_create_submissions` (renamed from `20261113120000_*`), `apps/api/prisma/schema.prisma`, `apps/api/src/app.module.ts`, `apps/api/openapi.json` (merge conflicts resolved), `apps/api/src/submissions/submissions.service.ts` (`loadSubmittableActivity` state check before classroom access), `submissions.controller.ts`, `submissions.integration.spec.ts`, `submissions-read.integration.spec.ts` (new parent-on-draft 404 tests), `submission-file-policy.ts` (migration comment), `docs/submissions.md`, `changelogs/tracker-agustin.md` (status + migration name, as requested in review).
+- **Change:** With AI assistance directed by Alejo: merged `origin/develop` into `feat/30-file-submissions` (PR #87's `20261113144500_create_point_transactions` had landed; no force-push per `rules/git-workflow.md`), renamed the submissions migration to `20261113150000_create_submissions` so the Prisma history stays in order, resolved the three merge conflicts, and reordered the `PUBLISHED` check before `verifyClassroomAccess` in `loadSubmittableActivity` so a linked parent on a draft activity gets `404` instead of `403` (existence leak from Calegaris's review, blocker 2). Added integration tests for POST and `GET .../me` asserting the parent-on-draft `404`, updated controller OpenAPI wording and `docs/submissions.md`, and fixed the stale tracker status/migration name (blocker 3). OpenAPI regenerated from source.
+- **Reason:** PR #89 review (Calegaris) left three blockers: out-of-order migration against post-#87 `develop`, the 403 draft-existence leak, and a stale tracker; Agustín did not address them, so Alejo asked to apply the corrections ourselves.
+- **Next step:** CI and team re-review on PR #89; merge is Agustín's/the reviewer's decision once approvals and checks are green.
+
+## 2026-11-14 — Classroom context invalidation (B)
+
+- **Status:** in-progress (backend implementation and verification complete; local closure authorized, publication and team approval pending)
+- **Area / files:** authenticated classroom context stream, transactional config/enrollment signals, existing revocation-event delivery, API/OpenAPI and context documentation.
+- **Change:** With AI assistance directed by Alejo: implemented backend B on `feat/classroom-context-b` from PR #88, preserving A. SSE hints require authoritative REST reload on connect/reconnect; parent/2D clients are supported without Colyseus. Durable replay and frontend implementation remain out of scope.
+- **Verification:** Linux Node 22 full suite 1,850/1,850, workspace typechecks, lint and all three builds passed. An added API-root SSE/PostgreSQL case passed with synthetic session verification. Independent review passed S1–S4 with 221/221 tests, no skips and three typechecks (numeric exit codes not exposed). Initial module-guard/fixture failures were corrected; code/docs formatting and links passed.
+- **Reason:** Clients must refresh context after access changes. A process-local broker, 15-second access checks and 60-second renewal do not prove frontend/proxy behavior or immediate distributed delivery.
+- **Next step:** Keep B in one PR as Alejo selected. PR #88 remains open, so a PR to `develop` would also show A until it merges. Alejo explicitly chose local closure without the unavailable native review; no global sync or review-mode change was applied. Publication/base selection remains separate; no native approval, B push, PR or merge is claimed.
+
+## 2026-11-14 — Merge PR #91 into develop
+
+- **Status:** completed
+- **Area / files:** none (remote PR operation only; no source changes in this workspace).
+- **Change:** With AI assistance directed by Alejo: verified [PR #91](https://github.com/Agustin742/integratec-final-back/pull/91) (`fix/90-outbox-spec-isolation`, base `develop`, 2 commits) reported `MERGEABLE`/`CLEAN`, confirmed `origin/develop` was fully contained in the branch (0 commits to bring in, so no develop sync was needed), and merged it with a merge commit `0ea54e3` after Alejo confirmed team review and explicitly authorized the merge.
+- **Reason:** #91 is the required dependency for PR #88 and Alejo requested its merge once reviewed.
+- **Next step:** Integrate the merged #91 dependency into the #88 candidate on `feat/classroom-panels-a` and verify #88's complete suite (see the 2026-11-14 classroom panel entry below).
+
+## 2026-11-14 — Classroom panel availability (PR #88 review corrections)
+
+- **Status:** in-progress (corrections committed; integrating the merged #91 dependency from `origin/develop` and verifying #88's complete suite; publication and approval pending)
+- **Area / files:** shared panel projection, classroom DTO/service, HTTP/OpenAPI tests, `docs/classroom-context.md`, activity-publication fixtures.
+- **Change:** Derived panels from capabilities with unchanged role outputs, extracted the lightweight enum, kept OpenAPI descriptions property-local, removed query-count coupling and exactly reverted the fixture workaround now handled in #90. Parent messaging placement remains a frontend follow-up, not a new permission.
+- **Verification:** Independent focused S3/S4/S7/S10 PASS: 165/165 tests across access, real PostgreSQL access, classroom/activity HTTP and OpenAPI, plus all three workspace typechecks. Integrated candidate on `c74daa0` (corrections `c93d137`/`26ea55b` plus `origin/develop` merge with #91/#87): full suite in a fresh dedicated Linux Node 22.23.5 container (`odd88-*`, fresh PostgreSQL 16 database and MinIO, bounded `--pool=threads --maxWorkers=2`) passed **1,806/1,806** — contracts 26/26, realtime 248/248, API 1,532/1,532 (exit 0). Typecheck, lint, `format:check`, all three builds and `check_docs.py changelogs/tracker-alejo.md` passed (exit 0 each). `pnpm openapi:export` wrote a byte-identical `openapi.json`. The merged `activities-publish.integration.spec.ts` exactly equals the #91 version.
+- **Reason:** Keep the panel contract focused and ready for frontend integration. Historical checks passed 1,741/1,741 plus independent verification; earlier Windows runner, Linux setup/formatting, provider and integrated fixture failures remain recorded in Git and PR #88. Those results do not verify these new corrections.
+- **Next step:** Publish (push) the integrated, suite-green head `c74daa0` when Alejo returns, observe CI and request team approval on [PR #88](https://github.com/Agustin742/integratec-final-back/pull/88). Push is deferred by Alejo; nothing was pushed.
+
+## 2026-11-14 — Scope integration outbox dispatch to owned events (#90)
+
+- **Status:** in-progress (implementation and functional verification complete; PR publication authorized, team review and merge pending).
+- **Area / files:** `apps/api/src/platform/outbox/`, integration-spec dispatch callers, test documentation.
+- **Change:** Created `fix/90-outbox-spec-isolation` from freshly fetched `develop` at `d3b04e8` in a separate worktree, preserving dirty PR #88 review changes. Added optional ownership-ID dispatch filtering; narrowed notification/reset/realtime/outbox fixtures and removed activity per-test cleanup/locking workaround. Production polling and omitted-filter behavior remain unchanged. AI-assisted work directed by Alejo.
+- **Reason:** Prevent specs sharing an outbox event type from consuming each other's events; unblock reliable verification of PR #88 without its fixture scheduling workaround.
+- **Evidence:** Real-PostgreSQL RED: 2 failed / 20 passed (foreign event consumed; empty IDs ignored). Focused GREEN: 126/126 plus three-workspace typecheck. Linux Node22 full API passed **1,511/1,511 twice** on fresh databases with `--maxWorkers=2`; typecheck, lint, source/config formatting, all three builds, contracts26/26 and realtime248/248 passed (parent job6 exit0). Guide/tracker links and whitespace passed.
+- **Retained failures / limits:** Initial Docker formatting command failed cwd path conversion before checks; scoped formatting then warned on two specs; worktree-local formatter was unavailable. Root-installed Prettier normalized only those files and subsequent checks passed. Native ASSESS unavailable (`package-local-binary-missing`); RDD state unknown, no native review verdict claimed. Earlier PR #88 verification failures and limits remain separate and unchanged.
+- **Independent verification:** S1–S6 PASS; separate Linux Node22 container/fresh database, five specs126/126 and all three workspace typechecks (job7 exit0). Parent repeated full-suite evidence is explicitly distinct from independent execution. No code blockers; no native approval or teammate approval inferred.
+- **Delivery:** Alejo explicitly authorized publishing the verified `312b6ab` implementation without native review. Fresh fetch confirms `develop` at `d3b04e8` is an ancestor; no upstream commits are missing. No review-mode or authority changes, merge, issue closure or deployment authorized.
+- **Next step:** Publish the separate PR into `develop`, observe exact-head CI and obtain another team member's approval before a separately authorized merge; then resume PR #88 integration. The PR records current delivery/CI state.
+
 ## 2026-11-13 — PR #84 develop integration follow-up
 
 - **Status:** in-progress (additive resolutions complete; parent integration checks running; PR #84 awaits final-head CI and approval)

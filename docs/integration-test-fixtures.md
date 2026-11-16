@@ -4,6 +4,9 @@ Set `DATABASE_URL` explicitly to an isolated, migrated **test** database before 
 
 - The test-only configuration boundary accepts loopback hosts and the Compose `postgres` hostname. This checks locality, not database ownership; the caller must provide a dedicated database.
 - The outbox suite requires permission to create a schema. It atomically creates a UUID-named schema and an empty copy of `public.outbox_events`, checks that model operations and raw dispatcher SQL resolve to that private table, and guards cleanup by schema OID and current owner. Cleanup never uses `CASCADE` or deletes shared event rows.
+- Specs sharing an event type must pass only their owned event IDs as the fourth argument to `dispatchPending(batchSize, now, types, eventIds)`. Capture IDs returned by transactional recorders; when an HTTP producer returns no IDs, query by fixture-owned payload identifiers (for example user or activity ID), never a global before/after snapshot. Scope assertions and cleanup to the same ownership boundary.
+- Type and ID filters intersect. An explicit empty ID list claims nothing; omitting IDs preserves the existing type-filtered or unfiltered production behavior. Only the private-schema outbox suite intentionally tests unfiltered dispatch. Production polling callers remain unchanged.
+- Activity publishing specs can leave pending events until final fixture teardown: other specs no longer claim them. Final teardown still removes owned notifications and deliveries before their source events; no per-test cleanup or cross-dispatch row-lock workaround is needed.
 - Fixtures use the existing migrated schema. They do not provision services, migrate, seed or change production dispatcher behavior.
 
 ```bash

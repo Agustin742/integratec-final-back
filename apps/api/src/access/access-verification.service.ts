@@ -15,10 +15,36 @@ import {
 import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassroomPanelKey } from './classroom-panel-key';
+
+export { ClassroomPanelKey } from './classroom-panel-key';
 
 export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type ClassroomAccessRole = 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT' | 'PARENT';
+
+/** UI hints from already-authorized capabilities, never an independent role table. */
+export function computeClassroomPanels(
+  capabilities: readonly ClassroomCapability[],
+): ClassroomPanelKey[] {
+  const panel = ClassroomPanelKey;
+  const content: readonly ClassroomCapability[] = ['publish_content', 'participate_activities'];
+  const requirements: readonly [ClassroomPanelKey, readonly ClassroomCapability[]][] = [
+    [panel.ACTIVITIES, content],
+    [panel.MATERIAL, content],
+    [panel.GRADES, ['view_metrics']],
+    [panel.CHAT, ['chat_classmates']],
+    [panel.NOTICES, content],
+    [panel.SHOP, ['participate_activities']],
+    [panel.BOT, ['configure_bot', 'participate_activities']],
+    [panel.MEMBERS, ['list_directory']],
+    [panel.SETTINGS, ['configure_classroom']],
+  ];
+  // Teacher messaging has no agreed classroom-shell panel; it never grants classroom chat.
+  return requirements
+    .filter(([, required]) => required.some((capability) => capabilities.includes(capability)))
+    .map(([key]) => key);
+}
 
 export type ClassroomCapability =
   | 'manage_school'
@@ -606,6 +632,30 @@ export class AccessVerificationService {
       orderBy: { userId: 'asc' },
     });
     return rows.map((row) => row.userId);
+  }
+
+  /**
+   * Whether the user is currently an enrolled student of the classroom (role STUDENT, ACTIVE, not
+   * deleted). Pass the caller's transaction client to re-check inside a transaction after a row
+   * lock, so a removal that committed meanwhile is seen.
+   */
+  async isActiveStudent(
+    classroomId: string,
+    userId: string,
+    options: { client?: Prisma.TransactionClient } = {},
+  ): Promise<boolean> {
+    const client = options.client ?? this.prisma;
+    const row = await client.classroomMembership.findFirst({
+      where: {
+        classroomId,
+        userId,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /**

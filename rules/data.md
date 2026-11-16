@@ -27,8 +27,10 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | Submission | A student's work for an activity (files or answers) | Joins Activity and student |
 | Grade | Score for a submission | One per submission; references the converting ledger entry |
 | PointsTransaction | Immutable ledger entry of points (earning, purchase, correction) | Belongs to a student; references its source |
-| ShopItem | Catalog entry: kind (classroom item or pet accessory), price | Referenced by purchases |
-| ClassroomItem | Item a classroom owns after purchase, with state | Belongs to a classroom; references a ShopItem |
+| ShopItem | Server-owned catalog entry: code, name, kind (`classroom_item`, `avatar_accessory`, `desk_upgrade`, `pet_accessory`), default price, `isActive`, `isImplemented`, metadata | Referenced by classroom overrides, purchases, and classroom items |
+| ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
+| ClassroomItem | Classroom-wide item unlocked after purchasing a `classroom_item`, with state (`unlocked`, `active`, `disabled`) | Belongs to a classroom; references a ShopItem and its originating StudentPurchase |
+| StudentPurchase | Immutable student purchase record storing `pricePaid`, `idempotencyKey`, and debit transaction link | Belongs to a classroom and student; references a ShopItem and PointTransaction |
 | Pet / PetAccessory | The classroom's single pet and the accessories it owns or has equipped | Pet belongs to a classroom |
 | Streak | Current and best streak per student, with last qualifying day | Belongs to a student |
 | Announcement | Bulletin-board notice | Belongs to a classroom; has an author |
@@ -64,6 +66,9 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - A Classroom **MUST** have exactly one Pet. Accessory ownership **MUST** be unique per (pet, shop item).
 - A Submission **MUST** be unique per (activity, student) unless the activity allows resubmission (teacher-configured per activity; history representation is open); a Grade **MUST** be unique per submission.
 - A PointsTransaction **MUST** be unique per (source type, source id) for earnings, and entries **MUST** be immutable.
+- A ClassroomShopItem **MUST** be unique per (classroom, shop item), and `priceOverride`, when set, **MUST** be positive.
+- A StudentPurchase **MUST** be unique per (classroom, student, shop item) and per (classroom, student, idempotency key).
+- A ClassroomItem **MUST** be unique per (classroom, shop item).
 - Streak **MUST** have one row per student, and the qualifying-day record **MUST** be unique per (student, local day).
 - Mention **MUST** be unique per (source, mentioned user).
 - AllowedMaterial **MUST** be unique per (classroom, material).

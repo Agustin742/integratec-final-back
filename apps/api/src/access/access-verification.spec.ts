@@ -6,6 +6,8 @@ import type { PrismaService } from '../prisma/prisma.service';
 import {
   AccessVerificationService,
   computeClassroomCapabilities,
+  computeClassroomPanels,
+  type ClassroomAccessRole,
   deriveClassroomAccessRole,
   type ClassroomCapability,
   type ClassroomRoleFacts,
@@ -47,6 +49,60 @@ describe('AccessVerificationService (HU-AUL-005)', () => {
     };
 
     service = new AccessVerificationService(prismaMock as unknown as PrismaService);
+  });
+
+  describe('Panel projection (not operation authorization)', () => {
+    const staff = [
+      'activities',
+      'material',
+      'grades',
+      'chat',
+      'notices',
+      'bot',
+      'members',
+      'settings',
+    ];
+    const student = [
+      'activities',
+      'material',
+      'grades',
+      'chat',
+      'notices',
+      'shop',
+      'bot',
+      'members',
+    ];
+    it.each<{ role: ClassroomAccessRole; expected: string[] }>([
+      { role: 'OWNER', expected: staff },
+      { role: 'ADMIN', expected: staff },
+      { role: 'TEACHER', expected: staff },
+      { role: 'STUDENT', expected: student },
+      { role: 'PARENT', expected: ['grades'] },
+    ])(
+      'returns a stable, fresh, unique array for $role without reserved pet',
+      ({ role, expected }) => {
+        const capabilities = computeClassroomCapabilities(role);
+        const panels = computeClassroomPanels(capabilities);
+        expect(panels).toEqual(expected);
+        expect(new Set(panels).size).toBe(panels.length);
+        expect(panels).not.toContain('pet');
+        expect(computeClassroomPanels(capabilities)).not.toBe(panels);
+        panels.splice(0, panels.length);
+        expect(computeClassroomPanels(capabilities)).toEqual(expected);
+      },
+    );
+  });
+
+  it('projects only panels supported by the supplied capabilities, not teacher messaging', () => {
+    expect(computeClassroomPanels([])).toEqual([]);
+    expect(computeClassroomPanels(['message_teacher'])).toEqual([]);
+    expect(computeClassroomPanels(['list_directory', 'configure_classroom'])).toEqual([
+      'members',
+      'settings',
+    ]);
+    expect(computeClassroomPanels(['view_metrics', 'view_metrics', 'message_teacher'])).toEqual([
+      'grades',
+    ]);
   });
 
   describe('Capabilities calculation helper (Permission Matrix)', () => {

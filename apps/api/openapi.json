@@ -488,7 +488,7 @@
     },
     "/classrooms/{id}": {
       "get": {
-        "description": "Returns the persistent state of a virtual classroom, its pet, desk count, and the server-derived role and capabilities for the authenticated caller.",
+        "description": "Returns persistent classroom state, pet, desk count, and the server-derived role, capabilities and availablePanels. Panels are UI availability, not operation authorization; pet is reserved and never available. Linked parents receive only the grades panel; adult mode disables parent access.",
         "operationId": "ClassroomsController_findOne",
         "parameters": [
           {
@@ -501,10 +501,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Classroom details and caller capabilities.",
+            "description": "Classroom details, caller capabilities and available panels.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ClassroomDetailResponseDto" }
+                "schema": { "$ref": "#/components/schemas/ClassroomContextResponseDto" }
               }
             }
           },
@@ -1151,6 +1151,600 @@
         "tags": ["notifications"]
       }
     },
+    "/activities/{activityId}/submissions": {
+      "post": {
+        "description": "Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes) to a published FILE activity of the student's classroom. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new; a different key after a submission exists is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
+        "operationId": "SubmissionsController_create",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated key, 1-255 characters (a UUID is recommended).",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 255 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/CreateSubmissionBodyDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay: the existing submission, nothing new stored.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionResponseDto" }
+              }
+            }
+          },
+          "201": {
+            "description": "Submission stored.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid `Idempotency-Key`, no files, disallowed or empty files (`VALIDATION_FAILED` with details), or too many files / unexpected field (`BAD_REQUEST`).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but not a student (staff, linked parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent, draft or deactivated activity, or not a member.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Already submitted with another key, window closed or not yet open, or not a file activity (`details` names the reason).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "413": {
+            "description": "A file exceeds 10 MB.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Submit files to an activity",
+        "tags": ["submissions"]
+      }
+    },
+    "/activities/{activityId}/submissions/me": {
+      "get": {
+        "description": "Student only. Returns the calling student's submission with a short-lived signed `downloadUrl` per file (lifetime from `STORAGE_SIGNED_URL_TTL`, reported in `downloadUrlExpiresAt`). The response is not cacheable. A student who has not submitted yet gets 404 `Submission not found`; unknown, malformed, draft or deactivated activities and non-members get 404 `Activity not found` (a draft never leaks its existence), and staff and linked parents get 403 on published activities only.",
+        "operationId": "SubmissionsController_readOwn",
+        "parameters": [
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionDownloadResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but not a student (staff, linked parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent, draft or deactivated activity, not a member, or nothing submitted yet.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read my submission to an activity",
+        "tags": ["submissions"]
+      }
+    },
+    "/submissions/{submissionId}": {
+      "get": {
+        "description": "Readable by the student who submitted it and by teacher-level staff of the activity's classroom (teacher, school Owner or Admin). Returns a short-lived signed `downloadUrl` per file; the response is not cacheable. Every other caller (another student, a linked parent, a non-member) gets the same 404 as for an unknown id, so existence never leaks.",
+        "operationId": "SubmissionReadController_readById",
+        "parameters": [
+          {
+            "name": "submissionId",
+            "required": true,
+            "in": "path",
+            "description": "Submission UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SubmissionDownloadResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed or unknown id, deactivated activity, or the caller may not read it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read a submission",
+        "tags": ["submissions"]
+      }
+    },
+    "/classrooms/{id}/points": {
+      "get": {
+        "description": "Returns the server-derived points balance (SUM of ledger amounts) and paginated immutable movements for the authenticated active student in the classroom. Supports sort=createdAt|amount (prefix \"-\" for descending; default -createdAt) with a matching id tiebreaker. No balance writes or student-to-student transfers are permitted.",
+        "operationId": "PointsController_getOwnWallet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StudentWalletDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get authenticated student points wallet and ledger movements",
+        "tags": ["points"]
+      }
+    },
+    "/classrooms/{id}/students/{studentId}/points": {
+      "get": {
+        "description": "Returns the server-derived points balance and paginated immutable movements for an active enrolled student in the classroom. Accessible to the student themselves, classroom staff (Owner, Admin, Teacher), and active linked parents when adultMode is disabled. Classmates receive 403; strangers, unlinked parents, and adult-mode parent requests receive 404. Supports sort=createdAt|amount (default -createdAt) with a matching id tiebreaker.",
+        "operationId": "PointsController_getStudentWallet",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "studentId",
+            "required": true,
+            "in": "path",
+            "description": "Target student user UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/StudentWalletDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Classmate student cannot access another student points wallet.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or student resource.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get a student points wallet and ledger movements",
+        "tags": ["points"]
+      }
+    },
+    "/classrooms/{id}/shop/items": {
+      "get": {
+        "description": "Returns paginated active shop items available in the classroom for an active enrolled student, resolving per-classroom price overrides and availability, student/classroom ownership flags, and server-side purchasability. Supports optional kind filter and sort=defaultPrice|name|createdAt (default createdAt) with a matching id tiebreaker.",
+        "operationId": "ShopController_listItems",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          },
+          {
+            "name": "kind",
+            "required": false,
+            "in": "query",
+            "description": "Optional filter by shop item kind.",
+            "schema": { "$ref": "#/components/schemas/ShopItemKind" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated classroom shop catalog items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ShopCatalogItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, kind filter, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List classroom shop catalog items",
+        "tags": ["shop"]
+      }
+    },
+    "/classrooms/{id}/shop/purchases": {
+      "get": {
+        "description": "Returns paginated immutable purchase records for the authenticated active student in the classroom. Supports sort=createdAt|pricePaid (default -createdAt) with a matching id tiebreaker.",
+        "operationId": "ShopController_listPurchases",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated student shop purchases.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StudentPurchaseDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, sort, or unknown query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List authenticated student shop purchases in the classroom",
+        "tags": ["shop"]
+      }
+    },
+    "/classrooms/{id}/shop/purchase": {
+      "post": {
+        "description": "Atomically validates student membership, catalog availability, implementation status, and unique ownership; debits the server-derived effective price from the points ledger; and records the purchase (plus ClassroomItem for classroom_item kinds). Requires an Idempotency-Key header (1-128 trimmed characters): returns 201 Created on new purchases and 200 OK on idempotent replays.",
+        "operationId": "ShopController_purchase",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Client-generated idempotency key (1-128 trimmed non-empty characters).",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/PurchaseShopItemDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of a previous purchase; no second debit occurred.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseResponseDto" }
+              }
+            }
+          },
+          "201": {
+            "description": "New purchase recorded and points debited from the student ledger.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PurchaseResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/invalid Idempotency-Key header, invalid shopItemId, or extra body fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller is not an active enrolled student.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom or shop item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Insufficient points balance, unimplemented item, duplicate ownership, or Idempotency-Key reused with another item.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Per-user purchase rate limit exceeded.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Purchase a classroom shop item atomically",
+        "tags": ["shop"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -1645,7 +2239,7 @@
         "tags": ["activities"]
       },
       "patch": {
-        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists.",
+        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists (409 afterwards); title, description and dates remain editable.",
         "operationId": "ActivitiesController_update",
         "parameters": [
           {
@@ -1714,7 +2308,7 @@
         "tags": ["activities"]
       },
       "delete": {
-        "description": "Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed.",
+        "description": "Teacher-level staff only. Logical deletion (`deletedAt`); rows are never physically removed. Refused (409) once any student has submitted.",
         "operationId": "ActivitiesController_deactivate",
         "parameters": [
           {
@@ -1748,6 +2342,12 @@
           },
           "404": {
             "description": "Invalid, nonexistent or out-of-scope classroom or activity.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "The activity has submissions and cannot be deleted.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1821,6 +2421,31 @@
         "security": [{ "bearer": [] }],
         "summary": "Publish a draft activity",
         "tags": ["activities"]
+      }
+    },
+    "/classrooms/{id}/context-events": {
+      "get": {
+        "operationId": "ClassroomContextEventsController_connect",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "classroom.context-invalidated events with JSON data {classroomId}; no replay",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          },
+          "401": { "description": "Missing, invalid, expired or revoked session" },
+          "404": { "description": "Classroom unavailable or inaccessible" },
+          "503": { "description": "Authorization setup timed out or service is stopping" }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Subscribe to live context hints; refetch classroom context on every connection and hint",
+        "tags": ["Classrooms"]
       }
     }
   },
@@ -2504,6 +3129,141 @@
         },
         "required": ["classroomId", "membershipId", "role", "desk", "alreadyMember"]
       },
+      "ClassroomContextResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "4e5f6a7b-0000-4000-8000-000000000002",
+            "description": "Unique classroom identifier (UUID)"
+          },
+          "name": {
+            "type": "string",
+            "example": "3° Año B - Matemática",
+            "description": "Display name of the virtual classroom"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true,
+            "example": "Matemática y Geometría",
+            "description": "Optional subject or course description"
+          },
+          "schoolId": {
+            "type": "string",
+            "nullable": true,
+            "example": "3f6c2d9e-0000-4000-8000-000000000000",
+            "description": "Owning school UUID when the classroom belongs to a school, or null"
+          },
+          "independentTeacherId": {
+            "type": "string",
+            "nullable": true,
+            "example": null,
+            "description": "Owning independent teacher user UUID when the classroom belongs to an independent teacher, or null"
+          },
+          "adultMode": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom runs in adult education mode"
+          },
+          "chatMuted": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether the classroom student chat is muted"
+          },
+          "collaborationLocked": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether collaborative editing is locked"
+          },
+          "gamesDisabled": {
+            "type": "boolean",
+            "example": false,
+            "description": "Whether interactive classroom games are disabled"
+          },
+          "myRole": {
+            "type": "string",
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
+            "example": "TEACHER",
+            "description": "Resolved role of the authenticated caller in this classroom"
+          },
+          "capabilities": {
+            "type": "array",
+            "example": [
+              "configure_classroom",
+              "invite_members",
+              "publish_content",
+              "moderate_chat",
+              "configure_bot",
+              "view_metrics",
+              "chat_classmates",
+              "list_directory",
+              "message_teacher"
+            ],
+            "description": "Server-derived capabilities granted to the caller in this classroom",
+            "items": {
+              "type": "string",
+              "enum": [
+                "manage_school",
+                "configure_classroom",
+                "invite_members",
+                "publish_content",
+                "moderate_chat",
+                "configure_bot",
+                "view_metrics",
+                "participate_activities",
+                "chat_classmates",
+                "list_directory",
+                "message_teacher"
+              ]
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom creation timestamp in UTC (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-11-07T20:00:00.000Z",
+            "description": "Classroom last update timestamp in UTC (ISO 8601)"
+          },
+          "deskCount": {
+            "type": "number",
+            "example": 12,
+            "description": "Total number of desks provisioned in the classroom"
+          },
+          "pet": {
+            "nullable": true,
+            "description": "The classroom pet state",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ClassroomPetSummaryDto" }]
+          },
+          "availablePanels": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassroomPanelKey" },
+            "description": "Stable, unique panel availability for the authorized caller, not action permissions. An absent panel is unavailable; a present panel may be empty. Pet is reserved and never emitted.",
+            "example": ["grades"]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "subject",
+          "schoolId",
+          "independentTeacherId",
+          "adultMode",
+          "chatMuted",
+          "collaborationLocked",
+          "gamesDisabled",
+          "myRole",
+          "capabilities",
+          "createdAt",
+          "updatedAt",
+          "deskCount",
+          "pet",
+          "availablePanels"
+        ]
+      },
       "UpdateClassroomDto": {
         "type": "object",
         "properties": {
@@ -2764,6 +3524,325 @@
           }
         },
         "required": ["updated"]
+      },
+      "CreateSubmissionBodyDto": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": { "type": "string", "format": "binary" },
+            "minItems": 1,
+            "maxItems": 5,
+            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX."
+          }
+        },
+        "required": ["files"]
+      },
+      "SubmissionFileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "originalName": {
+            "type": "string",
+            "description": "Sanitized display name (no path, no control characters)."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Detected from the file bytes, never from the client-declared type.",
+            "example": "application/pdf"
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4,
+            "description": "Zero-based order in which the files were sent."
+          }
+        },
+        "required": ["id", "originalName", "contentType", "sizeBytes", "position"]
+      },
+      "SubmissionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server clock, ISO 8601 UTC, taken once the activity row was locked."
+          },
+          "isLate": {
+            "type": "boolean",
+            "description": "True when submitted after `dueAt` on an activity with `allowLate`."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["submitted"],
+            "description": "Derived state of the work."
+          },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionFileResponseDto" }
+          }
+        },
+        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+      },
+      "SubmissionFileDownloadDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "originalName": {
+            "type": "string",
+            "description": "Sanitized display name (no path, no control characters)."
+          },
+          "contentType": {
+            "type": "string",
+            "description": "Detected from the file bytes, never from the client-declared type.",
+            "example": "application/pdf"
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4,
+            "description": "Zero-based order in which the files were sent."
+          },
+          "downloadUrl": {
+            "type": "string",
+            "description": "Short-lived signed URL that downloads the file without credentials. Treat it as a secret: do not log or share it; request the submission again for a fresh one."
+          },
+          "downloadUrlExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 UTC instant after which `downloadUrl` stops working."
+          }
+        },
+        "required": [
+          "id",
+          "originalName",
+          "contentType",
+          "sizeBytes",
+          "position",
+          "downloadUrl",
+          "downloadUrlExpiresAt"
+        ]
+      },
+      "SubmissionDownloadResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server clock, ISO 8601 UTC, taken once the activity row was locked."
+          },
+          "isLate": {
+            "type": "boolean",
+            "description": "True when submitted after `dueAt` on an activity with `allowLate`."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["submitted"],
+            "description": "Derived state of the work."
+          },
+          "files": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionFileDownloadDto" }
+          }
+        },
+        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+      },
+      "PointEntryKind": { "type": "string", "enum": ["EARNING", "DEBIT", "COMPENSATION"] },
+      "PointMovementDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "entryKind": { "allOf": [{ "$ref": "#/components/schemas/PointEntryKind" }] },
+          "amount": {
+            "type": "integer",
+            "description": "Signed integer delta: positive for earnings, negative for debits, non-zero signed for compensations.",
+            "example": 50
+          },
+          "sourceType": { "type": "string", "maxLength": 40, "example": "submission_grade" },
+          "sourceId": { "type": "string", "format": "uuid" },
+          "reason": {
+            "type": "string",
+            "maxLength": 240,
+            "example": "Activity graded: Fractions Quiz"
+          },
+          "actorId": { "type": "string", "format": "uuid", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "entryKind",
+          "amount",
+          "sourceType",
+          "sourceId",
+          "reason",
+          "actorId",
+          "createdAt"
+        ]
+      },
+      "StudentWalletDto": {
+        "type": "object",
+        "properties": {
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Server-derived current balance computed as SUM(amount) in the classroom.",
+            "example": 120
+          },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PointMovementDto" }
+          },
+          "page": { "type": "integer", "minimum": 1, "example": 1 },
+          "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "Total number of ledger entries for this student in the classroom."
+          }
+        },
+        "required": ["classroomId", "studentId", "balance", "items", "page", "pageSize", "total"]
+      },
+      "ShopItemKind": {
+        "type": "string",
+        "enum": ["CLASSROOM_ITEM", "AVATAR_ACCESSORY", "DESK_UPGRADE", "PET_ACCESSORY"]
+      },
+      "ShopCatalogItemDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "name": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "description": {
+            "type": "string",
+            "example": "Classic blue cap accessory for your 3D avatar."
+          },
+          "kind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] },
+          "price": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Effective server price in this classroom (override when set, else defaultPrice).",
+            "example": 50
+          },
+          "isImplemented": {
+            "type": "boolean",
+            "description": "Whether this catalog item has a working server/client implementation."
+          },
+          "isPurchasable": {
+            "type": "boolean",
+            "description": "True when implemented and not already owned by the student or classroom."
+          },
+          "ownedByStudent": { "type": "boolean" },
+          "ownedByClassroom": { "type": "boolean" },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": { "assetId": "cap", "slot": "head" },
+            "description": "Server-defined item metadata for client asset rendering."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "description",
+          "kind",
+          "price",
+          "isImplemented",
+          "isPurchasable",
+          "ownedByStudent",
+          "ownedByClassroom",
+          "metadata",
+          "createdAt"
+        ]
+      },
+      "StudentPurchaseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "shopItemKind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] },
+          "pointTransactionId": { "type": "string", "format": "uuid" },
+          "pricePaid": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Server-recorded points paid at purchase time.",
+            "example": 50
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "studentId",
+          "shopItemId",
+          "shopItemCode",
+          "shopItemName",
+          "shopItemKind",
+          "pointTransactionId",
+          "pricePaid",
+          "createdAt"
+        ]
+      },
+      "PurchaseShopItemDto": {
+        "type": "object",
+        "properties": {
+          "shopItemId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID of the catalog shop item to purchase.",
+            "example": "00000000-0000-4000-8000-000000000101"
+          }
+        },
+        "required": ["shopItemId"]
+      },
+      "ClassroomItemState": { "type": "string", "enum": ["UNLOCKED", "ACTIVE", "DISABLED"] },
+      "ClassroomItemDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "purchaseId": { "type": "string", "format": "uuid" },
+          "state": { "allOf": [{ "$ref": "#/components/schemas/ClassroomItemState" }] },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "classroomId", "shopItemId", "purchaseId", "state", "createdAt"]
+      },
+      "PurchaseResponseDto": {
+        "type": "object",
+        "properties": {
+          "purchase": { "$ref": "#/components/schemas/StudentPurchaseDto" },
+          "classroomItem": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ClassroomItemDto" }]
+          },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Server-derived student points balance after this operation.",
+            "example": 70
+          },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when the response replays an earlier purchase for the same Idempotency-Key."
+          }
+        },
+        "required": ["purchase", "classroomItem", "balance", "replayed"]
       },
       "RosterGuardianDto": {
         "type": "object",
@@ -3198,6 +4277,21 @@
             "items": { "$ref": "#/components/schemas/QuestionInputDto" }
           }
         }
+      },
+      "ClassroomPanelKey": {
+        "type": "string",
+        "enum": [
+          "activities",
+          "material",
+          "grades",
+          "chat",
+          "notices",
+          "shop",
+          "bot",
+          "members",
+          "settings",
+          "pet"
+        ]
       }
     }
   }

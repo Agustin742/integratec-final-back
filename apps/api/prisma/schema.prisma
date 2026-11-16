@@ -61,6 +61,14 @@ enum RegistrationPath {
   @@map("registration_path")
 }
 
+enum PointEntryKind {
+  EARNING      @map("earning")
+  DEBIT        @map("debit")
+  COMPENSATION @map("compensation")
+
+  @@map("point_entry_kind")
+}
+
 enum ActivityType {
   TP   @map("tp")
   EXAM @map("exam")
@@ -82,6 +90,23 @@ enum ActivityState {
   @@map("activity_state")
 }
 
+enum ShopItemKind {
+  CLASSROOM_ITEM   @map("classroom_item")
+  AVATAR_ACCESSORY @map("avatar_accessory")
+  DESK_UPGRADE     @map("desk_upgrade")
+  PET_ACCESSORY    @map("pet_accessory")
+
+  @@map("shop_item_kind")
+}
+
+enum ClassroomItemState {
+  UNLOCKED @map("unlocked")
+  ACTIVE   @map("active")
+  DISABLED @map("disabled")
+
+  @@map("classroom_item_state")
+}
+
 model User {
   id               String           @id @default(uuid()) @db.Uuid
   email            String           @unique @db.VarChar(255)
@@ -91,20 +116,24 @@ model User {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  avatarConfig          AvatarConfiguration?
-  sessions              Session[]
-  passwordResetTokens   PasswordResetToken[]
-  schoolMemberships     SchoolMember[]
-  independentClassrooms Classroom[]           @relation("IndependentTeacherClassrooms")
-  classroomMemberships  ClassroomMembership[]
-  createdInvitations    Invitation[]          @relation("InvitationCreator")
-  parentOfLinks         ParentLink[]          @relation("ParentLinks")
-  childInLinks          ParentLink[]          @relation("ChildLinks")
-  usedJoinCodes         JoinCodeUsage[]
-  notifications         Notification[]        @relation("NotificationRecipient")
-  studentNotifications  Notification[]        @relation("NotificationStudent")
-  activityMetrics       ActivityMetric[]
-  createdActivities     Activity[]
+  avatarConfig             AvatarConfiguration?
+  sessions                 Session[]
+  passwordResetTokens      PasswordResetToken[]
+  schoolMemberships        SchoolMember[]
+  independentClassrooms    Classroom[]           @relation("IndependentTeacherClassrooms")
+  classroomMemberships     ClassroomMembership[]
+  createdInvitations       Invitation[]          @relation("InvitationCreator")
+  parentOfLinks            ParentLink[]          @relation("ParentLinks")
+  childInLinks             ParentLink[]          @relation("ChildLinks")
+  usedJoinCodes            JoinCodeUsage[]
+  notifications            Notification[]        @relation("NotificationRecipient")
+  studentNotifications     Notification[]        @relation("NotificationStudent")
+  activityMetrics          ActivityMetric[]
+  studentPointTransactions PointTransaction[]    @relation("StudentPointTransactions")
+  actorPointTransactions   PointTransaction[]    @relation("ActorPointTransactions")
+  studentPurchases         StudentPurchase[]     @relation("StudentPurchases")
+  createdActivities        Activity[]
+  submissions              Submission[]
 
   @@map("users")
 }
@@ -231,6 +260,10 @@ model Classroom {
   parentLinks        ParentLink[]
   notifications      Notification[]
   activityMetrics    ActivityMetric[]
+  pointTransactions  PointTransaction[]
+  shopItemOverrides  ClassroomShopItem[]
+  classroomItems     ClassroomItem[]
+  studentPurchases   StudentPurchase[]
   activities         Activity[]
 
   @@index([schoolId])
@@ -382,9 +415,10 @@ model Activity {
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom Classroom  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  createdBy User       @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  questions Question[]
+  classroom   Classroom    @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  createdBy   User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  questions   Question[]
+  submissions Submission[]
 
   @@index([classroomId, state, deletedAt])
   @@index([classroomId, dueAt, id])
@@ -419,6 +453,48 @@ model Option {
 
   @@unique([questionId, position])
   @@map("options")
+}
+
+/// A student's single submission to a FILE activity (MVP: no resubmission). `submittedAt` is
+/// always set by the server; `isLate` is true when it passed `dueAt` on an `allowLate` activity.
+/// `idempotencyKey` is the client's `Idempotency-Key`. CHECK constraints in the database: key
+/// length 1-255 (see the create_submissions migration).
+model Submission {
+  id             String   @id @default(uuid()) @db.Uuid
+  activityId     String   @map("activity_id") @db.Uuid
+  studentId      String   @map("student_id") @db.Uuid
+  submittedAt    DateTime @map("submitted_at") @db.Timestamptz(6)
+  isLate         Boolean  @default(false) @map("is_late")
+  idempotencyKey String   @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activity Activity         @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  student  User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  files    SubmissionFile[]
+
+  @@unique([activityId, studentId])
+  @@index([studentId])
+  @@map("submissions")
+}
+
+/// One stored file of a submission. Bytes live in private object storage under `storageKey`.
+/// CHECK constraints in the database: `sizeBytes` 1 byte-10 MB, `position` 0-4 (at most five
+/// files), `originalName` length 1-255 and `contentType` limited to the allow-list.
+model SubmissionFile {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @map("submission_id") @db.Uuid
+  storageKey   String   @unique @map("storage_key")
+  originalName String   @map("original_name")
+  contentType  String   @map("content_type")
+  sizeBytes    Int      @map("size_bytes")
+  position     Int
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, position])
+  @@map("submission_files")
 }
 
 /// Transactional outbox: written in the same transaction as the business change and
@@ -493,4 +569,116 @@ model NotificationDelivery {
 
   @@unique([notificationId, channel])
   @@map("notification_deliveries")
+}
+
+/// Immutable append-only points ledger per student and classroom.
+/// Balance is derived as SUM(amount); entries are never updated or deleted.
+model PointTransaction {
+  id             String         @id @default(uuid()) @db.Uuid
+  classroomId    String         @map("classroom_id") @db.Uuid
+  studentId      String         @map("student_id") @db.Uuid
+  actorId        String?        @map("actor_id") @db.Uuid
+  entryKind      PointEntryKind @map("entry_kind")
+  amount         Int
+  sourceType     String         @map("source_type") @db.VarChar(40)
+  sourceId       String         @map("source_id") @db.Uuid
+  idempotencyKey String?        @unique @map("idempotency_key") @db.VarChar(128)
+  reason         String         @db.VarChar(240)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  classroom       Classroom        @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student         User             @relation("StudentPointTransactions", fields: [studentId], references: [id], onDelete: Restrict)
+  actor           User?            @relation("ActorPointTransactions", fields: [actorId], references: [id], onDelete: Restrict)
+  studentPurchase StudentPurchase?
+
+  @@index([classroomId, studentId, createdAt, id])
+  @@index([studentId])
+  @@map("point_transactions")
+}
+
+/// Server-owned catalog of purchasable shop items.
+/// Items with `isImplemented = false` cannot be purchased.
+model ShopItem {
+  id            String       @id @default(uuid()) @db.Uuid
+  code          String       @unique @db.VarChar(80)
+  name          String       @db.VarChar(120)
+  description   String       @default("")
+  kind          ShopItemKind
+  defaultPrice  Int          @map("default_price")
+  isActive      Boolean      @default(true) @map("is_active")
+  isImplemented Boolean      @default(false) @map("is_implemented")
+  metadata      Json         @default("{}")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroomOverrides ClassroomShopItem[]
+  classroomItems     ClassroomItem[]
+  purchases          StudentPurchase[]
+
+  @@index([kind, isActive])
+  @@index([defaultPrice, id])
+  @@map("shop_items")
+}
+
+/// Optional per-classroom price and availability overrides for a catalog shop item.
+model ClassroomShopItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  classroomId   String   @map("classroom_id") @db.Uuid
+  shopItemId    String   @map("shop_item_id") @db.Uuid
+  priceOverride Int?     @map("price_override")
+  isEnabled     Boolean  @default(true) @map("is_enabled")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  shopItem  ShopItem  @relation(fields: [shopItemId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, shopItemId])
+  @@index([shopItemId])
+  @@map("classroom_shop_items")
+}
+
+/// Immutable record of a student shop purchase linked to its debit PointTransaction.
+model StudentPurchase {
+  id                 String   @id @default(uuid()) @db.Uuid
+  classroomId        String   @map("classroom_id") @db.Uuid
+  studentId          String   @map("student_id") @db.Uuid
+  shopItemId         String   @map("shop_item_id") @db.Uuid
+  pointTransactionId String   @unique @map("point_transaction_id") @db.Uuid
+  pricePaid          Int      @map("price_paid")
+  idempotencyKey     String   @map("idempotency_key") @db.VarChar(128)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  classroom        Classroom        @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student          User             @relation("StudentPurchases", fields: [studentId], references: [id], onDelete: Restrict)
+  shopItem         ShopItem         @relation(fields: [shopItemId], references: [id], onDelete: Restrict)
+  pointTransaction PointTransaction @relation(fields: [pointTransactionId], references: [id], onDelete: Restrict)
+  classroomItem    ClassroomItem?
+
+  @@unique([classroomId, studentId, shopItemId])
+  @@unique([classroomId, studentId, idempotencyKey])
+  @@index([classroomId, studentId, createdAt, id])
+  @@index([studentId])
+  @@index([shopItemId])
+  @@map("student_purchases")
+}
+
+/// Classroom-wide item unlocked by a student purchase.
+model ClassroomItem {
+  id          String             @id @default(uuid()) @db.Uuid
+  classroomId String             @map("classroom_id") @db.Uuid
+  shopItemId  String             @map("shop_item_id") @db.Uuid
+  purchaseId  String             @unique @map("purchase_id") @db.Uuid
+  state       ClassroomItemState @default(ACTIVE)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom       @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  shopItem  ShopItem        @relation(fields: [shopItemId], references: [id], onDelete: Restrict)
+  purchase  StudentPurchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, shopItemId])
+  @@index([classroomId, state])
+  @@index([shopItemId])
+  @@map("classroom_items")
 }

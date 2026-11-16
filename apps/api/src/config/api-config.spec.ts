@@ -59,6 +59,8 @@ describe('loadApiConfig', () => {
       authDataRetentionSeconds: 2592000,
       authCleanupIntervalSeconds: 86400,
       authCleanupBatchSize: 1000,
+      shopPurchaseRateLimitWindowSeconds: 60,
+      shopPurchaseRateLimitMaxAttempts: 20,
     });
   });
 
@@ -484,6 +486,33 @@ describe('loadApiConfig', () => {
     it.each(['61m', '2h', '1d', '0s', '5', 'abc'])('rejects STORAGE_SIGNED_URL_TTL=%s', (ttl) => {
       expect(messageOf({ ...validEnv(), STORAGE_SIGNED_URL_TTL: ttl })).toContain(
         'STORAGE_SIGNED_URL_TTL',
+      );
+    });
+  });
+
+  describe('shop purchase rate limit settings', () => {
+    it('parses valid SHOP_PURCHASE_RATE_LIMIT_WINDOW and SHOP_PURCHASE_RATE_LIMIT_MAX', () => {
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          SHOP_PURCHASE_RATE_LIMIT_WINDOW: '2m',
+          SHOP_PURCHASE_RATE_LIMIT_MAX: '50',
+        }),
+      ).toMatchObject({
+        shopPurchaseRateLimitWindowSeconds: 120,
+        shopPurchaseRateLimitMaxAttempts: 50,
+      });
+    });
+
+    it.each(['0s', '61m', '2h', 'abc'])('rejects SHOP_PURCHASE_RATE_LIMIT_WINDOW=%s', (value) => {
+      expect(messageOf({ ...validEnv(), SHOP_PURCHASE_RATE_LIMIT_WINDOW: value })).toContain(
+        'SHOP_PURCHASE_RATE_LIMIT_WINDOW',
+      );
+    });
+
+    it.each(['0', '1001', '-1', 'abc'])('rejects SHOP_PURCHASE_RATE_LIMIT_MAX=%s', (value) => {
+      expect(messageOf({ ...validEnv(), SHOP_PURCHASE_RATE_LIMIT_MAX: value })).toContain(
+        'SHOP_PURCHASE_RATE_LIMIT_MAX',
       );
     });
   });

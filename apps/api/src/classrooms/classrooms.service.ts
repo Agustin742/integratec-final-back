@@ -7,6 +7,7 @@ import {
 import { ClassroomRole, MembershipState, type Prisma, SchoolRole } from '@prisma/client';
 import {
   AccessVerificationService,
+  computeClassroomPanels,
   type ClassroomAccessRole,
   type ClassroomCapability,
   UUID_PATTERN,
@@ -15,6 +16,7 @@ import { paginated, toSkipTake, type Paginated } from '../http/pagination/pagina
 import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import {
   DEFAULT_CLASSROOM_CONTROL_STATES,
   DEFAULT_INITIAL_DESK_COUNT,
@@ -22,6 +24,7 @@ import {
   DEFAULT_PET_SPECIES,
 } from './classrooms.constants';
 import type {
+  ClassroomContextResponseDto,
   ClassroomDetailResponseDto,
   ClassroomListItemDto,
 } from './dto/classroom-response.dto';
@@ -58,6 +61,7 @@ export class ClassroomsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly accessService: AccessVerificationService,
+    private readonly contextRecorder: ClassroomContextRecorder,
   ) {}
 
   /**
@@ -138,7 +142,7 @@ export class ClassroomsService {
    * Retrieves the classroom detail and server-derived role/capabilities for the actor.
    * Responds 404 if the classroom does not exist or the actor has no valid access.
    */
-  async findOne(actorUserId: string, classroomId: string): Promise<ClassroomDetailResponseDto> {
+  async findOne(actorUserId: string, classroomId: string): Promise<ClassroomContextResponseDto> {
     if (!UUID_PATTERN.test(actorUserId)) {
       throw new UnauthorizedException('Authentication is required');
     }
@@ -163,7 +167,10 @@ export class ClassroomsService {
       throw new NotFoundException('Classroom not found');
     }
 
-    return this.toDetailResponse(classroom, access.myRole, access.capabilities);
+    return {
+      ...this.toDetailResponse(classroom, access.myRole, access.capabilities),
+      availablePanels: computeClassroomPanels(access.capabilities),
+    };
   }
 
   /**
@@ -214,13 +221,21 @@ export class ClassroomsService {
       updateData.gamesDisabled = dto.gamesDisabled;
     }
 
-    const updated = await this.prisma.classroom.update({
-      where: { id: classroomId },
-      data: updateData,
-      include: {
-        pet: true,
-        _count: { select: { desks: true } },
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const classroom = await tx.classroom.update({
+        where: { id: classroomId },
+        data: updateData,
+        include: {
+          pet: true,
+          _count: { select: { desks: true } },
+        },
+      });
+      // Null-only ignored fields still retain their previous update response behavior.
+      // Any effective update input may invalidate, even if its value is unchanged.
+      if (Object.keys(updateData).length > 0) {
+        await this.contextRecorder.recordChanged(tx, classroomId);
+      }
+      return classroom;
     });
 
     return this.toDetailResponse(updated, access.myRole, access.capabilities);

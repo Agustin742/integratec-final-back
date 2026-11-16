@@ -15,14 +15,14 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 - The server **MUST** derive the classroom from the stored activity, not from client-supplied identifiers.
 - Visible states for an activity's work are **pending**, **submitted**, and **graded**. The state of a student's work is derived from the Submission and Grade records, not stored in a separate field that can disagree with them.
 - Title, description, and due date **MUST** be validated and bounded. Limits are **open** and **MUST** be recorded in the contract before release. Due-date semantics follow [Data and time](./data-and-time.md) and **MUST NOT** be shifted by incidental conversion. Deadlines are stored as UTC instants, shown in the school's time zone, and lateness is decided by the server using UTC (decision D10).
-- Editing a published activity after submissions exist, and deleting one with submissions, are **open**. Until decided, deletion **MUST** be refused when submissions or grades exist.
+- Editing a published activity after submissions exist, and deleting one with submissions, are decided in [D16](../docs/technical-justification.md#d16-file-submission-defaults): question edits and deletion **MUST** be refused once a submission exists. A grade always belongs to a submission, so the same lock covers grades.
 
 ## Exams
 
 - An exam has a start and an end (or a duration); the server decides whether it is **in progress** from persisted values and server time, never from a client clock.
 - While an exam is in progress for a classroom, the AI bot **MUST** be unavailable to the students taking it; see [AI bot and daily briefing](./ai-bot-and-daily-briefing.md). The bot check **MUST** read the same exam-in-progress state as this rule so both agree.
 - Whether an exam applies to the whole classroom or to selected students is **open**; the default assumption is the whole classroom.
-- A submission after the exam ends **MUST** be rejected or flagged as late according to a recorded decision (**open**).
+- A submission after the exam ends **MUST** be rejected or flagged as late according to a recorded decision ([D16](../docs/technical-justification.md#d16-file-submission-defaults): rejected unless the activity sets `allowLate`, then stored with `isLate`).
 
 ## Multiple-choice format
 
@@ -35,12 +35,12 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 
 - A submission references one or more files stored in object storage through NestJS. The server **MUST** validate file type (allow-list), size, and count, and **MUST NOT** trust client-declared MIME types; see [Security](./security.md) and [AWS infrastructure](./aws-infrastructure.md).
 - Files are private. Access is by short-lived signed URLs issued only after an authorization check on the submission's classroom. Direct public object access **MUST NOT** exist.
-- The exact limits and any malware scanning are **open**.
+- Limits are decided in [D16](../docs/technical-justification.md#d16-file-submission-defaults): PDF, PNG, JPEG and DOCX detected by content, 10 MB per file, 1 to 5 files. Malware scanning is **open**.
 
 ## Submissions
 
 - A student may submit only to an activity of a classroom where they are enrolled, only when it is published, and subject to its deadline policy.
-- Author and timestamps are set by the server. There is at most one current submission per (activity, student); whether resubmission is allowed is configured by the teacher per activity.
+- Author and timestamps are set by the server. There is at most one current submission per (activity, student); whether resubmission is allowed is configured by the teacher per activity (the MVP allows a single submission and no resubmission, [D16](../docs/technical-justification.md#d16-file-submission-defaults)).
 - A submission is readable by its student, by staff with authority over the classroom, and, as a grade only, by the student's linked parents. A student **MUST NOT** read other students' submissions.
 - Submitting **MUST** be idempotent for a retried request (for example through an idempotency key) so a network retry does not create duplicates.
 

@@ -168,6 +168,97 @@ describe('OpenAPI document', () => {
     ]);
   });
 
+  it('publishes the classroom shop catalog, purchase history, and idempotent purchase contracts', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+
+    const itemsOp = doc.paths['/classrooms/{id}/shop/items']?.get;
+    expect(itemsOp?.security).toEqual([{ bearer: [] }]);
+    expect(itemsOp?.responses?.['200']).toBeDefined();
+
+    const purchasesOp = doc.paths['/classrooms/{id}/shop/purchases']?.get;
+    expect(purchasesOp?.security).toEqual([{ bearer: [] }]);
+    expect(purchasesOp?.responses?.['200']).toBeDefined();
+
+    const purchaseOp = doc.paths['/classrooms/{id}/shop/purchase']?.post;
+    expect(purchaseOp?.security).toEqual([{ bearer: [] }]);
+    expect(purchaseOp?.responses?.['201']).toBeDefined();
+    expect(purchaseOp?.responses?.['200']).toBeDefined();
+    expect(purchaseOp?.responses?.['409']).toBeDefined();
+    expect(purchaseOp?.responses?.['429']).toBeDefined();
+    expect(purchaseOp?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+      ]),
+    );
+
+    const schemas = doc.components?.schemas ?? {};
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining([
+        'ShopCatalogItemDto',
+        'StudentPurchaseDto',
+        'ClassroomItemDto',
+        'PurchaseResponseDto',
+        'ShopItemKind',
+        'ClassroomItemState',
+      ]),
+    );
+  });
+
+  it('adds panel availability only to the classroom GET context', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const operation = doc.paths['/classrooms/{id}']?.get;
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(operation?.responses ?? {})).toEqual(['200', '401', '404']);
+    const contextRef = '#/components/schemas/ClassroomContextResponseDto';
+    expect(operation?.responses['200']).toMatchObject({
+      content: { 'application/json': { schema: { $ref: contextRef } } },
+    });
+    const schemas = doc.components?.schemas ?? {};
+    const panelRef = '#/components/schemas/ClassroomPanelKey';
+    expect(schemas.ClassroomContextResponseDto).toMatchObject({
+      required: expect.arrayContaining(['myRole', 'capabilities', 'availablePanels']),
+      properties: {
+        availablePanels: {
+          type: 'array',
+          description: expect.stringContaining('not action permissions'),
+          items: { $ref: panelRef },
+        },
+      },
+    });
+    expect(schemas.ClassroomPanelKey).toMatchObject({
+      enum: [
+        'activities',
+        'material',
+        'grades',
+        'chat',
+        'notices',
+        'shop',
+        'bot',
+        'members',
+        'settings',
+        'pet',
+      ],
+    });
+    expect(schemas.ClassroomPanelKey).not.toHaveProperty('description');
+    for (const name of ['ClassroomListItemDto', 'ClassroomDetailResponseDto']) {
+      const schema = schemas[name];
+      const properties = schema && 'properties' in schema && schema.properties;
+      expect(properties).not.toHaveProperty('availablePanels');
+    }
+    const unchangedOperations = [
+      ['/classrooms', 'post', '201'],
+      ['/classrooms/{id}', 'patch', '200'],
+    ] as const;
+    for (const [path, method, status] of unchangedOperations) {
+      const detailRef = '#/components/schemas/ClassroomDetailResponseDto';
+      expect(doc.paths[path]?.[method]?.responses[status]).toMatchObject({
+        content: { 'application/json': { schema: { $ref: detailRef } } },
+      });
+    }
+  });
+
   it('serves the JSON document and the Scalar UI outside production', async () => {
     app = await createApp('development');
 
