@@ -84,11 +84,11 @@ output "database_master_user_secret_arn" {
 }
 
 output "ecr_repository_urls" {
-  description = "ECR repository URL of each service (api, realtime); images are pushed and pulled here."
+  description = "ECR repository URL of each service, keyed by service name; images are pushed and pulled here."
   value       = module.registry.repository_urls
 }
 
 output "ecr_repository_arns" {
-  description = "ECR repository ARN of each service (api, realtime), for least-privilege IAM policies."
+  description = "ECR repository ARN of each service, keyed by service name, for least-privilege IAM policies."
   value       = module.registry.repository_arns
 }

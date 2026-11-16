@@ -19,14 +19,25 @@ variable "services" {
   }
 }
 
-variable "max_image_count" {
-  description = "Number of most recent images kept per repository; older ones expire."
-  type        = number
-  default     = 10
+variable "release_tag_prefix" {
+  description = "Tag prefix that marks deployable images; the deploy pipeline must tag every image meant to run with it."
+  type        = string
+  default     = "release-"
 
   validation {
-    condition     = var.max_image_count >= 1 && floor(var.max_image_count) == var.max_image_count
-    error_message = "max_image_count must be an integer greater than or equal to 1."
+    condition     = can(regex("^[A-Za-z0-9_.-]{1,128}$", var.release_tag_prefix))
+    error_message = "release_tag_prefix must be 1 to 128 characters of letters, digits, underscores, periods and hyphens (the characters ECR allows in tags)."
+  }
+}
+
+variable "max_release_images" {
+  description = "Number of most recent release-tagged images kept per repository; older ones expire."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.max_release_images >= 1 && floor(var.max_release_images) == var.max_release_images
+    error_message = "max_release_images must be an integer greater than or equal to 1."
   }
 }
 
@@ -38,5 +49,16 @@ variable "untagged_expiry_days" {
   validation {
     condition     = var.untagged_expiry_days >= 1 && floor(var.untagged_expiry_days) == var.untagged_expiry_days
     error_message = "untagged_expiry_days must be an integer greater than or equal to 1."
+  }
+}
+
+variable "non_release_expiry_days" {
+  description = "Days after push when tagged images without the release prefix (for example CI builds) expire."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.non_release_expiry_days >= 1 && floor(var.non_release_expiry_days) == var.non_release_expiry_days
+    error_message = "non_release_expiry_days must be an integer greater than or equal to 1."
   }
 }

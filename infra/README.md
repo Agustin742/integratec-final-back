@@ -313,6 +313,8 @@ The `terraform` job in `.github/workflows/ci.yml` runs on every pull request, fo
 3. `terraform validate`
 4. `terraform test` (mocked AWS provider)
 
+Test convention: every `*.tftest.hcl` in `envs/prod/tests` carries the same `override_data` for the ECR lifecycle policy document in its `mock_provider`, because the mock returns non-JSON for data source `.json` and the registry module is part of every plan. Keep it in new test files; the rule contents are asserted through the `lifecycle_rules` module output.
+
 ## Decisions
 
 | Decision | Choice | Why |

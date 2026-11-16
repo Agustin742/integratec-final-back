@@ -27,3 +27,8 @@ output "lifecycle_policies" {
   description = "Lifecycle policy JSON attached to each repository, keyed by service name."
   value       = { for k, p in aws_ecr_lifecycle_policy.this : k => p.policy }
 }
+
+output "lifecycle_rules" {
+  description = "Settings of each lifecycle rule (priority, tag selection, count), built from the same locals as the policy document, for tests and review."
+  value       = local.lifecycle_rules
+}

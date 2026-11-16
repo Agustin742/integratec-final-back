@@ -71,9 +71,42 @@ run "lifecycle_policy_is_attached_to_each_repository" {
   }
 }
 
+run "lifecycle_rules_protect_release_images" {
+  command = plan
+
+  # Rule contents come from the module output built from the same locals that feed
+  # the policy document (the mock cannot render the document itself).
+  assert {
+    condition     = length(module.registry.lifecycle_rules) == 3 && length(distinct([for r in module.registry.lifecycle_rules : r.priority])) == 3
+    error_message = "The lifecycle policy must have exactly three rules with distinct priorities."
+  }
+
+  assert {
+    condition     = module.registry.lifecycle_rules[0].tag_status == "untagged" && module.registry.lifecycle_rules[0].count_type == "sinceImagePushed" && module.registry.lifecycle_rules[0].count_number == 7
+    error_message = "Rule 1 must expire untagged images 7 days after push."
+  }
+
+  assert {
+    condition     = module.registry.lifecycle_rules[1].tag_status == "tagged" && module.registry.lifecycle_rules[1].tag_prefix_list == ["release-"] && module.registry.lifecycle_rules[1].count_type == "imageCountMoreThan" && module.registry.lifecycle_rules[1].count_number == 20
+    error_message = "Rule 2 must keep the last 20 images tagged with the release- prefix."
+  }
+
+  assert {
+    condition     = module.registry.lifecycle_rules[2].tag_status == "any" && module.registry.lifecycle_rules[2].count_type == "sinceImagePushed" && module.registry.lifecycle_rules[2].count_number == 30
+    error_message = "Rule 3 must expire any remaining image 30 days after push."
+  }
+
+  assert {
+    condition     = module.registry.lifecycle_rules[2].priority == max([for r in module.registry.lifecycle_rules : r.priority]...) && module.registry.lifecycle_rules[0].priority < module.registry.lifecycle_rules[1].priority
+    error_message = "The tag_status any rule must have the highest priority number (ECR evaluates it last) and the untagged rule must precede the release rule."
+  }
+}
+
 run "static_scan_of_registry_module" {
   command = plan
 
+  # The var.project != "" terms give each assertion a reference to the configuration;
+  # Terraform rejects conditions that only call file functions on constants.
   assert {
     condition     = var.project != "" && length(fileset("../../modules/registry", "*.tf")) > 0
     error_message = "The static scan found no .tf files in modules/registry; check the relative path."
@@ -91,21 +124,6 @@ run "static_scan_of_registry_module" {
     condition     = var.project != "" && length(regexall("(?m)^[[:space:]]*image_tag_mutability[[:space:]]*=[[:space:]]*\"IMMUTABLE\"", file("../../modules/registry/repository.tf"))) == 1
     error_message = "image_tag_mutability must be set to IMMUTABLE once."
   }
-
-  assert {
-    condition     = var.project != "" && length(regexall("(?m)^[[:space:]]*count_type[[:space:]]*=[[:space:]]*\"sinceImagePushed\"", file("../../modules/registry/lifecycle.tf"))) == 1 && length(regexall("(?m)^[[:space:]]*tag_status[[:space:]]*=[[:space:]]*\"untagged\"", file("../../modules/registry/lifecycle.tf"))) == 1
-    error_message = "Untagged images must expire by age (sinceImagePushed)."
-  }
-
-  assert {
-    condition     = var.project != "" && length(regexall("(?m)^[[:space:]]*count_type[[:space:]]*=[[:space:]]*\"imageCountMoreThan\"", file("../../modules/registry/lifecycle.tf"))) == 1 && length(regexall("(?m)^[[:space:]]*count_number[[:space:]]*=[[:space:]]*var[.]max_image_count", file("../../modules/registry/lifecycle.tf"))) == 1
-    error_message = "The last var.max_image_count images must be kept (imageCountMoreThan)."
-  }
-
-  assert {
-    condition     = var.project != "" && regex("priority[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]+description[^\n]*[[:space:]]+selection[[:space:]]*[{][[:space:]]*tag_status[[:space:]]*=[[:space:]]*\"untagged\"", file("../../modules/registry/lifecycle.tf"))[0] == "1" && regex("priority[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]+description[^\n]*[[:space:]]+selection[[:space:]]*[{][[:space:]]*tag_status[[:space:]]*=[[:space:]]*\"any\"", file("../../modules/registry/lifecycle.tf"))[0] == "2"
-    error_message = "The tag_status any rule must have the highest priority number (evaluated last)."
-  }
 }
 
 run "rejects_invalid_name_prefix" {
@@ -122,7 +140,7 @@ run "rejects_invalid_name_prefix" {
   expect_failures = [var.name_prefix]
 }
 
-run "rejects_zero_max_image_count" {
+run "rejects_empty_services" {
   command = plan
 
   module {
@@ -130,11 +148,56 @@ run "rejects_zero_max_image_count" {
   }
 
   variables {
-    name_prefix     = "aula-virtual-prod"
-    max_image_count = 0
+    name_prefix = "aula-virtual-prod"
+    services    = []
   }
 
-  expect_failures = [var.max_image_count]
+  expect_failures = [var.services]
+}
+
+run "rejects_uppercase_service" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix = "aula-virtual-prod"
+    services    = ["Api"]
+  }
+
+  expect_failures = [var.services]
+}
+
+run "rejects_underscore_service" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix = "aula-virtual-prod"
+    services    = ["real_time"]
+  }
+
+  expect_failures = [var.services]
+}
+
+run "rejects_zero_max_release_images" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix        = "aula-virtual-prod"
+    max_release_images = 0
+  }
+
+  expect_failures = [var.max_release_images]
 }
 
 run "rejects_zero_untagged_expiry_days" {
@@ -150,4 +213,49 @@ run "rejects_zero_untagged_expiry_days" {
   }
 
   expect_failures = [var.untagged_expiry_days]
+}
+
+run "rejects_zero_non_release_expiry_days" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    non_release_expiry_days = 0
+  }
+
+  expect_failures = [var.non_release_expiry_days]
+}
+
+run "rejects_empty_release_tag_prefix" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix        = "aula-virtual-prod"
+    release_tag_prefix = ""
+  }
+
+  expect_failures = [var.release_tag_prefix]
+}
+
+run "rejects_release_tag_prefix_with_invalid_characters" {
+  command = plan
+
+  module {
+    source = "../../modules/registry"
+  }
+
+  variables {
+    name_prefix        = "aula-virtual-prod"
+    release_tag_prefix = "release/*"
+  }
+
+  expect_failures = [var.release_tag_prefix]
 }
