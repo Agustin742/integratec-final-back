@@ -1,5 +1,15 @@
 # Tracker — Agustin
 
+## 2026-11-16 — Prod RDS PostgreSQL (#60)
+
+- **Status:** in-progress (commits on `feat/60-rds-postgres`, stacked on `feat/59-network-ec2-host`; PR not opened yet; nothing applied to AWS)
+- **Area / files:** `infra/modules/database/`, `infra/envs/prod/` (`main.tf`, `outputs.tf`, `tests/`), `infra/README.md`
+- **Change:** Added the database module and wired it in `envs/prod`. A database security group allows TCP 5432 only from the host security group and has no egress. A DB subnet group uses the private subnets, validated to span two distinct Availability Zones. The RDS instance runs PostgreSQL 16 (automatic minor upgrades) on `db.t4g.micro` with 20 GiB encrypted gp3, single-AZ and not public, with 7 days of backups (point-in-time restore), `deletion_protection`, `prevent_destroy` and a final snapshot `aula-virtual-prod-db-final`. RDS generates the master password in Secrets Manager; Terraform never sees it and the only credential output is `database_master_user_secret_arn`. Other outputs: endpoint, port and database name. Documented the resources, credentials, how #61 will read the secret and build `DATABASE_URL` for the api container only, backups and the point-in-time restore command, deletion procedure and snapshot cleanup, and the cost rows in `infra/README.md`. `terraform test` has 78 passing tests in `envs/prod`.
+- **Decisions (2026-11-16):** PostgreSQL 16 to match Docker Compose and CI; `db.t4g.micro`, 20 GiB, single-AZ, 7-day retention; the API uses the master user for the MVP.
+- **Reason:** The API cannot start without its database, and #61 needs the endpoint and the secret to deploy it.
+- **Open points for the PR:** nothing has been applied, so the apply-dependent criteria (connectivity from the host, second plan with no changes) are not verified. The restore path is documented but not tested. Cost figures are unverified and Free plan eligibility is not checked. A least-privilege application user is a follow-up. The host's permission to read the secret and `DATABASE_URL` belong to #61. Team access to the private database is tracked in #100.
+- **Next step:** Open the PR into `develop` after approval (after #59 merges); apply only with maintainer approval, together with #61.
+
 ## 2026-11-16 — Prod network and EC2 host with Caddy config (#59)
 
 - **Status:** in-progress (commits on `feat/59-network-ec2-host`; PR not opened yet; nothing applied to AWS)
