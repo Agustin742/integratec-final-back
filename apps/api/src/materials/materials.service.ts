@@ -48,6 +48,7 @@ export class MaterialsService {
     });
     if (access.myRole === 'PARENT')
       throw new ForbiddenException('Material is for staff and students');
+    return access;
   }
 
   async upload(actorId: string, classroomId: string, file: MaterialFile | undefined) {
@@ -92,17 +93,23 @@ export class MaterialsService {
   }
 
   private async resolve(actorId: string, classroomId: string, materialId: string, write = false) {
-    if (!UUID_PATTERN.test(materialId) || !UUID_PATTERN.test(classroomId)) {
+    if (!UUID_PATTERN.test(classroomId)) {
       throw new NotFoundException('Material not found');
     }
-    // Bind the stored resource to the path before evaluating its role. In particular,
-    // a student supplying a foreign material ID must get 404, never a role-based 403.
+    // Verify classroom membership and reject parents before reading the material row so
+    // parents cannot use 403 vs 404 to probe whether a materialId exists in the classroom.
+    const access = await this.authorize(actorId, classroomId);
+    if (!UUID_PATTERN.test(materialId)) {
+      throw new NotFoundException('Material not found');
+    }
     const row = await this.prisma.studyMaterial.findFirst({
       where: { id: materialId, classroomId, removedAt: null },
       select: { id: true, classroomId: true, objectKey: true },
     });
     if (!row) throw new NotFoundException('Material not found');
-    await this.authorize(actorId, row.classroomId, write);
+    if (write && access.myRole === 'STUDENT') {
+      throw new ForbiddenException('Material write requires staff authority');
+    }
     return row;
   }
 

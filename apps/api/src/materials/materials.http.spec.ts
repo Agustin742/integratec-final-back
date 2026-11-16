@@ -217,9 +217,14 @@ describe('study materials HTTP — S1–S5 private classroom material', () => {
         await api('get', parent, classroom, `/${material.id}/download`).expect(
           adultMode ? 404 : 403,
         );
+        await api('get', parent, classroom, `/${randomUUID()}/download`).expect(
+          adultMode ? 404 : 403,
+        );
         const before = await list();
         const count = objects.size;
         await upload(parent).expect(adultMode ? 404 : 403);
+        await api('delete', parent, classroom, `/${material.id}`).expect(adultMode ? 404 : 403);
+        await api('delete', parent, classroom, `/${randomUUID()}`).expect(adultMode ? 404 : 403);
         expect(await list()).toEqual(before);
         expect(objects.size).toBe(count);
       } finally {
@@ -247,6 +252,9 @@ describe('study materials HTTP — S1–S5 private classroom material', () => {
         expect(response.body).not.toHaveProperty('url');
       },
     });
+    await api('delete', teacher, classroom, `/${foreign.id}`).expect(404);
+    await api('delete', student, classroom, `/${foreign.id}`).expect(404);
+    await api('get', otherTeacher, foreignClassroom, `/${foreign.id}/download`).expect(200);
   });
 
   it.each([
@@ -255,10 +263,15 @@ describe('study materials HTTP — S1–S5 private classroom material', () => {
     ['MIME mismatch', pdf, 'lesson.png', 'image/png'],
     ['unsupported bytes', Buffer.from('synthetic plain text'), 'lesson.txt', 'text/plain'],
     ['unsafe filename', pdf, 'bad<script>.pdf', 'application/pdf'],
+    ['dotless filename', pdf, 'pdf', 'application/pdf'],
   ] as const)('rejects %s without public-list or object changes', async (_, bytes, name, mime) => {
     const before = await api('get', teacher);
     const count = objects.size;
-    await upload(teacher, classroom, bytes, name, mime).expect(400);
+    const response = await upload(teacher, classroom, bytes, name, mime).expect(400);
+    expect(response.body.error).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: [expect.objectContaining({ field: 'file' })],
+    });
     expect(await list()).toEqual(before.body);
     expect(objects.size).toBe(count);
   });
@@ -313,12 +326,31 @@ describe('study materials HTTP — S1–S5 private classroom material', () => {
     expect(await list()).toEqual(before);
     const count = objects.size;
     await api('delete', teacher, classroom, `/${material.id}`).expect(204);
+    await api('delete', teacher, classroom, `/${material.id}`).expect(404);
     expect(
       (await list(student)).items.some((item: { id: string }) => item.id === material.id),
     ).toBe(false);
     await api('get', student, classroom, `/${material.id}/download`).expect(404);
     expect(objects.size).toBe(count);
     expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('handles concurrent uploads, listings, and competing removals safely', async () => {
+    const [upA, upB, listed] = await Promise.all([
+      upload(teacher, classroom, pdf, 'concurrent-a.pdf', 'application/pdf'),
+      upload(teacher, classroom, png, 'concurrent-b.png', 'image/png'),
+      api('get', student),
+    ]);
+    expect(upA.status).toBe(201);
+    expect(upB.status).toBe(201);
+    expect(upA.body.id).not.toBe(upB.body.id);
+    expect(listed.status).toBe(200);
+
+    const [del1, del2] = await Promise.all([
+      api('delete', teacher, classroom, `/${upA.body.id}`),
+      api('delete', teacher, classroom, `/${upA.body.id}`),
+    ]);
+    expect([del1.status, del2.status].sort((a, b) => a - b)).toEqual([204, 404]);
   });
 
   it.each(['jpg', 'jpeg'])('accepts JPEG signature with the .%s extension', async (extension) => {

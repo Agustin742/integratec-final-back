@@ -1,4 +1,5 @@
-import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
+import { PayloadTooLargeException } from '@nestjs/common';
+import { RequestValidationException } from '../http/validation';
 
 /** Provisional issue #46 policy; see docs/study-material.md, not a malware scanner. */
 export const MATERIAL_MAX_BYTES = 10 * 1024 * 1024;
@@ -14,7 +15,9 @@ export interface MaterialFile {
 /** Identify the leading byte signature; do not infer type from the client declaration. */
 export function validateMaterialFile(file: MaterialFile | undefined) {
   if (!file || file.buffer.length === 0) {
-    throw new BadRequestException('One nonempty file is required');
+    throw new RequestValidationException([
+      { field: 'file', messages: ['One nonempty file is required'] },
+    ]);
   }
   if (file.buffer.length > MATERIAL_MAX_BYTES) throw new PayloadTooLargeException();
   const filename = file.originalname;
@@ -22,7 +25,9 @@ export function validateMaterialFile(file: MaterialFile | undefined) {
     filename.length > MATERIAL_FILENAME_MAX ||
     !/^[A-Za-z0-9][A-Za-z0-9 ._()-]*$/.test(filename)
   ) {
-    throw new BadRequestException('Use a safe filename of at most 120 ASCII characters');
+    throw new RequestValidationException([
+      { field: 'file', messages: ['Use a safe filename of at most 120 ASCII characters'] },
+    ]);
   }
   const bytes = file.buffer;
   let contentType: string;
@@ -37,11 +42,19 @@ export function validateMaterialFile(file: MaterialFile | undefined) {
     contentType = 'image/jpeg';
     extensions = ['jpg', 'jpeg'];
   } else {
-    throw new BadRequestException('Only PDF, PNG and JPEG byte signatures are supported');
+    throw new RequestValidationException([
+      { field: 'file', messages: ['Only PDF, PNG and JPEG byte signatures are supported'] },
+    ]);
   }
-  const extension = filename.split('.').at(-1)?.toLowerCase() ?? '';
+  const dotIndex = filename.lastIndexOf('.');
+  const extension = dotIndex > 0 ? filename.slice(dotIndex + 1).toLowerCase() : '';
   if (file.mimetype !== contentType || !extensions.includes(extension)) {
-    throw new BadRequestException('Filename extension and MIME type must match the file signature');
+    throw new RequestValidationException([
+      {
+        field: 'file',
+        messages: ['Filename extension and MIME type must match the file signature'],
+      },
+    ]);
   }
   return { filename, contentType, sizeBytes: bytes.length };
 }
