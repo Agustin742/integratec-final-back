@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, RegistrationPath, SchoolRole } from '@prisma/client';
+import { ClassroomRole, MembershipState, RegistrationPath, SchoolRole } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -312,6 +312,19 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
     expect(await dispatchNotifications(res.body.id)).toMatchObject({ delivered: 3 });
 
     const before = emailAdapter.sent.length;
+    const service = app.get(NotificationEmailService);
+    const [firstEvent] = await emailEvents(res.body.id);
+
+    // Concurrent first-time delivery before deliveredAt is set: the unique (notification,
+    // channel) receipt claim and stable provider idempotencyKey send exactly one email.
+    await Promise.all([service.deliver(firstEvent.id), service.deliver(firstEvent.id)]);
+    expect(emailAdapter.sent.length).toBe(before + 1);
+    expect(
+      await prisma.notificationDelivery.count({
+        where: { notification: { resourceId: res.body.id }, channel: 'email' },
+      }),
+    ).toBe(1);
+
     expect(await dispatchEmails(res.body.id)).toMatchObject({ delivered: 3 });
     expect(emailAdapter.sent.length).toBe(before + 3);
     const deliveries = await prisma.notificationDelivery.findMany({
@@ -325,14 +338,12 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
       ]),
     );
 
-    // Replay the same email events directly: the unique (notification, channel) claim row
-    // makes every retry a no-op, so no message is duplicated.
+    // Replay the same email events after deliveredAt is populated: early return makes every
+    // retry a no-op, so no message is duplicated.
     const [emailHandler] = app
       .get(OutboxHandlerRegistry)
       .handlersFor(NOTIFICATION_EMAIL_REQUESTED_EVENT);
-    const [firstEvent] = await emailEvents(res.body.id);
     const envelope = await prisma.outboxEvent.findUniqueOrThrow({ where: { id: firstEvent.id } });
-    const service = app.get(NotificationEmailService);
     await Promise.all([service.deliver(envelope.id), service.deliver(envelope.id)]);
     await emailHandler(envelope);
     expect(
@@ -612,7 +623,7 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
   it('rejects invalid text including control characters after a newline', async () => {
     const before = await api('get', `${base(classroomA)}?pageSize=100`, s1).expect(200);
     const eventCount = await classroomEventCount(classroomA);
-    for (const content of [' ', 'Line one\nLine two\u0001', 'x'.repeat(5001)]) {
+    for (const content of [' ', '\u200B', 'Line one\nLine two\u0001', 'x'.repeat(5001)]) {
       await publish(classroomA, content).expect(400);
     }
     expect((await api('get', `${base(classroomA)}?pageSize=100`, s1).expect(200)).body).toEqual(
@@ -642,5 +653,110 @@ describe('announcements PostgreSQL HTTP — communication-and-notifications, cla
       .join(' ');
     const res = await publish(classroomD, withinBound, otherTeacher).expect(201);
     expect(res.body.mentionedUserIds).toHaveLength(20);
+  });
+
+  it('serializes concurrent announcement mutations without duplicate mentions or lost deletes', async () => {
+    const [postA, postB] = await Promise.all([
+      publish(classroomA, 'Concurrente A @Ana Perez'),
+      publish(classroomA, 'Concurrente B @Bruno Dias'),
+    ]);
+    expect(postA.status).toBe(201);
+    expect(postB.status).toBe(201);
+    expect(postA.body.id).not.toBe(postB.body.id);
+    expect([...postA.body.mentionedUserIds].sort()).toEqual([s1, s2].sort());
+    expect(postB.body.mentionedUserIds).toEqual([s3]);
+    expect(await recipientsOf(postA.body.id, 'mention')).toEqual([s1, s2].sort());
+    expect(await recipientsOf(postB.body.id, 'mention')).toEqual([s3]);
+
+    const patchTarget = await publish(classroomA, 'Base para editar').expect(201);
+    const [patchA, patchB] = await Promise.all([
+      api('patch', `${base(classroomA)}/${patchTarget.body.id}`, teacher).send({
+        content: 'Edit A @Ana Perez',
+      }),
+      api('patch', `${base(classroomA)}/${patchTarget.body.id}`, teacher).send({
+        content: 'Edit B @Ana Perez @Bruno Dias',
+      }),
+    ]);
+    expect(patchA.status).toBe(200);
+    expect(patchB.status).toBe(200);
+    const latest = await prisma.announcement.findUniqueOrThrow({
+      where: { id: patchTarget.body.id },
+      select: { content: true },
+    });
+    const expectedMentions =
+      latest.content === 'Edit A @Ana Perez' ? [s1, s2].sort() : [s1, s2, s3].sort();
+    expect((await storedMentions(patchTarget.body.id)).map((row) => row.mentionedUserId)).toEqual(
+      expectedMentions,
+    );
+    const mentionRecipients = await recipientsOf(patchTarget.body.id, 'mention');
+    expect(mentionRecipients.filter((id) => id === s1)).toHaveLength(1);
+    expect(mentionRecipients.filter((id) => id === s2)).toHaveLength(1);
+
+    const doubleDeleteTarget = await publish(classroomA, 'Doble borrado').expect(201);
+    const [del1, del2] = await Promise.all([
+      api('delete', `${base(classroomA)}/${doubleDeleteTarget.body.id}`, teacher),
+      api('delete', `${base(classroomA)}/${doubleDeleteTarget.body.id}`, teacher),
+    ]);
+    expect([del1.status, del2.status].sort((a, b) => a - b)).toEqual([204, 404]);
+
+    const raceTarget = await publish(classroomA, 'Carrera edit vs delete').expect(201);
+    const [racePatch, raceDelete] = await Promise.all([
+      api('patch', `${base(classroomA)}/${raceTarget.body.id}`, teacher).send({
+        title: 'Edit en carrera',
+      }),
+      api('delete', `${base(classroomA)}/${raceTarget.body.id}`, teacher),
+    ]);
+    expect(raceDelete.status).toBe(204);
+    expect([200, 404]).toContain(racePatch.status);
+    const removedRow = await prisma.announcement.findUniqueOrThrow({
+      where: { id: raceTarget.body.id },
+      select: { deletedAt: true },
+    });
+    expect(removedRow.deletedAt).not.toBeNull();
+  });
+
+  it('resolves independent teachers, excludes school-deactivated teachers, enforces boundaries, and rejects sort', async () => {
+    await prisma.user.update({ where: { id: teacher }, data: { displayName: 'Profe Indep' } });
+    await prisma.user.update({ where: { id: teacherC }, data: { displayName: 'Profe Escuela' } });
+    await prisma.schoolMember.update({
+      where: { schoolId_userId: { schoolId: schoolC, userId: teacherC } },
+      data: { state: MembershipState.INACTIVE },
+    });
+    try {
+      const indepMention = await publish(
+        classroomA,
+        'Para @Profe Indep y falso foo@Ana Perez o @Ana Perez2',
+        coTeacher,
+      ).expect(201);
+      expect(indepMention.body.mentionedUserIds).toEqual([teacher]);
+      expect(
+        (await storedMentions(indepMention.body.id)).map((row) => row.mentionedUserId),
+      ).toEqual([teacher]);
+      expect(await recipientsOf(indepMention.body.id, 'mention')).toEqual([teacher]);
+
+      const inactiveSchoolTeacher = await publish(
+        classroomC,
+        'Mencion a @Profe Escuela inactivo',
+        ownerUser,
+      ).expect(201);
+      expect(inactiveSchoolTeacher.body.mentionedUserIds).toEqual([]);
+      expect(await storedMentions(inactiveSchoolTeacher.body.id)).toEqual([]);
+      expect(await recipientsOf(inactiveSchoolTeacher.body.id, 'mention')).toEqual([]);
+
+      await api('get', `${base(classroomA)}?sort=createdAt:asc`, s1).expect(400);
+    } finally {
+      await prisma.schoolMember.update({
+        where: { schoolId_userId: { schoolId: schoolC, userId: teacherC } },
+        data: { state: MembershipState.ACTIVE },
+      });
+      await prisma.user.update({
+        where: { id: teacher },
+        data: { displayName: `Ann ${teacher}` },
+      });
+      await prisma.user.update({
+        where: { id: teacherC },
+        data: { displayName: `Ann ${teacherC}` },
+      });
+    }
   });
 });

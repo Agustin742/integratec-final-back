@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType, PickType } from '@nestjs/swagger';
 import { applyDecorators } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
@@ -68,7 +68,7 @@ function AnnouncementContent(property: string): PropertyDecorator {
     Matches(/^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]*$/u, {
       message: `${property} must not contain control characters`,
     }),
-    Matches(/\S/u, {
+    Matches(/[^\s\u200B-\u200D\uFEFF]/u, {
       message: `${property} must contain text other than whitespace`,
     }),
   );
@@ -119,4 +119,7 @@ export class UpdateAnnouncementDto extends PartialType(CreateAnnouncementDto, {
 }
 
 /** Bulletin-board listing shares the standard offset pagination contract. */
-export class ListAnnouncementsQueryDto extends PaginationQueryDto {}
+export class ListAnnouncementsQueryDto extends PickType(PaginationQueryDto, [
+  'page',
+  'pageSize',
+] as const) {}

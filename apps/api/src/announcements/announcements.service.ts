@@ -55,10 +55,12 @@ interface RosterMember {
   displayName: string;
 }
 
+const MENTION_WORD_CHAR = /[\p{L}\p{N}_]/u;
+
 /**
  * Resolves `@mention` tokens against the classroom roster only; unresolved text stays
  * plain text. At each `@`, the longest roster display name that matches case-insensitively
- * wins, and every member sharing that display name is mentioned.
+ * on word boundaries wins, and every member sharing that display name is mentioned.
  */
 export function resolveMentionedUserIds(
   content: string,
@@ -81,15 +83,19 @@ export function resolveMentionedUserIds(
     const at = content.indexOf('@', searchFrom);
     if (at === -1) break;
     searchFrom = at + 1;
+    if (at > 0 && MENTION_WORD_CHAR.test(content[at - 1] ?? '')) continue;
     const rest = content.slice(at + 1);
     for (const name of names) {
-      if (rest.slice(0, name.length).toLowerCase() === name.toLowerCase()) {
-        for (const userId of userIdsByName.get(name.toLowerCase())!) {
-          if (!resolved.includes(userId)) resolved.push(userId);
-        }
-        searchFrom = at + 1 + name.length;
-        break;
+      if (rest.slice(0, name.length).toLowerCase() !== name.toLowerCase()) continue;
+      const afterIndex = at + 1 + name.length;
+      if (afterIndex < content.length && MENTION_WORD_CHAR.test(content[afterIndex] ?? '')) {
+        continue;
       }
+      for (const userId of userIdsByName.get(name.toLowerCase())!) {
+        if (!resolved.includes(userId)) resolved.push(userId);
+      }
+      searchFrom = afterIndex;
+      break;
     }
   }
   return resolved;
@@ -180,31 +186,34 @@ export class AnnouncementsService {
       throw new ForbiddenException('Announcement access denied');
     }
     const where: Prisma.AnnouncementWhereInput = { classroomId, deletedAt: null };
-    const [total, rows] = await this.prisma.$transaction(
-      [
-        this.prisma.announcement.count({ where }),
-        this.prisma.announcement.findMany({
-          where,
-          select: announcementSelect,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          ...toSkipTake(query),
-        }),
-      ],
+    const { total, rows, mentionRows } = await this.prisma.$transaction(
+      async (tx) => {
+        const [counted, items] = await Promise.all([
+          tx.announcement.count({ where }),
+          tx.announcement.findMany({
+            where,
+            select: announcementSelect,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            ...toSkipTake(query),
+          }),
+        ]);
+        // Mentions are generic (PointTransaction-style source columns), so they are read back
+        // inside the same snapshot instead of through a relation include.
+        const mentions =
+          items.length > 0
+            ? await tx.mention.findMany({
+                where: {
+                  sourceType: ANNOUNCEMENT_SOURCE_TYPE,
+                  sourceId: { in: items.map((row) => row.id) },
+                },
+                orderBy: [{ createdAt: 'asc' }, { mentionedUserId: 'asc' }],
+                select: { sourceId: true, mentionedUserId: true },
+              })
+            : [];
+        return { total: counted, rows: items, mentionRows: mentions };
+      },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    // Mentions are generic (PointTransaction-style source columns), so they are read back
-    // in one batch instead of through a relation include.
-    const mentionRows =
-      rows.length > 0
-        ? await this.prisma.mention.findMany({
-            where: {
-              sourceType: ANNOUNCEMENT_SOURCE_TYPE,
-              sourceId: { in: rows.map((row) => row.id) },
-            },
-            orderBy: { createdAt: 'asc' },
-            select: { sourceId: true, mentionedUserId: true },
-          })
-        : [];
     const mentionedBySource = new Map<string, string[]>();
     for (const mention of mentionRows) {
       const known = mentionedBySource.get(mention.sourceId) ?? [];

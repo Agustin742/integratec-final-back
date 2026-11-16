@@ -610,23 +610,70 @@ export class AccessVerificationService {
   }
 
   /**
-   * Ids of the students currently enrolled in the classroom (role STUDENT, ACTIVE, not deleted),
-   * optionally excluding one user. Owned here so producers (for example activity publishing) fan
-   * out to recipients without querying membership tables themselves. Pass the caller's
-   * transaction client so the read joins that transaction; ordered by id for determinism.
+   * Active classroom members eligible for `@mention` resolution: enrolled students, active
+   * teachers whose school membership is also active when the classroom belongs to a school,
+   * and the classroom's `independentTeacherId`. Matches the classroom member directory and
+   * access rules so `@mention` autocomplete and server resolution never diverge. Pass the
+   * caller's transaction client so the read joins that transaction.
    */
   async listActiveMentionCandidates(
     classroomId: string,
     client: Prisma.TransactionClient = this.prisma,
   ): Promise<{ userId: string; displayName: string }[]> {
+    const classroom = await client.classroom.findFirst({
+      where: { id: classroomId, deletedAt: null },
+      select: {
+        schoolId: true,
+        independentTeacherId: true,
+        independentTeacher: { select: { id: true, displayName: true } },
+      },
+    });
+    if (!classroom) return [];
+
     const members = await client.classroomMembership.findMany({
-      where: { classroomId, state: MembershipState.ACTIVE, deletedAt: null },
+      where: {
+        classroomId,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+        ...(classroom.schoolId === null
+          ? { role: { in: [ClassroomRole.STUDENT, ClassroomRole.TEACHER] } }
+          : {
+              OR: [
+                { role: ClassroomRole.STUDENT },
+                {
+                  role: ClassroomRole.TEACHER,
+                  user: {
+                    schoolMemberships: {
+                      some: {
+                        schoolId: classroom.schoolId,
+                        state: MembershipState.ACTIVE,
+                      },
+                    },
+                  },
+                },
+              ],
+            }),
+      },
+      orderBy: { id: 'asc' },
       select: { userId: true, user: { select: { displayName: true } } },
     });
-    return members.map((member) => ({
+
+    const candidates = members.map((member) => ({
       userId: member.userId,
       displayName: member.user.displayName,
     }));
+
+    if (
+      classroom.independentTeacher !== null &&
+      !candidates.some((candidate) => candidate.userId === classroom.independentTeacher!.id)
+    ) {
+      candidates.push({
+        userId: classroom.independentTeacher.id,
+        displayName: classroom.independentTeacher.displayName,
+      });
+    }
+
+    return candidates;
   }
 
   /** Active students for a producer that already authorized its classroom mutation. */
