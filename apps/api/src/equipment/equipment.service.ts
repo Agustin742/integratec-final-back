@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
   ForbiddenException,
@@ -29,10 +30,6 @@ function toMetadataRecord(value: Prisma.JsonValue): Record<string, unknown> {
     return value as Record<string, unknown>;
   }
   return {};
-}
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
 /**
@@ -122,12 +119,13 @@ export class EquipmentService {
     rawSlot: string,
     dto: EquipItemDto,
   ): Promise<EquipmentStateDto> {
-    this.rateLimiter.consume(actorUserId);
     const slotName = parseEquippedSlotName(rawSlot);
 
     await this.access.verifyClassroomAccess(actorUserId, classroomId, {
       requiredRole: 'STUDENT',
     });
+
+    this.rateLimiter.consume(actorUserId);
 
     const slot = SLOT_ENUM_BY_NAME[slotName];
 
@@ -167,25 +165,30 @@ export class EquipmentService {
         throw new ForbiddenException('Shop item has not been purchased in this classroom');
       }
 
-      try {
-        await tx.equippedItem.upsert({
-          where: {
-            classroomId_studentId_slot: { classroomId, studentId: actorUserId, slot },
-          },
-          create: { classroomId, studentId: actorUserId, slot, shopItemId },
-          update: { shopItemId },
-        });
-      } catch (error) {
-        // Concurrent equips of the same slot: the row appeared between read and write.
-        if (isUniqueConstraintError(error)) {
-          await tx.equippedItem.update({
-            where: { classroomId_studentId_slot: { classroomId, studentId: actorUserId, slot } },
-            data: { shopItemId },
-          });
-        } else {
-          throw error;
-        }
-      }
+      await tx.$executeRaw`
+        INSERT INTO "equipped_items" (
+          "id",
+          "classroom_id",
+          "student_id",
+          "slot",
+          "shop_item_id",
+          "created_at",
+          "updated_at"
+        )
+        VALUES (
+          ${randomUUID()}::uuid,
+          ${classroomId}::uuid,
+          ${actorUserId}::uuid,
+          ${slotName}::"equipped_slot",
+          ${shopItemId}::uuid,
+          NOW(),
+          NOW()
+        )
+        ON CONFLICT ("classroom_id", "student_id", "slot")
+        DO UPDATE SET
+          "shop_item_id" = EXCLUDED."shop_item_id",
+          "updated_at" = NOW()
+      `;
     });
 
     // Non-PII structured audit log per rules/observability-and-privacy.md.

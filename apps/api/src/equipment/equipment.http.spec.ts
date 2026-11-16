@@ -328,7 +328,7 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
     expect(upperCaseSlot.status).toBe(404);
     assertEnvelope(upperCaseSlot.body, 'NOT_FOUND');
 
-    // Unequipping an empty slot is idempotent.
+    // Unequipping an empty slot is idempotent, including an empty body `{}`.
     const emptyUnequip = await putEquipment(ids.classroom, ids.student, 'head', {
       shopItemId: null,
     });
@@ -338,6 +338,10 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
       studentId: ids.student,
       slots: { head: null, face: null, back: null, desk_decor: null },
     });
+
+    const omittedFieldUnequip = await putEquipment(ids.classroom, ids.student, 'head', {});
+    expect(omittedFieldUnequip.status).toBe(200);
+    expect(omittedFieldUnequip.body.slots.head).toBeNull();
   });
 
   it('rejects an unpurchased item with 403 and leaves the state unchanged (AC2)', async () => {
@@ -462,6 +466,11 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
   });
 
   it('returns 429 TOO_MANY_REQUESTS when a student exceeds the per-user equip rate limit (GET stays open)', async () => {
+    // Unknown slots and unauthorized callers do not consume the student's quota.
+    await putEquipment(ids.classroom, ids.student, 'wings', { shopItemId: ids.capItem }).expect(
+      404,
+    );
+
     for (let i = 0; i < 20; i += 1) {
       const res = await putEquipment(ids.classroom, ids.student, 'head', {
         shopItemId: randomUUID(),
@@ -478,5 +487,35 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
     // Reads are never rate limited.
     const read = await getEquipment(ids.classroom, ids.student);
     expect(read.status).toBe(200);
+  });
+
+  it('serializes concurrent PUT /me/equipment/:slot requests atomically without 500 errors', async () => {
+    for (const [item, key] of [
+      [ids.capItem, 'concurrent-cap'],
+      [ids.headphonesItem, 'concurrent-hp'],
+      [ids.deskPlantItem, 'concurrent-plant'],
+    ] as const) {
+      const buy = await postPurchase(ids.classroom, ids.student, { shopItemId: item }, key);
+      expect(buy.status).toBe(201);
+    }
+
+    const [r1, r2, r3] = await Promise.all([
+      putEquipment(ids.classroom, ids.student, 'head', { shopItemId: ids.capItem }),
+      putEquipment(ids.classroom, ids.student, 'head', { shopItemId: ids.headphonesItem }),
+      putEquipment(ids.classroom, ids.student, 'desk_decor', { shopItemId: ids.deskPlantItem }),
+    ]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(r3.status).toBe(200);
+
+    const finalState = await getEquipment(ids.classroom, ids.student);
+    expect(finalState.status).toBe(200);
+    expect([ids.capItem, ids.headphonesItem]).toContain(finalState.body.slots.head.shopItemId);
+    expect(finalState.body.slots.desk_decor.shopItemId).toBe(ids.deskPlantItem);
+    expect(
+      await prisma.equippedItem.count({
+        where: { classroomId: ids.classroom, studentId: ids.student, slot: EquippedSlot.HEAD },
+      }),
+    ).toBe(1);
   });
 });

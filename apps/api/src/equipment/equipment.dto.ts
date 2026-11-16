@@ -1,4 +1,4 @@
-import { ApiProperty, getSchemaPath } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import { EquippedSlot, ShopItemKind } from '@prisma/client';
 import { IsOptional, IsUUID } from 'class-validator';
 import { NotFoundException } from '@nestjs/common';
@@ -34,7 +34,8 @@ export function parseEquippedSlotName(raw: string): EquippedSlotName {
 
 /** Strict request body for `PUT /classrooms/:id/me/equipment/:slot`. */
 export class EquipItemDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
+    type: String,
     nullable: true,
     format: 'uuid',
     description:
@@ -43,7 +44,7 @@ export class EquipItemDto {
   })
   @IsOptional()
   @IsUUID('4')
-  shopItemId!: string | null;
+  shopItemId?: string | null;
 }
 
 /** One equipped purchase projection inside a slot. */
@@ -65,6 +66,7 @@ export class EquippedSlotDto {
 }
 
 /** Classroom-scoped equipment state of the authenticated student. */
+@ApiExtraModels(EquippedSlotDto)
 export class EquipmentStateDto {
   @ApiProperty({ format: 'uuid' })
   classroomId!: string;

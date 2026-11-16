@@ -494,4 +494,37 @@ describe('EquipmentService (real PostgreSQL)', () => {
 
     expect(await prisma.equippedItem.count({ where: { shopItemId: ids.capItem } })).toBe(1);
   });
+
+  it('handles concurrent equips on the same and different slots without 25P02 transaction errors', async () => {
+    await fundStudent(ids.student, 500);
+    await purchaseItem(ids.student, ids.capItem);
+    await purchaseItem(ids.student, ids.headphonesItem);
+    await purchaseItem(ids.student, ids.deskPlantItem);
+
+    // Concurrent first-time equips on the same slot (both racing INSERT) plus another slot.
+    const initialRace = await Promise.all([
+      equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.capItem }),
+      equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.headphonesItem }),
+      equipment.setSlot(ids.student, ids.classroom, 'desk_decor', {
+        shopItemId: ids.deskPlantItem,
+      }),
+    ]);
+    expect(initialRace).toHaveLength(3);
+
+    // Concurrent updates when the slot row already exists.
+    const updateRace = await Promise.all([
+      equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.capItem }),
+      equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.headphonesItem }),
+    ]);
+    expect(updateRace).toHaveLength(2);
+
+    const finalState = await equipment.getEquipment(ids.student, ids.classroom);
+    expect([ids.capItem, ids.headphonesItem]).toContain(finalState.slots.head?.shopItemId);
+    expect(finalState.slots.desk_decor?.shopItemId).toBe(ids.deskPlantItem);
+    expect(
+      await prisma.equippedItem.count({
+        where: { classroomId: ids.classroom, studentId: ids.student, slot: EquippedSlot.HEAD },
+      }),
+    ).toBe(1);
+  });
 });

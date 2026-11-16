@@ -3,6 +3,7 @@ import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiConflictResponse,
+  ApiExtraModels,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -14,11 +15,17 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
-import { EquipItemDto, EquipmentStateDto } from './equipment.dto';
+import {
+  EQUIPPED_SLOT_NAMES,
+  EquipItemDto,
+  EquipmentStateDto,
+  EquippedSlotDto,
+} from './equipment.dto';
 import { EquipmentService } from './equipment.service';
 
 @ApiTags('equipment')
 @ApiBearerAuth()
+@ApiExtraModels(EquippedSlotDto)
 @ApiParam({ name: 'id', description: 'Classroom UUID', format: 'uuid' })
 @ApiUnauthorizedResponse({ type: ErrorEnvelopeDto, description: 'Missing or invalid session.' })
 @ApiForbiddenResponse({
@@ -30,14 +37,6 @@ import { EquipmentService } from './equipment.service';
   type: ErrorEnvelopeDto,
   description:
     'Malformed, nonexistent, or inaccessible classroom; unknown equipment slot; or unknown shop item.',
-})
-@ApiConflictResponse({
-  type: ErrorEnvelopeDto,
-  description: 'Shop item kind does not fit the requested slot or the item is not equipable.',
-})
-@ApiTooManyRequestsResponse({
-  type: ErrorEnvelopeDto,
-  description: 'Per-user equipment change rate limit exceeded.',
 })
 @Controller('classrooms/:id/me/equipment')
 export class EquipmentController {
@@ -61,6 +60,12 @@ export class EquipmentController {
   }
 
   @Put(':slot')
+  @ApiParam({
+    name: 'slot',
+    enum: EQUIPPED_SLOT_NAMES,
+    enumName: 'EquippedSlotName',
+    description: 'Equipment slot name',
+  })
   @ApiOperation({
     summary: 'Equip a purchased item in a slot, or unequip the slot',
     description:
@@ -73,6 +78,14 @@ export class EquipmentController {
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
     description: 'Invalid slot value, invalid shopItemId, or extra body fields.',
+  })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Shop item kind does not fit the requested slot or the item is not equipable.',
+  })
+  @ApiTooManyRequestsResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Per-user equipment change rate limit exceeded.',
   })
   setSlot(
     @CurrentUser('userId') actorId: string,

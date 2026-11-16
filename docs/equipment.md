@@ -1,6 +1,6 @@
 # Avatar and desk equipment
 
-`EquipmentModule` is wired into the root API. It provides authenticated student endpoints for reading the classroom-scoped equipment state and equipping/unequipping purchased items on the avatar (head, face, back) and the desk decoration. Equipment state is classroom-scoped per [D16](technical-justification.md#d16-classroom-scoped-avatar-and-desk-equipment): a purchase made in one classroom can never be equipped in another.
+`EquipmentModule` is wired into the root API. It provides authenticated student endpoints for reading the classroom-scoped equipment state and equipping/unequipping purchased items on the avatar (head, face, back) and the desk decoration. Equipment state is classroom-scoped per [D17](technical-justification.md#d17-classroom-scoped-avatar-and-desk-equipment): a purchase made in one classroom can never be equipped in another.
 
 ## REST endpoints
 

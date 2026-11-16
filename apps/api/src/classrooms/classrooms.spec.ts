@@ -20,6 +20,8 @@ import { ApiConfigModule } from '../config/config.module';
 import { configureHttp } from '../http/configure-http';
 import { RequestValidationException } from '../http/validation';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
+import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_INITIAL_DESK_COUNT,
@@ -426,6 +428,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
     };
 
     const now = new Date('2026-11-07T20:00:00.000Z');
+    let record: ReturnType<typeof vi.fn>;
 
     beforeEach(() => {
       mockPrisma = {
@@ -449,7 +452,12 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
       };
 
       accessService = new AccessVerificationService(mockPrisma as unknown as PrismaService);
-      service = new ClassroomsService(mockPrisma as unknown as PrismaService, accessService);
+      record = vi.fn().mockResolvedValue('event-id');
+      service = new ClassroomsService(
+        mockPrisma as unknown as PrismaService,
+        accessService,
+        new ClassroomContextRecorder({ record } as unknown as OutboxWriter),
+      );
     });
 
     describe('create()', () => {
@@ -695,6 +703,105 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         expect(mockPrisma.classroom.findMany).not.toHaveBeenCalled();
         expect(mockPrisma.schoolMember.findMany).not.toHaveBeenCalled();
       });
+    });
+
+    describe('transactional context changes', () => {
+      const row = {
+        id: CLASSROOM_ID,
+        name: 'Aula',
+        subject: null,
+        schoolId: SCHOOL_ID,
+        independentTeacherId: null,
+        adultMode: false,
+        chatMuted: false,
+        collaborationLocked: false,
+        gamesDisabled: false,
+        createdAt: now,
+        updatedAt: now,
+        pet: null,
+        _count: { desks: 12 },
+      };
+
+      beforeEach(() => {
+        vi.spyOn(accessService, 'verifyClassroomAccess').mockResolvedValue({
+          classroom: row,
+          myRole: 'TEACHER',
+          capabilities: computeClassroomCapabilities('TEACHER'),
+        });
+        mockPrisma.classroom.update.mockImplementation(async ({ data }) => ({ ...row, ...data }));
+      });
+
+      it.each([
+        { adultMode: true },
+        { subject: null },
+        { name: 'Updated' },
+        { chatMuted: true },
+        { collaborationLocked: true },
+        { gamesDisabled: true },
+      ])('records only the classroom id with the configuration transaction: %j', async (dto) => {
+        const response = await service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, dto);
+        expect(response).toEqual({
+          ...row,
+          ...dto,
+          deskCount: 12,
+          _count: undefined,
+          myRole: 'TEACHER',
+          capabilities: computeClassroomCapabilities('TEACHER'),
+          createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
+        });
+        expect(record).toHaveBeenCalledExactlyOnceWith(mockPrisma, {
+          type: 'classroom.context.changed',
+          payload: { classroomId: CLASSROOM_ID },
+        });
+        expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+      });
+
+      it('preserves null-only ignored updates without emitting a context event', async () => {
+        await expect(
+          service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, { adultMode: null as unknown as boolean }),
+        ).resolves.toMatchObject({ adultMode: false });
+        expect(record).not.toHaveBeenCalled();
+      });
+
+      it('propagates outbox failure through the transaction', async () => {
+        const failure = new Error('Outbox unavailable');
+        record.mockRejectedValueOnce(failure);
+        const rejected = vi.fn();
+        mockPrisma.$transaction.mockImplementation(async (cb) => {
+          try {
+            return await cb(mockPrisma);
+          } catch (error) {
+            rejected(error);
+            throw error;
+          }
+        });
+        await expect(
+          service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, { adultMode: true }),
+        ).rejects.toBe(failure);
+        expect(rejected).toHaveBeenCalledWith(failure);
+      });
+
+      it('does not record after a failed configuration write', async () => {
+        mockPrisma.classroom.update.mockRejectedValueOnce(new Error('Write failed'));
+        await expect(
+          service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, { adultMode: true }),
+        ).rejects.toThrow('Write failed');
+        expect(record).not.toHaveBeenCalled();
+      });
+
+      it.each([new ForbiddenException(), new NotFoundException()])(
+        'does not mutate or record when authorization fails: %s',
+        async (error) => {
+          vi.mocked(accessService.verifyClassroomAccess).mockRejectedValueOnce(error);
+          await expect(
+            service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, { adultMode: true }),
+          ).rejects.toBe(error);
+          expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+          expect(mockPrisma.classroom.update).not.toHaveBeenCalled();
+          expect(record).not.toHaveBeenCalled();
+        },
+      );
     });
 
     describe('findOne() & update()', () => {

@@ -231,11 +231,29 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
   4. **Out of scope:** study material upload (#46) and the realtime `activity:published` emission (transport open).
 - **Rationale:** Logical deletion satisfies "do not delete activities with submissions or grades" now and later without a special case; the freeze-on-first-answer rule keeps teacher fixes possible until students answer, without changing answers already given.
 - **Alternatives:** Physical deletion when no submissions exist (rejected: two deletion paths and a race with the first submission); freezing questions at publish (rejected: blocks fixing typos after publishing).
-- **Trade-off:** Until #30 lands nothing locks the questions, and a published activity can still be edited and cannot be unpublished.
+- **Trade-off:** A published activity can still be edited and cannot be unpublished. The questions lock was added with #30 ([D16](#d16-file-submission-defaults)).
 - **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), [Communication and notifications](../rules/communication-and-notifications.md), and the [activities guide](activities.md).
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-13.
 
-### D16. Classroom-scoped avatar and desk equipment
+### D16. File submission defaults
+
+- **Question:** How do students submit files to an activity (RF-ACT-001, HU-ACT-003, issue #30): how many submissions, which files, how they are uploaded, what happens after the deadline, how retries are handled and what freezes once someone submitted?
+- **Outcome:**
+  1. **One submission per (activity, student)** in the MVP, with no resubmission or history.
+  2. **Files:** content-detected allow-list of PDF, PNG, JPEG and DOCX (the client MIME type is not trusted), at most 10 MB each, 1 to 5 files, name at most 255 characters. Malware scanning is out of scope.
+  3. **Upload:** multipart through the API, not a presigned PUT, so the server validates the real bytes. Objects are private, and reads return short-lived signed URLs (`STORAGE_SIGNED_URL_TTL`).
+  4. **Late policy:** the server clock decides. After `dueAt` with `allowLate = false` the submission is rejected; with `allowLate = true` it is stored with `isLate = true`. Before `opensAt` it is rejected.
+  5. **Idempotency:** the `Idempotency-Key` header is required. The same key returns the stored submission (`200`), a different key after a submission exists is `409`, and a race is resolved by the unique index.
+  6. **Conflicts:** rule violations are `409` with the reason in `details` through `RequestConflictException`, so the envelope message stays fixed.
+  7. **Shared lock:** submitting takes `FOR SHARE` on the activity row; teacher update, publish and deactivate take `FOR UPDATE`. Once any submission exists, question edits and deletion are `409`.
+  8. **Event:** a timely submission records the outbox event `submission.submitted-on-time` (payload version 1) in the same transaction. A no-op handler acknowledges it until the streak engine (HU-GAM-002), which must backfill from `submissions`.
+- **Rationale:** Validating bytes on the server is the only way to enforce the allow-list; a single submission keeps the grading model simple and matches the single-attempt default of D15; a deadline decided on the server clock cannot be bypassed by the client; a client-generated key makes network retries safe; a shared lock lets a deadline rush proceed in parallel while still freezing teacher edits; the dispatcher treats an event without a handler as a failure, so a no-op handler avoids five failed attempts and error logs per submission.
+- **Alternatives:** Presigned PUT directly to S3 (rejected: the server would see the bytes only afterwards, so an invalid file would already be stored); an exclusive row lock on submit (rejected: all students of one activity serialize and a rush exceeds the transaction timeout); `422` or `403` for window violations (rejected: `409` with details is the project's conflict shape); recording no event until HU-GAM-002 (rejected: issue #30 requires the event now, so HU-GAM-002 builds against an existing, tested contract, type `submission.submitted-on-time` with payload v1 recorded atomically with the submission, instead of changing the submission write path later; history comes from the `submissions` table either way).
+- **Trade-off:** Files pass through API memory (at most 5 x 10 MB per request). Resubmission and history are not possible yet. More than 5 files returns multer's generic `400`. After a transaction error, reconciliation compares the stored submission's complete file-ID set with the upload plan: an own committed result is recovered without deletion; a different winner allows cleanup of this request's unlinked objects. An empty read alone cannot rule out an in-flight commit. If reconciliation is unavailable or the outcome remains unknown, the original error is propagated and objects are retained, potentially leaving orphans (no cleanup worker yet), rather than risking committed files. Events recorded before HU-GAM-002 are acknowledged without effect and cannot be replayed, so that story backfills from `submissions`.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), the [activities guide](activities.md) and the [submissions guide](submissions.md).
+- **Approval:** Defaults approved by Agustin (decision owner) on 2026-11-13. The PR #89 commit-outcome safety correction was authorized by Alejo on 2026-11-15; this does not claim a new team approval.
+
+### D17. Classroom-scoped avatar and desk equipment
 
 - **Question:** Where is the equipment state of a student's avatar accessories and desk decoration stored (HU-ESP-004), and how is ownership enforced?
 - **Outcome:**
@@ -243,11 +261,11 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
   2. **Endpoints (student-only):** `GET /classrooms/:id/me/equipment` and `PUT /classrooms/:id/me/equipment/:slot` with body `{ shopItemId: string | null }` (null = unequip), same access rules as the shop (`403` staff/non-adult parent, `404` stranger/adult-mode parent/deleted context).
   3. **Error contract:** `403` when the item exists but has no `StudentPurchase` in this classroom; `404` unknown slot, unknown shop item, non-member, or deleted context; `409` when the item kind does not fit the slot or its metadata does not declare one; `400` extra body props; `429` per-user rate limit. Equip/unequip is idempotent and a rejected operation never changes persisted state (the ownership check runs inside the equip transaction).
   4. **Scope:** only `AVATAR_ACCESSORY` (head/face/back) and `DESK_UPGRADE` (desk_decor) kinds are equipable; `classroom_item` activation and pet accessories are out of scope. Rendering and the broadcast of the new look (realtime) are frontend/realtime work, not part of this card.
-- **Rationale:** Storing equipment inside the global `AvatarConfiguration.appearance` JSON would leak purchases across classrooms and bypass the per-classroom ownership model; the desk is already per classroom. Checking ownership inside the equip transaction realizes the ownership port left by card #20 (HU-AUT-003).
+- **Rationale:** Storing equipment inside the global `AvatarConfiguration.appearance` JSON would leak purchases across classrooms and bypass the per-classroom ownership model; the desk is already per classroom. Checking ownership against `StudentPurchase` inside `EquipmentService.setSlot` satisfies the per-classroom purchase gate directly, while global `AvatarAccessPort` stays scoped to finite free base appearance options.
 - **Alternatives:** Global `AvatarConfiguration` appearance JSON (rejected: crosses classrooms, no ownership proof at write time); per-slot booleans on the user row (rejected: loses which purchased item is equipped).
 - **Trade-off:** One extra table and join at render time; equipped state is duplicated per classroom, which is exactly the isolation the rules demand.
 - **Affected contracts:** [Data](../rules/data.md) (`EquippedItem` entity), [Points and shop](../rules/points-and-shop.md) (rate limit and ownership), [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) (student-only access), and the [equipment guide](equipment.md).
-- **Approval:** Proposed by Alejo on 2026-11-15 as part of card #35; pending team review in the PR.
+- **Approval:** Proposed by Alejo on 2026-11-15 as part of card #35; pending team review in PR #94.
 
 ## 8. Known conflicts and notes
 
