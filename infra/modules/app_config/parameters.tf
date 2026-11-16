@@ -1,4 +1,10 @@
 locals {
+  # Internal URLs use the Compose service names and container ports of the production
+  # stack: realtime listens on 2567 and api on 3000 (Dockerfiles and the Compose file
+  # added in T5). Change them together with those files.
+  realtime_internal_url = "http://realtime:2567"
+  api_internal_url      = "http://api:3000"
+
   # Non-secret runtime config, one SSM parameter per service and env var.
   # S3_BUCKET is added with the bucket itself; DATABASE_URL is built on the host from
   # the RDS master secret, so neither belongs here.
@@ -9,10 +15,10 @@ locals {
       NODE_ENV                = "production"
       # The bucket is created in the environment region, so reuse it instead of a second knob.
       S3_REGION             = var.region
-      REALTIME_INTERNAL_URL = "http://realtime:2567"
+      REALTIME_INTERNAL_URL = local.realtime_internal_url
     }
     realtime = {
-      API_INTERNAL_URL = "http://api:3000"
+      API_INTERNAL_URL = local.api_internal_url
       NODE_ENV         = "production"
     }
   }

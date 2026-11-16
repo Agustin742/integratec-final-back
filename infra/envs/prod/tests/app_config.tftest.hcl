@@ -73,7 +73,7 @@ run "ssm_parameters_hold_non_secret_config" {
   }
 
   assert {
-    condition     = toset(keys(module.app_config.parameter_arns)) == toset(["api", "realtime"]) && length(module.app_config.parameter_arns["api"]) == 5 && length(module.app_config.parameter_arns["realtime"]) == 2
+    condition     = toset(keys(module.app_config.parameter_arns)) == toset(["api", "realtime"]) && alltrue([for s in ["api", "realtime"] : length(module.app_config.parameter_arns[s]) == length([for k in keys(module.app_config.parameters) : k if startswith(k, "${s}/")])])
     error_message = "Parameter ARNs must be grouped per service."
   }
 

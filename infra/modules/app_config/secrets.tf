@@ -18,16 +18,18 @@ locals {
       services    = ["api"]
     }
   }
+
+  secret_names = { for k, _ in local.secrets : k => "${var.name_prefix}/${lower(replace(k, "_", "-"))}" }
 }
 
 resource "aws_secretsmanager_secret" "this" {
   for_each = local.secrets
 
-  name                    = "${var.name_prefix}/${lower(replace(each.key, "_", "-"))}"
+  name                    = local.secret_names[each.key]
   description             = each.value.description
   recovery_window_in_days = var.secret_recovery_window_in_days
 
   tags = {
-    Name = "${var.name_prefix}/${lower(replace(each.key, "_", "-"))}"
+    Name = local.secret_names[each.key]
   }
 }

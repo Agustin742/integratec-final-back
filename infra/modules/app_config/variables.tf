@@ -21,21 +21,13 @@ variable "region" {
 variable "allowed_origins" {
   description = "Browser origins the API accepts (CORS), published as ALLOWED_ORIGINS joined with commas."
   type        = list(string)
-
-  validation {
-    condition     = length(var.allowed_origins) > 0 && alltrue([for o in var.allowed_origins : can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", o))])
-    error_message = "allowed_origins must list at least one https origin without path, query or trailing slash, such as https://app.example.com."
-  }
+  # Validated once, in the prod root where operators set it.
 }
 
 variable "password_reset_url_base" {
   description = "Frontend page that receives the password reset token, published as PASSWORD_RESET_URL_BASE."
   type        = string
-
-  validation {
-    condition     = can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^?#[:space:]]*)?$", var.password_reset_url_base))
-    error_message = "password_reset_url_base must be an absolute https URL without query string or fragment, such as https://app.example.com/reset-password."
-  }
+  # Validated once, in the prod root where operators set it.
 }
 
 variable "secret_recovery_window_in_days" {

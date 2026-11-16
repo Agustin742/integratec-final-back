@@ -15,18 +15,26 @@
 #
 # Behavior:
 #   - A secret that already has an AWSCURRENT version is skipped ("already set"), so
-#     the script is safe to re-run and never overwrites a value.
+#     the script is safe to re-run and never overwrites a value. If the version lookup
+#     itself fails (permissions, throttling, network, expired session) the script
+#     aborts without writing anything.
 #   - INTERNAL_SERVICE_SECRET and JWT_SECRET: 64 characters, no punctuation, no spaces.
 #   - INVITATION_TOKEN_KEY: 64 characters of 0-9a-f (the API's decodeKey32 accepts
 #     exactly 64 hex characters).
 #   - The generated value is validated before it is stored, held only in a shell
-#     variable, never printed or written to a file, and unset right after use.
-#     put-secret-value receives it as a CLI argument (briefly visible to processes of
-#     the same user on this machine), so run it from a trusted workstation.
+#     variable, never printed or written to a file, and unset right after use. It is
+#     handed to put-secret-value on stdin (--secret-string file:///dev/stdin), so it
+#     never appears in the process arguments (/proc/<pid>/cmdline) of any user.
+#   - Requires a Linux or macOS shell (or CloudShell): the Windows build of the AWS CLI
+#     cannot read /dev/stdin, so the script refuses to run under Git Bash/MSYS/Cygwin
+#     rather than fall back to putting the value in the arguments.
 #
-# Rotation: put a new value for the secret (aws secretsmanager put-secret-value, or
-# delete its AWSCURRENT version's stage and re-run this script), then redeploy so the
-# host start script reads it again.
+# Rotation (supported procedure): generate a new value and store it with
+# `aws secretsmanager put-secret-value` for that secret; Secrets Manager moves
+# AWSCURRENT to the new version and keeps the old one as AWSPREVIOUS. Then redeploy so
+# the host start script reads the new value. Impact: rotating JWT_SECRET invalidates
+# every issued access token, and rotating INVITATION_TOKEN_KEY invalidates pending
+# invitations. This script never overwrites an existing value.
 
 set -euo pipefail
 
@@ -35,12 +43,12 @@ arns_file=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --region)
-      region="${2:-}"
-      shift 2
-      ;;
-    --arns-file)
-      arns_file="${2:-}"
+    --region | --arns-file)
+      if [ $# -lt 2 ]; then
+        echo "$1 requires a value." >&2
+        exit 2
+      fi
+      if [ "$1" = "--region" ]; then region="$2"; else arns_file="$2"; fi
       shift 2
       ;;
     *)
@@ -54,6 +62,13 @@ if [ -z "$region" ]; then
   echo "Missing --region (for example --region us-east-2)." >&2
   exit 2
 fi
+
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    echo "The Windows AWS CLI cannot read the value from stdin; run this script from Linux, macOS or CloudShell." >&2
+    exit 3
+    ;;
+esac
 
 if [ -n "$arns_file" ]; then
   arns_json="$(<"$arns_file")"
@@ -73,14 +88,6 @@ secret_arn() {
   fi
 }
 
-# True when the secret already has an AWSCURRENT version.
-has_current_version() {
-  local arn="$1" current
-  current="$(aws secretsmanager list-secret-version-ids --region "$region" --secret-id "$arn" \
-    --query "Versions[?contains(VersionStages, 'AWSCURRENT')].VersionId" --output text)"
-  [ -n "$current" ] && [ "$current" != "None" ]
-}
-
 generate_secret() {
   aws secretsmanager get-random-password --region "$region" \
     --password-length 64 --exclude-punctuation --no-include-space \
@@ -95,10 +102,16 @@ generate_hex_key() {
 }
 
 seed() {
-  local name="$1" generator="$2" pattern="$3" arn value
+  local name="$1" generator="$2" pattern="$3" arn current value
   arn="$(secret_arn "$name")"
 
-  if has_current_version "$arn"; then
+  # The lookup is not inside a conditional, so a failure aborts the whole script
+  # instead of looking like "no value yet" and overwriting a live secret.
+  if ! current="$(aws secretsmanager list-secret-version-ids --region "$region" --secret-id "$arn"     --query "Versions[?contains(VersionStages, 'AWSCURRENT')].VersionId" --output text)"; then
+    echo "${name}: could not read the secret's versions; aborting without changes." >&2
+    return 1
+  fi
+  if [ -n "$current" ] && [ "$current" != "None" ]; then
     echo "${name}: already set"
     return 0
   fi
@@ -110,8 +123,7 @@ seed() {
     return 1
   fi
 
-  aws secretsmanager put-secret-value --region "$region" --secret-id "$arn" \
-    --secret-string "$value" >/dev/null
+  printf '%s' "$value" | aws secretsmanager put-secret-value --region "$region" --secret-id "$arn"     --secret-string file:///dev/stdin >/dev/null
   unset value
   echo "${name}: set"
 }

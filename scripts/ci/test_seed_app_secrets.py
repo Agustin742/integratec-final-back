@@ -24,6 +24,10 @@ STUB = r"""#!/usr/bin/env bash
 echo "$*" >> "$STUB_LOG"
 case "$2" in
   list-secret-version-ids)
+    if [ -n "${STUB_LIST_FAIL:-}" ]; then
+      echo "An error occurred (AccessDeniedException)" >&2
+      exit 254
+    fi
     case "$*" in
       *jwt-secret*) [ -n "${STUB_JWT_SET:-}" ] && echo "version-id" || echo "None" ;;
       *) echo "None" ;;
@@ -31,13 +35,23 @@ case "$2" in
     ;;
   get-random-password)
     if [[ "$*" == *--exclude-uppercase* ]]; then
-      printf '%s\n' "${STUB_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
+      printf '%s
+' "${STUB_HEX:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
     else
-      printf '%s\n' "${STUB_PLAIN:-Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1A}"
+      printf '%s
+' "${STUB_PLAIN:-Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1Ab1A}"
     fi
     ;;
-  put-secret-value) ;;
+  put-secret-value)
+    # The value must arrive on stdin, never in the arguments logged above.
+    { echo "secret-id-args: $*"; cat; echo; } >> "$STUB_STDIN"
+    ;;
 esac
+"""
+
+# Fake uname so the Windows guard does not depend on the machine running the tests.
+UNAME_STUB = """#!/usr/bin/env bash
+echo "${STUB_UNAME:-Linux}"
 """
 
 
@@ -55,8 +69,7 @@ class StaticTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"set\s+-[a-z]*x|set\s+-o\s+xtrace|bash\s+-x")
 
     def test_checks_current_version_before_put(self):
-        self.assertIn("has_current_version", self.code)
-        self.assertLess(self.code.index('if has_current_version "$arn"'), self.code.index("put-secret-value"))
+        self.assertLess(self.code.index("list-secret-version-ids"), self.code.index("put-secret-value"))
         self.assertIn("AWSCURRENT", self.code)
         self.assertIn("already set", self.code)
 
@@ -79,10 +92,28 @@ class StaticTests(unittest.TestCase):
         self.assertLess(self.code.index('[[ ! "$value" =~ $pattern ]]'), self.code.index("put-secret-value"))
 
     def test_value_is_never_printed_or_written(self):
-        self.assertNotRegex(self.code, r"(echo|printf)[^\n]*\$\{?value\b")
+        joined = self.code.replace("\\n", " ")
+        self.assertNotRegex(joined, r"\becho\b[^\n]*\$\{?value\b")
+        for line in joined.splitlines():
+            if re.search(r"\bprintf\b", line) and re.search(r"\$\{?value\b", line):
+                self.assertRegex(line, r"printf '%s' \"\$value\" \| aws secretsmanager put-secret-value")
         self.assertNotRegex(self.code, r"\$\{?value\b[^\n]*(>|>>)\s*(?!/dev/null|&)[^\s]")
         self.assertNotRegex(self.code, r"\btee\b")
         self.assertIn("unset value", self.code)
+
+    def test_value_is_passed_on_stdin_not_argv(self):
+        joined = self.code.replace("\\n", " ")
+        self.assertIn("--secret-string file:///dev/stdin", joined)
+        self.assertNotRegex(joined, r"--secret-string\s+\"?\$")
+
+    def test_lookup_failure_is_not_in_a_conditional(self):
+        self.assertNotRegex(self.code, r"if\s+(!\s+)?has_current_version|\$\(has_current_version")
+        self.assertRegex(self.code, r"if ! current=\"\$\(aws secretsmanager list-secret-version-ids")
+
+    def test_header_documents_supported_rotation(self):
+        self.assertIn("put-secret-value", self.text.split("set -euo pipefail")[0])
+        self.assertIn("AWSPREVIOUS", self.text)
+        self.assertNotIn("delete its AWSCURRENT", self.text)
 
 
 @unittest.skipIf(BASH is None, "bash is not available")
@@ -95,7 +126,13 @@ class BehaviorTests(unittest.TestCase):
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
         log = Path(tmp) / "calls.log"
         log.write_text("")
-        env = dict(os.environ, STUB_LOG=str(log), PATH=tmp + os.pathsep + os.environ["PATH"])
+        stdin_log = Path(tmp) / "stdin.log"
+        stdin_log.write_text("")
+        uname = Path(tmp) / "uname"
+        uname.write_text(UNAME_STUB, newline="\n")
+        uname.chmod(uname.stat().st_mode | stat.S_IEXEC)
+        self.stdin_log = stdin_log
+        env = dict(os.environ, STUB_LOG=str(log), STUB_STDIN=str(stdin_log), PATH=tmp + os.pathsep + os.environ["PATH"])
         env.update(extra_env or {})
         arns = "{" + ",".join(f'"{k}": "{v}"' for k, v in ARNS.items()) + "}"
         result = subprocess.run([BASH, str(SCRIPT)] + (["--region", "us-east-2"] if args is None else args),
@@ -120,6 +157,39 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, out)
         self.assertNotIn("Ab1Ab1", out)
         self.assertNotIn("0123456789abcdef", out)
+
+    def test_value_goes_to_stdin_and_never_to_argv(self):
+        result, calls = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        puts = [c for c in calls if "put-secret-value" in c]
+        self.assertEqual(len(puts), 3)
+        for c in puts:
+            self.assertIn("--secret-string file:///dev/stdin", c)
+            self.assertNotIn("Ab1Ab1", c)
+            self.assertNotIn("0123456789abcdef", c)
+        received = self.stdin_log.read_text()
+        self.assertIn("Ab1Ab1Ab1", received)
+        self.assertIn("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", received)
+
+    def test_failed_version_lookup_aborts_without_writing(self):
+        result, calls = self.run_script({"STUB_LIST_FAIL": "1"})
+        out = result.stdout.decode() + result.stderr.decode()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("INTERNAL_SERVICE_SECRET", out)
+        self.assertFalse(any("put-secret-value" in c for c in calls))
+        self.assertFalse(any("get-random-password" in c for c in calls))
+
+    def test_missing_option_value_is_a_usage_error(self):
+        for args in (["--region"], ["--region", "us-east-2", "--arns-file"]):
+            result, calls = self.run_script(args=args)
+            self.assertEqual(result.returncode, 2, args)
+            self.assertIn("requires a value", result.stderr.decode())
+            self.assertEqual(calls, [])
+
+    def test_windows_native_aws_is_refused_before_any_call(self):
+        result, calls = self.run_script({"STUB_UNAME": "MINGW64_NT-10.0"})
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(calls, [])
 
     def test_invalid_hex_key_is_rejected_before_put(self):
         result, calls = self.run_script({"STUB_HEX": "G" * 64})
