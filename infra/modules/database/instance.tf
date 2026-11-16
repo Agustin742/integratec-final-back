@@ -28,7 +28,7 @@ resource "aws_db_instance" "this" {
   vpc_security_group_ids = [aws_security_group.database.id]
   publicly_accessible    = false
 
-  # Backups are taken in the early UTC morning (late evening in Argentina) and
+  # Backups are taken in the early UTC morning (03:00-04:00 in Argentina, UTC-3) and
   # maintenance runs on Sunday after the backup window, so the two never overlap.
   backup_retention_period  = var.backup_retention_period
   backup_window            = "06:00-07:00"

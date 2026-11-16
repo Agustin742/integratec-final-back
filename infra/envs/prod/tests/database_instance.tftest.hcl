@@ -121,12 +121,32 @@ run "outputs_never_expose_credentials" {
 
   assert {
     condition     = var.project != "" && length(regexall("(?m)^output[[:space:]]+\"[a-z_]*(password|username)[a-z_]*\"", file("outputs.tf"))) == 0
-    error_message = "The root must not output the master username or password."
+    error_message = "The root outputs must not be named after the master username or password."
+  }
+
+  assert {
+    condition     = var.project != "" && length(regexall("aws_db_instance[.][a-z_]+[.](username|password)|module[.]database[.][a-z_]*(username|password)", file("outputs.tf"))) == 0
+    error_message = "No output in outputs.tf may reference the master username or password."
+  }
+
+  assert {
+    condition     = var.project != "" && length(regexall("aws_db_instance[.][a-z_]+[.]master_user_secret", file("outputs.tf"))) == length(regexall("aws_db_instance[.][a-z_]+[.]master_user_secret[[][^]]*[]][.]secret_arn", file("outputs.tf")))
+    error_message = "Outputs in outputs.tf may only read secret_arn from master_user_secret."
   }
 
   assert {
     condition     = var.project != "" && length(regexall("(?m)^output[[:space:]]+\"[a-z_]*(password|username)[a-z_]*\"", file("../../modules/database/outputs.tf"))) == 0
-    error_message = "The database module must not output the master username or password."
+    error_message = "The module outputs must not be named after the master username or password."
+  }
+
+  assert {
+    condition     = var.project != "" && length(regexall("aws_db_instance[.][a-z_]+[.](username|password)|module[.]database[.][a-z_]*(username|password)", file("../../modules/database/outputs.tf"))) == 0
+    error_message = "No output in ../../modules/database/outputs.tf may reference the master username or password."
+  }
+
+  assert {
+    condition     = var.project != "" && length(regexall("aws_db_instance[.][a-z_]+[.]master_user_secret", file("../../modules/database/outputs.tf"))) == length(regexall("aws_db_instance[.][a-z_]+[.]master_user_secret[[][^]]*[]][.]secret_arn", file("../../modules/database/outputs.tf")))
+    error_message = "Outputs in ../../modules/database/outputs.tf may only read secret_arn from master_user_secret."
   }
 }
 
@@ -244,4 +264,219 @@ run "rejects_reserved_master_username" {
   }
 
   expect_failures = [var.master_username]
+}
+
+run "rejects_malformed_instance_class" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    instance_class                    = "t4g.micro"
+  }
+
+  expect_failures = [var.instance_class]
+}
+
+run "rejects_allocated_storage_below_20" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    allocated_storage                 = 19
+  }
+
+  expect_failures = [var.allocated_storage]
+}
+
+run "rejects_allocated_storage_above_65536" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    allocated_storage                 = 65537
+  }
+
+  expect_failures = [var.allocated_storage]
+}
+
+run "rejects_allocated_storage_fractional" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    allocated_storage                 = 20.5
+  }
+
+  expect_failures = [var.allocated_storage]
+}
+
+run "rejects_master_username_pg_prefix" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    master_username                   = "pg_admin"
+  }
+
+  expect_failures = [var.master_username]
+}
+
+run "rejects_master_username_rds_prefix" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    master_username                   = "rdsuser"
+  }
+
+  expect_failures = [var.master_username]
+}
+
+run "rejects_master_username_uppercase" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    master_username                   = "Aula_admin"
+  }
+
+  expect_failures = [var.master_username]
+}
+
+run "rejects_master_username_leading_digit" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    master_username                   = "1admin"
+  }
+
+  expect_failures = [var.master_username]
+}
+
+run "rejects_master_username_longer_than_63_characters" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    master_username                   = "a${join("", [for i in range(63) : "b"])}"
+  }
+
+  expect_failures = [var.master_username]
+}
+
+run "accepts_backup_retention_of_1" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    backup_retention_period           = 1
+  }
+
+  assert {
+    condition     = aws_db_instance.this.backup_retention_period == 1
+    error_message = "The retention of 1 days must be applied."
+  }
+}
+
+run "accepts_backup_retention_of_35" {
+  command = plan
+
+  module {
+    source = "../../modules/database"
+  }
+
+  variables {
+    name_prefix                       = "aula-virtual-prod"
+    vpc_id                            = "vpc-0123456789abcdef0"
+    private_subnet_ids                = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+    private_subnet_availability_zones = ["us-east-2a", "us-east-2b"]
+    host_security_group_id            = "sg-0123456789abcdef0"
+    backup_retention_period           = 35
+  }
+
+  assert {
+    condition     = aws_db_instance.this.backup_retention_period == 35
+    error_message = "The retention of 35 days must be applied."
+  }
 }
