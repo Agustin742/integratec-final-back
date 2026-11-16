@@ -46,3 +46,13 @@ module "registry" {
 
   name_prefix = "${var.project}-${local.environment}"
 }
+
+module "app_config" {
+  source = "../../modules/app_config"
+
+  name_prefix = "${var.project}-${local.environment}"
+  region      = var.region
+
+  allowed_origins         = var.allowed_origins
+  password_reset_url_base = var.password_reset_url_base
+}

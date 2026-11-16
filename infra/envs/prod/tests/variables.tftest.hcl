@@ -9,6 +9,11 @@ mock_provider "aws" {
   }
 }
 
+variables {
+  allowed_origins         = ["https://app.example.com"]
+  password_reset_url_base = "https://app.example.com/reset-password"
+}
+
 run "defaults_target_prod_in_us_east_2" {
   command = plan
 

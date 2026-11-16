@@ -11,7 +11,9 @@ mock_provider "aws" {
 }
 
 variables {
-  project = "aula-virtual"
+  project                 = "aula-virtual"
+  allowed_origins         = ["https://app.example.com"]
+  password_reset_url_base = "https://app.example.com/reset-password"
 }
 
 run "one_repository_per_service" {

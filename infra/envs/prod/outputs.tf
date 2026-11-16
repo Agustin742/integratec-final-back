@@ -92,3 +92,23 @@ output "ecr_repository_arns" {
   description = "ECR repository ARN of each service, keyed by service name, for least-privilege IAM policies."
   value       = module.registry.repository_arns
 }
+
+output "app_secret_arns" {
+  description = "ARN of each generated application secret, keyed by env var name. Only ARNs are exposed, never values."
+  value       = module.app_config.secret_arns
+}
+
+output "app_service_secret_arns" {
+  description = "Secret ARNs each service may read, keyed by service then env var (realtime only gets INTERNAL_SERVICE_SECRET)."
+  value       = module.app_config.service_secret_arns
+}
+
+output "app_config_parameter_path_prefixes" {
+  description = "SSM path prefix of the non-secret config of each service, keyed by service name."
+  value       = module.app_config.parameter_path_prefixes
+}
+
+output "app_config_parameter_arns" {
+  description = "ARNs of the SSM config parameters of each service, keyed by service name, for least-privilege IAM policies."
+  value       = module.app_config.parameter_arns
+}

@@ -92,3 +92,23 @@ variable "availability_zones" {
     error_message = "availability_zones must list at least two distinct availability zones."
   }
 }
+
+variable "allowed_origins" {
+  description = "Browser origins the API accepts (CORS); published to SSM as ALLOWED_ORIGINS. Required: there is no real frontend URL yet."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.allowed_origins) > 0 && alltrue([for o in var.allowed_origins : can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", o))])
+    error_message = "allowed_origins must list at least one https origin without path, query or trailing slash, such as https://app.example.com."
+  }
+}
+
+variable "password_reset_url_base" {
+  description = "Frontend page that receives the password reset token; published to SSM as PASSWORD_RESET_URL_BASE. Required: there is no real frontend URL yet."
+  type        = string
+
+  validation {
+    condition     = can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^?#[:space:]]*)?$", var.password_reset_url_base))
+    error_message = "password_reset_url_base must be an absolute https URL without query string or fragment, such as https://app.example.com/reset-password."
+  }
+}
