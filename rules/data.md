@@ -24,8 +24,9 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | Material | File uploaded by the teacher (stored in object storage) | Belongs to a classroom; has an author |
 | Activity | TP or exam; format file or multiple choice; due date or exam window | Belongs to a classroom |
 | Question / Option | Multiple-choice question and its options, with correct marking | Belong to an activity |
-| Submission | A student's work for an activity (files or answers) | Joins Activity and student |
-| Grade | Score for a submission | One per submission; references the converting ledger entry |
+| Submission | A student's work for an activity (files or answers); status (`submitted \| graded`) is derived from `Grade` | Joins Activity and student |
+| Grade | Score (`0-100`), feedback, weighted points, and optimistic `version` for a submission | One per submission; references the initial earning ledger entry when points > 0 |
+| GradeRevision | Immutable history of initial grading and each regrade (`pointsDelta`) | Belongs to Grade (`(grade, version)` unique); references the earning/compensating ledger entry when points change |
 | PointsTransaction | Immutable ledger entry of points (earning, purchase, correction) | Belongs to a student; references its source |
 | ShopItem | Server-owned catalog entry: code, name, kind (`classroom_item`, `avatar_accessory`, `desk_upgrade`, `pet_accessory`), default price, `isActive`, `isImplemented`, metadata | Referenced by classroom overrides, purchases, and classroom items |
 | ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
@@ -64,7 +65,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - A student **MUST** have at most **2** guardians (active ParentLinks); the server **MUST** reject a third.
 - (Parent, child, classroom context) **MUST** be unique among parent links. ParentLink creation **MUST** be rejected for a classroom in adult mode.
 - A Classroom **MUST** have exactly one Pet. Accessory ownership **MUST** be unique per (pet, shop item).
-- A Submission **MUST** be unique per (activity, student) unless the activity allows resubmission (teacher-configured per activity; history representation is open); a Grade **MUST** be unique per submission.
+- A Submission **MUST** be unique per (activity, student) unless the activity allows resubmission (teacher-configured per activity; history representation is open); a Grade **MUST** be unique per submission, and each GradeRevision **MUST** be unique per (grade, version).
 - A PointsTransaction **MUST** be unique per (source type, source id) for earnings, and entries **MUST** be immutable.
 - A ClassroomShopItem **MUST** be unique per (classroom, shop item), and `priceOverride`, when set, **MUST** be positive.
 - A StudentPurchase **MUST** be unique per (classroom, student, shop item) and per (classroom, student, idempotency key).
@@ -114,7 +115,7 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 - Final table and column names, enum values, and field limits.
 - Exact shape of the join code: decided in issue #14 (D7) as a single `Invitation` entity with a `kind` discriminator (`email` vs `join_code`) plus `JoinCodeUsage`.
 - Medal catalog.
-- Resubmission history and grade history representation.
+- Resubmission history; grade history is decided as `Grade` + append-only `GradeRevision` (issue #32, [D17](../docs/technical-justification.md#d17-submission-grading-weighted-points-conversion-and-grade-revision-history)).
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.
 - School, classroom, and account deletion effects.
 - Whether one user may hold a school path and an independent-teacher path under one account.

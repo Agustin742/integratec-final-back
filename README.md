@@ -35,6 +35,7 @@ backend/
 
 - [Activities (TP and exams)](docs/activities.md): `/classrooms/:id/activities` create, list, read, update, publish and logical deactivation; teacher and student views (the student view never carries `isCorrect`); publishing records the student notifications in the same transaction.
 - [File submissions](docs/submissions.md): `POST /activities/:activityId/submissions` (multipart, `Idempotency-Key`), `GET /activities/:activityId/submissions/me` and `GET /submissions/:submissionId`; content-detected PDF, PNG, JPEG and DOCX, private storage with signed download URLs, window and late handling on the server clock, and the question and deletion lock on activities.
+- [Grading and weighted points](docs/grading.md): `POST`/`PATCH`/`GET /submissions/:submissionId/grade` and staff queue `GET /classrooms/:id/submissions`, 0-100 scale with optimistic concurrency `GradeRevision` history, exact integer weighted points conversion (`GRADE_WEIGHT_TP`, `GRADE_WEIGHT_EXAM`), atomic ledger credit/compensation, and student-only `grade_posted` outbox notices.
 
 ## Notification center
 
@@ -237,6 +238,8 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `STORAGE_SIGNED_URL_TTL`  | Default `5m`; same format, 1s to 1h               | Default lifetime of signed download URLs                                 | Public         | Yes     |
 | `SHOP_PURCHASE_RATE_LIMIT_WINDOW` | Default `1m`; same format, 1s to 1h       | Sliding-window duration for per-user shop purchase rate limiting         | Public         | Yes     |
 | `SHOP_PURCHASE_RATE_LIMIT_MAX` | Default `20`; integer 1-1000               | Maximum shop purchase attempts per user inside the sliding window        | Public         | Yes     |
+| `GRADE_WEIGHT_TP`         | Default `1`; decimal 0.1-10 (<= 2 decimals)       | Points multiplier applied to graded TP activities                        | Public         | Yes     |
+| `GRADE_WEIGHT_EXAM`       | Default `1.5`; decimal 0.1-10 (<= 2 decimals), `> GRADE_WEIGHT_TP` | Points multiplier applied to graded EXAM activities     | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 

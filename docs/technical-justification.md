@@ -253,6 +253,20 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), the [activities guide](activities.md) and the [submissions guide](submissions.md).
 - **Approval:** Defaults approved by Agustin (decision owner) on 2026-11-13. The PR #89 commit-outcome safety correction was authorized by Alejo on 2026-11-15; this does not claim a new team approval.
 
+### D17. Submission grading, weighted points conversion, and grade revision history
+
+- **Question:** How are submitted `FILE` activities graded and regraded on the 0-100 scale, how are activity-type weights configured and converted into ledger points without drift, and how is grade history persisted (HU-ACT-004, issue #32)?
+- **Outcome:**
+  1. **Model and optimistic concurrency:** `Grade` (`grades`, one per `submission_id`) stores `score` (`0-100`), `feedback` (`1-5000` trimmed visible text), `pointsAwarded` (`>= 0`), nullable `pointTransactionId`, and `version` (starting at `1`). Every initial grade and regrade appends an immutable `GradeRevision` (`grade_revisions`, unique on `(grade_id, version)`) recording `pointsDelta` and its linked ledger entry when points change. Regrades require `version` and reject stale versions with `409 Conflict`.
+  2. **Configurable weights and exact rounding:** `GRADE_WEIGHT_TP` (default `1`) and `GRADE_WEIGHT_EXAM` (default `1.5`, validated strictly greater than `GRADE_WEIGHT_TP`) are validated configuration values (`[0.1..10]`, up to 2 decimals). Points are computed as `round(score * typeWeight * activity.weightMultiplier)` using exact integer ten-thousandths arithmetic and half-up rounding.
+  3. **Atomic ledger integration:** Initial `pointsAwarded === 0` skips ledger insertion (`pointTransactionId = null`); regrading from `0` to positive points uses `PointsLedgerService.credit` (`EARNING`), while subsequent non-zero deltas use `PointsLedgerService.compensate` (`COMPENSATION`, rejecting negative resulting balances with `409`). `delta === 0` skips ledger writes.
+  4. **Lock order, notifications, and preserved read access:** Write transactions lock `activities (FOR SHARE)` -> `submissions (FOR UPDATE)` -> `grades (FOR UPDATE)` -> `classroom_memberships (FOR UPDATE via PointsLedgerService)` and record a student-only `grade_posted` outbox notification in the same transaction. Classroom staff keep `GET` read access to existing grades even after a student leaves the classroom; parent/email notifications and multiple-choice auto-grading (`#47`) remain out of scope.
+- **Rationale:** Integer hundredths math avoids IEEE-754 boundary errors (`10 * 0.75 * 0.6`), `GradeRevision` makes point deltas auditable without mutating `PointTransaction` rows, optimistic `version` prevents silent last-write-wins on concurrent staff edits, and strict lock ordering avoids deadlocks with `ActivitiesService` and `ShopService`.
+- **Alternatives:** Floating-point `Math.round` (rejected: boundary misrounding); storing only current grade without revision rows (rejected: loses regrade delta history); mutating existing `PointTransaction` rows (rejected by immutable ledger rules).
+- **Trade-off:** Points-changing grading/regrading after a student leaves a classroom is blocked by `PointsLedgerService`'s active-membership invariant, while read access on previously awarded grades stays preserved for staff.
+- **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Points and shop](../rules/points-and-shop.md), [Data](../rules/data.md), [grading guide](grading.md), and [submissions guide](submissions.md).
+- **Approval:** Follows the implementation-deferred weights and grade history rules in [Activities and grading](../rules/activities-and-grading.md) and [Data](../rules/data.md); recorded for issue #32.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
