@@ -25,9 +25,12 @@
 #     variable, never printed or written to a file, and unset right after use. It is
 #     handed to put-secret-value on stdin (--secret-string file:///dev/stdin), so it
 #     never appears in the process arguments (/proc/<pid>/cmdline) of any user.
-#   - Requires a Linux or macOS shell (or CloudShell): the Windows build of the AWS CLI
-#     cannot read /dev/stdin, so the script refuses to run under Git Bash/MSYS/Cygwin
-#     rather than fall back to putting the value in the arguments.
+#   - Windows fallback: under Git Bash/MSYS/Cygwin the native AWS CLI cannot read
+#     /dev/stdin, so the value is passed as the --secret-string argument instead. On a
+#     single-user Windows workstation the arguments are visible only to that user's own
+#     processes, which can already read that user's AWS credentials, so this adds no
+#     meaningful exposure. On Linux the arguments are readable by other local users
+#     through /proc, so stdin stays mandatory there.
 #
 # Rotation (supported procedure): generate a new value and store it with
 # `aws secretsmanager put-secret-value` for that secret; Secrets Manager moves
@@ -63,13 +66,6 @@ if [ -z "$region" ]; then
   exit 2
 fi
 
-case "$(uname -s)" in
-  MINGW* | MSYS* | CYGWIN*)
-    echo "The Windows AWS CLI cannot read the value from stdin; run this script from Linux, macOS or CloudShell." >&2
-    exit 3
-    ;;
-esac
-
 if [ -n "$arns_file" ]; then
   arns_json="$(<"$arns_file")"
 else
@@ -101,13 +97,30 @@ generate_hex_key() {
     --no-require-each-included-type --query RandomPassword --output text
 }
 
+# Stores the value as the new AWSCURRENT version (see the header for why Windows differs).
+store_value() {
+  local arn="$1" value="$2"
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*)
+      aws secretsmanager put-secret-value --region "$region" --secret-id "$arn" \
+        --secret-string "$value" >/dev/null
+      ;;
+    *)
+      printf '%s' "$value" | aws secretsmanager put-secret-value --region "$region" --secret-id "$arn" \
+        --secret-string file:///dev/stdin >/dev/null
+      ;;
+  esac
+}
+
 seed() {
   local name="$1" generator="$2" pattern="$3" arn current value
   arn="$(secret_arn "$name")"
 
-  # The lookup is not inside a conditional, so a failure aborts the whole script
-  # instead of looking like "no value yet" and overwriting a live secret.
-  if ! current="$(aws secretsmanager list-secret-version-ids --region "$region" --secret-id "$arn"     --query "Versions[?contains(VersionStages, 'AWSCURRENT')].VersionId" --output text)"; then
+  # A failed lookup (permissions, throttling, network) must not look like "no value
+  # yet" and overwrite a live secret, so the failure of the command substitution is
+  # detected explicitly and aborts the script.
+  if ! current="$(aws secretsmanager list-secret-version-ids --region "$region" --secret-id "$arn" \
+    --query "Versions[?contains(VersionStages, 'AWSCURRENT')].VersionId" --output text)"; then
     echo "${name}: could not read the secret's versions; aborting without changes." >&2
     return 1
   fi
@@ -123,7 +136,7 @@ seed() {
     return 1
   fi
 
-  printf '%s' "$value" | aws secretsmanager put-secret-value --region "$region" --secret-id "$arn"     --secret-string file:///dev/stdin >/dev/null
+  store_value "$arn" "$value"
   unset value
   echo "${name}: set"
 }

@@ -43,8 +43,11 @@ case "$2" in
     fi
     ;;
   put-secret-value)
-    # The value must arrive on stdin, never in the arguments logged above.
-    { echo "secret-id-args: $*"; cat; echo; } >> "$STUB_STDIN"
+    # Linux mode passes file:///dev/stdin and the value arrives on stdin; the Windows
+    # fallback passes the value as the argument and stdin stays untouched.
+    if [[ "$*" == *file:///dev/stdin* ]]; then
+      { echo "secret-id-args: $*"; cat; echo; } >> "$STUB_STDIN"
+    fi
     ;;
 esac
 """
@@ -69,7 +72,7 @@ class StaticTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"set\s+-[a-z]*x|set\s+-o\s+xtrace|bash\s+-x")
 
     def test_checks_current_version_before_put(self):
-        self.assertLess(self.code.index("list-secret-version-ids"), self.code.index("put-secret-value"))
+        self.assertLess(self.code.index("list-secret-version-ids"), self.code.index('store_value "$arn"'))
         self.assertIn("AWSCURRENT", self.code)
         self.assertIn("already set", self.code)
 
@@ -89,10 +92,10 @@ class StaticTests(unittest.TestCase):
         self.assertIn("seed INTERNAL_SERVICE_SECRET generate_secret '^[A-Za-z0-9]{64}$'", self.code)
         self.assertIn("seed JWT_SECRET generate_secret '^[A-Za-z0-9]{64}$'", self.code)
         self.assertIn("seed INVITATION_TOKEN_KEY generate_hex_key '^[0-9a-f]{64}$'", self.code)
-        self.assertLess(self.code.index('[[ ! "$value" =~ $pattern ]]'), self.code.index("put-secret-value"))
+        self.assertLess(self.code.index('[[ ! "$value" =~ $pattern ]]'), self.code.index('store_value "$arn"'))
 
     def test_value_is_never_printed_or_written(self):
-        joined = self.code.replace("\\n", " ")
+        joined = self.code.replace("\\\n", " ")
         self.assertNotRegex(joined, r"\becho\b[^\n]*\$\{?value\b")
         for line in joined.splitlines():
             if re.search(r"\bprintf\b", line) and re.search(r"\$\{?value\b", line):
@@ -101,10 +104,13 @@ class StaticTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"\btee\b")
         self.assertIn("unset value", self.code)
 
-    def test_value_is_passed_on_stdin_not_argv(self):
-        joined = self.code.replace("\\n", " ")
+    def test_value_is_passed_on_stdin_except_for_the_windows_cli(self):
+        joined = self.code.replace("\\\n", " ")
         self.assertIn("--secret-string file:///dev/stdin", joined)
-        self.assertNotRegex(joined, r"--secret-string\s+\"?\$")
+        self.assertEqual(len(re.findall(r"--secret-string \"\$value\"", joined)), 1)
+        windows = re.search(r"MINGW\* \| MSYS\* \| CYGWIN\*\)(.*?);;", joined, re.S).group(1)
+        self.assertIn('--secret-string "$value"', windows)
+        self.assertNotIn("exit 3", self.code)
 
     def test_lookup_failure_is_not_in_a_conditional(self):
         self.assertNotRegex(self.code, r"if\s+(!\s+)?has_current_version|\$\(has_current_version")
@@ -186,10 +192,18 @@ class BehaviorTests(unittest.TestCase):
             self.assertIn("requires a value", result.stderr.decode())
             self.assertEqual(calls, [])
 
-    def test_windows_native_aws_is_refused_before_any_call(self):
-        result, calls = self.run_script({"STUB_UNAME": "MINGW64_NT-10.0"})
-        self.assertEqual(result.returncode, 3)
-        self.assertEqual(calls, [])
+    def test_windows_cli_gets_the_value_as_argument_and_nothing_on_stdin(self):
+        for uname in ("MINGW64_NT-10.0", "MSYS_NT-10.0", "CYGWIN_NT-10.0"):
+            result, calls = self.run_script({"STUB_UNAME": uname})
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            puts = [c for c in calls if "put-secret-value" in c]
+            self.assertEqual(len(puts), 3)
+            self.assertFalse(any("file:///dev/stdin" in c for c in puts))
+            self.assertEqual(sum("Ab1Ab1Ab1" in c for c in puts), 2)
+            self.assertEqual(sum("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in c for c in puts), 1)
+            self.assertEqual(self.stdin_log.read_text(), "")
+            out = result.stdout.decode() + result.stderr.decode()
+            self.assertNotIn("Ab1Ab1", out)
 
     def test_invalid_hex_key_is_rejected_before_put(self):
         result, calls = self.run_script({"STUB_HEX": "G" * 64})
