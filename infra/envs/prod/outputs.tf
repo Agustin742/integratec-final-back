@@ -112,3 +112,13 @@ output "app_config_parameter_arns" {
   description = "ARNs of the SSM config parameters of each service, keyed by service name, for least-privilege IAM policies."
   value       = module.app_config.parameter_arns
 }
+
+output "storage_bucket_name" {
+  description = "Name of the private S3 bucket for application files (student submissions and materials); also published to the API as S3_BUCKET."
+  value       = module.storage.bucket_name
+}
+
+output "storage_bucket_arn" {
+  description = "ARN of the application files bucket; grant object access on \"<arn>/*\"."
+  value       = module.storage.bucket_arn
+}

@@ -4,7 +4,7 @@ locals {
 
 # Prod compute is a single EC2 host (see rules/aws-infrastructure.md). The network
 # lives in modules/network, the host in modules/host, the database in modules/database
-# and the container registries in modules/registry. See infra/README.md for the list of
+# and the container registries in modules/registry and the files bucket in modules/storage. See infra/README.md for the list of
 # resources intentionally left out.
 
 module "network" {
@@ -47,11 +47,19 @@ module "registry" {
   name_prefix = "${var.project}-${local.environment}"
 }
 
+module "storage" {
+  source = "../../modules/storage"
+
+  name_prefix = "${var.project}-${local.environment}"
+}
+
 module "app_config" {
   source = "../../modules/app_config"
 
   name_prefix = "${var.project}-${local.environment}"
   region      = var.region
+
+  s3_bucket_name = module.storage.bucket_name
 
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base

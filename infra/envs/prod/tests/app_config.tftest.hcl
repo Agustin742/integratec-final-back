@@ -48,8 +48,8 @@ run "ssm_parameters_hold_non_secret_config" {
   command = apply
 
   assert {
-    condition     = toset(keys(module.app_config.parameters)) == toset(["api/ALLOWED_ORIGINS", "api/PASSWORD_RESET_URL_BASE", "api/NODE_ENV", "api/S3_REGION", "api/REALTIME_INTERNAL_URL", "realtime/API_INTERNAL_URL", "realtime/NODE_ENV"])
-    error_message = "The config parameters must be exactly the non-secret api and realtime settings (S3_BUCKET is added by the S3 task, DATABASE_URL is built on the host)."
+    condition     = toset(keys(module.app_config.parameters)) == toset(["api/ALLOWED_ORIGINS", "api/PASSWORD_RESET_URL_BASE", "api/NODE_ENV", "api/S3_REGION", "api/S3_BUCKET", "api/REALTIME_INTERNAL_URL", "realtime/API_INTERNAL_URL", "realtime/NODE_ENV"])
+    error_message = "The config parameters must be exactly the non-secret api and realtime settings (DATABASE_URL is built on the host)."
   }
 
   assert {
@@ -226,6 +226,7 @@ run "rejects_invalid_module_name_prefix" {
   variables {
     name_prefix             = "Bad_Prefix"
     region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
   }

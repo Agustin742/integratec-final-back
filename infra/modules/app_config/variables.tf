@@ -18,6 +18,16 @@ variable "region" {
   }
 }
 
+variable "s3_bucket_name" {
+  description = "Name of the files bucket, published to the API as S3_BUCKET."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$", var.s3_bucket_name))
+    error_message = "s3_bucket_name must be a valid S3 bucket name (3 to 63 characters: lowercase letters, digits, periods and hyphens)."
+  }
+}
+
 variable "allowed_origins" {
   description = "Browser origins the API accepts (CORS), published as ALLOWED_ORIGINS joined with commas."
   type        = list(string)

@@ -6,8 +6,8 @@ locals {
   api_internal_url      = "http://api:3000"
 
   # Non-secret runtime config, one SSM parameter per service and env var.
-  # S3_BUCKET is added with the bucket itself; DATABASE_URL is built on the host from
-  # the RDS master secret, so neither belongs here.
+  # DATABASE_URL is built on the host from the RDS master secret, so it does not
+  # belong here.
   config = {
     api = {
       ALLOWED_ORIGINS         = join(",", var.allowed_origins)
@@ -15,6 +15,7 @@ locals {
       NODE_ENV                = "production"
       # The bucket is created in the environment region, so reuse it instead of a second knob.
       S3_REGION             = var.region
+      S3_BUCKET             = var.s3_bucket_name
       REALTIME_INTERNAL_URL = local.realtime_internal_url
     }
     realtime = {
