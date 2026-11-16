@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-16 — Prod network and EC2 host with Caddy config (#59)
+
+- **Status:** in-progress (commits on `feat/59-network-ec2-host`; PR not opened yet; nothing applied to AWS)
+- **Area / files:** `infra/modules/network`, `infra/modules/host`, `infra/envs/prod/` (`main.tf`, `outputs.tf`, `variables.tf`, `tests/`), `infra/caddy/Caddyfile`, `scripts/ci/test_caddy.py`, `infra/README.md`
+- **Change:** Added the prod VPC (`10.0.0.0/16`), one public subnet, private subnets in two pinned Availability Zones, an internet gateway and no NAT. Added a host security group that only allows TCP 443 and 80 from the internet (no SSH), with a test that fails on any other public ingress. Added the EC2 host (`t3.small`, Amazon Linux 2023, encrypted gp3 root volume, IMDSv2 required, Elastic IP, SSM instance profile) whose first-boot script installs Docker and a checksum-verified Docker Compose and writes `done` or `failed` markers, with an output that gives the SSM command to check them. Added the Caddyfile (HTTP to HTTPS, `/api` to the API, `/realtime` to Colyseus with WebSocket, internal paths answer 404) with a 16-test harness. Documented the resources, the interim sslip.io name, the step-by-step plan and apply, Session Manager access, the bootstrap check and an unverified cost estimate in `infra/README.md`. Prod outputs expose the VPC, subnets, instance id, public IP, sslip.io domain, security group id and bootstrap check command. `terraform test` has 48 passing tests in `envs/prod`.
+- **Reason:** The RDS (#60) and ECR and Compose deployment (#61) issues need these subnets, host and security group, and the API and realtime service need a single HTTPS/WSS entry point.
+- **Open points for the PR:** nothing has been applied, so the HTTPS and WSS, second-plan and Let's Encrypt acceptance criteria are not verified. The cost figures are unverified and not compared with the Free plan credits. Caddy has no ACME contact email configured. Running Caddy and the containers belongs to #61.
+- **Next step:** Open the PR into `develop` after approval; apply only with maintainer approval.
+
 ## 2026-11-13 — Publish activities, server side (#28)
 
 - **Status:** in-progress (PR #86 into `develop` opened, in review)

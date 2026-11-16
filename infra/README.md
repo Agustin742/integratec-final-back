@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds the skeleton: a remote state bucket, the `prod` root, and the GitHub Actions OIDC role (disabled by default, see below). Application resources (network, EC2 host, RDS, ECR, ...) are added by later issues.
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host (see [Network and EC2 host](#network-and-ec2-host)), and the GitHub Actions OIDC role (disabled by default, see below). **Nothing in `infra/` has been applied to AWS yet.** RDS, ECR and the container deployment are added by later issues.
 
 Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
 
@@ -9,12 +9,12 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`) today, application resources later. | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network and EC2 host, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
 - **Every root module has a `versions.tf`.** CI detects roots by that file and fails if a root is missing from the `terraform` job matrix in `.github/workflows/ci.yml`.
-- Reusable child modules go under `infra/modules/` and have no `versions.tf` of their own.
+- Reusable child modules go under `infra/modules/` (`network`, `host`) and have no `versions.tf` of their own.
 - The `project` prefix (`aula-virtual` by default) **MUST** be the same in every root. The CI role policy in `envs/prod` derives the state bucket name from it and the account ID.
 - Tags `Project`, `Environment`, and `ManagedBy = "terraform"` are applied through provider `default_tags`.
 
@@ -50,6 +50,131 @@ terraform plan                                   # must report no changes
 
 - State locking uses the S3 native lockfile (`use_lockfile = true`), so no DynamoDB table is needed.
 - `prod.s3.tfbackend` and `*.tfvars` are git-ignored. `example.tfvars` documents the optional overrides.
+
+## Network and EC2 host
+
+Issue #59 adds the production network and the single host that will run the application. Everything is declared in `envs/prod` through the modules `modules/network` and `modules/host`, and covered by `terraform test` with a mocked AWS provider. **None of it has been applied to AWS**; the steps below describe what `terraform apply` would create.
+
+### Resources
+
+| Area | Resource | Notes |
+|------|----------|-------|
+| Network | VPC `10.0.0.0/16` | Variable `vpc_cidr`; it must be an IPv4 `/16`. |
+| Network | One public subnet | Holds the EC2 host; routes `0.0.0.0/0` to the internet gateway. |
+| Network | Private subnets in 2 AZs (`us-east-2a`, `us-east-2b`) | For the RDS subnet group (#60). Their route table has no routes, so they have no internet path. Variable `availability_zones`. |
+| Network | Internet gateway | Only for the public subnet. There is **no NAT gateway** and no load balancer. |
+| Security | Host security group | Inbound only TCP 443 and 80 from the internet. **No SSH (port 22) and no key pair.** Outbound is open so the host can reach package repositories, Let's Encrypt and, later, ECR. |
+| Compute | EC2 `t3.small`, Amazon Linux 2023 (x86_64) | The AMI comes from the public SSM parameter for AL2023; newer AMI releases do not replace the instance (`ignore_changes`). Variable `host_instance_type`. |
+| Compute | Root volume: encrypted gp3, 20 GiB | Variable `host_root_volume_size_gb`. |
+| Compute | IMDSv2 required | The instance metadata service only answers token-based requests. |
+| Compute | Elastic IP | A fixed public address; it is the only public address of the host. |
+| Access | IAM role and instance profile with `AmazonSSMManagedInstanceCore` | Lets Session Manager and Run Command reach the host. The application permissions (ECR, secrets) are added by #61. |
+| Provisioning | User data script (cloud-init, runs once at first boot) | Installs Docker and the pinned Docker Compose plugin (checksum verified) and starts the SSM agent. It writes `/var/lib/host-bootstrap/done` on success or `/var/lib/host-bootstrap/failed` (with the failing line) on error. Its log is `/var/log/host-bootstrap.log`. |
+
+Changing the user data or the AMI later does not touch the running instance. To apply such a change, replace the host on purpose: `terraform apply -replace=module.host.aws_instance.host`.
+
+### Domain and Caddy routing
+
+Let's Encrypt needs a DNS name that points to the Elastic IP. Until a real domain is chosen, the interim name is the Elastic IP under [sslip.io](https://sslip.io), a free wildcard DNS service: the IP `203.0.113.10` becomes `203-0-113-10.sslip.io`. Terraform exposes it as the output `host_sslip_domain`. Caddy reads the name from the `SITE_ADDRESS` variable, so switching to a real domain later does not change the Caddyfile.
+
+`infra/caddy/Caddyfile` is the reverse proxy configuration. Caddy is the only public entry:
+
+| Request | Result |
+|---------|--------|
+| `http://<site>/...` | Redirected to HTTPS. |
+| `https://<site>/api/...` | Proxied to the API container (`api:3000`), with the `/api` prefix removed. |
+| `https://<site>/realtime/...` | Proxied to the Colyseus container (`realtime:2567`). WebSocket upgrades (WSS) are supported and kept open for long sessions. |
+| `/api/internal*` and `/realtime/internal*` | `404`. The internal API and realtime channel stays on the private Docker network and is never routed. |
+| Anything else | `404`. |
+
+`scripts/ci/test_caddy.py` checks the file (and, when Docker is available, validates it and tests the routing against stub upstreams). **Caddy and the containers are not started by this issue**: running them belongs to the Docker Compose deployment in #61. Until then, nothing listens on ports 443 and 80 of the host.
+
+### Plan and apply, step by step
+
+Nothing here has been run for this issue; the first apply needs the maintainer's approval.
+
+1. Make sure the state bucket exists (see [Bootstrap](#bootstrap-once-per-aws-account)) and sign in with `aws login --region us-east-2`. `aws sts get-caller-identity` must succeed.
+2. Go to the prod root and initialize it against the remote state:
+
+   ```sh
+   cd infra/envs/prod
+   cp prod.s3.tfbackend.example prod.s3.tfbackend   # set bucket to the bootstrap output
+   terraform init -backend-config=prod.s3.tfbackend
+   ```
+
+3. Preview the changes and save the plan. `plan` changes nothing in AWS. Read it and check that it only creates resources (no destroy) and that no security group allows anything beyond 443 and 80:
+
+   ```sh
+   terraform plan -out=prod.tfplan
+   ```
+
+4. Apply exactly that plan. This creates the resources and starts billing for the instance, the volume and the Elastic IP:
+
+   ```sh
+   terraform apply prod.tfplan
+   ```
+
+5. Run `terraform plan` again. It must report no changes.
+6. Read the outputs you need later:
+
+   ```sh
+   terraform output host_public_ip
+   terraform output host_sslip_domain
+   terraform output host_instance_id
+   terraform output host_security_group_id
+   terraform output private_subnet_ids
+   ```
+
+To remove everything, `terraform destroy` shows what it will delete and asks for confirmation. The Elastic IP is released with it, so the sslip.io name changes if the host is created again.
+
+### Reach the host with Session Manager
+
+There is no SSH. Administration goes through AWS Systems Manager, which uses the instance profile and an outbound connection from the host; no inbound port is needed.
+
+On your computer you need AWS CLI v2 signed in to the account and the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html). The host appears as a managed node a few minutes after first boot.
+
+Open a shell on the host (run it from `infra/envs/prod`; `-raw` prints the value without quotes):
+
+```sh
+aws ssm start-session --region us-east-2 --target "$(terraform output -raw host_instance_id)"
+```
+
+Type `exit` to close it. You land as `ssm-user`; use `sudo` when you need root.
+
+### Check that the first boot worked
+
+The first boot installs Docker and Compose. To check it without opening a shell, run the output `host_bootstrap_check_command`, which sends a command through SSM Run Command that prints the `done` marker:
+
+```sh
+eval "$(terraform output -raw host_bootstrap_check_command)"
+```
+
+The result includes a `CommandId`. Commands run asynchronously, so fetch the outcome with it a few seconds later:
+
+```sh
+aws ssm get-command-invocation --region us-east-2 \
+  --command-id "<CommandId from the previous output>" \
+  --instance-id "$(terraform output -raw host_instance_id)"
+```
+
+Read `Status` and `StandardOutputContent`:
+
+- `Status` is `Success` and the output shows a timestamp and the Compose version: the host is ready.
+- `Status` is `Failed` because the `done` marker does not exist: the bootstrap failed or is still running. Read the `failed` marker the same way, with `commands=["cat /var/lib/host-bootstrap/failed"]`, or the full log (`/var/log/host-bootstrap.log`) from a Session Manager shell.
+- The command is rejected because the instance is not found: the SSM agent has not registered yet; wait a few minutes.
+
+### Estimated monthly cost (unverified)
+
+**These figures are not verified.** They are approximate on-demand Linux list prices for `us-east-2` written from memory, without a live pricing lookup, and they have not been compared with the AWS Free plan credits of this account. Check the [AWS Pricing Calculator](https://calculator.aws/) and the account's Billing page before applying.
+
+| Item | Assumption | Approximate monthly cost |
+|------|-----------|--------------------------|
+| EC2 `t3.small` | about USD 0.0208 per hour, 730 hours | about USD 15.2 |
+| EBS gp3, 20 GiB | about USD 0.08 per GiB-month | about USD 1.6 |
+| Public IPv4 (Elastic IP) | about USD 0.005 per hour, charged even when attached | about USD 3.7 |
+| Total | | about USD 20.5 |
+
+Not included: data transfer out, RDS (#60), ECR and any other later resource. Whether the Free plan credits cover this for the intended duration is not known.
 
 ## GitHub Actions OIDC role
 
