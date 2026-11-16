@@ -52,3 +52,13 @@ output "host_security_group_id" {
   description = "ID of the EC2 host security group; the intended source for the RDS ingress rule added in #60."
   value       = module.host.security_group_id
 }
+
+output "database_security_group_id" {
+  description = "ID of the database security group (PostgreSQL 5432 only from the EC2 host security group)."
+  value       = module.database.security_group_id
+}
+
+output "database_subnet_group_name" {
+  description = "Name of the DB subnet group (private subnets) the RDS instance is placed in."
+  value       = module.database.subnet_group_name
+}

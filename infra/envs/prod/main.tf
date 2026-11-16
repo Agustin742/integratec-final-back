@@ -3,8 +3,8 @@ locals {
 }
 
 # Prod compute is a single EC2 host (see rules/aws-infrastructure.md). The network
-# lives in modules/network; the host, RDS and ECR are added by later issues. See
-# infra/README.md for the list of resources intentionally left out.
+# lives in modules/network, the host in modules/host and the database networking in
+# modules/database; ECR is added by a later issue. See infra/README.md for the list of resources intentionally left out.
 
 module "network" {
   source = "../../modules/network"
@@ -28,4 +28,13 @@ module "host" {
   # The Elastic IP can only be associated once the internet gateway is attached to
   # the VPC, which no value passed to the module expresses.
   depends_on = [module.network]
+}
+
+module "database" {
+  source = "../../modules/database"
+
+  name_prefix            = "${var.project}-${local.environment}"
+  vpc_id                 = module.network.vpc_id
+  private_subnet_ids     = module.network.private_subnet_ids
+  host_security_group_id = module.host.security_group_id
 }
