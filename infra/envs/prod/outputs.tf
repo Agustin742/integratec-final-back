@@ -82,3 +82,13 @@ output "database_master_user_secret_arn" {
   description = "ARN of the Secrets Manager secret holding the RDS master credentials; the deployment reads it at runtime. Only the ARN is exposed, never the secret value."
   value       = module.database.master_user_secret_arn
 }
+
+output "ecr_repository_urls" {
+  description = "ECR repository URL of each service (api, realtime); images are pushed and pulled here."
+  value       = module.registry.repository_urls
+}
+
+output "ecr_repository_arns" {
+  description = "ECR repository ARN of each service (api, realtime), for least-privilege IAM policies."
+  value       = module.registry.repository_arns
+}

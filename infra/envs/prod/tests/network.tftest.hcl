@@ -1,4 +1,13 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  # The mock returns a random string for data source JSON, so the ECR lifecycle
+  # policy document is pinned to a well-formed value.
+  override_data {
+    target = module.registry.data.aws_ecr_lifecycle_policy_document.this
+    values = {
+      json = "{\"rules\":[]}"
+    }
+  }
+}
 
 run "vpc_has_dns_support_and_hostnames" {
   command = apply

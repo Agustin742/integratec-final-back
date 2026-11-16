@@ -3,8 +3,8 @@ locals {
 }
 
 # Prod compute is a single EC2 host (see rules/aws-infrastructure.md). The network
-# lives in modules/network, the host in modules/host and the database networking in
-# modules/database; ECR is added by a later issue. See infra/README.md for the list of
+# lives in modules/network, the host in modules/host, the database in modules/database
+# and the container registries in modules/registry. See infra/README.md for the list of
 # resources intentionally left out.
 
 module "network" {
@@ -39,4 +39,10 @@ module "database" {
   private_subnet_ids                = module.network.private_subnet_ids
   private_subnet_availability_zones = module.network.private_subnet_availability_zones
   host_security_group_id            = module.host.security_group_id
+}
+
+module "registry" {
+  source = "../../modules/registry"
+
+  name_prefix = "${var.project}-${local.environment}"
 }
