@@ -4,6 +4,7 @@ import { ActivitiesModule } from '../activities/activities.module';
 import { ActivityForumModule } from '../activities/forum/activity-forum.module';
 import { EmailModule } from '../platform/email/email.module';
 import { OutboxModule } from '../platform/outbox/outbox.module';
+import { ClassroomContextModule } from '../platform/classroom-context/classroom-context.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ClassroomInvitationCreatedHandler } from './classroom-invitation-created.handler';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
@@ -22,6 +23,7 @@ import { ClassroomRosterModule } from './roster/roster.module';
     PrismaModule,
     AccessModule,
     OutboxModule,
+    ClassroomContextModule,
     EmailModule,
     ClassroomRosterModule,
     ClassroomDirectoryModule,

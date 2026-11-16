@@ -15,6 +15,7 @@ import { configureHttp } from '../../http/configure-http';
 import { NOTIFICATION_REQUESTED_EVENT } from '../../notifications/notification-recorder.service';
 import { OutboxDispatcher } from '../../platform/outbox/outbox.dispatcher';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ActivitiesModule } from '../activities.module';
 import { ActivityForumModule } from './activity-forum.module';
 import { futureInstant } from '../../testing/relative-dates';
 
@@ -97,6 +98,7 @@ describe('activity forum PostgreSQL HTTP — communication, data and classrooms-
           ...authTestConfig({ outboxPollIntervalSeconds: 86400 }),
           databaseUrl,
         }),
+        ActivitiesModule,
         ActivityForumModule,
       ],
       providers: [
@@ -304,17 +306,29 @@ describe('activity forum PostgreSQL HTTP — communication, data and classrooms-
 
   it('whitespace-only and over-length bodies are rejected; 2000 chars are accepted', async () => {
     await forum('post', '/threads', student).send(body('   ')).expect(400);
+    await forum('post', '/threads', student).send(body('Hello\u0000world')).expect(400);
     await forum('post', '/threads', student)
       .send(body('x'.repeat(2001)))
       .expect(400);
-    await forum('post', '/threads', student)
-      .send(body('x'.repeat(2000)))
+    const padded = await forum('post', '/threads', student)
+      .send(body(`  ${'x'.repeat(2000)}  `))
       .expect(201);
+    expect(padded.body.posts[0].body).toBe('x'.repeat(2000));
   });
 
-  it('access matrix: parent 403, stranger 404, students cannot reach drafts, other classroom 404', async () => {
+  it('access matrix: 401 unauthenticated, parent 403/404, stranger 404, students cannot reach drafts, other classroom 404', async () => {
+    await request(app.getHttpServer())
+      .get(`/classrooms/${classroomA}/activities/${publishedActivity}/forum/threads`)
+      .expect(401);
     await forum('get', '/threads', parent).expect(403);
     await forum('post', '/threads', parent).send(body('Can I ask?')).expect(403);
+    await prisma.classroom.update({ where: { id: classroomA }, data: { adultMode: true } });
+    try {
+      await forum('get', '/threads', parent).expect(404);
+      await forum('post', '/threads', parent).send(body('Adult mode?')).expect(404);
+    } finally {
+      await prisma.classroom.update({ where: { id: classroomA }, data: { adultMode: false } });
+    }
     await forum('get', '/threads', stranger).expect(404);
     await forum('post', '/threads', stranger).send(body('Am I here?')).expect(404);
     await forum('get', '/threads', student, draftActivity).expect(404);
@@ -337,5 +351,82 @@ describe('activity forum PostgreSQL HTTP — communication, data and classrooms-
       .expect(404);
     await forum('get', `/threads/${randomUUID()}/posts`, student).expect(404);
     await forum('get', `/threads/not-a-uuid/posts`, student).expect(404);
+  });
+
+  it('handles concurrent thread creation, parallel replies, and activity deactivation races safely', async () => {
+    const raceActivity = randomUUID();
+    await prisma.activity.create({
+      data: activityData(raceActivity, classroomA, 'PUBLISHED'),
+    });
+
+    const [t1, t2] = await Promise.all([
+      forum('post', '/threads', student, raceActivity).send(body('Concurrent thread 1')),
+      forum('post', '/threads', otherStudent, raceActivity).send(body('Concurrent thread 2')),
+    ]);
+    expect(t1.status).toBe(201);
+    expect(t2.status).toBe(201);
+    expect(t1.body.id).not.toBe(t2.body.id);
+
+    const [r1, r2, r3] = await Promise.all([
+      forum('post', `/threads/${t1.body.id}/posts`, student, raceActivity).send(
+        body('Author follow-up'),
+      ),
+      forum('post', `/threads/${t1.body.id}/posts`, otherStudent, raceActivity).send(
+        body('Peer reply'),
+      ),
+      forum('post', `/threads/${t1.body.id}/posts`, teacher, raceActivity).send(
+        body('Teacher answer'),
+      ),
+    ]);
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
+    expect(r3.status).toBe(201);
+
+    const postsList = await forum(
+      'get',
+      `/threads/${t1.body.id}/posts`,
+      student,
+      raceActivity,
+    ).expect(200);
+    expect(postsList.body.total).toBe(4);
+    const threadList = await forum('get', '/threads', student, raceActivity).expect(200);
+    const summary = threadList.body.items.find((item: { id: string }) => item.id === t1.body.id) as
+      { replyCount: number } | undefined;
+    expect(summary?.replyCount).toBe(3);
+
+    const notices = await materialize(t1.body.id);
+    expect(notices.map((n) => n.recipientId)).toEqual([student]);
+
+    // Race thread creation and reply creation against activity deactivation (FOR UPDATE vs FOR SHARE).
+    const [deactRes, raceThreadRes, racePostRes] = await Promise.all([
+      request(app.getHttpServer())
+        .delete(`/classrooms/${classroomA}/activities/${raceActivity}`)
+        .set('Authorization', token(teacher)),
+      forum('post', '/threads', student, raceActivity).send(body('Race thread vs deactivate')),
+      forum('post', `/threads/${t2.body.id}/posts`, teacher, raceActivity).send(
+        body('Race reply vs deactivate'),
+      ),
+    ]);
+    expect(deactRes.status).toBe(204);
+    expect([201, 404]).toContain(raceThreadRes.status);
+    expect([201, 404]).toContain(racePostRes.status);
+
+    // Once deactivated, further thread and reply attempts return 404 and emit no replies/notices.
+    const postCountBefore = await prisma.activityForumPost.count({
+      where: { thread: { activityId: raceActivity } },
+    });
+    const requestsBefore = await replyRequests(t2.body.id);
+    await forum('post', '/threads', student, raceActivity)
+      .send(body('After deactivate'))
+      .expect(404);
+    await forum('post', `/threads/${t2.body.id}/posts`, teacher, raceActivity)
+      .send(body('Reply after deactivate'))
+      .expect(404);
+    expect(
+      await prisma.activityForumPost.count({
+        where: { thread: { activityId: raceActivity } },
+      }),
+    ).toBe(postCountBefore);
+    expect(await replyRequests(t2.body.id)).toHaveLength(requestsBefore.length);
   });
 });

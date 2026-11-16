@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ActivityState, type Prisma } from '@prisma/client';
+import { ActivityState, Prisma } from '@prisma/client';
 import { UUID_PATTERN } from '../../access/access-verification.service';
 import {
   AccessVerificationService,
@@ -62,8 +62,9 @@ export class ActivityForumService {
   ) {}
 
   /**
-   * Creates a thread with its first post (the question). The row lock serializes the
-   * publish-independent activity checks; the access check runs first so a stranger
+   * Creates a thread with its first post (the question). Acquires a shared row lock on
+   * the parent activity inside the transaction so concurrent activity deactivation cannot
+   * race past the `deletedAt` / `PUBLISHED` check; access check runs first so a stranger
    * never reaches the activity row.
    */
   async createThread(
@@ -73,24 +74,27 @@ export class ActivityForumService {
     dto: CreateForumThreadDto,
   ): Promise<ForumThreadDetailDto> {
     const access = await this.verifyForumAccess(actorId, classroomId);
-    const activity = await this.loadActivity(activityId, classroomId, access);
+    if (!UUID_PATTERN.test(activityId)) throw this.notFound();
     const body = this.validateBody(dto.body);
 
-    const thread = await this.prisma.activityForumThread.create({
-      data: {
-        activityId: activity.id,
-        authorId: actorId,
-        posts: { create: { authorId: actorId, body } },
-      },
-      select: {
-        id: true,
-        activityId: true,
-        authorId: true,
-        createdAt: true,
-        posts: {
-          select: { id: true, threadId: true, authorId: true, body: true, createdAt: true },
+    const thread = await this.prisma.$transaction(async (tx) => {
+      const activity = await this.lockAndVerifyActivity(tx, activityId, classroomId, access);
+      return tx.activityForumThread.create({
+        data: {
+          activityId: activity.id,
+          authorId: actorId,
+          posts: { create: { authorId: actorId, body } },
         },
-      },
+        select: {
+          id: true,
+          activityId: true,
+          authorId: true,
+          createdAt: true,
+          posts: {
+            select: { id: true, threadId: true, authorId: true, body: true, createdAt: true },
+          },
+        },
+      });
     });
     return toThreadDetail(thread);
   }
@@ -104,11 +108,11 @@ export class ActivityForumService {
     dto: CreateForumPostDto,
   ): Promise<ForumPostDto> {
     const access = await this.verifyForumAccess(actorId, classroomId);
-    await this.loadActivity(activityId, classroomId, access);
-    if (!UUID_PATTERN.test(threadId)) throw this.notFound();
+    if (!UUID_PATTERN.test(activityId) || !UUID_PATTERN.test(threadId)) throw this.notFound();
     const body = this.validateBody(dto.body);
 
     const row = await this.prisma.$transaction(async (tx) => {
+      await this.lockAndVerifyActivity(tx, activityId, classroomId, access);
       const locked = await tx.$queryRaw<{ id: string; authorId: string }[]>`
         SELECT id, author_id AS "authorId" FROM activity_forum_threads
         WHERE id = ${threadId}::uuid AND activity_id = ${activityId}::uuid
@@ -147,22 +151,25 @@ export class ActivityForumService {
     const activity = await this.loadActivity(activityId, classroomId, access);
     const sort = parseSort(query.sort, FORUM_THREAD_SORT_OPTIONS);
     const where: Prisma.ActivityForumThreadWhereInput = { activityId: activity.id };
-    const [rows, total] = await Promise.all([
-      this.prisma.activityForumThread.findMany({
-        where,
-        ...toSkipTake(query),
-        orderBy: [{ [sort.field]: sort.direction }, { id: 'asc' }],
-        select: {
-          id: true,
-          activityId: true,
-          authorId: true,
-          createdAt: true,
-          posts: THREAD_FIRST_POST_SELECT,
-          _count: { select: { posts: true } },
-        },
-      }),
-      this.prisma.activityForumThread.count({ where }),
-    ]);
+    const [rows, total] = await this.prisma.$transaction(
+      [
+        this.prisma.activityForumThread.findMany({
+          where,
+          ...toSkipTake(query),
+          orderBy: [{ [sort.field]: sort.direction }, { id: 'asc' }],
+          select: {
+            id: true,
+            activityId: true,
+            authorId: true,
+            createdAt: true,
+            posts: THREAD_FIRST_POST_SELECT,
+            _count: { select: { posts: true } },
+          },
+        }),
+        this.prisma.activityForumThread.count({ where }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
     const items = rows.map(toThreadSummary);
     return paginated(items, total, query);
   }
@@ -184,15 +191,18 @@ export class ActivityForumService {
     if (!thread) throw this.notFound();
     const sort = parseSort(query.sort, FORUM_POST_SORT_OPTIONS);
     const where: Prisma.ActivityForumPostWhereInput = { threadId };
-    const [rows, total] = await Promise.all([
-      this.prisma.activityForumPost.findMany({
-        where,
-        ...toSkipTake(query),
-        orderBy: [{ [sort.field]: sort.direction }, { id: 'asc' }],
-        select: { id: true, threadId: true, authorId: true, body: true, createdAt: true },
-      }),
-      this.prisma.activityForumPost.count({ where }),
-    ]);
+    const [rows, total] = await this.prisma.$transaction(
+      [
+        this.prisma.activityForumPost.findMany({
+          where,
+          ...toSkipTake(query),
+          orderBy: [{ [sort.field]: sort.direction }, { id: 'asc' }],
+          select: { id: true, threadId: true, authorId: true, body: true, createdAt: true },
+        }),
+        this.prisma.activityForumPost.count({ where }),
+      ],
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
     return paginated(rows.map(toPostDto), total, query);
   }
 
@@ -240,11 +250,51 @@ export class ActivityForumService {
   }
 
   /**
-   * Bodies are non-empty after trimming and bounded server-side (the DTO validates the
-   * same bound; the service enforces the invariant again inside the business layer).
+   * Locks and re-verifies the parent activity inside the write transaction so a
+   * concurrent `ActivitiesService.deactivate` cannot leave new threads/posts or
+   * notifications attached to a deleted or draft activity.
+   */
+  private async lockAndVerifyActivity(
+    tx: Prisma.TransactionClient,
+    activityId: string,
+    classroomId: string,
+    access: ClassroomAccessResult,
+  ): Promise<{ id: string }> {
+    if (!UUID_PATTERN.test(activityId)) throw this.notFound();
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM activities
+      WHERE id = ${activityId}::uuid
+        AND classroom_id = ${classroomId}::uuid
+        AND deleted_at IS NULL
+      FOR SHARE`;
+    if (locked.length === 0) throw this.notFound();
+    const isStaff =
+      access.myRole === 'OWNER' || access.myRole === 'ADMIN' || access.myRole === 'TEACHER';
+    const row = await tx.activity.findFirst({
+      where: {
+        id: activityId,
+        classroomId,
+        deletedAt: null,
+        ...(isStaff ? {} : { state: ActivityState.PUBLISHED }),
+      },
+      select: { id: true },
+    });
+    if (!row) throw this.notFound();
+    return row;
+  }
+
+  /**
+   * Bodies are non-empty after trimming, free of control characters, and bounded
+   * server-side (the DTO validates the same bound; the service enforces it again).
    */
   private validateBody(raw: string): string {
     const trimmed = raw.trim();
+    // eslint-disable-next-line no-control-regex -- Reject NUL and unsafe control characters.
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/u.test(trimmed)) {
+      throw new RequestValidationException([
+        { field: 'body', messages: ['body must not contain control characters'] },
+      ]);
+    }
     if (trimmed.length === 0 || trimmed.length > FORUM_POST_BODY_MAX_LENGTH) {
       throw new RequestValidationException([
         {

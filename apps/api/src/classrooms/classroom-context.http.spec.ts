@@ -10,6 +10,7 @@ import { SessionVerifier } from '../auth/session-verifier.service';
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../config/config.module';
 import { configureHttp } from '../http/configure-http';
+import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertResourceAuthorization } from '../testing/resource-authorization';
@@ -93,7 +94,18 @@ describe('classroom context HTTP — panel availability is not authorization', (
         AccessModule,
       ],
       controllers: [ClassroomsController],
-      providers: [ClassroomsService, { provide: ClassroomInvitationsService, useValue: {} }],
+      providers: [
+        ClassroomsService,
+        { provide: ClassroomInvitationsService, useValue: {} },
+        {
+          provide: ClassroomContextRecorder,
+          useValue: {
+            recordChanged: () => {
+              throw new Error('GET must not record context changes');
+            },
+          },
+        },
+      ],
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
