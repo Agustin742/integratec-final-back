@@ -66,8 +66,8 @@ run "versioning_with_bounded_noncurrent_retention" {
   }
 
   assert {
-    condition     = module.storage.lifecycle_rules == { noncurrent_version_expiration_days = 30, abort_incomplete_multipart_upload_days = 7 }
-    error_message = "Noncurrent versions must expire after 30 days and incomplete multipart uploads be aborted after 7 days."
+    condition     = module.storage.lifecycle_rules.status == "Enabled" && module.storage.lifecycle_rules.noncurrent_version_expiration_days == 30 && module.storage.lifecycle_rules.abort_incomplete_multipart_upload_days == 7
+    error_message = "The lifecycle rule must be Enabled, expire noncurrent versions after 30 days and abort incomplete multipart uploads after 7 days."
   }
 }
 
@@ -165,6 +165,37 @@ run "rejects_invalid_module_name_prefix" {
 
   variables {
     name_prefix = "Bad_Prefix"
+  }
+
+  expect_failures = [var.name_prefix]
+}
+
+run "accepts_name_prefix_of_30_characters" {
+  command = plan
+
+  module {
+    source = "../../modules/storage"
+  }
+
+  variables {
+    name_prefix = "aula-virtual-prod-aaaaaaaaaaaa"
+  }
+
+  assert {
+    condition     = output.bucket_settings.bucket_prefix == "aula-virtual-prod-aaaaaaaaaaaa-files-"
+    error_message = "A 30 character name_prefix must be accepted: with -files- the bucket prefix is the 37 character maximum."
+  }
+}
+
+run "rejects_name_prefix_of_31_characters" {
+  command = plan
+
+  module {
+    source = "../../modules/storage"
+  }
+
+  variables {
+    name_prefix = "aula-virtual-prod-aaaaaaaaaaaaa"
   }
 
   expect_failures = [var.name_prefix]

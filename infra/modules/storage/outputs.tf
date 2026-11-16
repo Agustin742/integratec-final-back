@@ -30,14 +30,16 @@ output "public_access_block" {
 }
 
 output "lifecycle_rules" {
-  description = "Retention settings of the lifecycle rule, built from the same inputs as the resource, for tests and review."
+  description = "Id, status and retention days of the lifecycle rule as configured on the resource, for tests and review."
   value = {
-    noncurrent_version_expiration_days     = var.noncurrent_version_expiration_days
-    abort_incomplete_multipart_upload_days = local.abort_incomplete_multipart_upload_days
+    id                                     = one(aws_s3_bucket_lifecycle_configuration.this.rule[*].id)
+    status                                 = one(aws_s3_bucket_lifecycle_configuration.this.rule[*].status)
+    noncurrent_version_expiration_days     = one(flatten(aws_s3_bucket_lifecycle_configuration.this.rule[*].noncurrent_version_expiration[*].noncurrent_days))
+    abort_incomplete_multipart_upload_days = one(flatten(aws_s3_bucket_lifecycle_configuration.this.rule[*].abort_incomplete_multipart_upload[*].days_after_initiation))
   }
 }
 
 output "bucket_policy_statements" {
-  description = "Statements of the bucket policy, built from the same locals as the policy document, for tests and review."
-  value       = local.bucket_policy_statements
+  description = "Statements of the policy attached to the bucket, decoded from the resource, for tests and review."
+  value       = jsondecode(aws_s3_bucket_policy.this.policy).Statement
 }

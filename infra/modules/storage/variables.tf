@@ -1,10 +1,10 @@
 variable "name_prefix" {
-  description = "Prefix for resource names, including project and environment (for example aula-virtual-prod)."
+  description = "Prefix for resource names, including project and environment (for example aula-virtual-prod). At most 30 characters: S3 limits bucket_prefix to 37 and the module appends -files-."
   type        = string
 
   validation {
-    condition     = can(regex("^[a-z][a-z0-9-]{1,60}[a-z0-9]$", var.name_prefix))
-    error_message = "name_prefix must be 3 to 62 characters: lowercase letters, digits and hyphens only, starting with a letter and ending with a letter or digit."
+    condition     = can(regex("^[a-z][a-z0-9-]{1,28}[a-z0-9]$", var.name_prefix))
+    error_message = "name_prefix must be 3 to 30 characters (the bucket prefix <name_prefix>-files- is limited to 37 by S3): lowercase letters, digits and hyphens only, starting with a letter and ending with a letter or digit."
   }
 }
 
