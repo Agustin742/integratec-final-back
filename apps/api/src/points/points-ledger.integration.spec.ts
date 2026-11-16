@@ -511,7 +511,7 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
       }),
     ).toBe(1);
 
-    await prisma.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+    await prisma.$executeRaw`TRUNCATE TABLE "grade_revisions", "grades", "classroom_items", "student_purchases", "point_transactions"`;
     expect(
       await prisma.pointTransaction.count({
         where: { classroomId: ids.classroom, studentId: ids.student },
