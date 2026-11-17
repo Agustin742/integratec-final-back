@@ -32,8 +32,8 @@ services:
     image: caddy:2.11.7-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     environment:
       - SITE_ADDRESS=${SITE_ADDRESS:?SITE_ADDRESS is required}
     volumes:
@@ -52,7 +52,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${LOG_GROUP_PREFIX:?LOG_GROUP_PREFIX is required}/caddy
-        tag: "{{.Name}}"
+        tag: '{{.Name}}'
         mode: non-blocking
         max-buffer-size: 4m
 
@@ -74,7 +74,7 @@ services:
     networks:
       - private
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:3000/health']
       interval: 15s
       timeout: 5s
       retries: 3
@@ -84,7 +84,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${LOG_GROUP_PREFIX:?LOG_GROUP_PREFIX is required}/api
-        tag: "{{.Name}}"
+        tag: '{{.Name}}'
         mode: non-blocking
         max-buffer-size: 4m
 
@@ -99,7 +99,7 @@ services:
     networks:
       - private
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2567/health"]
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:2567/health']
       interval: 15s
       timeout: 5s
       retries: 3
@@ -109,7 +109,7 @@ services:
       options:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${LOG_GROUP_PREFIX:?LOG_GROUP_PREFIX is required}/realtime
-        tag: "{{.Name}}"
+        tag: '{{.Name}}'
         mode: non-blocking
         max-buffer-size: 4m
 
