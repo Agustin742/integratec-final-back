@@ -385,6 +385,62 @@ describe('GradesService (unit)', () => {
     });
   });
 
+  it('returns the current grade without writes on an identical regrade, but still 409s on a stale version', async () => {
+    const gradeRow = {
+      id: gradeId,
+      submissionId,
+      graderId: actorId,
+      score: 80,
+      feedback: 'Same words',
+      pointsAwarded: 80,
+      typeWeight: new Prisma.Decimal('1.00'),
+      weightMultiplier: new Prisma.Decimal('1.00'),
+      pointTransactionId: txId1,
+      version: 3,
+      gradedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const lockRows = () =>
+      txClient.$queryRaw
+        .mockResolvedValueOnce([
+          {
+            id: activityId,
+            type: ActivityType.TP,
+            format: ActivityFormat.FILE,
+            title: 'TP 1',
+            maxScore: 100,
+            weightMultiplier: new Prisma.Decimal('1.00'),
+          },
+        ])
+        .mockResolvedValueOnce([{ id: submissionId, studentId }])
+        .mockResolvedValueOnce([gradeRow]);
+
+    lockRows();
+    const res = await service.regradeSubmission(actorId, submissionId, {
+      score: 80,
+      feedback: 'Same words',
+      version: 3,
+    });
+
+    expect(res).toMatchObject({ id: gradeId, version: 3, pointsAwarded: 80, score: 80 });
+    expect(txClient.grade.update).not.toHaveBeenCalled();
+    expect(txClient.gradeRevision.create).not.toHaveBeenCalled();
+    expect(pointsLedger.credit).not.toHaveBeenCalled();
+    expect(pointsLedger.compensate).not.toHaveBeenCalled();
+    expect(notifications.record).not.toHaveBeenCalled();
+
+    lockRows();
+    await expect(
+      service.regradeSubmission(actorId, submissionId, {
+        score: 80,
+        feedback: 'Same words',
+        version: 2,
+      }),
+    ).rejects.toThrow(ConflictException);
+    expect(txClient.grade.update).not.toHaveBeenCalled();
+  });
+
   it('calls credit (not compensate) when regrading from 0 points to positive points', async () => {
     txClient.$queryRaw
       .mockResolvedValueOnce([

@@ -515,7 +515,9 @@ describe('Grades & Grading Queue HTTP contract (real PostgreSQL, #26 isolation)'
           interaction,
         ),
       assertAllowed: () => {
-        nextPatchVersion += 1;
+        // The helper sends the same payload twice; the repeat is an identical no-op regrade that
+        // returns the current grade, so only the first request bumps the version (1 -> 2).
+        nextPatchVersion = 2;
       },
       assertDenied: (res) => {
         assertEnvelope(res.body, 'NOT_FOUND');
@@ -569,7 +571,7 @@ describe('Grades & Grading Queue HTTP contract (real PostgreSQL, #26 isolation)'
         submissionId: ids.sub1,
         score: 90,
         feedback: 'Admin regraded',
-        version: 3,
+        version: 2,
       });
       const raw = JSON.stringify(readRes.body);
       expect(raw).not.toContain('storageKey');

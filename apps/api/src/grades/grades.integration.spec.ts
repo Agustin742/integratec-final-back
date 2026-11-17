@@ -1001,6 +1001,79 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     });
   });
 
+  describe('identical regrade', () => {
+    async function snapshot(submissionId: string) {
+      const [grade, ledgerRows, revisions, outbox] = await Promise.all([
+        prisma.grade.findUniqueOrThrow({ where: { submissionId } }),
+        prisma.pointTransaction.count({ where: { classroomId: ids.classroom } }),
+        prisma.gradeRevision.count({ where: { grade: { submissionId } } }),
+        prisma.outboxEvent.count({
+          where: {
+            type: NOTIFICATION_REQUESTED_EVENT,
+            payload: { path: ['classroomId'], equals: ids.classroom },
+          },
+        }),
+      ]);
+      return { grade, ledgerRows, revisions, outbox };
+    }
+
+    it('returns the current grade without a new version, revision, ledger entry or notification', async () => {
+      const first = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Solid work',
+      });
+      const before = await snapshot(ids.tpSubmission);
+
+      const again = await grades.regradeSubmission(ids.secondTeacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Solid work',
+        version: first.version,
+      });
+
+      expect(again).toEqual(first);
+      expect(await snapshot(ids.tpSubmission)).toEqual(before);
+    });
+
+    it('still rejects a stale version with 409 even when the content is identical', async () => {
+      const first = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Solid work',
+      });
+      await grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 75,
+        feedback: 'Better',
+        version: first.version,
+      });
+      const before = await snapshot(ids.tpSubmission);
+
+      await expect(
+        grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
+          score: 75,
+          feedback: 'Better',
+          version: first.version,
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(await snapshot(ids.tpSubmission)).toEqual(before);
+    });
+
+    it('treats a changed feedback with the same score as a real regrade', async () => {
+      const first = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Solid work',
+      });
+
+      const next = await grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Solid work, with comments',
+        version: first.version,
+      });
+
+      expect(next.version).toBe(2);
+      expect((await snapshot(ids.tpSubmission)).revisions).toBe(2);
+    });
+  });
+
   describe('grading queue sorted by gradedAt', () => {
     async function gradeExamThenTp(): Promise<void> {
       await grades.gradeSubmission(ids.teacher, ids.examSubmission, {

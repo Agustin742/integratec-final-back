@@ -354,7 +354,7 @@ export class GradesService {
     const context = await this.loadSubmissionContext(submissionId);
     await this.assertStaffAccess(actorId, context.activity.classroomId, context.studentId);
 
-    const { response, pointsDelta } = await this.prisma.$transaction(async (tx) => {
+    const { response, pointsDelta, unchanged } = await this.prisma.$transaction(async (tx) => {
       const activity = await this.lockActiveActivity(
         tx,
         context.activityId,
@@ -376,6 +376,17 @@ export class GradesService {
           'version',
           'Grade has been modified by another request; reload the latest version and retry',
         );
+      }
+
+      // The version check above still ran: a stale request is a 409 even with identical content.
+      // Identical score and feedback (already trimmed by the DTO) change nothing, so there is no new
+      // version, revision, ledger entry or notification; the current grade is returned as is.
+      if (dto.score === currentGrade.score && dto.feedback === currentGrade.feedback) {
+        return {
+          response: toGradeResponseDto(currentGrade, activity.id, submission.studentId),
+          pointsDelta: 0,
+          unchanged: true,
+        };
       }
 
       // Only a changed score is checked: a feedback-only regrade survives a lowered maxScore.
@@ -502,8 +513,21 @@ export class GradesService {
       return {
         response: toGradeResponseDto(updated, activity.id, submission.studentId),
         pointsDelta: appliedDelta,
+        unchanged: false,
       };
     });
+
+    if (unchanged) {
+      this.logger.log({
+        event: 'submission_regrade_unchanged',
+        classroomId: context.activity.classroomId,
+        submissionId,
+        gradeId: response.id,
+        graderId: actorId,
+        version: response.version,
+      });
+      return response;
+    }
 
     this.logger.log({
       event: 'submission_regraded',
