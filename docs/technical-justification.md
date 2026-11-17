@@ -253,6 +253,20 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Affected contracts:** [Activities and grading](../rules/activities-and-grading.md), [Data](../rules/data.md), [Data and time](../rules/data-and-time.md), the [activities guide](activities.md) and the [submissions guide](submissions.md).
 - **Approval:** Defaults approved by Agustin (decision owner) on 2026-11-13. The PR #89 commit-outcome safety correction was authorized by Alejo on 2026-11-15; this does not claim a new team approval.
 
+### D17. Classroom-scoped avatar and desk equipment
+
+- **Question:** Where is the equipment state of a student's avatar accessories and desk decoration stored (HU-ESP-004), and how is ownership enforced?
+- **Outcome:**
+  1. **Classroom-scoped storage:** a new `EquippedItem` entity (`equipped_items`) holds one equipped purchase per `(classroomId, studentId, slot)` with slots `head`, `face`, `back`, `desk_decor` derived from `ShopItem.metadata.slot`. Purchases are per classroom (`StudentPurchase` unique `(classroomId, studentId, shopItemId)`) and classroom data must not cross classrooms, so equipment is classroom-scoped too.
+  2. **Endpoints (student-only):** `GET /classrooms/:id/me/equipment` and `PUT /classrooms/:id/me/equipment/:slot` with body `{ shopItemId: string | null }` (null = unequip), same access rules as the shop (`403` staff/non-adult parent, `404` stranger/adult-mode parent/deleted context).
+  3. **Error contract:** `403` when the item exists but has no `StudentPurchase` in this classroom; `404` unknown slot, unknown shop item, non-member, or deleted context; `409` when the item kind does not fit the slot or its metadata does not declare one; `400` extra body props; `429` per-user rate limit. Equip/unequip is idempotent and a rejected operation never changes persisted state (the ownership check runs inside the equip transaction).
+  4. **Scope:** only `AVATAR_ACCESSORY` (head/face/back) and `DESK_UPGRADE` (desk_decor) kinds are equipable; `classroom_item` activation and pet accessories are out of scope. Rendering and the broadcast of the new look (realtime) are frontend/realtime work, not part of this card.
+- **Rationale:** Storing equipment inside the global `AvatarConfiguration.appearance` JSON would leak purchases across classrooms and bypass the per-classroom ownership model; the desk is already per classroom. Checking ownership against `StudentPurchase` inside `EquipmentService.setSlot` satisfies the per-classroom purchase gate directly, while global `AvatarAccessPort` stays scoped to finite free base appearance options.
+- **Alternatives:** Global `AvatarConfiguration` appearance JSON (rejected: crosses classrooms, no ownership proof at write time); per-slot booleans on the user row (rejected: loses which purchased item is equipped).
+- **Trade-off:** One extra table and join at render time; equipped state is duplicated per classroom, which is exactly the isolation the rules demand.
+- **Affected contracts:** [Data](../rules/data.md) (`EquippedItem` entity), [Points and shop](../rules/points-and-shop.md) (rate limit and ownership), [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md) (student-only access), and the [equipment guide](equipment.md).
+- **Approval:** Proposed by Alejo on 2026-11-15 as part of card #35; pending team review in PR #94.
+
 ## 8. Known conflicts and notes
 
 - The [derived design views](./diagrams/README.md) are proposed design aligned with the school model. Where they differ, the domain rules prevail; they are not competing requirements.
