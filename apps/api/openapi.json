@@ -3698,6 +3698,237 @@
         "summary": "Subscribe to live context hints; refetch classroom context on every connection and hint",
         "tags": ["Classrooms"]
       }
+    },
+    "/classrooms/{id}/me/report-card": {
+      "get": {
+        "description": "One item per graded activity: score, feedback and net credited points, latest grading first. Ungraded submissions and deleted activities are not listed. This card is the student resource; staff and parents answer 403 (the parent view is HU-ACT-006, out of scope here).",
+        "operationId": "StudentMetricsController_reportCard",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The student's graded activities, paginated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ReportCardItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller lacks the role this resource requires.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the authenticated student's graded activities of one classroom",
+        "tags": ["metrics"]
+      }
+    },
+    "/classrooms/{id}/me/activity-metrics": {
+      "get": {
+        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount stays 0 until chat ships.",
+        "operationId": "StudentMetricsController_myDailyMetrics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw daily metric rows, latest day first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DailyMetricDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller lacks the role this resource requires.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the authenticated student's own daily activity metrics",
+        "tags": ["metrics"]
+      }
+    },
+    "/classrooms/{id}/activity-metrics": {
+      "get": {
+        "description": "Teaching-staff summary: raw totals per active enrolled student (connected seconds, submissions, messages, graded and ungraded submission counts), display name ascending. Students who left keep their daily history but no longer appear here. The school owner and admin read any classroom of their school without membership.",
+        "operationId": "ClassroomMetricsController_classroomMetrics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw per-student totals, paginated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StudentMetricSummaryDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller is not teaching staff (students and parents).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the raw per-student activity totals of one classroom",
+        "tags": ["metrics"]
+      }
     }
   },
   "info": {
@@ -5867,6 +6098,115 @@
         "type": "object",
         "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } },
         "required": ["body"]
+      },
+      "ReportCardItemDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Graded activity UUID."
+          },
+          "activityTitle": { "type": "string", "description": "Activity title at grading time." },
+          "activityType": {
+            "type": "string",
+            "enum": ["TP", "EXAM"],
+            "description": "Activity type."
+          },
+          "maxScore": {
+            "type": "number",
+            "description": "Activity maxScore (0-100) at grading time."
+          },
+          "score": { "type": "number", "description": "Awarded score (0..maxScore)." },
+          "feedback": { "type": "string", "description": "Written feedback left by the grader." },
+          "pointsAwarded": {
+            "type": "number",
+            "description": "Net credited weighted points for this grade."
+          },
+          "isLate": { "type": "boolean", "description": "Whether the submission was late." },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Submission instant (UTC)."
+          },
+          "gradedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest grading instant (UTC)."
+          }
+        },
+        "required": [
+          "activityId",
+          "activityTitle",
+          "activityType",
+          "maxScore",
+          "score",
+          "feedback",
+          "pointsAwarded",
+          "isLate",
+          "submittedAt",
+          "gradedAt"
+        ]
+      },
+      "DailyMetricDto": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "UTC calendar date the signals belong to."
+          },
+          "connectedSeconds": {
+            "type": "number",
+            "description": "Aggregated connected seconds reported by the realtime server."
+          },
+          "submissionCount": { "type": "number", "description": "Submissions created that day." },
+          "messageCount": {
+            "type": "number",
+            "description": "Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships."
+          }
+        },
+        "required": ["day", "connectedSeconds", "submissionCount", "messageCount"]
+      },
+      "StudentMetricSummaryDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Enrolled student UUID."
+          },
+          "displayName": { "type": "string", "description": "Student display name." },
+          "connectedSeconds": {
+            "type": "number",
+            "description": "Sum of connected seconds across all recorded UTC days."
+          },
+          "submissionCount": {
+            "type": "number",
+            "description": "Sum of submission counts across all recorded UTC days."
+          },
+          "messageCount": {
+            "type": "number",
+            "description": "Sum of message counts across all recorded UTC days."
+          },
+          "gradedCount": {
+            "type": "number",
+            "description": "Submissions with a grade in this classroom."
+          },
+          "ungradedCount": {
+            "type": "number",
+            "description": "Submissions without a grade yet in this classroom."
+          }
+        },
+        "required": [
+          "studentId",
+          "displayName",
+          "connectedSeconds",
+          "submissionCount",
+          "messageCount",
+          "gradedCount",
+          "ungradedCount"
+        ]
       },
       "ClassroomPanelKey": {
         "type": "string",

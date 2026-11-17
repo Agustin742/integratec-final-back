@@ -1,5 +1,13 @@
 # Tracker — Alejo
 
+## 2026-11-17 — Issue #36 (HU-ACT-005): academic history and participation metrics
+
+- **Status:** in-progress (T1–T4 committed on `feat/36-activity-metrics` in worktree `odd/worktrees/issue-36`; T5 final checks running. Next step: full `lint/test/typecheck/build`, feature-doc update, push + single PR into `develop`).
+- **Area / files:** new `apps/api/src/metrics/` module (`metric-schema.spec.ts`, `metric-recording.service.ts`, `utc-day.ts`, `metrics.module.ts`, `metric-recording.integration.spec.ts`, `metrics.dto.ts`, `metrics.service.ts`, `metrics.controller.ts`, `metrics.http.integration.spec.ts`), `apps/api/prisma/schema.prisma` (`ActivityMetric` gains `submissionCount`/`messageCount`), migration `20261117231530_add_metric_submission_and_message_counts`, `apps/api/src/submissions/submissions.service.ts` (write-time metric increment), `apps/api/openapi.json`.
+- **Change:** With AI assistance directed by Alejo: student report card (`GET /classrooms/:id/me/report-card` — graded activities only, score/feedback/points, `gradedAt desc`), student daily metrics (`GET /classrooms/:id/me/activity-metrics` — raw per-UTC-day rows, `day desc`), and staff classroom summary (`GET /classrooms/:id/activity-metrics` — raw per-student totals over ACTIVE enrollments, `displayName asc`; school Owner/Admin derived authority). Gap 17 stays open by decision: raw values only, no composite formula; `messageCount` stays 0 until chat (RF-COM-002) ships; parents get 403 (HU-ACT-006 out of scope). Submissions increment the daily metric row inside the submission's own transaction (one row per activity/student; replay does not double count).
+- **Reason:** Issue #36 next in backlog; connected-time ingestion shipped with #25. Runs isolated on `feat/36-activity-metrics` (base `c6c3fc0` = `origin/develop`) because #29/#33 are owned by other agents in sibling worktrees. Single PR with explicit `size:exception` accepted by Alejo (~700–900 authored lines forecast).
+- **Resume:** Delivered so far: commit `9df1ca8` (schema + migration + spec RED→GREEN), `c6568a0` (write-time recording, 40 tests green, typecheck clean), `909ef37` (read endpoints: 11/11 HTTP spec green, typecheck clean, `openapi.json` regenerated +340 lines).
+
 ## 2026-11-15 — Issue #37: announcements backend (HU-COM-001)
 
 - **Status:** completed (PR #97 review feedback resolved and verified; current-head CI and teammate re-review tracked in [PR #97](https://github.com/Agustin742/integratec-final-back/pull/97))
