@@ -7,10 +7,20 @@ async function main(): Promise<void> {
   assertSafeToSeed(process.env);
 
   // Clean existing seed data
-  // point_transactions is append-only against UPDATE/DELETE, and student_purchases / classroom_items
-  // reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
-  await prisma.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+  // point_transactions is append-only against UPDATE/DELETE, and student_purchases / classroom_items /
+  // grades / grade_revisions reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
+  await prisma.$executeRaw`TRUNCATE TABLE "grade_revisions", "grades", "classroom_items", "student_purchases", "point_transactions"`;
   await prisma.equippedItem.deleteMany();
+  await prisma.submissionFile.deleteMany();
+  await prisma.submission.deleteMany();
+  await prisma.option.deleteMany();
+  await prisma.question.deleteMany();
+  await prisma.activityForumPost.deleteMany();
+  await prisma.activityForumThread.deleteMany();
+  await prisma.mention.deleteMany();
+  await prisma.announcement.deleteMany();
+  await prisma.studyMaterial.deleteMany();
+  await prisma.activity.deleteMany();
   await prisma.classroomShopItem.deleteMany();
   await prisma.shopItem.deleteMany();
   await prisma.joinCodeUsage.deleteMany();

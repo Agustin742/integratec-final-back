@@ -353,6 +353,111 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
     expect(wallet.total).toBe(3);
   });
 
+  describe('compensateCapped', () => {
+    const baseInput = () => ({
+      classroomId: ids.classroom,
+      studentId: ids.student,
+      sourceType: 'submission_grade',
+      sourceId: ids.gradeSource,
+      actorId: ids.teacher,
+    });
+
+    async function seedBalance(amount: number) {
+      await ledger.credit({
+        classroomId: ids.classroom,
+        studentId: ids.student,
+        amount,
+        sourceType: 'submission_grade',
+        sourceId: ids.gradeSource,
+        reason: `Seed ${amount}`,
+        actorId: ids.teacher,
+      });
+    }
+
+    it('applies the full delta when the balance covers it', async () => {
+      await seedBalance(100);
+
+      const result = await ledger.compensateCapped({ ...baseInput(), delta: -40, reason: 'Full' });
+
+      expect(result.applied).toBe(-40);
+      expect(result.unrecovered).toBe(0);
+      expect(result.entry?.amount).toBe(-40);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(60);
+    });
+
+    it('caps the delta at the available balance and never yields a negative balance', async () => {
+      await seedBalance(10);
+
+      const result = await ledger.compensateCapped({ ...baseInput(), delta: -40, reason: 'Cap' });
+
+      expect(result.applied).toBe(-10);
+      expect(result.unrecovered).toBe(30);
+      expect(result.entry?.amount).toBe(-10);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+    });
+
+    it('writes no ledger entry when the balance is zero', async () => {
+      await seedBalance(10);
+      await ledger.debit({
+        classroomId: ids.classroom,
+        studentId: ids.student,
+        amount: 10,
+        sourceType: 'shop_purchase',
+        sourceId: randomUUID(),
+        reason: 'Spend all',
+      });
+
+      const result = await ledger.compensateCapped({ ...baseInput(), delta: -25, reason: 'None' });
+
+      expect(result.entry).toBeNull();
+      expect(result.applied).toBe(0);
+      expect(result.unrecovered).toBe(25);
+      expect(
+        await prisma.pointTransaction.count({
+          where: { classroomId: ids.classroom, studentId: ids.student },
+        }),
+      ).toBe(2);
+    });
+
+    it('rejects a non-negative delta and keeps the default compensate 409 on a negative balance', async () => {
+      await seedBalance(10);
+
+      await expect(
+        ledger.compensateCapped({ ...baseInput(), delta: 5, reason: 'Up' }),
+      ).rejects.toThrow();
+      await expect(
+        ledger.compensate({ ...baseInput(), delta: -40, reason: 'Default' }),
+      ).rejects.toThrow(ConflictException);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(10);
+    });
+
+    it('reconciles against a concurrent debit without ever going negative', async () => {
+      await seedBalance(70);
+
+      const [capped, debit] = await Promise.allSettled([
+        ledger.compensateCapped({ ...baseInput(), delta: -100, reason: 'Race cap' }),
+        ledger.debit({
+          classroomId: ids.classroom,
+          studentId: ids.student,
+          amount: 60,
+          sourceType: 'shop_purchase',
+          sourceId: randomUUID(),
+          reason: 'Race buy',
+        }),
+      ]);
+
+      expect(capped.status).toBe('fulfilled');
+      const appliedCap = capped.status === 'fulfilled' ? capped.value.applied : 0;
+      const debited = debit.status === 'fulfilled' ? 60 : 0;
+      const balance = await ledger.getBalance(ids.classroom, ids.student);
+      expect(balance).toBe(0);
+      expect(70 + appliedCap - debited).toBe(balance);
+      if (debit.status === 'rejected') {
+        expect(debit.reason).toBeInstanceOf(ConflictException);
+      }
+    });
+  });
+
   it('rejects credit/debit/compensate when student is not actively enrolled in the classroom', async () => {
     await expect(
       ledger.credit({
@@ -516,7 +621,7 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
     // wiped while other spec files run in parallel.
     await expect(
       prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+        await tx.$executeRaw`TRUNCATE TABLE "grade_revisions", "grades", "classroom_items", "student_purchases", "point_transactions"`;
         throw new Error('rollback-truncate-probe');
       }),
     ).rejects.toThrow('rollback-truncate-probe');

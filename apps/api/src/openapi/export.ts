@@ -6,6 +6,8 @@ import {
   DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
   DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
   DEFAULT_AUTH_DATA_RETENTION_SECONDS,
+  DEFAULT_GRADE_WEIGHT_EXAM,
+  DEFAULT_GRADE_WEIGHT_TP,
   type ApiConfig,
 } from '../config/api-config';
 import { buildOpenApiDocument } from './openapi-document';
@@ -48,6 +50,8 @@ const EXPORT_CONFIG: ApiConfig = {
   authDataRetentionSeconds: DEFAULT_AUTH_DATA_RETENTION_SECONDS,
   authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
   authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
+  gradeWeightTp: DEFAULT_GRADE_WEIGHT_TP,
+  gradeWeightExam: DEFAULT_GRADE_WEIGHT_EXAM,
 };
 
 /** Returns the OpenAPI document as repository-formatted JSON ending with a newline. */

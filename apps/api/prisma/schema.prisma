@@ -149,6 +149,8 @@ model User {
   forumPosts               ActivityForumPost[]   @relation("ActivityForumPostAuthor")
   equippedItems            EquippedItem[]
   submissions              Submission[]
+  gradedGrades             Grade[]               @relation("GradedGrades")
+  gradeRevisions           GradeRevision[]       @relation("GradedGradeRevisions")
   authoredAnnouncements    Announcement[]        @relation("AnnouncementAuthor")
   mentions                 Mention[]             @relation("MentionedUsers")
 
@@ -559,6 +561,7 @@ model Submission {
   activity Activity         @relation(fields: [activityId], references: [id], onDelete: Restrict)
   student  User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
   files    SubmissionFile[]
+  grade    Grade?
 
   @@unique([activityId, studentId])
   @@index([studentId])
@@ -677,6 +680,8 @@ model PointTransaction {
   student         User             @relation("StudentPointTransactions", fields: [studentId], references: [id], onDelete: Restrict)
   actor           User?            @relation("ActorPointTransactions", fields: [actorId], references: [id], onDelete: Restrict)
   studentPurchase StudentPurchase?
+  grade           Grade?
+  gradeRevision   GradeRevision?
 
   @@index([classroomId, studentId, createdAt, id])
   @@index([studentId])
@@ -769,6 +774,58 @@ model ClassroomItem {
   @@index([classroomId, state])
   @@index([shopItemId])
   @@map("classroom_items")
+}
+
+/// Server-owned grade for a submission (`score` 0-100) with optimistic concurrency `version`
+/// and atomic link to the initial earning `PointTransaction` (nullable when `pointsAwarded = 0`).
+model Grade {
+  id                 String   @id @default(uuid()) @db.Uuid
+  submissionId       String   @unique @map("submission_id") @db.Uuid
+  graderId           String   @map("grader_id") @db.Uuid
+  score              Int
+  feedback           String
+  pointsAwarded      Int      @map("points_awarded")
+  /// Weights used at the initial grade; regrades reuse them so later activity/config edits never move points.
+  typeWeight         Decimal  @map("type_weight") @db.Decimal(4, 2)
+  weightMultiplier   Decimal  @map("weight_multiplier") @db.Decimal(3, 2)
+  pointTransactionId String?  @unique @map("point_transaction_id") @db.Uuid
+  version            Int      @default(1)
+  gradedAt           DateTime @map("graded_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  submission       Submission        @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  grader           User              @relation("GradedGrades", fields: [graderId], references: [id], onDelete: Restrict)
+  pointTransaction PointTransaction? @relation(fields: [pointTransactionId], references: [id], onDelete: Restrict)
+  revisions        GradeRevision[]
+
+  @@index([graderId])
+  @@map("grades")
+}
+
+/// Append-only history of initial grading (`version = 1`) and every regrade (`version >= 2`),
+/// recording `pointsDelta` (the delta actually applied to the ledger), `pointsUnrecovered` (the part of a
+/// downward delta the student's balance could not cover) and the linked earning/compensating
+/// `PointTransaction` when points changed.
+model GradeRevision {
+  id                 String   @id @default(uuid()) @db.Uuid
+  gradeId            String   @map("grade_id") @db.Uuid
+  graderId           String   @map("grader_id") @db.Uuid
+  version            Int
+  score              Int
+  feedback           String
+  pointsDelta        Int      @map("points_delta")
+  pointsUnrecovered  Int      @default(0) @map("points_unrecovered")
+  pointTransactionId String?  @unique @map("point_transaction_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  grade            Grade             @relation(fields: [gradeId], references: [id], onDelete: Restrict)
+  grader           User              @relation("GradedGradeRevisions", fields: [graderId], references: [id], onDelete: Restrict)
+  pointTransaction PointTransaction? @relation(fields: [pointTransactionId], references: [id], onDelete: Restrict)
+
+  @@unique([gradeId, version])
+  @@index([graderId])
+  @@map("grade_revisions")
 }
 
 /// Bulletin-board notice owned by a classroom; removal is logical (`deletedAt`)

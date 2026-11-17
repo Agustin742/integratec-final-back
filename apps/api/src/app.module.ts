@@ -14,6 +14,7 @@ import { UsersModule } from './users/users.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { PointsModule } from './points/points.module';
 import { ShopModule } from './shop/shop.module';
+import { GradesModule } from './grades/grades.module';
 import { MaterialsModule } from './materials/materials.module';
 import { EquipmentModule } from './equipment/equipment.module';
 
@@ -38,6 +39,7 @@ export class AppModule {
         SubmissionsModule,
         PointsModule,
         ShopModule,
+        GradesModule,
         MaterialsModule,
         EquipmentModule,
       ],

@@ -1993,6 +1993,280 @@
         "tags": ["shop"]
       }
     },
+    "/submissions/{submissionId}/grade": {
+      "post": {
+        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Assigns a 0-100 score and visible feedback (`1-5000` characters) to an ungraded `FILE` submission, computes server-weighted points (`round(score * typeWeight * activity.weightMultiplier)`), credits the points ledger atomically when points > 0, and records a student-only `grade_posted` notification. Returns `409` if already graded or not a `FILE` activity, `403` for classroom students or linked parents, and `404` for out-of-scope actors.",
+        "operationId": "SubmissionGradesController_grade",
+        "parameters": [
+          {
+            "name": "submissionId",
+            "required": true,
+            "in": "path",
+            "description": "Submission UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/GradeSubmissionDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Grade created and points credited.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/GradeResponseDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid score (outside 0-100 or above the activity maxScore), blank/control-character feedback, or extra body fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom/child submission, but caller lacks teacher authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Submission not found, deleted activity, or out-of-scope actor.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Submission already graded or activity format is not FILE.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Grade a file submission",
+        "tags": ["grades"]
+      },
+      "patch": {
+        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Uses optimistic concurrency (`version`) to update score and feedback, appends a `GradeRevision` row, applies a compensating ledger entry (or initial earning from 0) when weighted points change, and records a student-only `grade_posted` notification. Returns `409` on stale `version` or if a negative delta would drive student points below zero.",
+        "operationId": "SubmissionGradesController_regrade",
+        "parameters": [
+          {
+            "name": "submissionId",
+            "required": true,
+            "in": "path",
+            "description": "Submission UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegradeSubmissionDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Grade updated and revision appended.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/GradeResponseDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid score (outside 0-100, or changed above the activity maxScore), feedback, version, or extra body fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom/child submission, but caller lacks teacher authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Submission or grade not found, deleted activity, or out-of-scope actor.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Stale grade version, non-FILE activity, or insufficient points balance for delta.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Regrade an existing submission grade",
+        "tags": ["grades"]
+      },
+      "get": {
+        "description": "Readable by classroom staff (`OWNER`, `ADMIN`, `TEACHER`, preserved even if the student later leaves), the active owning student, and active linked parents outside adult mode. Never exposes file storage keys or signed download URLs. Classmate students receive `403`; ungraded submissions, deleted activities, unlinked/adult-mode parents, and out-of-scope callers receive `404`.",
+        "operationId": "SubmissionGradesController_getGrade",
+        "parameters": [
+          {
+            "name": "submissionId",
+            "required": true,
+            "in": "path",
+            "description": "Submission UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/GradeResponseDto" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Classmate student attempting to read another student grade.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Submission or grade not found, deleted activity, or out-of-scope actor.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read a submission grade",
+        "tags": ["grades"]
+      }
+    },
+    "/classrooms/{id}/submissions": {
+      "get": {
+        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Returns a paginated grading queue across non-deleted classroom activities (preserving submissions of deactivated students), optionally filtered by `activityId` and derived `state` (`submitted` or `graded`). Ordered by `submittedAt` ascending by default (supports `submittedAt`, `gradedAt`, and `-` descending prefix) with `id` ascending tiebreaker.",
+        "operationId": "ClassroomSubmissionsController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "activityId",
+            "required": false,
+            "in": "query",
+            "description": "Optional filter by an active activity of this classroom.",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "state",
+            "required": false,
+            "in": "query",
+            "description": "Optional filter by derived submission state (`submitted` or `graded`).",
+            "schema": { "type": "string", "enum": ["submitted", "graded"] }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Default `submittedAt` ascending; `id` ascending is the deterministic tiebreaker.",
+            "schema": {
+              "default": "submittedAt",
+              "type": "string",
+              "enum": ["submittedAt", "gradedAt", "-submittedAt", "-gradedAt"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated grading queue for classroom staff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/GradingQueueItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination, filter, or sort parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but caller lacks teacher authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom or filtered activity not found, or caller is out of scope.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List classroom submissions for staff grading",
+        "tags": ["grades"]
+      }
+    },
     "/classrooms/{id}/materials": {
       "post": {
         "description": "Teacher-level staff only. One nonempty PDF/PNG/JPEG, at most 10 MiB. Leading byte signature, declared MIME and filename extension must agree; no scanning or complete content parsing. Filename: 1–120 ASCII letters, digits, spaces, dots, underscores, parentheses or hyphens, starting with a letter or digit. No other multipart fields.",
@@ -4618,7 +4892,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["submitted"],
+            "enum": ["submitted", "graded"],
             "description": "Derived state of the work."
           },
           "files": {
@@ -4684,7 +4958,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["submitted"],
+            "enum": ["submitted", "graded"],
             "description": "Derived state of the work."
           },
           "files": {
@@ -4884,6 +5158,141 @@
           }
         },
         "required": ["purchase", "classroomItem", "balance", "replayed"]
+      },
+      "GradeSubmissionDto": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Numeric grade on a 0-100 scale.",
+            "example": 85
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Visible teacher feedback for the student (trimmed, 1-5000 characters).",
+            "example": "Clear structure and complete reasoning."
+          }
+        },
+        "required": ["score", "feedback"]
+      },
+      "GradeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "submissionId": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "studentId": { "type": "string", "format": "uuid" },
+          "graderId": { "type": "string", "format": "uuid" },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "feedback": { "type": "string", "minLength": 1, "maxLength": 5000 },
+          "pointsAwarded": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Server-computed weighted points currently awarded for this grade."
+          },
+          "pointTransactionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Id of the initial earning ledger entry. It is never replaced by later regrade entries (even after a regrade to 0 points), and is null only when the first award was 0 points and no later regrade has credited points."
+          },
+          "version": { "type": "integer", "minimum": 1 },
+          "gradedAt": { "type": "string", "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "submissionId",
+          "activityId",
+          "studentId",
+          "graderId",
+          "score",
+          "feedback",
+          "pointsAwarded",
+          "pointTransactionId",
+          "version",
+          "gradedAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "RegradeSubmissionDto": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Numeric grade on a 0-100 scale.",
+            "example": 85
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "description": "Visible teacher feedback for the student (trimmed, 1-5000 characters).",
+            "example": "Clear structure and complete reasoning."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Expected current grade version for optimistic concurrency control.",
+            "example": 1
+          }
+        },
+        "required": ["score", "feedback", "version"]
+      },
+      "GradingQueueGradeDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "graderId": { "type": "string", "format": "uuid" },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "feedback": { "type": "string", "minLength": 1, "maxLength": 5000 },
+          "pointsAwarded": { "type": "integer", "minimum": 0 },
+          "version": { "type": "integer", "minimum": 1 },
+          "gradedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "graderId", "score", "feedback", "pointsAwarded", "version", "gradedAt"]
+      },
+      "ActivityType": { "type": "string", "enum": ["TP", "EXAM"] },
+      "GradingQueueItemDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Submission UUID." },
+          "activityId": { "type": "string", "format": "uuid" },
+          "activityTitle": { "type": "string" },
+          "activityType": { "allOf": [{ "$ref": "#/components/schemas/ActivityType" }] },
+          "studentId": { "type": "string", "format": "uuid" },
+          "studentDisplayName": { "type": "string" },
+          "submittedAt": { "type": "string", "format": "date-time" },
+          "isLate": { "type": "boolean" },
+          "status": { "type": "string", "enum": ["submitted", "graded"] },
+          "fileCount": { "type": "integer", "minimum": 0 },
+          "grade": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/GradingQueueGradeDto" }]
+          }
+        },
+        "required": [
+          "id",
+          "activityId",
+          "activityTitle",
+          "activityType",
+          "studentId",
+          "studentDisplayName",
+          "submittedAt",
+          "isLate",
+          "status",
+          "fileCount",
+          "grade"
+        ]
       },
       "MaterialDto": {
         "type": "object",
