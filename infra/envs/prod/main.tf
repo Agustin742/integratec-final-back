@@ -39,6 +39,7 @@ module "database" {
   private_subnet_ids                = module.network.private_subnet_ids
   private_subnet_availability_zones = module.network.private_subnet_availability_zones
   host_security_group_id            = module.host.security_group_id
+  backup_retention_period           = var.database_backup_retention_period
 }
 
 module "registry" {
