@@ -437,6 +437,78 @@ describe('GradesService (unit)', () => {
     expect(txClient.grade.update).not.toHaveBeenCalled();
   });
 
+  it('writes ledger reasons on the activity maxScore scale and truncates overlong ones', async () => {
+    const activityRow = (title: string) => ({
+      id: activityId,
+      type: ActivityType.TP,
+      format: ActivityFormat.FILE,
+      title,
+      maxScore: 50,
+      weightMultiplier: new Prisma.Decimal('1.00'),
+    });
+    txClient.$queryRaw
+      .mockResolvedValueOnce([activityRow('TP 1')])
+      .mockResolvedValueOnce([{ id: submissionId, studentId }]);
+    txClient.grade.findUnique.mockResolvedValue(null);
+    txClient.grade.create.mockImplementation(async ({ data }) => ({
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    }));
+
+    await service.gradeSubmission(actorId, submissionId, { score: 40, feedback: 'ok' });
+    expect(pointsLedger.credit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'Grade: TP 1 (40/50)' }),
+      txClient,
+    );
+
+    const longTitle = 'T'.repeat(300);
+    txClient.$queryRaw
+      .mockResolvedValueOnce([activityRow(longTitle)])
+      .mockResolvedValueOnce([{ id: submissionId, studentId }]);
+    await service.gradeSubmission(actorId, submissionId, { score: 40, feedback: 'ok' });
+    const longReason = pointsLedger.credit.mock.calls.at(-1)?.[0].reason as string;
+    expect(longReason).toHaveLength(240);
+    expect(longReason.startsWith('Grade: TTTT')).toBe(true);
+
+    txClient.$queryRaw
+      .mockResolvedValueOnce([activityRow('TP 1')])
+      .mockResolvedValueOnce([{ id: submissionId, studentId }])
+      .mockResolvedValueOnce([
+        {
+          id: gradeId,
+          submissionId,
+          graderId: actorId,
+          score: 20,
+          feedback: 'v1',
+          pointsAwarded: 20,
+          typeWeight: new Prisma.Decimal('1.00'),
+          weightMultiplier: new Prisma.Decimal('1.00'),
+          pointTransactionId: txId1,
+          version: 1,
+          gradedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ]);
+    txClient.grade.update.mockImplementation(async ({ data }) => ({
+      id: gradeId,
+      submissionId,
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    await service.regradeSubmission(actorId, submissionId, {
+      score: 45,
+      feedback: 'better',
+      version: 1,
+    });
+    expect(pointsLedger.compensate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'Regrade v2: TP 1 (45/50)' }),
+      txClient,
+    );
+  });
+
   it('calls credit (not compensate) when regrading from 0 points to positive points', async () => {
     txClient.$queryRaw
       .mockResolvedValueOnce([

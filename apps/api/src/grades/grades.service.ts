@@ -129,8 +129,13 @@ function assertScoreWithinMaxScore(score: number, maxScore: number): void {
   }
 }
 
-function buildLedgerReason(prefix: string, activityTitle: string, score: number): string {
-  const full = `${prefix}: ${activityTitle} (${score}/100)`;
+function buildLedgerReason(
+  prefix: string,
+  activityTitle: string,
+  score: number,
+  maxScore: number,
+): string {
+  const full = `${prefix}: ${activityTitle} (${score}/${maxScore})`;
   return full.length <= MAX_LEDGER_REASON_LENGTH
     ? full
     : full.slice(0, MAX_LEDGER_REASON_LENGTH).trimEnd();
@@ -268,7 +273,7 @@ export class GradesService {
               amount: pointsAwarded,
               sourceType: SUBMISSION_GRADE_SOURCE_TYPE,
               sourceId: gradeId,
-              reason: buildLedgerReason('Grade', activity.title, dto.score),
+              reason: buildLedgerReason('Grade', activity.title, dto.score, activity.maxScore),
             },
             tx,
           );
@@ -424,7 +429,12 @@ export class GradesService {
       let appliedDelta = delta;
       let pointsUnrecovered = 0;
       if (delta !== 0) {
-        const reason = buildLedgerReason(`Regrade v${nextVersion}`, activity.title, dto.score);
+        const reason = buildLedgerReason(
+          `Regrade v${nextVersion}`,
+          activity.title,
+          dto.score,
+          activity.maxScore,
+        );
         if (currentGrade.pointTransactionId === null && delta > 0) {
           const creditResult = await this.pointsLedger.credit(
             {
