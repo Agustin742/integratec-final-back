@@ -11,7 +11,14 @@ export class NotificationDto {
   id!: string;
 
   @ApiProperty({
-    enum: ['activity_published', 'grade_posted', 'announcement', 'mention', 'activity_forum_reply'],
+    enum: [
+      'activity_published',
+      'grade_posted',
+      'announcement',
+      'mention',
+      'activity_forum_reply',
+      'badge_awarded',
+    ],
   })
   kind!: string;
 
@@ -21,8 +28,12 @@ export class NotificationDto {
   })
   resourceId!: string;
 
-  @ApiProperty({ format: 'uuid' })
-  classroomId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'Null for classroom-free notices such as badge awards.',
+  })
+  classroomId!: string | null;
 
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   studentId!: string | null;

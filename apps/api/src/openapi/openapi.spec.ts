@@ -377,6 +377,56 @@ describe('OpenAPI document', () => {
     }
   });
 
+  it('publishes the own gamification streak and badge summary contract', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+
+    const operation = doc.paths['/gamification/me']?.get;
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(operation?.responses ?? {})).toEqual(['200', '401']);
+    expect(operation?.responses['200']).toMatchObject({
+      content: {
+        'application/json': { schema: { $ref: '#/components/schemas/GamificationSummaryDto' } },
+      },
+    });
+
+    const schemas = doc.components?.schemas ?? {};
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining(['GamificationSummaryDto', 'StreakSummaryDto', 'EarnedBadgeDto']),
+    );
+    expect(schemas.GamificationSummaryDto).toMatchObject({
+      required: ['streak', 'badges'],
+    });
+    expect(schemas.StreakSummaryDto).toMatchObject({
+      required: ['currentStreak', 'bestStreak', 'lastQualifyingDay'],
+      properties: {
+        currentStreak: { type: 'integer', minimum: 0 },
+        bestStreak: { type: 'integer', minimum: 0 },
+        lastQualifyingDay: {
+          type: 'string',
+          nullable: true,
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$',
+        },
+      },
+    });
+    expect(schemas.EarnedBadgeDto).toMatchObject({
+      required: ['id', 'code', 'name', 'description', 'awardedAt'],
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        awardedAt: { type: 'string', format: 'date-time' },
+      },
+    });
+
+    // Verify zero dangling $refs in the generated OpenAPI document.
+    const serialized = JSON.stringify(doc);
+    const refs = [...serialized.matchAll(/"\$ref":"#\/components\/schemas\/([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    for (const refName of refs) {
+      expect(schemas[refName]).toBeDefined();
+    }
+  });
+
   it('serves the JSON document and the Scalar UI outside production', async () => {
     app = await createApp('development');
 

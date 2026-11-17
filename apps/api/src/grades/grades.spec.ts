@@ -6,6 +6,7 @@ import type { AccessVerificationService } from '../access/access-verification.se
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { createValidationPipe, RequestValidationException } from '../http/validation';
 import type { NotificationRecorder } from '../notifications/notification-recorder.service';
+import type { StreakService } from '../gamification/streak.service';
 import type { PointsLedgerService } from '../points/points-ledger.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import {
@@ -193,6 +194,9 @@ describe('GradesService (unit)', () => {
   let notifications: {
     record: ReturnType<typeof vi.fn>;
   };
+  let streaks: {
+    recordQualifying: ReturnType<typeof vi.fn>;
+  };
   let service: GradesService;
 
   beforeEach(() => {
@@ -271,11 +275,15 @@ describe('GradesService (unit)', () => {
     notifications = {
       record: vi.fn().mockResolvedValue(randomUUID()),
     };
+    streaks = {
+      recordQualifying: vi.fn().mockResolvedValue(undefined),
+    };
     service = new GradesService(
       prisma as unknown as PrismaService,
       access as unknown as AccessVerificationService,
       pointsLedger as unknown as PointsLedgerService,
       notifications as unknown as NotificationRecorder,
+      streaks as unknown as StreakService,
       authTestConfig({ gradeWeightTp: 1, gradeWeightExam: 1.5 }),
     );
   });

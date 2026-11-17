@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityType, Prisma } from '@prisma/client';
+import { ActivityFormat, ActivityType, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessResult,
@@ -13,6 +13,7 @@ import { toIsoString } from '../http/iso-string';
 import { RequestValidationException } from '../http/validation';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
+import { isExamPassed, StreakService } from '../gamification/streak.service';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -211,6 +212,7 @@ export class GradesService {
     private readonly access: AccessVerificationService,
     private readonly pointsLedger: PointsLedgerService,
     private readonly notifications: NotificationRecorder,
+    private readonly streaks: StreakService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
 
@@ -316,6 +318,21 @@ export class GradesService {
           recipientId: submission.studentId,
           studentId: submission.studentId,
         });
+
+        // A passed exam is the day's qualifying activity (RN-08); the streak
+        // day is unique per (student, local day), so repeated evaluations on
+        // one day count once. The passing threshold is an open decision and is
+        // disclosed in docs/gamification.md.
+        if (
+          mapActivityType(activity.type) === ActivityType.EXAM &&
+          isExamPassed(dto.score, activity.maxScore)
+        ) {
+          await this.streaks.recordQualifying(tx, {
+            studentId: submission.studentId,
+            source: StreakQualifyingSource.EXAM_PASSED,
+            at: created.gradedAt,
+          });
+        }
 
         return toGradeResponseDto(created, activity.id, submission.studentId);
       });
@@ -519,6 +536,20 @@ export class GradesService {
         recipientId: submission.studentId,
         studentId: submission.studentId,
       });
+
+      // A regrade that lifts an exam to a passing score qualifies for the day's
+      // streak milestone exactly like the initial grade (RN-08); a regrade that
+      // lowers it below the threshold never revokes an already-counted day.
+      if (
+        mapActivityType(activity.type) === ActivityType.EXAM &&
+        isExamPassed(dto.score, activity.maxScore)
+      ) {
+        await this.streaks.recordQualifying(tx, {
+          studentId: submission.studentId,
+          source: StreakQualifyingSource.EXAM_PASSED,
+          at: updated.gradedAt,
+        });
+      }
 
       return {
         response: toGradeResponseDto(updated, activity.id, submission.studentId),
