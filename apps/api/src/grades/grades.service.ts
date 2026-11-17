@@ -316,7 +316,8 @@ export class GradesService {
       });
     } catch (error) {
       // Catch P2002 strictly outside $transaction so we never query an aborted Postgres tx (25P02).
-      if (isUniqueViolation(error)) {
+      // Only the grade's own submission unique means "already graded"; any other one is a bug.
+      if (isUniqueViolation(error, 'submission_id')) {
         throw conflict('submission', 'Submission has already been graded');
       }
       throw error;

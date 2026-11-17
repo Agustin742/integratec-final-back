@@ -441,6 +441,22 @@ describe('GradesService (unit)', () => {
     expect(res.pointsAwarded).toBe(75);
   });
 
+  it('does not report an unrelated unique violation as "already graded"', async () => {
+    const unrelated = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { modelName: 'Grade', target: ['point_transaction_id'] },
+    });
+    prisma.$transaction.mockRejectedValueOnce(unrelated);
+
+    const outcome = await service
+      .gradeSubmission(actorId, submissionId, { score: 80, feedback: 'ok' })
+      .catch((error: unknown) => error);
+
+    expect(outcome).toBe(unrelated);
+    expect(outcome).not.toBeInstanceOf(ConflictException);
+  });
+
   it('throws 409 on non-FILE activity, already graded submission, P2002 outside tx, and stale PATCH version', async () => {
     txClient.$queryRaw
       .mockResolvedValueOnce([
@@ -462,6 +478,7 @@ describe('GradesService (unit)', () => {
       new Prisma.PrismaClientKnownRequestError('Unique constraint', {
         code: 'P2002',
         clientVersion: 'test',
+        meta: { modelName: 'Grade', target: ['submission_id'] },
       }),
     );
     await expect(
