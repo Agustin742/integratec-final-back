@@ -15,6 +15,11 @@ async function main(): Promise<void> {
   await prisma.submission.deleteMany();
   await prisma.option.deleteMany();
   await prisma.question.deleteMany();
+  await prisma.activityForumPost.deleteMany();
+  await prisma.activityForumThread.deleteMany();
+  await prisma.mention.deleteMany();
+  await prisma.announcement.deleteMany();
+  await prisma.studyMaterial.deleteMany();
   await prisma.activity.deleteMany();
   await prisma.classroomShopItem.deleteMany();
   await prisma.shopItem.deleteMany();
