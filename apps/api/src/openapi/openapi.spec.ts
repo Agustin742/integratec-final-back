@@ -40,6 +40,8 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   authDataRetentionSeconds: 2592000,
   authCleanupIntervalSeconds: 86400,
   authCleanupBatchSize: 1000,
+  gradeWeightTp: 1,
+  gradeWeightExam: 1.5,
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {
@@ -96,6 +98,49 @@ describe('OpenAPI document', () => {
     );
     // The enum is generated from the single source of truth, not retyped.
     expect(schemas.ErrorCode).toMatchObject({ enum: Object.values(ERROR_CODES) });
+  });
+
+  it('publishes private material upload, discovery, download and logical-removal contracts', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const root = '/classrooms/{id}/materials';
+    for (const [path, method, success] of [
+      [root, 'get', '200'],
+      [root, 'post', '201'],
+      [`${root}/{materialId}/download`, 'get', '200'],
+      [`${root}/{materialId}`, 'delete', '204'],
+    ] as const) {
+      const operation = doc.paths[path]?.[method];
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      for (const status of [success, '401', '403', '404']) {
+        expect(operation?.responses[status]).toBeDefined();
+      }
+    }
+    expect(doc.paths[root]?.post?.requestBody).toMatchObject({
+      content: {
+        'multipart/form-data': {
+          schema: {
+            required: ['file'],
+            properties: { file: { type: 'string', format: 'binary' } },
+          },
+        },
+      },
+    });
+    expect(doc.paths[root]?.post?.responses['413']).toBeDefined();
+    expect(doc.paths[root]?.post?.responses['503']).toBeDefined();
+    const schema = doc.components?.schemas?.MaterialDto;
+    expect(schema && 'properties' in schema && Object.keys(schema.properties ?? {})).toEqual([
+      'id',
+      'classroomId',
+      'authorId',
+      'filename',
+      'contentType',
+      'sizeBytes',
+      'createdAt',
+    ]);
+    expect(doc.components?.schemas?.MaterialDownloadDto).toMatchObject({
+      required: ['url', 'expiresInSeconds'],
+    });
   });
 
   it('publishes authenticated notification navigation and read contracts without storage internals', async () => {
@@ -203,6 +248,79 @@ describe('OpenAPI document', () => {
         'ClassroomItemState',
       ]),
     );
+  });
+
+  it('publishes submission grading, regrading, grade read, and staff queue contracts without type: object primitives or dangling refs', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+
+    const postOp = doc.paths['/submissions/{submissionId}/grade']?.post;
+    expect(postOp?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(postOp?.responses ?? {})).toEqual(
+      expect.arrayContaining(['201', '400', '401', '403', '404', '409']),
+    );
+
+    const patchOp = doc.paths['/submissions/{submissionId}/grade']?.patch;
+    expect(patchOp?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(patchOp?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '401', '403', '404', '409']),
+    );
+
+    const getGradeOp = doc.paths['/submissions/{submissionId}/grade']?.get;
+    expect(getGradeOp?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(getGradeOp?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '401', '403', '404']),
+    );
+
+    const queueOp = doc.paths['/classrooms/{id}/submissions']?.get;
+    expect(queueOp?.security).toEqual([{ bearer: [] }]);
+    expect(Object.keys(queueOp?.responses ?? {})).toEqual(
+      expect.arrayContaining(['200', '400', '401', '403', '404']),
+    );
+
+    const schemas = doc.components?.schemas ?? {};
+    expect(Object.keys(schemas)).toEqual(
+      expect.arrayContaining([
+        'GradeSubmissionDto',
+        'RegradeSubmissionDto',
+        'GradeResponseDto',
+        'GradingQueueGradeDto',
+        'GradingQueueItemDto',
+        'SubmissionResponseDto',
+      ]),
+    );
+
+    expect(schemas.SubmissionResponseDto).toMatchObject({
+      properties: {
+        status: { type: 'string', enum: ['submitted', 'graded'] },
+      },
+    });
+    expect(schemas.GradeResponseDto).toMatchObject({
+      properties: {
+        pointTransactionId: { type: 'string', format: 'uuid', nullable: true },
+        score: { type: 'integer', minimum: 0, maximum: 100 },
+        pointsAwarded: { type: 'integer', minimum: 0 },
+        version: { type: 'integer', minimum: 1 },
+      },
+    });
+    expect(schemas.GradingQueueItemDto).toMatchObject({
+      properties: {
+        status: { type: 'string', enum: ['submitted', 'graded'] },
+        grade: {
+          nullable: true,
+          allOf: [{ $ref: '#/components/schemas/GradingQueueGradeDto' }],
+        },
+      },
+    });
+
+    // Verify zero dangling $refs in the generated OpenAPI document.
+    const serialized = JSON.stringify(doc);
+    const refs = [...serialized.matchAll(/"\$ref":"#\/components\/schemas\/([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    for (const refName of refs) {
+      expect(schemas[refName]).toBeDefined();
+    }
   });
 
   it('adds panel availability only to the classroom GET context', async () => {

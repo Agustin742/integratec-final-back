@@ -49,6 +49,8 @@ const config: ApiConfig = {
   authDataRetentionSeconds: 2592000,
   authCleanupIntervalSeconds: 86400,
   authCleanupBatchSize: 1000,
+  gradeWeightTp: 1,
+  gradeWeightExam: 1.5,
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

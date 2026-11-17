@@ -64,6 +64,14 @@ export interface ApiConfig {
   shopPurchaseRateLimitWindowSeconds?: number;
   /** Maximum shop purchase attempts per user inside the sliding window (defaults to 20). */
   shopPurchaseRateLimitMaxAttempts?: number;
+  /** Points multiplier applied to graded TP activities (`loadApiConfig` defaults it to 1). */
+  gradeWeightTp: number;
+  /** Points multiplier applied to graded EXAM activities; `loadApiConfig` guarantees it is > gradeWeightTp (default 1.5). */
+  gradeWeightExam: number;
+  /** Sliding window for per-user equipment change rate limiting (defaults to 60s when omitted). */
+  equipRateLimitWindowSeconds?: number;
+  /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
+  equipRateLimitMaxAttempts?: number;
 }
 
 /** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
@@ -94,6 +102,18 @@ export const MAX_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 3600;
 export const MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS = 1000;
 export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 60;
 export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
+/** Activity-type points weights bounds and defaults (`GRADE_WEIGHT_EXAM > GRADE_WEIGHT_TP`). */
+export const MIN_GRADE_WEIGHT = 0.1;
+export const MAX_GRADE_WEIGHT = 10;
+export const DEFAULT_GRADE_WEIGHT_TP = 1;
+export const DEFAULT_GRADE_WEIGHT_EXAM = 1.5;
+
+/** Equipment change rate limiter bounds and defaults. */
+export const MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 3600;
+export const MAX_EQUIP_RATE_LIMIT_ATTEMPTS = 1000;
+export const DEFAULT_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 60;
+export const DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS = 20;
 
 /** Local realtime server, used when `REALTIME_INTERNAL_URL` is unset outside production. */
 export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
@@ -145,6 +165,10 @@ const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, suc
 const BATCH_SIZE_MESSAGE = `must be an integer between 1 and ${MAX_AUTH_CLEANUP_BATCH_SIZE}`;
 const SHOP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
 const SHOP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS}`;
+const GRADE_WEIGHT_MESSAGE =
+  'must be a finite decimal between 0.1 and 10 with at most 2 decimal places';
+const EQUIP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
+const EQUIP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_EQUIP_RATE_LIMIT_ATTEMPTS}`;
 
 const required = { error: 'is required' };
 
@@ -167,6 +191,24 @@ const duration = (
             .number()
             .min(minSeconds, DURATION_MESSAGE)
             .max(maxSeconds ?? Infinity, maxMessage),
+        ),
+    );
+
+const gradeWeight = (fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+(?:\.\d{1,2})?$/, GRADE_WEIGHT_MESSAGE)
+        .transform(Number)
+        .pipe(
+          z
+            .number()
+            .finite(GRADE_WEIGHT_MESSAGE)
+            .min(MIN_GRADE_WEIGHT, GRADE_WEIGHT_MESSAGE)
+            .max(MAX_GRADE_WEIGHT, GRADE_WEIGHT_MESSAGE),
         ),
     );
 
@@ -348,6 +390,28 @@ const envSchema = z
               .max(MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS, SHOP_RATE_LIMIT_MAX_MESSAGE),
           ),
       ),
+    GRADE_WEIGHT_TP: gradeWeight(String(DEFAULT_GRADE_WEIGHT_TP)),
+    GRADE_WEIGHT_EXAM: gradeWeight(String(DEFAULT_GRADE_WEIGHT_EXAM)),
+    EQUIP_RATE_LIMIT_WINDOW: duration(
+      '1m',
+      MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS,
+      EQUIP_RATE_LIMIT_WINDOW_MESSAGE,
+    ),
+    EQUIP_RATE_LIMIT_MAX: z
+      .string()
+      .default(String(DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS))
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, EQUIP_RATE_LIMIT_MAX_MESSAGE)
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, EQUIP_RATE_LIMIT_MAX_MESSAGE)
+              .max(MAX_EQUIP_RATE_LIMIT_ATTEMPTS, EQUIP_RATE_LIMIT_MAX_MESSAGE),
+          ),
+      ),
   })
   .superRefine((env, ctx) => {
     // A production link must point at the real frontend, never silently at localhost.
@@ -399,6 +463,18 @@ const envSchema = z
         code: 'custom',
         path: [missing],
         message: 'is required when the other S3 credential variable is set',
+      });
+    }
+    // Rules/activities-and-grading: an exam must carry strictly higher weight than a TP.
+    if (
+      typeof env.GRADE_WEIGHT_TP === 'number' &&
+      typeof env.GRADE_WEIGHT_EXAM === 'number' &&
+      env.GRADE_WEIGHT_EXAM <= env.GRADE_WEIGHT_TP
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['GRADE_WEIGHT_EXAM'],
+        message: 'must be strictly greater than GRADE_WEIGHT_TP',
       });
     }
   });
@@ -462,5 +538,9 @@ export function loadApiConfig(env: Env): ApiConfig {
     authCleanupBatchSize: values.AUTH_CLEANUP_BATCH_SIZE,
     shopPurchaseRateLimitWindowSeconds: values.SHOP_PURCHASE_RATE_LIMIT_WINDOW,
     shopPurchaseRateLimitMaxAttempts: values.SHOP_PURCHASE_RATE_LIMIT_MAX,
+    gradeWeightTp: values.GRADE_WEIGHT_TP,
+    gradeWeightExam: values.GRADE_WEIGHT_EXAM,
+    equipRateLimitWindowSeconds: values.EQUIP_RATE_LIMIT_WINDOW,
+    equipRateLimitMaxAttempts: values.EQUIP_RATE_LIMIT_MAX,
   };
 }

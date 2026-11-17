@@ -1,5 +1,24 @@
 # Tracker — Luis
 
+## 2026-11-15 — Submission grading, weighted points conversion, and review queue (Issue #32)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261116000000_create_grades/`, `apps/api/prisma/seed.ts`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/.env.example`, `apps/api/src/auth/testing/auth-test-config.ts`, `apps/api/src/grades/`, `apps/api/src/submissions/submissions.dto.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/points/points-ledger.integration.spec.ts`, `apps/api/src/app.module.ts`, `apps/api/src/openapi/openapi.spec.ts`, `apps/api/openapi.json`, `rules/data.md`, `docs/technical-justification.md`, `docs/grading.md`, `docs/submissions.md`, `README.md`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Issue #32 (`HU-ACT-004: Grade submissions, give feedback and credit weighted points`) on `feat/32-grade-submissions`:
+  - **Config & weighted points (`api-config.ts`, `grade-points.ts`):** Added `GRADE_WEIGHT_TP` (default `1`) and `GRADE_WEIGHT_EXAM` (default `1.5`, validated strictly `EXAM > TP`, `0.1..10`, <= 2 decimals) and implemented exact integer ten-thousandths half-up rounding (`calculateWeightedGradePoints`) without IEEE-754 float drift.
+  - **Prisma schema, additive migration & seed (`20261116000000_create_grades`, `seed.ts`):** Added `Grade` (`grades`) and `GradeRevision` (`grade_revisions`) with `ON DELETE RESTRICT` FKs and PostgreSQL `CHECK` constraints (`score 0..100`, `feedback 1..5000` trimmed, `points_awarded >= 0`, `version >= 1`). Updated `Submission.grade` and derived `SubmissionResponseDto.status` (`'graded' | 'submitted'`). Updated `TRUNCATE TABLE` in `seed.ts` and `points-ledger.integration.spec.ts` to include `"grade_revisions", "grades"` alongside `"classroom_items", "student_purchases", "point_transactions"` and added `SubmissionFile`/`Submission`/`Option`/`Question`/`Activity` cleanup in `seed.ts`.
+  - **`GradesModule`, `GradesService`, controllers & DTOs (`apps/api/src/grades/`):**
+    - `POST /submissions/:submissionId/grade` (`201`): staff-only (`#26` isolation), strict DTO validation (`0..100`, `VisibleText` `1..5000`, `forbidNonWhitelisted`), locks `activities (FOR SHARE)` -> `submissions (FOR UPDATE)`, rejects non-`FILE` or already-graded submissions (`409`), credits `PointsLedgerService` when `pointsAwarded > 0` (`submission_grade`), appends `GradeRevision` v1, records student-only `grade_posted` outbox notice, and catches `P2002` strictly outside `$transaction`.
+    - `PATCH /submissions/:submissionId/grade` (`200`): optimistic concurrency via `version`, locks `grades (FOR UPDATE)`, supports `0`-to-positive initial `credit`, signed `compensate` (`409` on negative balance), and `delta === 0` no-ledger regrades, appending `GradeRevision` and `grade_posted`.
+    - `GET /submissions/:submissionId/grade` (`200`): readable by classroom staff (preserved after student departure), active owning student, and active linked parent (`!adultMode`), returning `403` to classmate students and `404` otherwise, with zero storage keys or signed URLs.
+    - `GET /classrooms/:id/submissions` (`200`): staff-only `RepeatableRead` paginated queue filtering by `activityId` and `state`, sorted by `submittedAt`/`gradedAt` with `+id` tiebreaker.
+  - **Docs, OpenAPI & tests:** Added `D18` in `docs/technical-justification.md`, updated `rules/data.md`, `docs/submissions.md`, `README.md`, added `docs/grading.md`, regenerated `apps/api/openapi.json`, and added unit (`grades.spec.ts`, `grade-schema.spec.ts`), integration/concurrency (`grades.integration.spec.ts`), `#26` HTTP (`grades.http.spec.ts`), and `openapi.spec.ts` specs.
+- **Verification observed (2026-11-15):**
+  - `prisma:migrate:deploy` (`14` migrations including `20261116000000_create_grades`) and `ALLOW_DESTRUCTIVE_SEED=true prisma:seed` against isolated PostgreSQL `grades_test_isolated` (`127.0.0.1:5433`, dropped afterward) — passed.
+  - Real PostgreSQL & Supertest run (`--no-file-parallelism`) across 10 files (`grades.spec.ts` `12/12`, `grade-schema.spec.ts` `3/3`, `grades.integration.spec.ts` `8/8`, `grades.http.spec.ts` `4/4`, `points-ledger.integration.spec.ts` `10/10`, `submissions.http.spec.ts` `16/16`, `submissions.integration.spec.ts` `39/39`, `submissions-read.integration.spec.ts` `20/20`, `openapi.spec.ts` `10/10`, `api-config.spec.ts` `137/137`) — passed **259/259 tests, 0 skipped**.
+  - `prisma:generate`, `openapi:export`, `lint`, `typecheck`, `build`, `format:check`, `python scripts/ci/check_docs.py` (`75 files`), and `git diff --check` — passed (exit 0).
+- **Next step:** Stage, commit in logical commits (without AI attribution), push `feat/32-grade-submissions`, and open PR targeting `develop` once confirmed by the user.
+
 ## 2026-11-14 — Classroom shop catalog, overrides, and atomic purchases (Issue #34)
 
 - **Status:** completed

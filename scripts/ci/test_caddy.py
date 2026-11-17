@@ -6,12 +6,17 @@ when Docker is not available (CI runners have it).
 """
 
 from pathlib import Path
+import base64
+import hashlib
+import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -65,8 +70,9 @@ class CaddyfileStaticTests(unittest.TestCase):
     def test_unmatched_requests_answer_404(self):
         self.assertRegex(self.text, r"(?s)handle \{\s*respond 404\s*\}")
 
-    def test_logs_go_to_stdout_as_json(self):
-        self.assertRegex(self.text, r"(?s)log \{\s*output stdout\s*format json")
+    def test_logs_are_redacted_json_on_stdout_and_stderr(self):
+        self.assertRegex(self.text, r"(?s)log \{\s*output stdout\s*format filter \{\s*wrap json")
+        self.assertRegex(self.text, r"(?s)log \{\s*output stderr\s*format filter \{\s*wrap json")
 
 
 @unittest.skipUnless(DOCKER and pinned_image(), "Docker or the pinned image is unavailable")
@@ -95,7 +101,7 @@ class CaddyfileDockerTests(unittest.TestCase):
 
 
 @unittest.skipUnless(DOCKER and pinned_image(), "Docker or the pinned image is unavailable")
-class CaddyRoutingTests(unittest.TestCase):
+class CaddyStack(unittest.TestCase):
     """Runs the real Caddyfile over plain HTTP in front of two echo stubs named like the services."""
 
     @classmethod
@@ -166,6 +172,121 @@ class CaddyRoutingTests(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, error.read().decode(), dict(error.headers)
 
+
+
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WEBSOCKET_ECHO_IMAGE = "python:3.13.1-alpine"
+# Stdlib-only upstream: completes the RFC 6455 handshake, reports the path it received, then echoes text frames.
+WEBSOCKET_ECHO_SERVER = r"""
+import base64, hashlib, socketserver, sys
+
+def send(sock, text):
+    sock.sendall(bytes([0x81, len(text.encode())]) + text.encode())
+
+class Handler(socketserver.StreamRequestHandler):
+    def handle(self):
+        path = self.rfile.readline().split()[1].decode()
+        headers = {}
+        while (line := self.rfile.readline().strip()):
+            name, _, value = line.decode().partition(":")
+            headers[name.strip().lower()] = value.strip()
+        accept = base64.b64encode(hashlib.sha1((headers["sec-websocket-key"] + "{GUID}").encode()).digest()).decode()
+        self.wfile.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                          "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").encode())
+        send(self.request, "path " + path)
+        head = self.rfile.read(2)
+        mask = self.rfile.read(4)
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(self.rfile.read(head[1] & 0x7F)))
+        send(self.request, "echo " + payload.decode())
+
+socketserver.ThreadingTCPServer.allow_reuse_address = True
+socketserver.ThreadingTCPServer(("", int(sys.argv[1])), Handler).serve_forever()
+""".replace("{GUID}", WEBSOCKET_GUID)
+
+
+def websocket_exchange(base, path, message):
+    """Performs a WebSocket handshake through `base`; returns the handshake and the first two text frames."""
+    key = base64.b64encode(os.urandom(16)).decode()
+    host = urllib.parse.urlsplit(base).netloc
+    request = (
+        f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
+        f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    )
+    with socket.create_connection((host.split(":")[0], int(host.split(":")[1])), timeout=5) as sock:
+        reader = sock.makefile("rb")
+        sock.sendall(request.encode())
+        status_line = reader.readline().decode().strip()
+        headers = {}
+        while (line := reader.readline().strip()):
+            name, _, value = line.decode().partition(":")
+            headers[name.strip().lower()] = value.strip()
+        expected = base64.b64encode(hashlib.sha1((key + WEBSOCKET_GUID).encode()).digest()).decode()
+        handshake = (status_line, headers, expected)
+        if not status_line.startswith("HTTP/1.1 101"):
+            return handshake, []
+
+        def read_exactly(count):
+            data = reader.read(count)
+            if len(data) != count:
+                raise AssertionError(f"connection closed early: wanted {count} bytes, got {len(data)}")
+            return data
+
+        def read_frame():
+            opcode_byte, length = read_exactly(2)
+            if length & 0x7F >= 126:
+                raise AssertionError("frames this large are not expected in the test")
+            return opcode_byte & 0x0F, read_exactly(length & 0x7F).decode()
+
+        payload = message.encode()
+        mask = os.urandom(4)
+        masked = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
+        sock.sendall(bytes([0x81, 0x80 | len(payload)]) + mask + masked)
+        return handshake, [read_frame(), read_frame()]
+
+
+class CaddyWebSocketTests(CaddyStack):
+    """Colyseus clients connect over WebSocket, so the proxy must complete a real upgrade."""
+
+    @classmethod
+    def start_stub(cls, image, alias, port, suffix):
+        if alias != "realtime":
+            return super().start_stub(image, alias, port, suffix)
+        name = f"caddy-routing-{alias}-{suffix}"
+        docker(
+            "run", "-d", "--name", name, "--network", cls.network, "--network-alias", alias,
+            WEBSOCKET_ECHO_IMAGE, "python", "-u", "-c", WEBSOCKET_ECHO_SERVER, str(port),
+        )
+        return name
+
+    @classmethod
+    def wait_until_ready(cls):
+        super().wait_until_ready()
+        # The echo server only speaks WebSocket, so readiness means a full handshake through Caddy.
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                handshake, _ = websocket_exchange(cls.base, "/realtime/ready", "ready")
+                if handshake[0].startswith("HTTP/1.1 101"):
+                    return
+            except (OSError, AssertionError):
+                pass
+            if time.monotonic() > deadline:
+                logs = docker("logs", cls.containers[1], check=False).stderr
+                raise RuntimeError(f"the WebSocket upstream did not become ready: {logs}")
+            time.sleep(0.2)
+
+    def test_websocket_upgrade_and_messages_pass_through_the_realtime_route(self):
+        (status_line, headers, expected_accept), frames = websocket_exchange(
+            self.base, "/realtime/abc/def?room=1", "hello through caddy"
+        )
+        self.assertTrue(status_line.startswith("HTTP/1.1 101"), status_line)
+        self.assertEqual(headers.get("upgrade", "").lower(), "websocket")
+        self.assertEqual(headers.get("sec-websocket-accept"), expected_accept)
+        # First frame: the upstream reports the path it received; second: the echoed message.
+        self.assertEqual(frames, [(1, "path /abc/def?room=1"), (1, "echo hello through caddy")])
+
+
+class CaddyRoutingTests(CaddyStack):
     def test_api_requests_reach_the_api_with_the_prefix_stripped(self):
         status, body, _ = self.get("/api/health?x=1")
         self.assertEqual((status, body), (200, "api GET /health?x=1"))
@@ -177,13 +298,6 @@ class CaddyRoutingTests(unittest.TestCase):
     def test_realtime_requests_reach_colyseus_with_the_prefix_stripped(self):
         status, body, _ = self.get("/realtime/matchmake/joinOrCreate/classroom", method="POST")
         self.assertEqual((status, body), (200, "realtime POST /matchmake/joinOrCreate/classroom"))
-
-    def test_websocket_upgrade_headers_are_forwarded(self):
-        status, body, _ = self.get(
-            "/realtime/abc/def",
-            headers={"Connection": "Upgrade", "Upgrade": "websocket"},
-        )
-        self.assertEqual((status, body), (200, "realtime GET /abc/def"))
 
     def test_internal_paths_are_not_reachable(self):
         paths = [
@@ -220,6 +334,62 @@ class CaddyRoutingTests(unittest.TestCase):
     def test_server_header_is_removed(self):
         _, _, headers = self.get("/api/health")
         self.assertNotIn("Server", headers)
+
+
+class CaddyLogStack(CaddyStack):
+    """Shared helpers: Colyseus clients send credentials in the WebSocket query string; logs must never keep them."""
+
+    SECRETS = {
+        "sessionId": "SYNTHETIC-SESSION-VALUE",
+        "reconnectionToken": "SYNTHETIC-RECONNECT-VALUE",
+        "_authToken": "SYNTHETIC-AUTH-VALUE",
+    }
+
+    def request_path(self):
+        # A unique marker lets each test read only the log entries of its own request.
+        self.marker = uuid.uuid4().hex
+        query = "&".join(f"{key}={value}" for key, value in self.SECRETS.items())
+        return f"/realtime/process/room?{query}&marker={self.marker}"
+
+    def wait_for_entries(self, logger_prefix, timeout=5.0):
+        """Poll the proxy logs until an entry of this request from `logger_prefix` appears."""
+        deadline = time.monotonic() + timeout
+        while True:
+            logs = docker("logs", self.proxy, check=False)
+            entries = [
+                line for line in (logs.stdout + logs.stderr).splitlines()
+                if self.marker in line and f'"logger":"{logger_prefix}' in line
+            ]
+            if entries:
+                return entries
+            if time.monotonic() >= deadline:
+                self.fail(f"no {logger_prefix} entry for the request within {timeout}s")
+            time.sleep(0.1)
+
+    def assert_redacted(self, entries):
+        text = "\n".join(entries)
+        for key, value in self.SECRETS.items():
+            with self.subTest(key=key):
+                self.assertNotIn(value, text)
+                self.assertIn(f"{key}=REDACTED", text)
+
+
+class CaddyAccessLogRedactionTests(CaddyLogStack):
+    def test_credentials_are_redacted_in_the_access_log_but_still_forwarded(self):
+        path = self.request_path()
+        status, body, _ = self.get(path)
+        self.assertEqual((status, body), (200, f"realtime GET {path.removeprefix('/realtime')}"))
+        self.assert_redacted(self.wait_for_entries("http.log.access"))
+
+
+class CaddyErrorLogRedactionTests(CaddyLogStack):
+    """Has its own stack because it stops the realtime stub."""
+
+    def test_credentials_are_redacted_in_the_error_log_when_the_upstream_is_down(self):
+        docker("stop", self.containers[1])  # the realtime stub
+        status, _, _ = self.get(self.request_path())
+        self.assertEqual(status, 502)
+        self.assert_redacted(self.wait_for_entries("http.log.error"))
 
 
 if __name__ == "__main__":

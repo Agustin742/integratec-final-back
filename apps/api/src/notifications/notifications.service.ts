@@ -1,15 +1,24 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import {
   NOTIFICATION_REQUESTED_EVENT,
   notificationRequestSchema,
   type NotificationRequest,
 } from './notification-recorder.service';
+import { NOTIFICATION_EMAIL_REQUESTED_EVENT } from './notification-events';
 
 import { type NotificationDto, type NotificationsQueryDto } from './notifications.dto';
+
+const notificationEmailRequestSchema = z
+  .object({
+    notificationId: z.string().regex(UUID_PATTERN),
+  })
+  .strict();
 
 const navigationSelect = {
   id: true,
@@ -36,6 +45,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
+    private readonly outbox: OutboxWriter,
   ) {}
 
   /** Reusable by future reads: check every stored context, not just classroom membership. */
@@ -49,7 +59,7 @@ export class NotificationsService {
           )
         : await this.access.verifyClassroomAccess(request.recipientId, request.classroomId);
       // Parents have no classroom-wide content access. Grade notices require the
-      // exact active child; announcements remain deferred until issue #37.
+      // exact active child; #37 does not extend parent announcement visibility.
       return (
         result.myRole !== 'PARENT' ||
         (request.kind === 'grade_posted' && request.studentId !== undefined)
@@ -148,6 +158,64 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
+  /** Notification-owned persistence boundary for a committed announcement email request. */
+  async prepareAnnouncementEmail(eventId: string): Promise<{
+    notificationId: string;
+    resourceId: string;
+    to: string;
+  } | null> {
+    if (!UUID_PATTERN.test(eventId)) return null;
+    const event = await this.prisma.outboxEvent.findUnique({ where: { id: eventId } });
+    if (!event || event.type !== NOTIFICATION_EMAIL_REQUESTED_EVENT) return null;
+    const parsed = notificationEmailRequestSchema.safeParse(event.payload);
+    if (!parsed.success) throw new Error('Invalid notification email request');
+    const { notificationId } = parsed.data;
+    const notification = await this.prisma.notification.findUnique({
+      where: { id: notificationId },
+      select: {
+        kind: true,
+        classroomId: true,
+        resourceId: true,
+        recipientId: true,
+        studentId: true,
+        recipient: { select: { email: true } },
+      },
+    });
+    if (!notification) throw new Error('Notification not materialized');
+    if (notification.kind !== 'announcement') return null;
+    const request = notificationRequestSchema.safeParse({
+      kind: notification.kind,
+      classroomId: notification.classroomId,
+      resourceId: notification.resourceId,
+      recipientId: notification.recipientId,
+      studentId: notification.studentId ?? undefined,
+    });
+    if (!request.success || !(await this.hasCurrentAccess(request.data))) return null;
+    // Uniqueness protects receipts; the provider key protects external sends on replay.
+    await this.prisma.notificationDelivery.createMany({
+      data: [{ notificationId, channel: 'email' }],
+      skipDuplicates: true,
+    });
+    const delivery = await this.prisma.notificationDelivery.findUniqueOrThrow({
+      where: { notificationId_channel: { notificationId, channel: 'email' } },
+      select: { deliveredAt: true },
+    });
+    if (delivery.deliveredAt !== null) return null;
+    return {
+      notificationId,
+      resourceId: notification.resourceId,
+      to: notification.recipient.email,
+    };
+  }
+
+  /** Called only after the email port acknowledges this stable delivery identity. */
+  async completeAnnouncementEmail(notificationId: string): Promise<void> {
+    await this.prisma.notificationDelivery.update({
+      where: { notificationId_channel: { notificationId, channel: 'email' } },
+      data: { deliveredAt: new Date() },
+    });
+  }
+
   /** Load committed state, not the supplied envelope: uncommitted events are invisible. */
   async materializeCommittedEvent(eventId: string): Promise<void> {
     if (!UUID_PATTERN.test(eventId)) return;
@@ -161,7 +229,7 @@ export class NotificationsService {
     await this.prisma.$transaction(async (tx) => {
       // createMany(skipDuplicates) is database-level ON CONFLICT DO NOTHING. A
       // timeout/replay/concurrent handler cannot overwrite read state or create a twin.
-      await tx.notification.createMany({
+      const inserted = await tx.notification.createMany({
         data: [{ ...request, sourceEventId: event.id }],
         skipDuplicates: true,
       });
@@ -173,6 +241,15 @@ export class NotificationsService {
         data: [{ notificationId: notification.id, channel: 'in_app', deliveredAt: new Date() }],
         skipDuplicates: true,
       });
+      // Announcement notices also travel by email: the request is recorded in the same
+      // transaction, so the email job sees a committed notification and its unique
+      // (notification, channel) delivery row makes retries idempotent.
+      if (request.kind === 'announcement' && inserted.count > 0) {
+        await this.outbox.record(tx, {
+          type: NOTIFICATION_EMAIL_REQUESTED_EVENT,
+          payload: { notificationId: notification.id },
+        });
+      }
     });
   }
 }
