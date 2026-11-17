@@ -43,6 +43,22 @@ mock_provider "aws" {
       arn = "arn:aws:iam::123456789012:role/aula-virtual-prod-github-actions"
     }
   }
+
+  # The mock leaves the managed master secret empty and returns random values for the
+  # endpoint; app_config validates the database connection settings it publishes, so
+  # the instance is pinned to well-formed values.
+  override_resource {
+    target = module.database.aws_db_instance.this
+    values = {
+      address = "aula-virtual-prod-db.abcdefghij.us-east-2.rds.amazonaws.com"
+      port    = 5432
+      master_user_secret = [{
+        secret_arn    = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-00000000-0000-0000-0000-000000000000-AbCdEf"
+        kms_key_id    = "arn:aws:kms:us-east-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+        secret_status = "active"
+      }]
+    }
+  }
 }
 
 run "github_oidc_provider_trusts_only_sts_audience" {

@@ -16,6 +16,22 @@ mock_provider "aws" {
       json = "{\"rules\":[]}"
     }
   }
+
+  # The mock leaves the managed master secret empty and returns random values for the
+  # endpoint; app_config validates the database connection settings it publishes, so
+  # the instance is pinned to well-formed values.
+  override_resource {
+    target = module.database.aws_db_instance.this
+    values = {
+      address = "aula-virtual-prod-db.abcdefghij.us-east-2.rds.amazonaws.com"
+      port    = 5432
+      master_user_secret = [{
+        secret_arn    = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-00000000-0000-0000-0000-000000000000-AbCdEf"
+        kms_key_id    = "arn:aws:kms:us-east-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+        secret_status = "active"
+      }]
+    }
+  }
 }
 
 variables {
@@ -57,8 +73,8 @@ run "ssm_parameters_hold_non_secret_config" {
   command = apply
 
   assert {
-    condition     = toset(keys(module.app_config.parameters)) == toset(["api/ALLOWED_ORIGINS", "api/PASSWORD_RESET_URL_BASE", "api/NODE_ENV", "api/S3_REGION", "api/S3_BUCKET", "api/REALTIME_INTERNAL_URL", "realtime/API_INTERNAL_URL", "realtime/NODE_ENV"])
-    error_message = "The config parameters must be exactly the non-secret api and realtime settings (DATABASE_URL is built on the host)."
+    condition     = toset(keys(module.app_config.parameters)) == toset(["api/ALLOWED_ORIGINS", "api/PASSWORD_RESET_URL_BASE", "api/NODE_ENV", "api/S3_REGION", "api/S3_BUCKET", "api/REALTIME_INTERNAL_URL", "api/DB_HOST", "api/DB_PORT", "api/DB_NAME", "api/DB_SECRET_ARN", "realtime/API_INTERNAL_URL", "realtime/NODE_ENV"])
+    error_message = "The config parameters must be exactly the non-secret api and realtime settings, including the database connection info (DATABASE_URL is built on the host)."
   }
 
   assert {
@@ -89,6 +105,40 @@ run "ssm_parameters_hold_non_secret_config" {
   assert {
     condition     = module.app_config.parameter_path_prefixes == { api = "/aula-virtual-prod/config/api", realtime = "/aula-virtual-prod/config/realtime" } && output.app_config_parameter_path_prefixes == module.app_config.parameter_path_prefixes
     error_message = "Each service must have its own parameter path prefix, exposed by the root."
+  }
+}
+
+run "database_connection_info_is_published_for_the_host" {
+  command = apply
+
+  assert {
+    condition     = module.app_config.parameters["api/DB_HOST"].value == module.database.address && module.app_config.parameters["api/DB_HOST"].value == "aula-virtual-prod-db.abcdefghij.us-east-2.rds.amazonaws.com"
+    error_message = "DB_HOST must be the RDS address from module.database."
+  }
+
+  assert {
+    condition     = module.app_config.parameters["api/DB_PORT"].value == "5432" && module.app_config.parameters["api/DB_PORT"].value == tostring(module.database.port)
+    error_message = "DB_PORT must be the RDS port from module.database, as a string."
+  }
+
+  assert {
+    condition     = module.app_config.parameters["api/DB_NAME"].value == module.database.db_name
+    error_message = "DB_NAME must be the initial database name from module.database."
+  }
+
+  assert {
+    condition     = module.app_config.parameters["api/DB_SECRET_ARN"].value == module.database.master_user_secret_arn && module.app_config.parameters["api/DB_SECRET_ARN"].value == "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-00000000-0000-0000-0000-000000000000-AbCdEf"
+    error_message = "DB_SECRET_ARN must be the ARN of the RDS-managed master secret (the pointer, never its value)."
+  }
+
+  assert {
+    condition     = alltrue([for n in ["DB_HOST", "DB_PORT", "DB_NAME", "DB_SECRET_ARN"] : module.app_config.parameters["api/${n}"].type == "String" && module.app_config.parameters["api/${n}"].name == "/aula-virtual-prod/config/api/${n}"])
+    error_message = "The database parameters must be String parameters under /<name_prefix>/config/api/."
+  }
+
+  assert {
+    condition     = !contains(keys(module.app_config.parameters), "realtime/DB_HOST") && !contains(keys(module.app_config.parameters), "realtime/DB_SECRET_ARN")
+    error_message = "Only the api reads database settings; realtime must not get them."
   }
 }
 
@@ -238,7 +288,168 @@ run "rejects_invalid_module_name_prefix" {
     s3_bucket_name          = "aula-virtual-prod-files-abc123"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-1-AbCdEf"
   }
 
   expect_failures = [var.name_prefix]
+}
+
+# A null value (what a mock leaves for the managed secret) is rejected too, so a real plan
+# can never publish an empty DB_SECRET_ARN; prod tests pin the database instance instead.
+
+run "rejects_db_host_with_a_scheme_or_port" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "postgres://db.example.com:5432"
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-1-AbCdEf"
+  }
+
+  expect_failures = [var.db_host]
+}
+
+run "rejects_empty_db_host" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = ""
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-1-AbCdEf"
+  }
+
+  expect_failures = [var.db_host]
+}
+
+run "rejects_out_of_range_db_port" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 70000
+    db_name                 = "aula"
+    db_secret_arn           = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-1-AbCdEf"
+  }
+
+  expect_failures = [var.db_port]
+}
+
+run "rejects_invalid_db_name" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 5432
+    db_name                 = "Bad-Name"
+    db_secret_arn           = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-1-AbCdEf"
+  }
+
+  expect_failures = [var.db_name]
+}
+
+run "rejects_non_secret_manager_db_secret_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = "arn:aws:s3:::bucket"
+  }
+
+  expect_failures = [var.db_secret_arn]
+}
+
+run "rejects_empty_db_secret_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = ""
+  }
+
+  expect_failures = [var.db_secret_arn]
+}
+
+run "rejects_null_db_secret_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/app_config"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    region                  = "us-east-2"
+    s3_bucket_name          = "aula-virtual-prod-files-abc123"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    db_host                 = "db.abc.us-east-2.rds.amazonaws.com"
+    db_port                 = 5432
+    db_name                 = "aula"
+    db_secret_arn           = null
+  }
+
+  expect_failures = [var.db_secret_arn]
 }

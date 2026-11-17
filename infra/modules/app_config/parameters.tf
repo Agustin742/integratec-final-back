@@ -7,7 +7,9 @@ locals {
 
   # Non-secret runtime config, one SSM parameter per service and env var.
   # DATABASE_URL is built on the host from the RDS master secret, so it does not
-  # belong here.
+  # belong here; the host builds it from the DB_* parameters below plus that secret.
+  # DB_* are read by infra/deploy/start-app.sh only: compose.prod.yaml lists the api
+  # environment explicitly, so these names never reach the containers.
   config = {
     api = {
       ALLOWED_ORIGINS         = join(",", var.allowed_origins)
@@ -17,6 +19,10 @@ locals {
       S3_REGION             = var.region
       S3_BUCKET             = var.s3_bucket_name
       REALTIME_INTERNAL_URL = local.realtime_internal_url
+      DB_HOST               = var.db_host
+      DB_PORT               = tostring(var.db_port)
+      DB_NAME               = var.db_name
+      DB_SECRET_ARN         = var.db_secret_arn
     }
     realtime = {
       API_INTERNAL_URL = local.api_internal_url

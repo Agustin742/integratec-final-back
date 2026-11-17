@@ -65,6 +65,34 @@ mock_provider "aws" {
   }
 
   override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/DB_HOST"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/DB_HOST"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/DB_PORT"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/DB_PORT"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/DB_NAME"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/DB_NAME"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/DB_SECRET_ARN"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/DB_SECRET_ARN"
+    }
+  }
+
+  override_resource {
     target = module.app_config.aws_ssm_parameter.this["realtime/API_INTERNAL_URL"]
     values = {
       arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/realtime/API_INTERNAL_URL"
@@ -190,6 +218,16 @@ run "config_parameters_are_scoped_to_the_config_path" {
   assert {
     condition     = toset(module.runtime_access.policy_statements["ReadAppConfig"].Resource) == toset(flatten(values(module.app_config.parameter_arns)))
     error_message = "GetParameters must be scoped to the ARNs of the config parameters."
+  }
+
+  assert {
+    condition     = alltrue([for n in ["DB_HOST", "DB_PORT", "DB_NAME", "DB_SECRET_ARN"] : contains(module.runtime_access.policy_statements["ReadAppConfig"].Resource, "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/${n}")])
+    error_message = "The database connection parameters must be readable by exact ARN, with no extra grant."
+  }
+
+  assert {
+    condition     = alltrue([for n in ["DB_HOST", "DB_PORT", "DB_NAME", "DB_SECRET_ARN"] : startswith("arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/${n}", "${module.app_config.parameter_path_arns["api"]}/")])
+    error_message = "The database connection parameters must sit under the api config path that GetParametersByPath allows."
   }
 
   assert {

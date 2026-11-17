@@ -82,6 +82,13 @@ module "app_config" {
 
   s3_bucket_name = module.storage.bucket_name
 
+  # Single source of truth for the host: it reads these from SSM instead of the operator
+  # copying Terraform outputs into the environment file.
+  db_host       = module.database.address
+  db_port       = module.database.port
+  db_name       = module.database.db_name
+  db_secret_arn = module.database.master_user_secret_arn
+
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base
 }

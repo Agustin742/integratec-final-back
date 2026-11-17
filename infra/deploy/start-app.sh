@@ -7,17 +7,14 @@
 #     --name-prefix aula-virtual-prod --region us-east-2 \
 #     --api-image  <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/api:<tag> \
 #     --realtime-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/realtime:<tag> \
-#     --site-address <host_sslip_domain> \
-#     --db-endpoint <database_endpoint> --db-name <database_name> \
-#     --db-secret-arn <database_master_user_secret_arn>
+#     --site-address <host_sslip_domain>
 #
 # Every input can also be an environment variable: NAME_PREFIX, AWS_REGION, API_IMAGE,
-# REALTIME_IMAGE, SITE_ADDRESS, DB_ENDPOINT (host:port), DB_NAME, DB_SECRET_ARN. An argument wins
-# over the variable. The values of --site-address, --db-endpoint, --db-name and --db-secret-arn are
-# the Terraform outputs host_sslip_domain, database_endpoint, database_name and
-# database_master_user_secret_arn; none of them is a secret. The host cannot read them itself: the
-# RDS-managed master secret holds only the user name and password, and the instance role has no
-# rds:Describe permission.
+# REALTIME_IMAGE, SITE_ADDRESS. An argument wins over the variable. --site-address is the Terraform
+# output host_sslip_domain (not a secret). The database connection info is not an input: Terraform
+# publishes DB_HOST, DB_PORT, DB_NAME and DB_SECRET_ARN as SSM parameters under
+# /<name-prefix>/config/api, and this script reads them there (single source of truth; none of them is
+# a secret, the credentials stay in the RDS-managed master secret).
 #
 # Rotation: RDS rotates the managed master password about every 7 days, and DATABASE_URL is built
 # once per start. After a successful start the script saves a small state file (DEPLOY_STATE_FILE,
@@ -35,10 +32,12 @@
 #
 # What it does:
 #   1. Reads the non-secret config of each service from SSM Parameter Store, by path
-#      /<name-prefix>/config/<service> (ssm:GetParametersByPath).
+#      /<name-prefix>/config/<service> (ssm:GetParametersByPath), including DB_HOST, DB_PORT,
+#      DB_NAME and DB_SECRET_ARN of the api.
 #   2. Reads the generated secrets (<name-prefix>/jwt-secret, invitation-token-key,
 #      internal-service-secret) and the RDS master secret from Secrets Manager.
-#   3. Builds DATABASE_URL (user and password URL-encoded, sslmode=require because RDS for
+#   3. Builds DATABASE_URL as postgresql://user:password@DB_HOST:DB_PORT/DB_NAME (user and
+#      password URL-encoded, sslmode=require because RDS for
 #      PostgreSQL 16 enforces TLS) and exports it for the api only: compose.prod.yaml lists it in
 #      the api service alone.
 #   4. Logs in to ECR (password on stdin) and runs `docker compose up -d --wait`.
@@ -64,9 +63,6 @@ region="${AWS_REGION:-}"
 api_image="${API_IMAGE:-}"
 realtime_image="${REALTIME_IMAGE:-}"
 site_address="${SITE_ADDRESS:-}"
-db_endpoint="${DB_ENDPOINT:-}"
-db_name="${DB_NAME:-}"
-db_secret_arn="${DB_SECRET_ARN:-}"
 state_file="${DEPLOY_STATE_FILE:-/var/lib/aula-app/deployed-state}"
 lock_file="${DEPLOY_LOCK_FILE:-$(dirname "$state_file")/deploy.lock}"
 lock_wait="${DEPLOY_LOCK_WAIT:-300}"
@@ -74,7 +70,7 @@ refresh_only=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --name-prefix | --region | --api-image | --realtime-image | --site-address | --db-endpoint | --db-name | --db-secret-arn)
+    --name-prefix | --region | --api-image | --realtime-image | --site-address)
       [ $# -ge 2 ] || usage_error "$1 requires a value."
       case "$1" in
         --name-prefix) name_prefix="$2" ;;
@@ -82,9 +78,6 @@ while [ $# -gt 0 ]; do
         --api-image) api_image="$2" ;;
         --realtime-image) realtime_image="$2" ;;
         --site-address) site_address="$2" ;;
-        --db-endpoint) db_endpoint="$2" ;;
-        --db-name) db_name="$2" ;;
-        --db-secret-arn) db_secret_arn="$2" ;;
       esac
       shift 2
       ;;
@@ -100,7 +93,7 @@ done
 # must come from AWS, not from the caller's shell.
 unset JWT_SECRET INVITATION_TOKEN_KEY INTERNAL_SERVICE_SECRET DATABASE_URL \
   ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL API_INTERNAL_URL \
-  LOG_GROUP_PREFIX
+  LOG_GROUP_PREFIX DB_HOST DB_PORT DB_NAME DB_SECRET_ARN DB_ENDPOINT
 
 require() {
   [ -n "$2" ] || usage_error "Missing $1 ($3)."
@@ -108,13 +101,8 @@ require() {
 require --name-prefix "$name_prefix" "for example aula-virtual-prod"
 require --region "$region" "for example us-east-2"
 require --site-address "$site_address" "output host_sslip_domain"
-require --db-endpoint "$db_endpoint" "output database_endpoint, host:port"
-require --db-name "$db_name" "output database_name"
-require --db-secret-arn "$db_secret_arn" "output database_master_user_secret_arn"
 
 [[ "$name_prefix" =~ ^[a-z][a-z0-9-]{1,29}$ ]] || usage_error "--name-prefix must be lowercase letters, digits and hyphens."
-[[ "$db_endpoint" =~ ^([A-Za-z0-9.-]+):([0-9]{1,5})$ ]] || usage_error "--db-endpoint must look like host:port."
-[[ "$db_name" =~ ^[a-z][a-z0-9_]{0,62}$ ]] || usage_error "--db-name must be lowercase letters, digits and underscores."
 [[ "$site_address" =~ ^[A-Za-z0-9.-]+$ ]] || usage_error "--site-address must be a host name."
 
 command -v aws >/dev/null || usage_error "The aws CLI is required."
@@ -220,16 +208,23 @@ ecr_image_pattern='^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z
 [[ "$api_image" =~ $ecr_image_pattern ]] || usage_error "--api-image must be an ECR image URI with a tag."
 [[ "$realtime_image" =~ $ecr_image_pattern ]] || usage_error "--realtime-image must be an ECR image URI with a tag."
 
+declare -A api_config=() realtime_config=()
+read_config api "ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL DB_HOST DB_PORT DB_NAME DB_SECRET_ARN" api_config
+read_config realtime "API_INTERNAL_URL" realtime_config
+
+db_host="${api_config[DB_HOST]}" db_port="${api_config[DB_PORT]}"
+db_name="${api_config[DB_NAME]}" db_secret_arn="${api_config[DB_SECRET_ARN]}"
+[[ "$db_host" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] || fail "api: SSM parameter DB_HOST is not a host name; nothing was started."
+[[ "$db_port" =~ ^[0-9]{1,5}$ ]] || fail "api: SSM parameter DB_PORT is not a port number; nothing was started."
+[[ "$db_name" =~ ^[a-z][a-z0-9_]{0,62}$ ]] || fail "api: SSM parameter DB_NAME must be lowercase letters, digits and underscores; nothing was started."
+[[ "$db_secret_arn" =~ ^arn:aws[a-z-]*:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[^*]+$ ]] || fail "api: SSM parameter DB_SECRET_ARN is not a Secrets Manager secret ARN; nothing was started."
+
 # Read before the secret itself: if the secret rotates in between, the recorded version is older
 # than what was deployed, and the next refresh redeploys once more, which is harmless.
 db_secret_version="$(current_version "RDS master secret" "$db_secret_arn")"
 if [ -n "$refresh_only" ] && [ "$state_version" = "$db_secret_version" ]; then
   exit 0
 fi
-
-declare -A api_config=() realtime_config=()
-read_config api "ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL" api_config
-read_config realtime "API_INTERNAL_URL" realtime_config
 
 internal_service_secret="$(read_secret INTERNAL_SERVICE_SECRET "${name_prefix}/internal-service-secret")"
 jwt_secret="$(read_secret JWT_SECRET "${name_prefix}/jwt-secret")"
@@ -239,7 +234,7 @@ master_json="$(read_secret "RDS master secret" "$db_secret_arn")"
 db_user="$(json_member "$master_json" username)" || fail "RDS master secret: no readable username; nothing was started."
 db_password="$(json_member "$master_json" password)" || fail "RDS master secret: no readable password (missing, empty or with escape sequences); nothing was started."
 unset master_json
-database_url="postgresql://$(urlencode "$db_user"):$(urlencode "$db_password")@${db_endpoint}/${db_name}?sslmode=require"
+database_url="postgresql://$(urlencode "$db_user"):$(urlencode "$db_password")@${db_host}:${db_port}/${db_name}?sslmode=require"
 unset db_user db_password
 
 # ECR login: the token travels on stdin only. One login per distinct registry host.

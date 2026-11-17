@@ -39,6 +39,10 @@ API_PARAMS = {
     "S3_REGION": "us-east-2",
     "S3_BUCKET": "aula-virtual-prod-files-0123",
     "REALTIME_INTERNAL_URL": "http://realtime:2567",
+    "DB_HOST": "aula.abc123.us-east-2.rds.amazonaws.com",
+    "DB_PORT": "5432",
+    "DB_NAME": "aula",
+    "DB_SECRET_ARN": DB_SECRET_ARN,
 }
 REALTIME_PARAMS = {"API_INTERNAL_URL": "http://api:3000", "NODE_ENV": "production"}
 
@@ -202,14 +206,12 @@ class BehaviorTests(unittest.TestCase):
             "--name-prefix", PREFIX, "--region", REGION,
             "--api-image", API_IMAGE, "--realtime-image", REALTIME_IMAGE,
             "--site-address", "203-0-113-10.sslip.io",
-            "--db-endpoint", "aula.abc123.us-east-2.rds.amazonaws.com:5432",
-            "--db-name", "aula", "--db-secret-arn", DB_SECRET_ARN,
         ]
 
     def run_script(self, args=None, extra_env=None):
         self.runs += 1
         inputs = ("NAME_PREFIX", "AWS_REGION", "API_IMAGE", "REALTIME_IMAGE", "SITE_ADDRESS", "DB_ENDPOINT",
-                  "DB_NAME", "DB_SECRET_ARN")
+                  "DB_NAME", "DB_SECRET_ARN", "DB_HOST", "DB_PORT")
         env = dict((k, v) for k, v in os.environ.items() if k not in inputs)
         env.update(STUB_LOG=str(self.logs), STUB_FIXTURES=str(self.fixtures),
                    STUB_RUN=str(self.runs), DEPLOY_STATE_FILE=str(self.state), PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
@@ -254,8 +256,10 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(env["INVITATION_TOKEN_KEY"], INVITATION)
         self.assertEqual(env["INTERNAL_SERVICE_SECRET"], INTERNAL)
         for key, value in {**API_PARAMS, **REALTIME_PARAMS}.items():
-            if key != "NODE_ENV":
+            if key != "NODE_ENV" and not key.startswith("DB_"):
                 self.assertEqual(env[key], value, key)
+        for key in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_SECRET_ARN"):
+            self.assertNotIn(key, env, "database connection info is for building DATABASE_URL, not for the containers")
 
     def test_database_url_url_encodes_the_credentials_and_requires_tls(self):
         result, out = self.run_script()
@@ -366,13 +370,13 @@ class BehaviorTests(unittest.TestCase):
     def test_missing_or_invalid_inputs_are_usage_errors_without_aws_calls(self):
         base = self.args()
         cases = {}
-        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image",
-                     "--site-address", "--db-endpoint", "--db-name", "--db-secret-arn"):
+        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image", "--site-address"):
             i = base.index(flag)
             cases[f"missing {flag}"] = base[:i] + base[i + 2:]
         cases["non-ECR image"] = [a if a != API_IMAGE else "docker.io/library/nginx:latest" for a in base]
         cases["image without tag"] = [a if a != API_IMAGE else f"{REGISTRY}/{PREFIX}/api" for a in base]
-        cases["bad endpoint"] = [a if not a.endswith(":5432") else "not an endpoint" for a in base]
+        for old in ("--db-endpoint", "--db-name", "--db-secret-arn"):
+            cases[f"removed {old}"] = base + [old, "x"]
         cases["unknown argument"] = base + ["--bogus", "x"]
         cases["option without value"] = base + ["--region"]
         for label, args in cases.items():
@@ -495,13 +499,57 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(logins, [f"login --username AWS --password-stdin {REGISTRY}",
                                   f"login --username AWS --password-stdin {other}"])
 
+    def test_database_settings_come_from_the_api_config_not_from_the_caller(self):
+        stale = {"DB_ENDPOINT": "evil.example.com:1", "DB_NAME": "evil", "DB_SECRET_ARN": "arn:evil",
+                 "DB_HOST": "evil.example.com", "DB_PORT": "1"}
+        result, out = self.run_script(extra_env=stale)
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("@aula.abc123.us-east-2.rds.amazonaws.com:5432/aula?sslmode=require", self.compose_env()["DATABASE_URL"])
+        self.assertTrue(any(f"--secret-id {DB_SECRET_ARN}" in c for c in self.log("aws.log")))
+        self.assertFalse(any("evil" in c for c in self.log("aws.log")))
+
+    def test_missing_database_parameter_fails_closed_before_touching_secrets(self):
+        for name in ("DB_HOST", "DB_PORT", "DB_NAME", "DB_SECRET_ARN"):
+            with self.subTest(name):
+                self.write_defaults()
+                self.logs.joinpath("aws.log").unlink(missing_ok=True)
+                trimmed = {k: v for k, v in API_PARAMS.items() if k != name}
+                (self.fixtures / fixture_name("ssm", f"/{PREFIX}/config/api")).write_text(
+                    ssm_text(trimmed, "api"), newline="\n")
+                result, out = self.run_script()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(name, out)
+                self.assertFalse(self.compose_calls())
+                self.assertFalse(any(c.startswith("secretsmanager") for c in self.log("aws.log")))
+
+    def test_malformed_database_parameters_fail_closed(self):
+        bad = {"DB_HOST": "not a host", "DB_PORT": "5432x", "DB_NAME": "Bad-Name"}
+        for name, value in bad.items():
+            with self.subTest(name):
+                self.write_defaults()
+                params = {**API_PARAMS, name: value}
+                (self.fixtures / fixture_name("ssm", f"/{PREFIX}/config/api")).write_text(
+                    ssm_text(params, "api"), newline="\n")
+                result, out = self.run_script()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(name, out)
+                self.assertFalse(self.compose_calls())
+
+    def test_usage_and_header_no_longer_mention_database_inputs(self):
+        header = script_text().split("set -euo pipefail")[0]
+        self.assertNotRegex(header, r"--db-|DB_ENDPOINT")
+        self.assertIn("DB_HOST", header)
+
+    def test_service_unit_environment_file_only_needs_the_host_basics(self):
+        text = (SYSTEMD / "app-db-refresh.service").read_text()
+        self.assertNotRegex(text, r"DB_ENDPOINT|DB_NAME|DB_SECRET_ARN")
+
     def test_inputs_may_come_from_the_environment(self):
         args = self.args()
         env = {}
         for flag, var in (("--name-prefix", "NAME_PREFIX"), ("--region", "AWS_REGION"),
                           ("--api-image", "API_IMAGE"), ("--realtime-image", "REALTIME_IMAGE"),
-                          ("--site-address", "SITE_ADDRESS"), ("--db-endpoint", "DB_ENDPOINT"),
-                          ("--db-name", "DB_NAME"), ("--db-secret-arn", "DB_SECRET_ARN")):
+                          ("--site-address", "SITE_ADDRESS")):
             env[var] = args[args.index(flag) + 1]
         result, out = self.run_script(args=[], extra_env=env)
         self.assertEqual(result.returncode, 0, out)
