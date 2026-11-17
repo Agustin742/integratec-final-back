@@ -14,6 +14,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PointsModule } from './points/points.module';
 import { ShopModule } from './shop/shop.module';
 import { MaterialsModule } from './materials/materials.module';
+import { EquipmentModule } from './equipment/equipment.module';
 
 @Module({
   controllers: [HealthController],
@@ -36,6 +37,7 @@ export class AppModule {
         PointsModule,
         ShopModule,
         MaterialsModule,
+        EquipmentModule,
       ],
     };
   }

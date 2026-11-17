@@ -64,6 +64,10 @@ export interface ApiConfig {
   shopPurchaseRateLimitWindowSeconds?: number;
   /** Maximum shop purchase attempts per user inside the sliding window (defaults to 20). */
   shopPurchaseRateLimitMaxAttempts?: number;
+  /** Sliding window for per-user equipment change rate limiting (defaults to 60s when omitted). */
+  equipRateLimitWindowSeconds?: number;
+  /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
+  equipRateLimitMaxAttempts?: number;
 }
 
 /** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
@@ -94,6 +98,12 @@ export const MAX_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 3600;
 export const MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS = 1000;
 export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_WINDOW_SECONDS = 60;
 export const DEFAULT_SHOP_PURCHASE_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
+/** Equipment change rate limiter bounds and defaults. */
+export const MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 3600;
+export const MAX_EQUIP_RATE_LIMIT_ATTEMPTS = 1000;
+export const DEFAULT_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 60;
+export const DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS = 20;
 
 /** Local realtime server, used when `REALTIME_INTERNAL_URL` is unset outside production. */
 export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
@@ -145,6 +155,8 @@ const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, suc
 const BATCH_SIZE_MESSAGE = `must be an integer between 1 and ${MAX_AUTH_CLEANUP_BATCH_SIZE}`;
 const SHOP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
 const SHOP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS}`;
+const EQUIP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
+const EQUIP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_EQUIP_RATE_LIMIT_ATTEMPTS}`;
 
 const required = { error: 'is required' };
 
@@ -348,6 +360,26 @@ const envSchema = z
               .max(MAX_SHOP_PURCHASE_RATE_LIMIT_ATTEMPTS, SHOP_RATE_LIMIT_MAX_MESSAGE),
           ),
       ),
+    EQUIP_RATE_LIMIT_WINDOW: duration(
+      '1m',
+      MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS,
+      EQUIP_RATE_LIMIT_WINDOW_MESSAGE,
+    ),
+    EQUIP_RATE_LIMIT_MAX: z
+      .string()
+      .default(String(DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS))
+      .pipe(
+        z
+          .string()
+          .regex(/^\d+$/, EQUIP_RATE_LIMIT_MAX_MESSAGE)
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .min(1, EQUIP_RATE_LIMIT_MAX_MESSAGE)
+              .max(MAX_EQUIP_RATE_LIMIT_ATTEMPTS, EQUIP_RATE_LIMIT_MAX_MESSAGE),
+          ),
+      ),
   })
   .superRefine((env, ctx) => {
     // A production link must point at the real frontend, never silently at localhost.
@@ -462,5 +494,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     authCleanupBatchSize: values.AUTH_CLEANUP_BATCH_SIZE,
     shopPurchaseRateLimitWindowSeconds: values.SHOP_PURCHASE_RATE_LIMIT_WINDOW,
     shopPurchaseRateLimitMaxAttempts: values.SHOP_PURCHASE_RATE_LIMIT_MAX,
+    equipRateLimitWindowSeconds: values.EQUIP_RATE_LIMIT_WINDOW,
+    equipRateLimitMaxAttempts: values.EQUIP_RATE_LIMIT_MAX,
   };
 }
