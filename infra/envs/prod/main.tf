@@ -62,9 +62,12 @@ module "runtime_access" {
   role_name   = module.host.instance_role_name
 
   ecr_repository_arns = module.registry.repository_arns
-  # The RDS master secret is always managed (manage_master_user_password is asserted
-  # in database_instance.tftest.hcl); compact only keeps the plan working when a test
-  # mock leaves the managed secret block empty.
+  # RISK: compact() silently drops a null RDS master secret ARN, which would leave the
+  # host without access to the database credentials and no error at plan time. It is
+  # here only because test mocks leave the managed secret block empty; the real value
+  # is guarded by database_instance.tftest.hcl, which asserts manage_master_user_password
+  # (so RDS always creates the secret) and pins the ARN that runtime_access.tftest.hcl
+  # expects in the policy.
   secret_arns             = compact(concat(values(module.app_config.secret_arns), [module.database.master_user_secret_arn]))
   ssm_parameter_arns      = flatten(values(module.app_config.parameter_arns))
   ssm_parameter_path_arns = values(module.app_config.parameter_path_arns)

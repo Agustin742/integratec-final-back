@@ -63,8 +63,8 @@ variable "s3_bucket_arn" {
   type        = string
 
   validation {
-    condition     = var.s3_bucket_arn != "" && !strcontains(var.s3_bucket_arn, "*") && !strcontains(var.s3_bucket_arn, "/")
-    error_message = "s3_bucket_arn must be the exact ARN of the bucket (no wildcards, no object path)."
+    condition     = can(regex("^arn:aws[a-z-]*:s3:::[^*/]+$", var.s3_bucket_arn))
+    error_message = "s3_bucket_arn must be the exact ARN of a bucket (arn:<partition>:s3:::<name>), with no wildcards and no object path."
   }
 }
 

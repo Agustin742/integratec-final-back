@@ -5,6 +5,15 @@ variables {
 }
 
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
+  # format, so the bucket ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.storage.aws_s3_bucket.this
+    values = {
+      arn = "arn:aws:s3:::aula-virtual-prod-files-20260101000000000000000001"
+    }
+  }
+
   # The mock returns a random string for data source JSON, so the ECR lifecycle
   # policy document is pinned to a well-formed value.
   override_data {

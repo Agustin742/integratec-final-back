@@ -1,4 +1,90 @@
 mock_provider "aws" {
+  # The mock returns random strings for data sources and ARNs, so the values the SSM
+  # path ARNs are built from are pinned to well-formed ones.
+  override_data {
+    target = module.app_config.data.aws_partition.current
+    values = {
+      partition = "aws"
+    }
+  }
+
+  override_data {
+    target = module.app_config.data.aws_region.current
+    values = {
+      region = "us-east-2"
+    }
+  }
+
+  override_data {
+    target = module.app_config.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/ALLOWED_ORIGINS"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/ALLOWED_ORIGINS"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/PASSWORD_RESET_URL_BASE"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/PASSWORD_RESET_URL_BASE"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/NODE_ENV"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/NODE_ENV"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/S3_REGION"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/S3_REGION"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/S3_BUCKET"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/S3_BUCKET"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["api/REALTIME_INTERNAL_URL"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api/REALTIME_INTERNAL_URL"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["realtime/API_INTERNAL_URL"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/realtime/API_INTERNAL_URL"
+    }
+  }
+
+  override_resource {
+    target = module.app_config.aws_ssm_parameter.this["realtime/NODE_ENV"]
+    values = {
+      arn = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/realtime/NODE_ENV"
+    }
+  }
+
+  override_resource {
+    target = module.storage.aws_s3_bucket.this
+    values = {
+      arn = "arn:aws:s3:::aula-virtual-prod-files-20260101000000000000000001"
+    }
+  }
+
   # The mock returns a random string for data source JSON, so the ECR lifecycle
   # policy document is pinned to a well-formed value (see infra/README.md CI checks).
   override_data {
@@ -114,6 +200,19 @@ run "config_parameters_are_scoped_to_the_config_path" {
   assert {
     condition     = toset(module.runtime_access.policy_statements["ReadAppConfigByPath"].Resource) == toset(concat(values(module.app_config.parameter_path_arns), [for p in values(module.app_config.parameter_path_arns) : "${p}/*"]))
     error_message = "GetParametersByPath must be scoped to each service config path and its children, nothing broader."
+  }
+
+  assert {
+    condition     = module.app_config.parameter_path_arns == { api = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/api", realtime = "arn:aws:ssm:us-east-2:123456789012:parameter/aula-virtual-prod/config/realtime" }
+    error_message = "Path ARNs must be arn:<partition>:ssm:<region>:<account>:parameter/<prefix>/config/<service> (single slash after parameter)."
+  }
+
+  assert {
+    condition = alltrue([
+      for service, path_arn in module.app_config.parameter_path_arns :
+      !contains(flatten(values(module.app_config.parameter_arns)), path_arn) && alltrue([for p in module.app_config.parameter_arns[service] : startswith(p, "${path_arn}/")])
+    ])
+    error_message = "A path ARN must differ from every parameter ARN, and each parameter ARN of the service must sit under its path ARN."
   }
 }
 
@@ -275,7 +374,7 @@ run "rejects_bucket_arn_that_is_not_an_s3_arn" {
     secret_arns             = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:a"]
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
-    s3_bucket_arn           = "*"
+    s3_bucket_arn           = "aula-virtual-prod-files-bucket"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -299,4 +398,44 @@ run "rejects_wildcard_secret_arn" {
   }
 
   expect_failures = [var.secret_arns]
+}
+
+run "rejects_wildcard_bucket_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/runtime_access"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    role_name               = "r"
+    ecr_repository_arns     = { api = "arn:aws:ecr:us-east-2:123456789012:repository/a" }
+    secret_arns             = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:a"]
+    ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
+    ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
+    s3_bucket_arn           = "arn:aws:s3:::*"
+  }
+
+  expect_failures = [var.s3_bucket_arn]
+}
+
+run "rejects_object_path_bucket_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/runtime_access"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    role_name               = "r"
+    ecr_repository_arns     = { api = "arn:aws:ecr:us-east-2:123456789012:repository/a" }
+    secret_arns             = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:a"]
+    ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
+    ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
+    s3_bucket_arn           = "arn:aws:s3:::bucket/prefix"
+  }
+
+  expect_failures = [var.s3_bucket_arn]
 }
