@@ -1,4 +1,22 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
+  # format, so the bucket ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.storage.aws_s3_bucket.this
+    values = {
+      arn = "arn:aws:s3:::aula-virtual-prod-files-20260101000000000000000001"
+    }
+  }
+
+  # The mock returns a random string for data source JSON, so the ECR lifecycle
+  # policy document is pinned to a well-formed value.
+  override_data {
+    target = module.registry.data.aws_ecr_lifecycle_policy_document.this
+    values = {
+      json = "{\"rules\":[]}"
+    }
+  }
+
   # The mock generates random values for computed nested blocks, so the managed
   # master user secret is pinned to a well-formed value.
   override_resource {
@@ -17,7 +35,9 @@ mock_provider "aws" {
 }
 
 variables {
-  project = "aula-virtual"
+  project                 = "aula-virtual"
+  allowed_origins         = ["https://app.example.com"]
+  password_reset_url_base = "https://app.example.com/reset-password"
 }
 
 run "instance_engine_and_sizing" {

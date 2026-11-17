@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host and the database (see [Network and EC2 host](#network-and-ec2-host) and [Database (RDS PostgreSQL)](#database-rds-postgresql)), and the GitHub Actions OIDC role (disabled by default, see below). **Nothing in `infra/` has been applied to AWS yet.** ECR and the container deployment are added by a later issue.
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host and the database (see [Network and EC2 host](#network-and-ec2-host) and [Database (RDS PostgreSQL)](#database-rds-postgresql)), the container deployment resources (see [Container deployment](#container-deployment-ecr-secrets-config-compose)), and the GitHub Actions OIDC role (disabled by default, see below). **Nothing in `infra/` has been applied to AWS yet.** The image pipeline that builds and ships images is a later issue (#58).
 
 Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
 
@@ -9,12 +9,12 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: network, EC2 host and RDS database, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network, EC2 host, RDS database and container deployment resources, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
 - **Every root module has a `versions.tf`.** CI detects roots by that file and fails if a root is missing from the `terraform` job matrix in `.github/workflows/ci.yml`.
-- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`) and have no `versions.tf` of their own.
+- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`, `registry`, `app_config`, `storage`, `runtime_access`) and have no `versions.tf` of their own.
 - The `project` prefix (`aula-virtual` by default) **MUST** be the same in every root. The CI role policy in `envs/prod` derives the state bucket name from it and the account ID.
 - Tags `Project`, `Environment`, and `ManagedBy = "terraform"` are applied through provider `default_tags`.
 
@@ -68,7 +68,7 @@ Issue #59 adds the production network and the single host that will run the appl
 | Compute | Root volume: encrypted gp3, 20 GiB | Variable `host_root_volume_size_gb`. |
 | Compute | IMDSv2 required | The instance metadata service only answers token-based requests. |
 | Compute | Elastic IP | A fixed public address; it is the only public address of the host. |
-| Access | IAM role and instance profile with `AmazonSSMManagedInstanceCore` | Lets Session Manager and Run Command reach the host. The application permissions (ECR, secrets) are added by #61. |
+| Access | IAM role and instance profile with `AmazonSSMManagedInstanceCore` | Lets Session Manager and Run Command reach the host. The application permissions (ECR, secrets, config, files, logs) are added by #61, see [Host role permissions](#host-role-permissions). |
 | Provisioning | User data script (cloud-init, runs once at first boot) | Installs Docker and the pinned Docker Compose plugin (checksum verified) and starts the SSM agent. It writes `/var/lib/host-bootstrap/done` on success or `/var/lib/host-bootstrap/failed` (with the failing line) on error. Its log is `/var/log/host-bootstrap.log`. |
 
 Changing the user data or the AMI later does not touch the running instance. To apply such a change, replace the host on purpose: `terraform apply -replace=module.host.aws_instance.host`.
@@ -87,7 +87,7 @@ Let's Encrypt needs a DNS name that points to the Elastic IP. Until a real domai
 | `/api/internal*` and `/realtime/internal*` | `404`. The internal API and realtime channel stays on the private Docker network and is never routed. |
 | Anything else | `404`. |
 
-`scripts/ci/test_caddy.py` checks the file (and, when Docker is available, validates it and tests the routing against stub upstreams). **Caddy and the containers are not started by this issue**: running them belongs to the Docker Compose deployment in #61. Until then, nothing listens on ports 443 and 80 of the host.
+`scripts/ci/test_caddy.py` checks the file (and, when Docker is available, validates it and tests the routing against stub upstreams). Caddy and the containers are started by the Docker Compose deployment of #61, see [Container deployment](#container-deployment-ecr-secrets-config-compose). Until that is done on the host, nothing listens on ports 443 and 80.
 
 ### Plan and apply, step by step
 
@@ -178,7 +178,7 @@ Read `Status` and `StandardOutputContent`:
 | Secrets Manager secret for the master password (#60) | about USD 0.40 per secret per month | about USD 0.4 |
 | Total | | about USD 35 |
 
-Not included: data transfer out, ECR and any other later resource. Whether the Free plan credits cover this for the intended duration is not known.
+Not included: data transfer out and the resources of [Container deployment](#container-deployment-ecr-secrets-config-compose), which have their own [cost table](#estimated-monthly-cost-of-the-deployment-resources-unverified). Whether the Free plan credits cover this for the intended duration is not known.
 
 ## Database (RDS PostgreSQL)
 
@@ -204,9 +204,9 @@ terraform output database_master_user_secret_arn
 
 For the MVP the API connects with the master user. A separate user with limited permissions (for the API, and another for migrations) is a follow-up; Terraform cannot create it because it cannot reach the private database.
 
-### How the deployment will use it (#61)
+### How the deployment uses it (#61)
 
-This is the pattern #61 will implement; it is not done here. When the application is deployed or started, the host:
+This is what `infra/deploy/start-app.sh` does (see [Container deployment](#container-deployment-ecr-secrets-config-compose)). When the application is deployed or started, the host:
 
 1. Reads the secret by its ARN. The secret value is JSON with `username` and `password`:
 
@@ -215,10 +215,10 @@ This is the pattern #61 will implement; it is not done here. When the applicatio
      --secret-id "$(terraform output -raw database_master_user_secret_arn)"
    ```
 
-2. Builds `DATABASE_URL` from that secret and the outputs `database_endpoint` (host and port together), `database_port` and `database_name`. The password must be URL-encoded.
+2. Builds `DATABASE_URL` from that secret and the connection settings `DB_HOST`, `DB_PORT` and `DB_NAME`, which Terraform publishes as SSM parameters of the api. The password is URL-encoded.
 3. Passes `DATABASE_URL` only to the environment of the `api` container.
 
-The URL and the password are never written to images, Git, logs or the `realtime` container, which has no database access. The host's IAM permission to read that one secret is added by #61; today the host role only has the SSM permission.
+The URL and the password are never written to images, Git, logs or the `realtime` container, which has no database access. The host's IAM permission to read that one secret is part of the [host role permissions](#host-role-permissions).
 
 ### Backups and restore
 
@@ -277,6 +277,163 @@ terraform output database_subnet_group_name
 
 The database rows are part of the [estimated monthly cost](#estimated-monthly-cost-unverified) table above. They are unverified, and whether the Free plan covers `db.t4g.micro` is not checked.
 
+## Container deployment (ECR, secrets, config, Compose)
+
+Issue #61 adds everything the host needs to run `api` and `realtime` behind Caddy: image repositories, secret containers, non-secret config, a files bucket, the host permissions, log groups, a production Compose file and a start script. Terraform creates only the AWS resources. The Compose file, the Caddyfile and the start script live in the repository and reach the host through Session Manager by hand until the pipeline (#58) automates it. **None of it has been applied to AWS.** It is covered by `terraform test` with a mocked AWS provider and by the unit tests in `scripts/ci`.
+
+### Resources
+
+| Area | Resource | Notes |
+|------|----------|-------|
+| Images | ECR repositories `aula-virtual-prod-api` and `aula-virtual-prod-realtime` (module `registry`) | Tags are **immutable** (a tag cannot be pushed twice), scan on push, AES256 encryption. Outputs `ecr_repository_urls` and `ecr_repository_arns`. |
+| Images | ECR lifecycle policy | Untagged images expire after 7 days. Images tagged `release-*` keep the newest 20. Every other image expires 30 days after push. A release image is protected from the 30-day rule, so **#58 must tag deployable images `release-*`**, or they will be deleted. |
+| Secrets | Three Secrets Manager secrets (module `app_config`): `<prefix>/jwt-secret`, `<prefix>/invitation-token-key`, `<prefix>/internal-service-secret` | Terraform creates **empty containers only**. The values are generated by AWS and loaded once by `infra/scripts/seed-app-secrets.sh`, so they never appear in Terraform code, plan, outputs or state. Recovery window 7 days. Output `app_secret_arns` (ARNs only). |
+| Config | SSM Parameter Store `String` parameters under `/<prefix>/config/api/` and `/<prefix>/config/realtime/` | Non-secret values only. For the api: `ALLOWED_ORIGINS`, `PASSWORD_RESET_URL_BASE`, `NODE_ENV`, `S3_BUCKET`, `S3_REGION`, `REALTIME_INTERNAL_URL` and the database connection `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SECRET_ARN`. For realtime: `API_INTERNAL_URL` and `NODE_ENV`. `DB_SECRET_ARN` only points to the RDS master secret, it is not a credential. The origins and the reset URL come from the variables `allowed_origins` and `password_reset_url_base` (https only; each origin must be canonical, with a lowercase host and no default `:443` port, because the API compares it with its parsed `URL.origin`; placeholders in `example.tfvars`). |
+| Files | S3 bucket `aula-virtual-prod-files-<random suffix>` (module `storage`) | Private (all public access blocked), versioned, encrypted (AES256), owner-enforced ownership, and a bucket policy that denies any request not using TLS. Old versions expire after 30 days and abandoned multipart uploads after 7 days. `prevent_destroy` is on. The API uploads and signs download URLs itself, so there is no CORS configuration. Outputs `storage_bucket_name` and `storage_bucket_arn`. |
+| Access | Inline policy `aula-virtual-prod-host-runtime` on the host role (module `runtime_access`) | See [Host role permissions](#host-role-permissions). |
+| Logs | CloudWatch log groups `/aula-virtual-prod/api`, `/aula-virtual-prod/realtime` and `/aula-virtual-prod/caddy` | Retention 14 days. Terraform creates them so the host never needs permission to create groups. Output `log_group_names`. |
+
+### Host role permissions
+
+The host role keeps `AmazonSSMManagedInstanceCore` and gets one inline policy with these statements. Nothing allows `*` except the ECR login token.
+
+| Statement | Allows | Why |
+|-----------|--------|-----|
+| `EcrAuthToken` | `ecr:GetAuthorizationToken` on `*` | AWS does not support limiting this action to a repository, so `*` is the only accepted value. It only returns a login token and grants no access to images by itself. It is kept in its own statement so every other statement stays scoped. |
+| `EcrPull` | Pull actions (`BatchGetImage`, `GetDownloadUrlForLayer`, `BatchCheckLayerAvailability`) on the two repositories | The host pulls images. It cannot push or delete them. |
+| `ReadAppSecrets` | `secretsmanager:GetSecretValue` on the three app secrets and the RDS master secret | The start script reads them and injects them as container environment. |
+| `ReadAppConfig` and `ReadAppConfigByPath` | `ssm:GetParameters` on each parameter, `ssm:GetParametersByPath` on each config path | The start script reads the non-secret config. Reading by path is authorized against the path itself and the parameters under it, so both forms are listed. |
+| `FilesBucketObjects` | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on objects of the files bucket | The API stores and reads submissions. There is no `s3:ListBucket` because the API uses known keys. |
+| `WriteServiceLogs` | `logs:CreateLogStream`, `logs:PutLogEvents` on the three log groups | The Docker `awslogs` driver writes the container logs. |
+
+There is no KMS statement: the secrets use the AWS managed key `aws/secretsmanager`, which any caller allowed to use Secrets Manager can use. If a customer managed key is added later, the role needs `kms:Decrypt` on it.
+
+### One-time setup after `terraform apply`
+
+Apply creates the secret containers empty, and the api cannot start until they have a value. Load them once, from the machine where you run Terraform, with the same AWS credentials. From the repository root:
+
+```sh
+terraform -chdir=infra/envs/prod output -json app_secret_arns \
+  | infra/scripts/seed-app-secrets.sh --region us-east-2
+```
+
+Or save the JSON to a file and pass it with `--arns-file arns.json` (the file holds ARNs only, never values). The script generates each value with AWS (`get-random-password`), validates it, stores it with `put-secret-value` and never prints it. It **skips a secret that already has a value**, so it is safe to run again, and it stops without writing anything if it cannot check the current value (permissions, expired session, network).
+
+On Linux and macOS the value goes to the AWS CLI through stdin. Under **Git Bash on Windows** the native AWS CLI cannot read `/dev/stdin`, so the script falls back to passing the value as an argument; on a single-user workstation that adds no meaningful exposure (details in the script header).
+
+To rotate a secret later, generate a new value and store it with `aws secretsmanager put-secret-value` for that secret (the script never overwrites). Secrets Manager keeps the old value as `AWSPREVIOUS`. Then redeploy (rerun `start-app.sh`) so the host reads the new value. Impact: rotating `JWT_SECRET` invalidates every issued access token, and rotating `INVITATION_TOKEN_KEY` invalidates pending invitations.
+
+### Host layout
+
+The host runs the stack from `/opt/aula`. Keep the relative layout, because the Compose file mounts `../caddy/Caddyfile`:
+
+| Path on the host | Content |
+|------------------|---------|
+| `/opt/aula/infra/deploy/compose.prod.yaml` and `start-app.sh` (executable) | Copied from `infra/deploy/`. |
+| `/opt/aula/infra/deploy/systemd/` | The two systemd unit files, copied from `infra/deploy/systemd/`. |
+| `/opt/aula/infra/caddy/Caddyfile` | Copied from `infra/caddy/Caddyfile`. |
+| `/etc/aula-app/deploy.env` | Non-secret inputs for the refresh timer, see below. |
+| `/var/lib/aula-app/deployed-state` | Written by `start-app.sh` after each successful start: three lines `db_secret_version` (the version id of the RDS master secret, not its value), `api_image` and `realtime_image`. Never secrets. |
+| `/var/lib/aula-app/deploy.lock` | Lock file. Only one deployment or refresh runs at a time; another waits up to 5 minutes. It holds no data. |
+
+### Manual deploy with Session Manager (until #58)
+
+The images must already be in ECR. Until #58 exists, push them by hand (`docker login` to ECR, then `docker push`) with a `release-*` tag such as `release-2026-11-16-1`; tags are immutable, so each push needs a new tag. Then, in a [Session Manager shell](#reach-the-host-with-session-manager):
+
+1. Become root and create the folders:
+
+   ```sh
+   sudo -i
+   mkdir -p /opt/aula/infra/deploy/systemd /opt/aula/infra/caddy /etc/aula-app /var/lib/aula-app
+   ```
+
+2. Copy the files. There is no SSH or file transfer, so paste each file from the repository into the shell, for example:
+
+   ```sh
+   cat > /opt/aula/infra/deploy/compose.prod.yaml <<'EOF_FILE'
+   <paste the file content>
+   EOF_FILE
+   ```
+
+   Do this for `compose.prod.yaml`, `start-app.sh`, the two files in `systemd/` and the `Caddyfile` (to the paths of the table above), then run `chmod +x /opt/aula/infra/deploy/start-app.sh`.
+
+3. Create `/etc/aula-app/deploy.env` with **non-secret** values only. `SITE_ADDRESS` is the output `host_sslip_domain`:
+
+   ```sh
+   cat > /etc/aula-app/deploy.env <<'EOF_FILE'
+   NAME_PREFIX=aula-virtual-prod
+   AWS_REGION=us-east-2
+   SITE_ADDRESS=<output host_sslip_domain>
+   EOF_FILE
+   ```
+
+   Do not put secrets or image values here; the refresh reuses the images recorded in the state file.
+
+4. First deploy, with the full image URIs (the repository URLs are in `terraform output ecr_repository_urls`, followed by `:<tag>`):
+
+   ```sh
+   /opt/aula/infra/deploy/start-app.sh \
+     --name-prefix aula-virtual-prod --region us-east-2 \
+     --api-image <api repository url>:<release tag> \
+     --realtime-image <realtime repository url>:<release tag> \
+     --site-address <output host_sslip_domain>
+   ```
+
+   The script reads the config from SSM and the secrets from Secrets Manager with the instance role, logs in to ECR, and runs `docker compose up -d --wait`. If something is missing it stops with a message that names the item, never a value. `docker login` keeps the ECR token (valid about 12 hours) in root's Docker config (`~/.docker/config.json`). To update later, run it again with the new image URIs.
+
+5. Install the rotation refresh (next section):
+
+   ```sh
+   cp /opt/aula/infra/deploy/systemd/app-db-refresh.service /opt/aula/infra/deploy/systemd/app-db-refresh.timer /etc/systemd/system/
+   systemctl daemon-reload
+   systemctl enable --now app-db-refresh.timer
+   ```
+
+**Rollout order.** The start script reads the database settings from SSM. Run `terraform apply` (it creates the parameters) **before** shipping a newer `start-app.sh` to the host; otherwise the script stops because `DB_HOST` and the other parameters are missing.
+
+### RDS password rotation
+
+AWS rotates the RDS master password about every 7 days, and `DATABASE_URL` is built once when the stack starts. The timer `app-db-refresh.timer` runs `start-app.sh --refresh-if-rotated` two minutes after boot and every 10 minutes. It does nothing while the secret version equals the one in the state file; after a rotation it redeploys the api with the new password, using the images recorded in the state file (so it never rolls back to older images). **Until the timer fires after a rotation, new api database connections can fail, for up to about 10 minutes.** Check the timer with `systemctl list-timers app-db-refresh.timer` and the last run with `journalctl -u app-db-refresh.service`.
+
+### Roll back
+
+There is no automatic rollback: if `docker compose up --wait` fails, the script exits with an error and the stack stays in whatever state Compose left it. To go back, run `start-app.sh` again with the image URIs of the previous `release-*` tag (as in step 4). That also becomes the recorded state, so later refreshes keep it. The old image must still exist in ECR; the lifecycle keeps the newest 20 release images.
+
+### Delete the files bucket
+
+The bucket holds user files, so it has `prevent_destroy` in Terraform, versioning and `force_destroy = false`: `terraform destroy` fails on it on purpose. To delete it deliberately:
+
+1. Open a reviewed change that removes `prevent_destroy` from `modules/storage/bucket.tf`, and apply it.
+2. Empty the bucket **including all object versions and delete markers** (the console "Empty" action does this; `aws s3 rm` alone leaves old versions behind and the deletion fails).
+3. Run `terraform destroy`.
+
+Back up anything that must be kept before step 2: noncurrent versions are the only recovery copy.
+
+### Estimated monthly cost of the deployment resources (unverified)
+
+**These figures are not verified.** They are approximate public `us-east-2` list prices written from memory, without a live pricing lookup, and not compared with the Free plan credits. Check the [AWS Pricing Calculator](https://calculator.aws/) before applying. They add to the [table above](#estimated-monthly-cost-unverified).
+
+| Item | Assumption | Approximate monthly cost |
+|------|-----------|--------------------------|
+| ECR storage | about USD 0.10 per GB-month; two repositories, a few hundred MB per image, up to 20 release images each | about USD 1 to 3 |
+| Secrets Manager | about USD 0.40 per secret per month; 3 app secrets (the RDS master secret is already counted) | about USD 1.2 |
+| SSM Parameter Store | standard parameters are free | USD 0 |
+| CloudWatch Logs | about USD 0.50 per GB ingested and USD 0.03 per GB-month stored; depends entirely on log volume | unknown, likely under USD 1 at low traffic |
+| S3 files bucket | about USD 0.023 per GB-month plus requests; depends on uploads | unknown, likely under USD 1 at low usage |
+
+Not included: data transfer out and the API request charges of each service.
+
+### Known follow-ups
+
+Not fixed in #61:
+
+- Use `sslmode=verify-full` with the RDS certificate bundle. Today it is `require`, which encrypts but does not verify the server; this would also close the risk that someone able to write SSM parameters could redirect the database connection.
+- Roll back automatically when `docker compose up --wait` fails.
+- Read the realtime config after the refresh early exit, so a no-op timer tick has one less failure mode.
+- Add script tests for a malformed `DB_SECRET_ARN` and an out-of-range `DB_PORT`, and keep the validation regexes of the script and of Terraform in sync.
+- Remove the now-redundant `compact()` in `envs/prod/main.tf`, and centralize the repeated mock overrides in the test files if Terraform supports it.
+- The `scripts/ci` tests that need PyYAML are skipped where it is not installed; decide whether CI installs it.
+
 ## GitHub Actions OIDC role
 
 `envs/prod` can create the `token.actions.githubusercontent.com` OIDC provider and the role `aula-virtual-prod-github-actions` (output `github_actions_role_arn`).
@@ -312,6 +469,8 @@ The `terraform` job in `.github/workflows/ci.yml` runs on every pull request, fo
 2. `terraform init -backend=false -input=false -lockfile=readonly`
 3. `terraform validate`
 4. `terraform test` (mocked AWS provider)
+
+Test convention: every `*.tftest.hcl` in `envs/prod/tests` carries the same `override_data` for the ECR lifecycle policy document in its `mock_provider`, because the mock returns non-JSON for data source `.json` and the registry module is part of every plan. Keep it in new test files; the rule contents are asserted through the `lifecycle_rules` module output.
 
 ## Decisions
 
