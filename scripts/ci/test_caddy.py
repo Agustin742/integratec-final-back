@@ -178,7 +178,7 @@ WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 WEBSOCKET_ECHO_IMAGE = "python:3.13.1-alpine"
 # Stdlib-only upstream: completes the RFC 6455 handshake, reports the path it received, then echoes text frames.
 WEBSOCKET_ECHO_SERVER = r"""
-import base64, hashlib, socketserver
+import base64, hashlib, socketserver, sys
 
 def send(sock, text):
     sock.sendall(bytes([0x81, len(text.encode())]) + text.encode())
@@ -200,7 +200,7 @@ class Handler(socketserver.StreamRequestHandler):
         send(self.request, "echo " + payload.decode())
 
 socketserver.ThreadingTCPServer.allow_reuse_address = True
-socketserver.ThreadingTCPServer(("", 2567), Handler).serve_forever()
+socketserver.ThreadingTCPServer(("", int(sys.argv[1])), Handler).serve_forever()
 """.replace("{GUID}", WEBSOCKET_GUID)
 
 
@@ -225,11 +225,17 @@ def websocket_exchange(base, path, message):
         if not status_line.startswith("HTTP/1.1 101"):
             return handshake, []
 
+        def read_exactly(count):
+            data = reader.read(count)
+            if len(data) != count:
+                raise AssertionError(f"connection closed early: wanted {count} bytes, got {len(data)}")
+            return data
+
         def read_frame():
-            opcode_byte, length = reader.read(2)
+            opcode_byte, length = read_exactly(2)
             if length & 0x7F >= 126:
                 raise AssertionError("frames this large are not expected in the test")
-            return opcode_byte & 0x0F, reader.read(length & 0x7F).decode()
+            return opcode_byte & 0x0F, read_exactly(length & 0x7F).decode()
 
         payload = message.encode()
         mask = os.urandom(4)
@@ -248,9 +254,26 @@ class CaddyWebSocketTests(CaddyStack):
         name = f"caddy-routing-{alias}-{suffix}"
         docker(
             "run", "-d", "--name", name, "--network", cls.network, "--network-alias", alias,
-            WEBSOCKET_ECHO_IMAGE, "python", "-u", "-c", WEBSOCKET_ECHO_SERVER,
+            WEBSOCKET_ECHO_IMAGE, "python", "-u", "-c", WEBSOCKET_ECHO_SERVER, str(port),
         )
         return name
+
+    @classmethod
+    def wait_until_ready(cls):
+        super().wait_until_ready()
+        # The echo server only speaks WebSocket, so readiness means a full handshake through Caddy.
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                handshake, _ = websocket_exchange(cls.base, "/realtime/ready", "ready")
+                if handshake[0].startswith("HTTP/1.1 101"):
+                    return
+            except (OSError, AssertionError):
+                pass
+            if time.monotonic() > deadline:
+                logs = docker("logs", cls.containers[1], check=False).stderr
+                raise RuntimeError(f"the WebSocket upstream did not become ready: {logs}")
+            time.sleep(0.2)
 
     def test_websocket_upgrade_and_messages_pass_through_the_realtime_route(self):
         (status_line, headers, expected_accept), frames = websocket_exchange(
