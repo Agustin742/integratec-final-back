@@ -239,6 +239,7 @@ export class GradesService {
         if (mapActivityFormat(activity.format) !== ActivityFormat.FILE) {
           throw conflict('activity', 'Only file submissions can be graded manually');
         }
+        await this.assertStudentStillActive(tx, context.activity.classroomId, submission.studentId);
 
         const existingGrade = await tx.grade.findUnique({
           where: { submissionId: submission.id },
@@ -362,6 +363,7 @@ export class GradesService {
       if (mapActivityFormat(activity.format) !== ActivityFormat.FILE) {
         throw conflict('activity', 'Only file submissions can be graded manually');
       }
+      await this.assertStudentStillActive(tx, context.activity.classroomId, submission.studentId);
 
       const currentGrade = await this.lockGradeBySubmission(tx, submission.id);
       if (!currentGrade) {
@@ -544,18 +546,20 @@ export class GradesService {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'TEACHER' });
     const sort = parseSort(query.sort, GRADING_QUEUE_SORT_OPTIONS);
 
-    const where: Prisma.SubmissionWhereInput = {
+    const buildWhere = (activeStudentIds: string[]): Prisma.SubmissionWhereInput => ({
       activity: {
         classroomId,
         deletedAt: null,
       },
+      // Students who left the classroom can no longer be graded, so they are not queued.
+      studentId: { in: activeStudentIds },
       ...(query.activityId !== undefined ? { activityId: query.activityId } : {}),
       ...(query.state === 'submitted'
         ? { grade: { is: null } }
         : query.state === 'graded'
           ? { grade: { isNot: null } }
           : {}),
-    };
+    });
 
     const orderBy: Prisma.SubmissionOrderByWithRelationInput[] =
       sort.field === 'gradedAt'
@@ -573,6 +577,10 @@ export class GradesService {
             throw new NotFoundException('Activity not found');
           }
         }
+        const activeStudentIds = await this.access.listActiveStudentIds(classroomId, {
+          client: tx,
+        });
+        const where = buildWhere(activeStudentIds);
         const total = await tx.submission.count({ where });
         const rows = await tx.submission.findMany({
           where,
@@ -586,6 +594,21 @@ export class GradesService {
     );
 
     return paginated(rows.map(toQueueItemDto), total, query);
+  }
+
+  /**
+   * Grading and regrading require a student who is still enrolled. Checked inside the grading
+   * transaction through the access module (non-locking read, so the lock order is unchanged); the
+   * points ledger still locks the membership row when points move.
+   */
+  private async assertStudentStillActive(
+    tx: Prisma.TransactionClient,
+    classroomId: string,
+    studentId: string,
+  ): Promise<void> {
+    if (!(await this.access.isActiveStudent(classroomId, studentId, { client: tx }))) {
+      throw conflict('submission', 'Student is no longer active in this classroom');
+    }
   }
 
   private async loadSubmissionContext(submissionId: string) {

@@ -27,6 +27,7 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 - **Write routes (`POST` / `PATCH`):** Non-members, unassigned school teachers, deleted activities/classrooms/schools, `adultMode` parents, and parents linked only to another student in the classroom receive `404 NOT_FOUND`. Classroom students and parents linked to the submission's student receive `403 FORBIDDEN`.
 - **Read route (`GET /submissions/:submissionId/grade`):** Classmate students receive `403 FORBIDDEN`. Out-of-scope actors, unlinked or `adultMode` parents, parents of removed students, deleted activities, and ungraded submissions for authorized callers receive `404 NOT_FOUND`. Classroom staff keep `200` read access even when the student membership is later deactivated ([Activities and grading](../rules/activities-and-grading.md#grades-and-weighted-points)).
 - **Queue (`GET /classrooms/:id/submissions`):** Non-members, unassigned school teachers, `adultMode` parents, and unknown/deleted/foreign `activityId` filters receive `404 NOT_FOUND`. Classroom students and non-adult parents receive `403 FORBIDDEN`.
+- **Departed students:** The queue lists only submissions of students with an active `STUDENT` membership, and `total` counts the same filtered set. `POST` and `PATCH` on a submission whose student is no longer an active student of the classroom fail up front with `409 CONFLICT` (field `submission`), whatever the score, points delta, or whether the regrade only changes feedback; nothing is written. Existing grades stay readable by staff.
 
 ## Weighted points conversion and ledger rules
 
@@ -39,6 +40,7 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 ## Concurrency and transaction order
 
 - Write transactions acquire locks in strict deadlock-free order: `activities (FOR SHARE)` -> `submissions (FOR UPDATE)` -> (`grades (FOR UPDATE)` on `PATCH`) -> `classroom_memberships (FOR UPDATE OF cm)` inside `PointsLedgerService`.
+- The active-student check runs inside the write transaction right after the submission lock, as a non-locking read through `AccessVerificationService.isActiveStudent`, so the lock order above is unchanged. `PointsLedgerService` still locks the membership row whenever points move.
 - Unique-constraint conflicts (`P2002`) are caught only outside `$transaction` so PostgreSQL never sees follow-up queries on an aborted transaction (`25P02`).
 - Each committed grade or regrade records a student-only `grade_posted` outbox request (`NotificationRecorder.record`) inside the same transaction. Parent notifications and email delivery remain out of scope.
 - `GET /classrooms/:id/submissions` executes `activityId` validation, `count`, and `findMany` inside a single `RepeatableRead` transaction.

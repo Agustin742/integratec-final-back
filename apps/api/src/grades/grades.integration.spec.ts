@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import {
   ActivityFormat,
@@ -600,35 +600,93 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     await expect(prisma.grade.delete({ where: { id: created.id } })).rejects.toThrow();
   });
 
-  it('rejects points-changing grade for an inactive student via PointsLedgerService (404) while preserving staff read access on existing grade', async () => {
-    const existing = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
-      score: 70,
-      feedback: 'Graded before leaving',
+  describe('departed students', () => {
+    async function removeStudent() {
+      await prisma.classroomMembership.updateMany({
+        where: { classroomId: ids.classroom, userId: ids.student },
+        data: { state: MembershipState.INACTIVE, deletedAt: new Date() },
+      });
+    }
+
+    async function countWrites(submissionId: string) {
+      const [grade, ledgerRows, revisions, outbox] = await Promise.all([
+        prisma.grade.findUnique({ where: { submissionId }, select: { id: true } }),
+        prisma.pointTransaction.count({ where: { classroomId: ids.classroom } }),
+        prisma.gradeRevision.count({ where: { grade: { submissionId } } }),
+        prisma.outboxEvent.count({
+          where: {
+            type: NOTIFICATION_REQUESTED_EVENT,
+            payload: { path: ['classroomId'], equals: ids.classroom },
+          },
+        }),
+      ]);
+      return { hasGrade: grade !== null, ledgerRows, revisions, outbox };
+    }
+
+    it.each([
+      ['a points-awarding score', 80],
+      ['a zero score', 0],
+    ])('rejects initial grading with 409 for %s and writes nothing', async (_label, score) => {
+      await removeStudent();
+      const before = await countWrites(ids.examSubmission);
+
+      await expect(
+        grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+          score,
+          feedback: 'After leaving',
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(await countWrites(ids.examSubmission)).toEqual(before);
     });
 
-    await prisma.classroomMembership.updateMany({
-      where: { classroomId: ids.classroom, userId: ids.student },
-      data: { state: MembershipState.INACTIVE, deletedAt: new Date() },
+    it('rejects a feedback-only regrade with 409 and writes no ledger, revision or notification', async () => {
+      const existing = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Graded before leaving',
+      });
+      await removeStudent();
+      const before = await countWrites(ids.tpSubmission);
+
+      await expect(
+        grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
+          score: 70,
+          feedback: 'Feedback only after leaving',
+          version: existing.version,
+        }),
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
+          score: 90,
+          feedback: 'Points change after leaving',
+          version: existing.version,
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      expect(await countWrites(ids.tpSubmission)).toEqual(before);
     });
 
-    // Staff read remains preserved
-    const read = await grades.getGrade(ids.teacher, ids.tpSubmission);
-    expect(read.id).toBe(existing.id);
+    it('hides the departed student from the grading queue and keeps totals consistent', async () => {
+      await removeStudent();
 
-    // New points credit or compensation after student leaves fails cleanly via PointsLedgerService
-    await expect(
-      grades.gradeSubmission(ids.teacher, ids.examSubmission, {
-        score: 80,
-        feedback: 'After leaving',
-      }),
-    ).rejects.toThrow(NotFoundException);
+      const queue = await grades.listGradingQueue(ids.teacher, ids.classroom, {
+        page: 1,
+        pageSize: 20,
+      } as never);
 
-    await expect(
-      grades.regradeSubmission(ids.teacher, ids.tpSubmission, {
-        score: 90,
-        feedback: 'After leaving',
-        version: 1,
-      }),
-    ).rejects.toThrow(NotFoundException);
+      expect(queue.items).toEqual([]);
+      expect(queue.total).toBe(0);
+    });
+
+    it('keeps existing grades readable by staff after the student leaves', async () => {
+      const existing = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Graded before leaving',
+      });
+      await removeStudent();
+
+      const read = await grades.getGrade(ids.teacher, ids.tpSubmission);
+      expect(read.id).toBe(existing.id);
+    });
   });
 });

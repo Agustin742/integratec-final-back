@@ -599,7 +599,8 @@ describe('Grades & Grading Queue HTTP contract (real PostgreSQL, #26 isolation)'
     });
     await getGrade(ids.sub1, ids.teacher).expect(200);
     await getGrade(ids.sub1, ids.owner).expect(200);
-    expect((await getQueue(ids.classroom, ids.teacher).expect(200)).body.total).toBe(3);
+    // Queue hides the departed student's submissions (sub1, sub2); only the classmate's sub3 stays.
+    expect((await getQueue(ids.classroom, ids.teacher).expect(200)).body.total).toBe(1);
     assertEnvelope((await getGrade(ids.sub1, ids.student).expect(404)).body, 'NOT_FOUND');
     assertEnvelope((await getGrade(ids.sub1, ids.parent).expect(404)).body, 'NOT_FOUND');
     assertEnvelope(
