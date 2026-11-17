@@ -98,8 +98,10 @@ variable "allowed_origins" {
   type        = list(string)
 
   validation {
-    condition     = length(var.allowed_origins) > 0 && alltrue([for o in var.allowed_origins : can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", o))])
-    error_message = "allowed_origins must list at least one https origin without path, query or trailing slash, such as https://app.example.com."
+    # Must match the API check new URL(value).origin === value: lowercase host, no
+    # default :443 port and no zero-padded port, since URL parsing rewrites all three.
+    condition     = length(var.allowed_origins) > 0 && alltrue([for o in var.allowed_origins : can(regex("^https://[a-z0-9.-]+(:[1-9][0-9]{0,4})?$", o)) && !endswith(o, ":443")])
+    error_message = "allowed_origins must list at least one canonical https origin: lowercase host, no path, query or trailing slash, and no default :443 port, such as https://app.example.com."
   }
 }
 

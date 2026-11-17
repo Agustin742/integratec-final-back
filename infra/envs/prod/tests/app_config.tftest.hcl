@@ -245,6 +245,52 @@ run "rejects_allowed_origin_with_path" {
   expect_failures = [var.allowed_origins]
 }
 
+# The API accepts an origin only when new URL(value).origin === value, so Terraform must
+# reject spellings that URL parsing rewrites: the default port, uppercase hosts and
+# zero-padded ports. Otherwise apply succeeds and the API fails startup validation.
+run "rejects_allowed_origin_with_default_https_port" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://app.example.com:443"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "rejects_allowed_origin_with_uppercase_host" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://App.Example.com"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "rejects_allowed_origin_with_zero_padded_port" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://app.example.com:08443"]
+  }
+
+  expect_failures = [var.allowed_origins]
+}
+
+run "accepts_allowed_origin_with_explicit_non_default_port" {
+  command = plan
+
+  variables {
+    allowed_origins = ["https://app.example.com:8443"]
+  }
+
+  assert {
+    condition     = module.app_config.parameters["api/ALLOWED_ORIGINS"].value == "https://app.example.com:8443"
+    error_message = "A canonical origin with a non-default port must be published unchanged."
+  }
+}
+
 run "rejects_http_password_reset_url_base" {
   command = plan
 
