@@ -60,17 +60,13 @@ describe('grade-points helpers (unit)', () => {
     expect(() => calculateWeightedGradePoints(85.5, 1, 1)).toThrow(RangeError);
   });
 
-  it('resolves TP and EXAM weights from config and requires EXAM > TP', () => {
+  it('looks up the TP and EXAM weights from config', () => {
     expect(
       resolveActivityTypeWeight(ActivityType.TP, { gradeWeightTp: 1, gradeWeightExam: 1.5 }),
     ).toBe(1);
     expect(
       resolveActivityTypeWeight(ActivityType.EXAM, { gradeWeightTp: 1, gradeWeightExam: 1.5 }),
     ).toBe(1.5);
-    expect(resolveActivityTypeWeight(ActivityType.EXAM, {})).toBe(1.5);
-    expect(() =>
-      resolveActivityTypeWeight(ActivityType.EXAM, { gradeWeightTp: 2, gradeWeightExam: 2 }),
-    ).toThrow(RangeError);
   });
 });
 

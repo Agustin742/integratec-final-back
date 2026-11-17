@@ -1,9 +1,5 @@
 import { ActivityType, Prisma } from '@prisma/client';
-import {
-  DEFAULT_GRADE_WEIGHT_EXAM,
-  DEFAULT_GRADE_WEIGHT_TP,
-  type ApiConfig,
-} from '../config/api-config';
+import type { ApiConfig } from '../config/api-config';
 
 export const GRADE_SCORE_MIN = 0;
 export const GRADE_SCORE_MAX = 100;
@@ -38,18 +34,14 @@ export function toHundredths(value: number | Prisma.Decimal | string): number {
 }
 
 /**
- * Resolves the configured activity-type weight for `TP` or `EXAM`, enforcing `EXAM > TP`.
+ * Looks up the configured activity-type weight for `TP` or `EXAM`. Defaults and the `EXAM > TP`
+ * rule are already guaranteed by `loadApiConfig`.
  */
 export function resolveActivityTypeWeight(
   type: ActivityType,
   config: Pick<ApiConfig, 'gradeWeightTp' | 'gradeWeightExam'>,
 ): number {
-  const tpWeight = config.gradeWeightTp ?? DEFAULT_GRADE_WEIGHT_TP;
-  const examWeight = config.gradeWeightExam ?? DEFAULT_GRADE_WEIGHT_EXAM;
-  if (!(examWeight > tpWeight)) {
-    throw new RangeError('Configured EXAM weight must be strictly greater than TP weight');
-  }
-  return type === ActivityType.EXAM ? examWeight : tpWeight;
+  return type === ActivityType.EXAM ? config.gradeWeightExam : config.gradeWeightTp;
 }
 
 /**

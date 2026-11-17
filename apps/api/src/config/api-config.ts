@@ -64,10 +64,10 @@ export interface ApiConfig {
   shopPurchaseRateLimitWindowSeconds?: number;
   /** Maximum shop purchase attempts per user inside the sliding window (defaults to 20). */
   shopPurchaseRateLimitMaxAttempts?: number;
-  /** Points multiplier applied to graded TP activities (defaults to 1). */
-  gradeWeightTp?: number;
-  /** Points multiplier applied to graded EXAM activities; must be > gradeWeightTp (defaults to 1.5). */
-  gradeWeightExam?: number;
+  /** Points multiplier applied to graded TP activities (`loadApiConfig` defaults it to 1). */
+  gradeWeightTp: number;
+  /** Points multiplier applied to graded EXAM activities; `loadApiConfig` guarantees it is > gradeWeightTp (default 1.5). */
+  gradeWeightExam: number;
   /** Sliding window for per-user equipment change rate limiting (defaults to 60s when omitted). */
   equipRateLimitWindowSeconds?: number;
   /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
