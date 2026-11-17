@@ -65,8 +65,9 @@ class CaddyfileStaticTests(unittest.TestCase):
     def test_unmatched_requests_answer_404(self):
         self.assertRegex(self.text, r"(?s)handle \{\s*respond 404\s*\}")
 
-    def test_logs_go_to_stdout_as_json(self):
-        self.assertRegex(self.text, r"(?s)log \{\s*output stdout\s*format json")
+    def test_logs_go_to_stdout_as_redacted_json(self):
+        self.assertRegex(self.text, r"(?s)log \{\s*output stdout\s*format filter \{\s*wrap json")
+        self.assertRegex(self.text, r"(?s)log \{\s*output stderr\s*format filter \{\s*wrap json")
 
 
 @unittest.skipUnless(DOCKER and pinned_image(), "Docker or the pinned image is unavailable")
@@ -95,7 +96,7 @@ class CaddyfileDockerTests(unittest.TestCase):
 
 
 @unittest.skipUnless(DOCKER and pinned_image(), "Docker or the pinned image is unavailable")
-class CaddyRoutingTests(unittest.TestCase):
+class CaddyStack(unittest.TestCase):
     """Runs the real Caddyfile over plain HTTP in front of two echo stubs named like the services."""
 
     @classmethod
@@ -166,6 +167,9 @@ class CaddyRoutingTests(unittest.TestCase):
         except urllib.error.HTTPError as error:
             return error.code, error.read().decode(), dict(error.headers)
 
+
+
+class CaddyRoutingTests(CaddyStack):
     def test_api_requests_reach_the_api_with_the_prefix_stripped(self):
         status, body, _ = self.get("/api/health?x=1")
         self.assertEqual((status, body), (200, "api GET /health?x=1"))
@@ -220,6 +224,44 @@ class CaddyRoutingTests(unittest.TestCase):
     def test_server_header_is_removed(self):
         _, _, headers = self.get("/api/health")
         self.assertNotIn("Server", headers)
+
+
+class CaddyLogRedactionTests(CaddyStack):
+    """Colyseus clients send credentials in the WebSocket query string; logs must never keep them."""
+
+    SECRETS = {
+        "sessionId": "SYNTHETIC-SESSION-VALUE",
+        "reconnectionToken": "SYNTHETIC-RECONNECT-VALUE",
+        "_authToken": "SYNTHETIC-AUTH-VALUE",
+    }
+
+    @classmethod
+    def query(cls):
+        return "&".join(f"{key}={value}" for key, value in cls.SECRETS.items())
+
+    def assert_redacted(self, logs):
+        for key, value in self.SECRETS.items():
+            with self.subTest(key=key):
+                self.assertNotIn(value, logs)
+                self.assertIn(f"{key}=REDACTED", logs)
+
+    def test_credentials_are_redacted_in_the_access_log_but_still_forwarded(self):
+        path = f"/realtime/process/room?{self.query()}"
+        status, body, _ = self.get(path)
+        self.assertEqual((status, body), (200, f"realtime GET /process/room?{self.query()}"))
+        logs = docker("logs", self.proxy, check=False)
+        output = logs.stdout + logs.stderr
+        self.assertIn('"logger":"http.log.access', output)
+        self.assert_redacted(output)
+
+    def test_credentials_are_redacted_in_the_error_log_when_the_upstream_is_down(self):
+        docker("stop", self.containers[1])  # the realtime stub
+        status, _, _ = self.get(f"/realtime/process/room?{self.query()}")
+        self.assertEqual(status, 502)
+        logs = docker("logs", self.proxy, check=False)
+        output = logs.stdout + logs.stderr
+        self.assertIn('"logger":"http.log.error', output)
+        self.assert_redacted(output)
 
 
 if __name__ == "__main__":
