@@ -70,6 +70,51 @@ describe('OpenAPI document', () => {
     app = undefined;
   });
 
+  it('documents student-only inbox status and eligibility without changing detail/staff schemas', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const list = doc.paths['/classrooms/{id}/activities']?.get;
+    expect(list?.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'status',
+          schema: expect.objectContaining({ enum: ['pending', 'submitted', 'graded', 'overdue'] }),
+        }),
+      ]),
+    );
+    expect(list?.responses['200']).toMatchObject({
+      content: {
+        'application/json': {
+          schema: {
+            properties: {
+              items: {
+                items: {
+                  anyOf: [
+                    { $ref: '#/components/schemas/ActivitySummaryDto' },
+                    { $ref: '#/components/schemas/StudentActivitySummaryDto' },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const schemas = doc.components?.schemas ?? {};
+    expect(schemas.StudentActivitySummaryDto).toMatchObject({
+      required: expect.arrayContaining(['status', 'canSubmit']),
+    });
+    for (const name of [
+      'ActivitySummaryDto',
+      'StudentActivityResponseDto',
+      'TeacherActivityResponseDto',
+    ]) {
+      const schema = schemas[name];
+      expect(schema && 'properties' in schema && schema.properties).not.toHaveProperty('status');
+      expect(schema && 'properties' in schema && schema.properties).not.toHaveProperty('canSubmit');
+    }
+  });
+
   it('describes /health and the reusable error envelope schemas', async () => {
     app = await createApp('test');
     const doc = buildOpenApiDocument(app);

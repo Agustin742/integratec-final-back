@@ -3,6 +3,7 @@ import { ApiProperty, ApiPropertyOptional, OmitType, PartialType, PickType } fro
 import { ActivityFormat, ActivityState, ActivityType } from '@prisma/client';
 import { Transform, Type } from 'class-transformer';
 import {
+  Allow,
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
@@ -284,6 +285,9 @@ export class UpdateActivityDto extends PartialType(UpdatableFieldsDto, {
   questions?: QuestionInputDto[];
 }
 
+export const ACTIVITY_WORK_STATUSES = ['pending', 'submitted', 'graded', 'overdue'] as const;
+export type ActivityWorkStatus = (typeof ACTIVITY_WORK_STATUSES)[number];
+
 export class ListActivitiesQueryDto extends PickType(PaginationQueryDto, [
   'page',
   'pageSize',
@@ -308,7 +312,23 @@ export class ListActivitiesQueryDto extends PickType(PaginationQueryDto, [
   @IsOptional()
   @IsEnum(ActivityState)
   state?: ActivityState;
+
+  @ApiPropertyOptional({
+    type: String,
+    enum: ACTIVITY_WORK_STATUSES,
+    description:
+      'Student-only work status; filters before pagination/count. Staff receive 400 (property status should not exist).',
+  })
+  // The list service chooses this DTO only for non-staff. Staff use the DTO below so
+  // whitelist errors aggregate with other query errors in the shared validation pipe.
+  @Allow()
+  status?: ActivityWorkStatus;
 }
+
+/** Keeps the pre-inbox staff whitelist, including compound-error ordering. */
+export class StaffListActivitiesQueryDto extends OmitType(ListActivitiesQueryDto, [
+  'status',
+] as const) {}
 
 export class TeacherOptionDto {
   @ApiProperty({ format: 'uuid' })
@@ -419,6 +439,20 @@ export class ActivitySummaryDto {
 
   @ApiProperty({ type: String, format: 'date-time' })
   updatedAt!: string;
+}
+
+export class StudentActivitySummaryDto extends ActivitySummaryDto {
+  @ApiProperty({
+    enum: ACTIVITY_WORK_STATUSES,
+    description: 'Own work: graded > submitted > overdue > pending. Independent of Activity.state.',
+  })
+  status!: ActivityWorkStatus;
+
+  @ApiProperty({
+    description:
+      'Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission.',
+  })
+  canSubmit!: boolean;
 }
 
 export class TeacherActivityResponseDto extends ActivitySummaryDto {

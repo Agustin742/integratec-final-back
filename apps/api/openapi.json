@@ -2990,7 +2990,7 @@
         "tags": ["activities"]
       },
       "get": {
-        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker.",
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
         "operationId": "ActivitiesController_list",
         "parameters": [
           {
@@ -3001,24 +3001,24 @@
             "schema": { "type": "string" }
           },
           {
-            "name": "page",
-            "required": false,
-            "in": "query",
             "description": "1-based page number.",
+            "required": false,
+            "name": "page",
+            "in": "query",
             "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
           },
           {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
             "description": "Items per page.",
+            "required": false,
+            "name": "pageSize",
+            "in": "query",
             "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
           },
           {
-            "name": "sort",
-            "required": false,
-            "in": "query",
             "description": "Field to order by; prefix with \"-\" for descending. Default `dueAt` ascending; `id` is the tiebreaker.",
+            "required": false,
+            "name": "sort",
+            "in": "query",
             "schema": {
               "default": "dueAt",
               "example": "-createdAt",
@@ -3027,16 +3027,23 @@
             }
           },
           {
-            "name": "state",
-            "required": false,
-            "in": "query",
             "description": "Staff only. Students always receive published activities only and may not filter drafts.",
+            "required": false,
+            "name": "state",
+            "in": "query",
             "schema": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] }
+          },
+          {
+            "description": "Student-only work status; filters before pagination/count. Staff receive 400 (property status should not exist).",
+            "required": false,
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["pending", "submitted", "graded", "overdue"] }
           }
         ],
         "responses": {
           "200": {
-            "description": "Activities without questions.",
+            "description": "Activities without questions. Staff receive summaries; students receive inbox items.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3045,7 +3052,12 @@
                   "properties": {
                     "items": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/ActivitySummaryDto" }
+                      "items": {
+                        "anyOf": [
+                          { "$ref": "#/components/schemas/ActivitySummaryDto" },
+                          { "$ref": "#/components/schemas/StudentActivitySummaryDto" }
+                        ]
+                      }
                     },
                     "page": { "type": "integer", "minimum": 1, "example": 1 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
@@ -5688,6 +5700,76 @@
           "questionCount",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "StudentActivitySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": { "type": "string", "enum": ["FILE", "MULTIPLE_CHOICE"] },
+          "state": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "dueAt": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC." },
+          "allowLate": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Number, not a decimal string."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "School IANA time zone for rendering the instants above."
+          },
+          "questionCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "submitted", "graded", "overdue"],
+            "description": "Own work: graded > submitted > overdue > pending. Independent of Activity.state."
+          },
+          "canSubmit": {
+            "type": "boolean",
+            "description": "Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission."
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "type",
+          "format",
+          "state",
+          "title",
+          "description",
+          "opensAt",
+          "dueAt",
+          "allowLate",
+          "maxScore",
+          "weightMultiplier",
+          "publishedAt",
+          "timeZone",
+          "questionCount",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "canSubmit"
         ]
       },
       "StudentOptionDto": {

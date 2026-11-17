@@ -50,6 +50,7 @@ const row = {
   classroom: { school: { timeZone: 'America/Argentina/Cordoba' } },
   _count: { questions: 0 },
   questions: [],
+  submissions: [],
 };
 type Method = 'get' | 'post' | 'patch' | 'delete';
 type Actor = 'owner' | 'teacher' | 'student' | 'parent' | 'stranger';
@@ -392,6 +393,25 @@ describe('activities draft CRUD HTTP — activities-and-grading, classrooms-and-
         expect(prisma.activity.count).toHaveBeenCalledWith({ where });
       },
     );
+    it('selects only actor submission/grade existence and shares the status predicate with count', async () => {
+      actAs('student');
+      await call('get', `${base}?status=graded&page=2&pageSize=1`).expect(200);
+      const args = prisma.activity.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({
+        classroomId,
+        deletedAt: null,
+        state: 'PUBLISHED',
+        submissions: { some: { studentId: actorId, grade: { isNot: null } } },
+      });
+      expect(prisma.activity.count).toHaveBeenCalledWith({ where: args.where });
+      expect(args).toMatchObject({ skip: 1, take: 1 });
+      expect(args.select.submissions).toEqual({
+        where: { studentId: actorId },
+        select: { grade: { select: { id: true } } },
+      });
+      for (const field of ['questions', 'answers', 'createdById'])
+        expect(args.select).not.toHaveProperty(field);
+    });
     it('denies linked parents with 403 and strangers with 404', async () => {
       actAs('parent');
       await call('get', base).expect(403);
