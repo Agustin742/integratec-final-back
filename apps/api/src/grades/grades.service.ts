@@ -605,10 +605,10 @@ export class GradesService {
           : {}),
     });
 
-    const orderBy: Prisma.SubmissionOrderByWithRelationInput[] =
-      sort.field === 'gradedAt'
-        ? [{ grade: { gradedAt: sort.direction } }, { id: 'asc' }]
-        : [{ submittedAt: sort.direction }, { id: 'asc' }];
+    const submittedOrderBy: Prisma.SubmissionOrderByWithRelationInput[] = [
+      { submittedAt: sort.direction },
+      { id: 'asc' },
+    ];
 
     const { total, rows } = await this.prisma.$transaction(
       async (tx) => {
@@ -626,13 +626,47 @@ export class GradesService {
         });
         const where = buildWhere(activeStudentIds);
         const total = await tx.submission.count({ where });
-        const rows = await tx.submission.findMany({
-          where,
-          orderBy,
-          ...toSkipTake(query),
-          select: QUEUE_SELECT,
-        });
-        return { total, rows };
+        if (sort.field !== 'gradedAt') {
+          const rows = await tx.submission.findMany({
+            where,
+            orderBy: submittedOrderBy,
+            ...toSkipTake(query),
+            select: QUEUE_SELECT,
+          });
+          return { total, rows };
+        }
+
+        // `gradedAt` lives on an optional relation and Prisma cannot set a nulls policy there, while
+        // PostgreSQL puts NULLs first on DESC. So the page is the graded rows (ordered by gradedAt in
+        // the requested direction) followed by the ungraded ones (by id); both directions keep
+        // ungraded submissions last. Same snapshot, so the counts and slices line up.
+        const gradedWhere: Prisma.SubmissionWhereInput = {
+          AND: [where, { grade: { isNot: null } }],
+        };
+        const gradedTotal = await tx.submission.count({ where: gradedWhere });
+        const { skip, take } = toSkipTake(query);
+        const gradedRows =
+          skip < gradedTotal
+            ? await tx.submission.findMany({
+                where: gradedWhere,
+                orderBy: [{ grade: { gradedAt: sort.direction } }, { id: 'asc' }],
+                skip,
+                take,
+                select: QUEUE_SELECT,
+              })
+            : [];
+        const remaining = take - gradedRows.length;
+        const ungradedRows =
+          remaining > 0
+            ? await tx.submission.findMany({
+                where: { AND: [where, { grade: { is: null } }] },
+                orderBy: { id: 'asc' },
+                skip: Math.max(0, skip - gradedTotal),
+                take: remaining,
+                select: QUEUE_SELECT,
+              })
+            : [];
+        return { total, rows: [...gradedRows, ...ungradedRows] };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );

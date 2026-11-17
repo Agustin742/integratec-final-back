@@ -20,7 +20,7 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 | `POST /submissions/:submissionId/grade` | Classroom staff (`OWNER`, `ADMIN`, assigned `TEACHER`) | `201` `GradeResponseDto` | Grades an ungraded `FILE` submission (`version: 1`) |
 | `PATCH /submissions/:submissionId/grade` | Classroom staff (`OWNER`, `ADMIN`, assigned `TEACHER`) | `200` `GradeResponseDto` | Regrades with optimistic `version` check (`409` if stale) |
 | `GET /submissions/:submissionId/grade` | Classroom staff, owning active student, active linked parent (`!adultMode`) | `200` `GradeResponseDto` | Never exposes storage keys or signed URLs; staff keep read access after student departure |
-| `GET /classrooms/:id/submissions` | Classroom staff (`OWNER`, `ADMIN`, assigned `TEACHER`) | `200` `Paginated<GradingQueueItemDto>` | Optional `activityId`, `state` (`submitted` \| `graded`), and `sort` (`submittedAt` default asc, `gradedAt`, optional `-`) with `+id` tiebreaker |
+| `GET /classrooms/:id/submissions` | Classroom staff (`OWNER`, `ADMIN`, assigned `TEACHER`) | `200` `Paginated<GradingQueueItemDto>` | Optional `activityId`, `state` (`submitted` \| `graded`), and `sort` (`submittedAt` default asc, `gradedAt`, optional `-`) with `+id` tiebreaker; with `gradedAt` (either direction) ungraded submissions always come last |
 
 ### Access and existence isolation (#26)
 

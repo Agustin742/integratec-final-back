@@ -1000,4 +1000,46 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       expect(read.id).toBe(existing.id);
     });
   });
+
+  describe('grading queue sorted by gradedAt', () => {
+    async function gradeExamThenTp(): Promise<void> {
+      await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 60,
+        feedback: 'Graded first',
+      });
+      await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+        score: 70,
+        feedback: 'Graded last',
+      });
+    }
+
+    const queue = async (sort: string, page: number, pageSize: number) =>
+      (
+        await grades.listGradingQueue(ids.teacher, ids.classroom, {
+          page,
+          pageSize,
+          sort,
+        } as never)
+      ).items.map((item) => item.id);
+
+    it('puts the most recently graded first and ungraded submissions last on -gradedAt', async () => {
+      await gradeExamThenTp();
+
+      expect(await queue('-gradedAt', 1, 2)).toEqual([ids.tpSubmission, ids.examSubmission]);
+      expect(await queue('-gradedAt', 2, 2)).toEqual([ids.mcSubmission]);
+      expect(await queue('-gradedAt', 1, 1)).toEqual([ids.tpSubmission]);
+      expect(await queue('-gradedAt', 3, 1)).toEqual([ids.mcSubmission]);
+    });
+
+    it('also leaves ungraded submissions last on ascending gradedAt', async () => {
+      await gradeExamThenTp();
+
+      expect(await queue('gradedAt', 1, 3)).toEqual([
+        ids.examSubmission,
+        ids.tpSubmission,
+        ids.mcSubmission,
+      ]);
+      expect(await queue('gradedAt', 2, 2)).toEqual([ids.mcSubmission]);
+    });
+  });
 });
