@@ -107,6 +107,16 @@ enum ClassroomItemState {
   @@map("classroom_item_state")
 }
 
+/// Equipment slots derived from ShopItem.metadata.slot at equip time.
+enum EquippedSlot {
+  HEAD       @map("head")
+  FACE       @map("face")
+  BACK       @map("back")
+  DESK_DECOR @map("desk_decor")
+
+  @@map("equipped_slot")
+}
+
 model User {
   id               String           @id @default(uuid()) @db.Uuid
   email            String           @unique @db.VarChar(255)
@@ -133,6 +143,11 @@ model User {
   actorPointTransactions   PointTransaction[]    @relation("ActorPointTransactions")
   studentPurchases         StudentPurchase[]     @relation("StudentPurchases")
   createdActivities        Activity[]
+  authoredStudyMaterials   StudyMaterial[]       @relation("MaterialAuthor")
+  removedStudyMaterials    StudyMaterial[]       @relation("MaterialRemover")
+  forumThreads             ActivityForumThread[] @relation("ActivityForumThreadAuthor")
+  forumPosts               ActivityForumPost[]   @relation("ActivityForumPostAuthor")
+  equippedItems            EquippedItem[]
   submissions              Submission[]
   authoredAnnouncements    Announcement[]        @relation("AnnouncementAuthor")
   mentions                 Mention[]             @relation("MentionedUsers")
@@ -268,10 +283,36 @@ model Classroom {
   studentPurchases   StudentPurchase[]
   activities         Activity[]
   announcements      Announcement[]
+  studyMaterials     StudyMaterial[]
+  equippedItems      EquippedItem[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
   @@map("classrooms")
+}
+
+/// Private classroom files. Logical removal keeps author/history and the private object.
+model StudyMaterial {
+  id          String    @id @default(uuid()) @db.Uuid
+  classroomId String    @map("classroom_id") @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
+  objectKey   String    @unique @map("object_key") @db.VarChar(255)
+  filename    String    @db.VarChar(120)
+  contentType String    @map("content_type") @db.VarChar(32)
+  sizeBytes   Int       @map("size_bytes")
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
+  removedById String?   @map("removed_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  author    User      @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  removedBy User?     @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
+
+  @@index([classroomId, removedAt, createdAt, id])
+  @@index([authorId])
+  @@index([removedById])
+  @@map("study_materials")
 }
 
 model ClassroomMembership {
@@ -418,10 +459,11 @@ model Activity {
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom   Classroom    @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  createdBy   User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  questions   Question[]
-  submissions Submission[]
+  classroom    Classroom             @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  createdBy    User                  @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  questions    Question[]
+  forumThreads ActivityForumThread[]
+  submissions  Submission[]
 
   @@index([classroomId, state, deletedAt])
   @@index([classroomId, dueAt, id])
@@ -456,6 +498,48 @@ model Option {
 
   @@unique([questionId, position])
   @@map("options")
+}
+
+/// Per-activity query forum (HU-COM-003, MVP Core). A thread is scoped to exactly one
+/// Activity and holds an ordered list of posts; the first post is the original question.
+/// It does NOT share the `Message` entity: that entity is pinned by `rules/data.md` to
+/// exactly one context (classroom channel or parent conversation), enforced in the
+/// database, and no Message table exists yet. Retention and content filtering are open
+/// decisions recorded in issue #39 (gap 7); no edit or moderation endpoints in this card.
+model ActivityForumThread {
+  id         String   @id @default(uuid()) @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  authorId   String   @map("author_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  activity Activity            @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  author   User                @relation("ActivityForumThreadAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  posts    ActivityForumPost[]
+
+  @@index([activityId, createdAt, id])
+  @@index([authorId])
+  @@map("activity_forum_threads")
+}
+
+/// One post inside an activity forum thread. The server sets author and timestamp and
+/// clients MUST NOT. Bodies are validated server-side (non-empty after trim, bounded),
+/// stored and returned as plain text, never interpreted or rendered as HTML, and are
+/// never logged (see rules/observability-and-privacy.md).
+model ActivityForumPost {
+  id        String   @id @default(uuid()) @db.Uuid
+  threadId  String   @map("thread_id") @db.Uuid
+  authorId  String   @map("author_id") @db.Uuid
+  body      String   @db.VarChar(2000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  thread ActivityForumThread @relation(fields: [threadId], references: [id], onDelete: Restrict)
+  author User                @relation("ActivityForumPostAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([threadId, createdAt, id])
+  @@index([authorId])
+  @@map("activity_forum_posts")
 }
 
 /// A student's single submission to a FILE activity (MVP: no resubmission). `submittedAt` is
@@ -617,6 +701,7 @@ model ShopItem {
   classroomOverrides ClassroomShopItem[]
   classroomItems     ClassroomItem[]
   purchases          StudentPurchase[]
+  equippedItems      EquippedItem[]
 
   @@index([kind, isActive])
   @@index([defaultPrice, id])
@@ -721,4 +806,25 @@ model Mention {
   @@unique([sourceType, sourceId, mentionedUserId])
   @@index([mentionedUserId])
   @@map("mentions")
+}
+
+/// One equipped purchase per (classroom, student, slot). Classroom-scoped so an accessory
+/// bought in one classroom never leaks into another; the desk decoration belongs to the
+/// student's own desk in that classroom implicitly (the membership holds the desk).
+model EquippedItem {
+  id          String       @id @default(uuid()) @db.Uuid
+  classroomId String       @map("classroom_id") @db.Uuid
+  studentId   String       @map("student_id") @db.Uuid
+  slot        EquippedSlot
+  shopItemId  String       @map("shop_item_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  student   User      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  shopItem  ShopItem  @relation(fields: [shopItemId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, studentId, slot])
+  @@index([shopItemId])
+  @@map("equipped_items")
 }

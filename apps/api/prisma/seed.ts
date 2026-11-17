@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   // point_transactions is append-only against UPDATE/DELETE, and student_purchases / classroom_items
   // reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
   await prisma.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+  await prisma.equippedItem.deleteMany();
   await prisma.classroomShopItem.deleteMany();
   await prisma.shopItem.deleteMany();
   await prisma.joinCodeUsage.deleteMany();

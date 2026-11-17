@@ -31,6 +31,10 @@ backend/
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
 - [Resource authorization test pattern](docs/resource-authorization-testing.md): reusable public-request assertions for resource ID tampering and untrusted object interaction context.
 
+## Study material
+
+- [Private study material](docs/study-material.md): staff multipart upload, member-only paginated discovery and signed downloads, and staff logical removal through `/classrooms/:id/materials`. File limits are provisional issue #46 assumptions; signature detection is not malware scanning.
+
 ## Activities
 
 - [Activities (TP and exams)](docs/activities.md): `/classrooms/:id/activities` create, list, read, update, publish and logical deactivation; teacher and student views (the student view never carries `isCorrect`); publishing records the student notifications in the same transaction.

@@ -496,7 +496,7 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('allows TRUNCATE TABLE "point_transactions" for dev/test seeding resets', async () => {
+  it('allows TRUNCATE TABLE "point_transactions" for dev/test seeding resets (verified in a rolled-back transaction)', async () => {
     await ledger.credit({
       classroomId: ids.classroom,
       studentId: ids.student,
@@ -511,11 +511,19 @@ describe('PointsLedgerService (real PostgreSQL)', () => {
       }),
     ).toBe(1);
 
-    await prisma.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+    // The seed runs this TRUNCATE in autocommit. Here it is verified inside an
+    // explicitly rolled-back transaction so the shared suite database is never
+    // wiped while other spec files run in parallel.
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`TRUNCATE TABLE "classroom_items", "student_purchases", "point_transactions"`;
+        throw new Error('rollback-truncate-probe');
+      }),
+    ).rejects.toThrow('rollback-truncate-probe');
     expect(
       await prisma.pointTransaction.count({
         where: { classroomId: ids.classroom, studentId: ids.student },
       }),
-    ).toBe(0);
+    ).toBe(1);
   });
 });

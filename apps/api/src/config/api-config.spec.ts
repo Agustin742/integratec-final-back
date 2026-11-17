@@ -61,6 +61,8 @@ describe('loadApiConfig', () => {
       authCleanupBatchSize: 1000,
       shopPurchaseRateLimitWindowSeconds: 60,
       shopPurchaseRateLimitMaxAttempts: 20,
+      equipRateLimitWindowSeconds: 60,
+      equipRateLimitMaxAttempts: 20,
     });
   });
 
