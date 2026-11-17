@@ -4,6 +4,8 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Stable delivery identity. Providers must deduplicate retries, including uncertain outcomes. */
+  idempotencyKey?: string;
 }
 
 /** Outbound email boundary. Features depend on this, never on a provider. */

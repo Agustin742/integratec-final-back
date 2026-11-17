@@ -49,8 +49,12 @@ export class SubmissionResponseDto {
   })
   isLate!: boolean;
 
-  @ApiProperty({ enum: ['submitted'], description: 'Derived state of the work.' })
-  status!: 'submitted';
+  @ApiProperty({
+    type: String,
+    enum: ['submitted', 'graded'],
+    description: 'Derived state of the work.',
+  })
+  status!: 'submitted' | 'graded';
 
   @ApiProperty({ type: [SubmissionFileResponseDto] })
   files!: SubmissionFileResponseDto[];

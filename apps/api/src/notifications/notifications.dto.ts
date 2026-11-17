@@ -10,7 +10,9 @@ export class NotificationDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
 
-  @ApiProperty({ enum: ['activity_published', 'grade_posted', 'announcement', 'mention'] })
+  @ApiProperty({
+    enum: ['activity_published', 'grade_posted', 'announcement', 'mention', 'activity_forum_reply'],
+  })
   kind!: string;
 
   @ApiProperty({

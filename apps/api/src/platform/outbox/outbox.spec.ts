@@ -56,6 +56,8 @@ const config: ApiConfig = {
   authDataRetentionSeconds: 2592000,
   authCleanupIntervalSeconds: 86400,
   authCleanupBatchSize: 1000,
+  gradeWeightTp: 1,
+  gradeWeightExam: 1.5,
 };
 
 describe('transactional outbox (integration, real Postgres)', () => {
