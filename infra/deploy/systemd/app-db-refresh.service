@@ -1,0 +1,12 @@
+# Redeploys the stack when RDS has rotated the master password (see start-app.sh, "Rotation").
+# Until the timer fires after a rotation, new api database connections fail: up to about 10 minutes.
+# Install on the host under /etc/systemd/system (steps: infra/README.md, issue #61). The environment
+# file holds NON-secret inputs only: NAME_PREFIX, AWS_REGION, API_IMAGE, REALTIME_IMAGE, SITE_ADDRESS,
+# DB_ENDPOINT, DB_NAME and DB_SECRET_ARN.
+[Unit]
+Description=Redeploy the app when the RDS master secret rotates
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/aula-app/deploy.env
+ExecStart=/opt/aula/infra/deploy/start-app.sh --refresh-if-rotated

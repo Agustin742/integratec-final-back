@@ -1,0 +1,11 @@
+# Runs app-db-refresh.service two minutes after boot and every 10 minutes after each run.
+[Unit]
+Description=Check for a rotated RDS master secret
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

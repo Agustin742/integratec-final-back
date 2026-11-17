@@ -19,6 +19,12 @@
 # RDS-managed master secret holds only the user name and password, and the instance role has no
 # rds:Describe permission.
 #
+# Rotation: RDS rotates the managed master password about every 7 days, and DATABASE_URL is built
+# once per start. The version id of the secret that was deployed is saved (DB_SECRET_STATE_FILE,
+# default /var/lib/aula-app/db-secret-version). With --refresh-if-rotated the script exits quietly
+# when that version is still current and otherwise redeploys, which recreates the api with the new
+# URL. systemd/app-db-refresh.{service,timer} run it every 10 minutes (installation: T6 docs).
+#
 # What it does:
 #   1. Reads the non-secret config of each service from SSM Parameter Store, by path
 #      /<name-prefix>/config/<service> (ssm:GetParametersByPath).
@@ -51,6 +57,8 @@ site_address="${SITE_ADDRESS:-}"
 db_endpoint="${DB_ENDPOINT:-}"
 db_name="${DB_NAME:-}"
 db_secret_arn="${DB_SECRET_ARN:-}"
+state_file="${DB_SECRET_STATE_FILE:-/var/lib/aula-app/db-secret-version}"
+refresh_only=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -67,6 +75,10 @@ while [ $# -gt 0 ]; do
         --db-secret-arn) db_secret_arn="$2" ;;
       esac
       shift 2
+      ;;
+    --refresh-if-rotated)
+      refresh_only=1
+      shift
       ;;
     *) usage_error "Unknown argument: $1" ;;
   esac
@@ -107,6 +119,15 @@ compose_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/compose.prod.yaml"
 fail() {
   echo "$1" >&2
   exit 1
+}
+
+# Prints the VersionId of the AWSCURRENT version of a secret (an identifier, not a value).
+current_version() {
+  local version
+  if ! version="$(aws secretsmanager get-secret-value --region "$region" --secret-id "$1"     --query VersionId --output text)" || [ -z "$version" ] || [ "$version" = "None" ]; then
+    fail "RDS master secret: could not read its current version; nothing was started."
+  fi
+  printf '%s' "$version"
 }
 
 # Prints the SecretString of a secret; stops when it cannot be read or is empty.
@@ -162,6 +183,13 @@ json_member() {
   [[ "$json" =~ $pattern ]] && [ -n "${BASH_REMATCH[1]}" ] && printf '%s' "${BASH_REMATCH[1]}"
 }
 
+# Read before the secret itself: if the secret rotates in between, the recorded version is older
+# than what was deployed, and the next refresh redeploys once more, which is harmless.
+db_secret_version="$(current_version "$db_secret_arn")"
+if [ -n "$refresh_only" ] && [ -f "$state_file" ] && [ "$(<"$state_file")" = "$db_secret_version" ]; then
+  exit 0
+fi
+
 declare -A api_config=() realtime_config=()
 read_config api "ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL" api_config
 read_config realtime "API_INTERNAL_URL" realtime_config
@@ -196,4 +224,8 @@ done <<<"$registries"
   export REALTIME_INTERNAL_URL="${api_config[REALTIME_INTERNAL_URL]}" API_INTERNAL_URL="${realtime_config[API_INTERNAL_URL]}"
   exec docker compose -f "$compose_file" up -d --remove-orphans --wait --wait-timeout 180
 )
+# Recorded only after a successful start; it holds the version id, never the secret.
+mkdir -p "$(dirname "$state_file")"
+printf '%s
+' "$db_secret_version" > "$state_file"
 echo "Stack started: caddy, api and realtime are healthy."

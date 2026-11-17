@@ -52,7 +52,9 @@ key() { printf '%s' "$1" | tr -c 'A-Za-z0-9' _; }
 arg() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { printf '%s' "$2"; return; }; shift; done; }
 case "$1 $2" in
   "ssm get-parameters-by-path") f="$STUB_FIXTURES/ssm_$(key "$(arg --path "$@")")" ;;
-  "secretsmanager get-secret-value") f="$STUB_FIXTURES/secret_$(key "$(arg --secret-id "$@")")" ;;
+  "secretsmanager get-secret-value")
+    if [[ "$*" == *"--query VersionId"* ]]; then f="$STUB_FIXTURES/version_$(key "$(arg --secret-id "$@")")"
+    else f="$STUB_FIXTURES/secret_$(key "$(arg --secret-id "$@")")"; fi ;;
   "ecr get-login-password") f="$STUB_FIXTURES/ecr_token" ;;
   *) echo "unexpected aws call: $*" >&2; exit 2 ;;
 esac
@@ -68,7 +70,9 @@ DOCKER_STUB = r"""#!/usr/bin/env bash
 echo "$*" >> "$STUB_LOG/docker.log"
 case "$1" in
   login) echo "login-stdin: $(cat)" >> "$STUB_LOG/docker-login.log" ;;
-  compose) env > "$STUB_LOG/compose-env.$STUB_RUN" ;;
+  compose)
+    env > "$STUB_LOG/compose-env.$STUB_RUN"
+    if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi ;;
 esac
 """
 
@@ -85,6 +89,22 @@ def script_text():
     return SCRIPT.read_text()
 
 
+SYSTEMD = ROOT / "infra/deploy/systemd"
+
+
+class SystemdUnitTests(unittest.TestCase):
+    def test_service_runs_the_refresh_once_with_a_non_secret_environment_file(self):
+        text = (SYSTEMD / "app-db-refresh.service").read_text()
+        self.assertIn("Type=oneshot", text)
+        self.assertRegex(text, r"(?m)^ExecStart=\S*start-app\.sh --refresh-if-rotated$")
+        self.assertRegex(text, r"(?m)^EnvironmentFile=/etc/\S+/deploy\.env$")
+
+    def test_timer_checks_every_ten_minutes_and_after_boot(self):
+        text = (SYSTEMD / "app-db-refresh.timer").read_text()
+        for line in ("OnBootSec=2min", "OnUnitActiveSec=10min", "Persistent=true", "WantedBy=timers.target"):
+            self.assertIn(line, text)
+
+
 class StaticTests(unittest.TestCase):
     def setUp(self):
         self.text = script_text()
@@ -98,7 +118,7 @@ class StaticTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"\btee\b")
         self.assertNotRegex(self.code, r"\.env\b")
         self.assertNotRegex(self.code, r"--env-file")
-        self.assertNotRegex(self.code, r"(?m)>>?\s*(?!/dev/null|&)[\"$\w./]")
+        self.assertNotRegex(self.code, r"(?m)>>?\s*(?!/dev/null|&|\"\$state_file\")[\"$\w./]")
 
     def test_secret_variables_are_never_echoed(self):
         for line in self.code.replace("\\\n", " ").splitlines():
@@ -134,6 +154,7 @@ class BehaviorTests(unittest.TestCase):
             stub.write_text(body, newline="\n")
             stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
         self.runs = 0
+        self.state = self.tmp / "state" / "db-secret-version"
         self.write_defaults()
 
     # fixtures -------------------------------------------------------------------------------
@@ -150,7 +171,11 @@ class BehaviorTests(unittest.TestCase):
             ssm_text(API_PARAMS, "api"), newline="\n")
         (self.fixtures / fixture_name("ssm", f"/{PREFIX}/config/realtime")).write_text(
             ssm_text(REALTIME_PARAMS, "realtime"), newline="\n")
+        self.write_version("v1")
         (self.fixtures / "ecr_token").write_text(ECR_TOKEN, newline="\n")
+
+    def write_version(self, version):
+        (self.fixtures / fixture_name("version", DB_SECRET_ARN)).write_text(version + "\n", newline="\n")
 
     def remove_fixture(self, name):
         (self.fixtures / name).unlink()
@@ -171,7 +196,7 @@ class BehaviorTests(unittest.TestCase):
                   "DB_NAME", "DB_SECRET_ARN")
         env = dict((k, v) for k, v in os.environ.items() if k not in inputs)
         env.update(STUB_LOG=str(self.logs), STUB_FIXTURES=str(self.fixtures),
-                   STUB_RUN=str(self.runs), PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
+                   STUB_RUN=str(self.runs), DB_SECRET_STATE_FILE=str(self.state), PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
         env.update(extra_env or {})
         result = subprocess.run([BASH, str(SCRIPT)] + (self.args() if args is None else args),
                                 capture_output=True, env=env, cwd=self.work)
@@ -334,6 +359,52 @@ class BehaviorTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, out)
                 self.assertEqual(self.log("aws.log"), [])
                 self.assertEqual(self.log("docker.log"), [])
+
+    def compose_calls(self):
+        return [c for c in self.log("docker.log") if c.startswith("compose")]
+
+    def test_deploy_records_only_the_secret_version(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertEqual(self.state.read_text(), "v1\n")
+
+    def test_refresh_with_the_same_version_does_nothing(self):
+        self.run_script()
+        result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
+        self.assertEqual((result.returncode, out), (0, ""))
+        self.assertEqual(len(self.compose_calls()), 1)
+
+    def test_refresh_after_rotation_redeploys_with_the_new_password(self):
+        self.run_script()
+        self.write_version("v2")
+        (self.fixtures / fixture_name("secret", DB_SECRET_ARN)).write_text(
+            '{"username":"aula_admin","password":"rotated"}', newline="\n")
+        result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
+        self.assertEqual(result.returncode, 0, out)
+        self.assertEqual(len(self.compose_calls()), 2)
+        self.assertIn(":rotated@", self.compose_env()["DATABASE_URL"])
+        self.assertEqual(self.state.read_text(), "v2\n")
+
+    def test_refresh_without_state_deploys(self):
+        result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
+        self.assertEqual(result.returncode, 0, out)
+        self.assertEqual(len(self.compose_calls()), 1)
+        self.assertEqual(self.state.read_text(), "v1\n")
+
+    def test_state_is_not_written_when_compose_fails(self):
+        self.run_script()
+        self.write_version("v2")
+        result, out = self.run_script(extra_env={"STUB_COMPOSE_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state.read_text(), "v1\n")
+
+    def test_unreadable_version_fails_closed(self):
+        self.remove_fixture(fixture_name("version", DB_SECRET_ARN))
+        for extra in ([], ["--refresh-if-rotated"]):
+            result, out = self.run_script(args=self.args() + extra)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(self.compose_calls())
+            self.assertFalse(self.state.exists())
 
     def test_inputs_may_come_from_the_environment(self):
         args = self.args()
