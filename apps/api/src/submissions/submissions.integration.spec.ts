@@ -162,6 +162,8 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
           await tx.activity.deleteMany({ where: activity });
           await tx.parentLink.deleteMany({ where: { classroomId: { in: classrooms } } });
           await tx.classroomMembership.deleteMany({ where: { classroomId: { in: classrooms } } });
+          // Metric rows reference users and classrooms with restrict; remove them first.
+          await tx.activityMetric.deleteMany({ where: { classroomId: { in: classrooms } } });
           await tx.classroom.deleteMany({ where: { id: { in: classrooms } } });
           await tx.user.deleteMany({ where: { id: { in: users } } });
         });
@@ -248,6 +250,45 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       await submit(activityId, { actor: s2 }).expect(201);
       expect(await rowsOf(activityId, s1)).toHaveLength(1);
       expect(await rowsOf(activityId, s2)).toHaveLength(1);
+    });
+
+    it('adds the submission to the UTC-day ActivityMetric row and replays do not double count', async () => {
+      // A dedicated student: the row is per user and day, so other tests' submissions
+      // for s1 or s2 must not contribute to the count asserted here.
+      const metricStudent = randomUUID();
+      await prisma.$transaction([
+        prisma.user.create({
+          data: {
+            id: metricStudent,
+            displayName: 'Metric Student',
+            email: `submissions-metric-${metricStudent}@example.invalid`,
+            passwordHash: 'synthetic-unused-submissions-hash',
+            registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+          },
+        }),
+        prisma.classroomMembership.create({
+          data: { classroomId: classroomA, userId: metricStudent, role: ClassroomRole.STUDENT },
+        }),
+      ]);
+
+      const activityId = await publishedActivity();
+      const key = randomUUID();
+      await submit(activityId, { actor: metricStudent, key }).expect(201);
+      await submit(activityId, { actor: metricStudent, key }).expect(200);
+
+      const metric = await prisma.activityMetric.findFirstOrThrow({
+        where: { classroomId: classroomA, userId: metricStudent },
+      });
+      const utcDay = new Date(
+        Date.UTC(
+          metric.createdAt.getUTCFullYear(),
+          metric.createdAt.getUTCMonth(),
+          metric.createdAt.getUTCDate(),
+        ),
+      );
+      expect(metric.day.getTime()).toBe(utcDay.getTime());
+      expect(metric.submissionCount).toBe(1);
+      expect(metric.messageCount).toBe(0);
     });
   });
 
