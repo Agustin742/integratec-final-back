@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AccessModule } from '../access/access.module';
 import { ActivitiesModule } from '../activities/activities.module';
+import { ActivityForumModule } from '../activities/forum/activity-forum.module';
 import { EmailModule } from '../platform/email/email.module';
 import { OutboxModule } from '../platform/outbox/outbox.module';
 import { ClassroomContextModule } from '../platform/classroom-context/classroom-context.module';
@@ -29,6 +30,7 @@ import { ClassroomRosterModule } from './roster/roster.module';
     ClassroomRemovalModule,
     ClassroomDesksModule,
     ActivitiesModule,
+    ActivityForumModule,
   ],
   controllers: [ClassroomsController, MeClassroomsController, InvitationsController],
   providers: [

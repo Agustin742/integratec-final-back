@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PointEntryKind, Prisma } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
+import { toIsoString } from '../http/iso-string';
 import { paginated, toSkipTake } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { PrismaService } from '../prisma/prisma.service';
@@ -55,6 +56,18 @@ export interface CompensatePointsInput {
   reason: string;
   actorId: string;
   idempotencyKey?: string;
+}
+
+/** Input for a negative compensation capped at the student's available balance (no idempotency key). */
+export type CompensateCappedInput = Omit<CompensatePointsInput, 'idempotencyKey'>;
+
+export interface CappedCompensationResult {
+  /** The appended entry, or `null` when the balance was zero and nothing was written. */
+  entry: PointTransactionDto | null;
+  /** Signed delta actually applied to the ledger (`0` or negative, never below the balance). */
+  applied: number;
+  /** Non-negative part of the requested decrease that could not be recovered. */
+  unrecovered: number;
 }
 
 export interface LedgerWriteResult {
@@ -118,10 +131,6 @@ function mapEntryKind(raw: PointEntryKind | string): PointEntryKind {
     default:
       throw new Error(`Unsupported point entry kind: ${String(raw)}`);
   }
-}
-
-function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function toTransactionDto(row: PointRow): PointTransactionDto {
@@ -433,6 +442,66 @@ export class PointsLedgerService {
     }
 
     return result;
+  }
+
+  /**
+   * Appends a negative compensation capped at the student's available balance, so the requested
+   * decrease is applied as far as the balance allows and never yields a negative balance. The
+   * balance is read under the same membership `FOR UPDATE` lock `debit`/`compensate` take, so it is
+   * race-free with concurrent debits. When the balance is `0`, nothing is written.
+   */
+  async compensateCapped(
+    input: CompensateCappedInput,
+    tx?: Prisma.TransactionClient,
+  ): Promise<CappedCompensationResult> {
+    const classroomId = assertUuid(input.classroomId, 'classroomId');
+    const studentId = assertUuid(input.studentId, 'studentId');
+    const sourceId = assertUuid(input.sourceId, 'sourceId');
+    const actorId = assertUuid(input.actorId, 'actorId');
+    const delta = assertNonZeroInt32(input.delta, 'delta');
+    if (delta > 0) {
+      throw new BadRequestException('delta must be negative for a capped compensation');
+    }
+    const sourceType = normalizeText(input.sourceType, 'sourceType', MAX_SOURCE_TYPE_LENGTH);
+    const reason = normalizeText(input.reason, 'reason', MAX_REASON_LENGTH);
+
+    const outcome = await this.withTransaction(tx, async (client) => {
+      await this.lockActiveStudentMembership(client, classroomId, studentId);
+
+      const balance = await this.readLockedBalance(client, classroomId, studentId);
+      const applied = 0 - Math.min(-delta, Math.max(balance, 0));
+      const unrecovered = -delta + applied;
+      if (applied === 0) {
+        return { entry: null, applied, unrecovered };
+      }
+
+      const written = await this.insertNonEarningEntry(client, {
+        classroomId,
+        studentId,
+        actorId,
+        entryKind: PointEntryKind.COMPENSATION,
+        amount: applied,
+        sourceType,
+        sourceId,
+        idempotencyKey: null,
+        reason,
+      });
+      return { entry: written.entry, applied, unrecovered };
+    });
+
+    if (outcome.entry) {
+      this.logger.log({
+        event: 'points_compensation_recorded',
+        classroomId: outcome.entry.classroomId,
+        entryId: outcome.entry.id,
+        actorId: outcome.entry.actorId,
+        amount: outcome.entry.amount,
+        sourceType: outcome.entry.sourceType,
+        sourceId: outcome.entry.sourceId,
+      });
+    }
+
+    return outcome;
   }
 
   /**

@@ -61,6 +61,10 @@ describe('loadApiConfig', () => {
       authCleanupBatchSize: 1000,
       shopPurchaseRateLimitWindowSeconds: 60,
       shopPurchaseRateLimitMaxAttempts: 20,
+      gradeWeightTp: 1,
+      gradeWeightExam: 1.5,
+      equipRateLimitWindowSeconds: 60,
+      equipRateLimitMaxAttempts: 20,
     });
   });
 
@@ -514,6 +518,67 @@ describe('loadApiConfig', () => {
       expect(messageOf({ ...validEnv(), SHOP_PURCHASE_RATE_LIMIT_MAX: value })).toContain(
         'SHOP_PURCHASE_RATE_LIMIT_MAX',
       );
+    });
+  });
+
+  describe('grade weight settings', () => {
+    it('parses explicit GRADE_WEIGHT_TP and GRADE_WEIGHT_EXAM up to 2 decimals when EXAM > TP', () => {
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          GRADE_WEIGHT_TP: '0.75',
+          GRADE_WEIGHT_EXAM: '2.25',
+        }),
+      ).toMatchObject({
+        gradeWeightTp: 0.75,
+        gradeWeightExam: 2.25,
+      });
+
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          GRADE_WEIGHT_TP: '0.1',
+          GRADE_WEIGHT_EXAM: '10',
+        }),
+      ).toMatchObject({
+        gradeWeightTp: 0.1,
+        gradeWeightExam: 10,
+      });
+    });
+
+    it.each(['0', '-1', '0.09', '10.01', '1.234', 'abc', 'Infinity', 'NaN', '+1', '1e1'])(
+      'rejects invalid GRADE_WEIGHT_TP=%s without echoing its value',
+      (value) => {
+        const message = messageOf({ ...validEnv(), GRADE_WEIGHT_TP: value });
+        expect(message).toContain('GRADE_WEIGHT_TP');
+        expect(message).toContain('between 0.1 and 10');
+        if (value.length > 2) expect(message).not.toContain(value);
+      },
+    );
+
+    it.each(['0', '-1', '0.09', '10.01', '1.234', 'abc', 'Infinity', 'NaN', '+2'])(
+      'rejects invalid GRADE_WEIGHT_EXAM=%s without echoing its value',
+      (value) => {
+        const message = messageOf({ ...validEnv(), GRADE_WEIGHT_EXAM: value });
+        expect(message).toContain('GRADE_WEIGHT_EXAM');
+        expect(message).toContain('between 0.1 and 10');
+        if (value.length > 2) expect(message).not.toContain(value);
+      },
+    );
+
+    it('rejects GRADE_WEIGHT_EXAM <= GRADE_WEIGHT_TP (EXAM > TP required)', () => {
+      for (const [tp, exam] of [
+        ['1.5', '1.5'],
+        ['2', '1.5'],
+        ['2.5', '2.49'],
+        ['10', undefined],
+      ] as const) {
+        const env: Record<string, string | undefined> = { ...validEnv(), GRADE_WEIGHT_TP: tp };
+        if (exam !== undefined) env.GRADE_WEIGHT_EXAM = exam;
+        const message = messageOf(env);
+        expect(message).toContain('GRADE_WEIGHT_EXAM');
+        expect(message).toContain('strictly greater than GRADE_WEIGHT_TP');
+      }
     });
   });
 

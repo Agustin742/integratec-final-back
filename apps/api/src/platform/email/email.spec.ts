@@ -36,6 +36,17 @@ describe('EmailModule', () => {
     expect(adapter.sent).toHaveLength(0);
   });
 
+  it('deduplicates concurrent and replayed messages with the same idempotency key', async () => {
+    const adapter = new InMemoryEmailAdapter();
+    const keyed = { ...message, idempotencyKey: 'notification:synthetic:email' };
+    await Promise.all([adapter.send(keyed), adapter.send(keyed)]);
+    await adapter.send(keyed);
+    expect(adapter.sent).toHaveLength(1);
+    adapter.clear();
+    await adapter.send(keyed);
+    expect(adapter.sent).toHaveLength(1);
+  });
+
   it('does not expose its internal store for mutation', async () => {
     const adapter = new InMemoryEmailAdapter();
     await adapter.send(message);

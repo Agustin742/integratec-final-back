@@ -1,6 +1,6 @@
 # File submissions
 
-`SubmissionsModule` lets an enrolled student hand in files for a published `FILE` activity (see [Activities](activities.md)) and lets the student and the classroom staff read the result. Multiple-choice answers (#47), grading (#32), points (#31) and the streak engine (HU-GAM-002) are **not** part of this module yet (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService`; the academic rules are in [Activities and grading](../rules/activities-and-grading.md) and the defaults are recorded as [D16](technical-justification.md#d16-file-submission-defaults).
+`SubmissionsModule` lets an enrolled student hand in files for a published `FILE` activity (see [Activities](activities.md)) and lets the student and the classroom staff read the result. Multiple-choice answers (#47), grading ([Grading](grading.md)), points (#31) and the streak engine (HU-GAM-002) are handled outside this module (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService`; the academic rules are in [Activities and grading](../rules/activities-and-grading.md) and the defaults are recorded as [D16](technical-justification.md#d16-file-submission-defaults).
 
 ## Data model
 
@@ -9,7 +9,7 @@
 | `submissions` | One row per (activity, student): `submittedAt` (server clock), `isLate`, `idempotencyKey` |
 | `submission_files` | Files of a submission: private `storageKey` (unique), `originalName`, `contentType`, `sizeBytes`, `position` |
 
-`(activity_id, student_id)` is unique, so the database, not only the service, guarantees a single submission. `CHECK` constraints back the idempotency key length (1-255), file size (1 byte to 10 MB), position (0-4), name length (1-255) and the content type allow-list. Foreign keys are `RESTRICT`. The state of the student's work is derived from this row (`status: "submitted"`), never stored separately.
+`(activity_id, student_id)` is unique, so the database, not only the service, guarantees a single submission. `CHECK` constraints back the idempotency key length (1-255), file size (1 byte to 10 MB), position (0-4), name length (1-255) and the content type allow-list. Foreign keys are `RESTRICT`. The state of the student's work is derived from `Submission` and its optional `Grade` (`status: "submitted" | "graded"`), never stored separately.
 
 ## Endpoints
 
@@ -100,7 +100,7 @@ Once any submission exists for an activity ([Activities](activities.md)):
 ## Out of scope and follow-ups
 
 - Resubmission and submission history (MVP is one submission per student and activity).
-- Multiple-choice answers (#47), grading and grades (#32), points (#31) and the streak engine (HU-GAM-002).
+- Multiple-choice answers (#47) and the streak engine (HU-GAM-002); manual grading lives in [Grading](grading.md).
 - Malware scanning of uploads.
 - Reconciliation/retention tooling for orphan objects left by unknown transaction outcomes or failed cleanup (potentially linked files are never deleted merely because a transaction promise rejected).
 - More than 5 files returns multer's generic `400 BAD_REQUEST` instead of `VALIDATION_FAILED`.

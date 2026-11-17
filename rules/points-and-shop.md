@@ -14,7 +14,7 @@ Points are a server-owned ledger. The client never sets a balance, a price, a st
 - The points balance is per student (an individual ledger). A purchase **MUST** only spend points the buyer can use for that item.
 - Each entry records the reason and source (for example grade of a submission, purchase, correction, medal) and **MUST** reference its source record so an earning cannot be duplicated: a unique constraint on (source type, source id) **MUST** make the earning idempotent.
 - Balance changes and the records that justify them (grade, purchase) **MUST** commit in the same transaction.
-- A balance **MUST NOT** go negative. A purchase **MUST** check and debit under a lock or equivalent atomic condition so concurrent purchases cannot overspend.
+- A balance **MUST NOT** go negative, including through a grade compensation: a downward regrade is capped at the available balance and the shortfall is recorded, not carried as debt ([D18](../docs/technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history)). A purchase **MUST** check and debit under a lock or equivalent atomic condition so concurrent purchases cannot overspend.
 - Points are earned through graded activities. Other earning sources (streak bonuses, medals) are **open**; any addition requires a recorded decision and its own idempotency rule.
 - Parents see only their linked child's points; classmates **MUST NOT** see another student's exact balance unless a decision says otherwise (**open**).
 

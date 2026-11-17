@@ -17,14 +17,42 @@
 # optional through an environment variable. Let's Encrypt works without one; add a global
 # `email` here if expiry notices are wanted.
 #
+# Logs are JSON: access on stdout, errors on stderr. Colyseus clients send credentials in the WebSocket query string
+# (`sessionId`, `reconnectionToken`, `_authToken`), so the log encoder replaces those values with
+# REDACTED in `request.uri`; the keys stay visible to show they were sent. Access entries go
+# through the site `log`, but errors (e.g. 502 when an upstream is down) go to the default logger,
+# so both carry the same filter (a snippet cannot be imported from the global block, so it is
+# written twice: keep both in sync). Only logging is filtered: the request forwarded to the
+# services is unchanged. Add any new credential parameter to both filters.
+#
 # CORS is answered by the applications (they know the allowed origins); Caddy adds no CORS headers.
 # There is no request body limit: Caddy has none by default and the upload design (file size and
 # count) is not implemented yet. Set `request_body { max_size ... }` once it is.
+{
+	log {
+		output stderr
+		format filter {
+			wrap json
+			request>uri query {
+				replace sessionId REDACTED
+				replace reconnectionToken REDACTED
+				replace _authToken REDACTED
+			}
+		}
+	}
+}
 
 {$SITE_ADDRESS} {
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			request>uri query {
+				replace sessionId REDACTED
+				replace reconnectionToken REDACTED
+				replace _authToken REDACTED
+			}
+		}
 	}
 
 	header {
