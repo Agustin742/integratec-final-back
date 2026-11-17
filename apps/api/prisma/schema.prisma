@@ -804,7 +804,9 @@ model Grade {
 }
 
 /// Append-only history of initial grading (`version = 1`) and every regrade (`version >= 2`),
-/// recording `pointsDelta` and the linked earning/compensating `PointTransaction` when points changed.
+/// recording `pointsDelta` (the delta actually applied to the ledger), `pointsUnrecovered` (the part of a
+/// downward delta the student's balance could not cover) and the linked earning/compensating
+/// `PointTransaction` when points changed.
 model GradeRevision {
   id                 String   @id @default(uuid()) @db.Uuid
   gradeId            String   @map("grade_id") @db.Uuid
@@ -813,6 +815,7 @@ model GradeRevision {
   score              Int
   feedback           String
   pointsDelta        Int      @map("points_delta")
+  pointsUnrecovered  Int      @default(0) @map("points_unrecovered")
   pointTransactionId String?  @unique @map("point_transaction_id") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

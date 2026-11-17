@@ -6,8 +6,8 @@
 
 | Table | Purpose |
 |---|---|
-| `grades` | One row per `submission_id`: `score` (`0-100`), `feedback` (`1-5000` trimmed visible text), `points_awarded` (`>= 0`), `type_weight` and `weight_multiplier` (weights snapshotted at the initial grade), nullable unique `point_transaction_id`, optimistic `version` (`>= 1`), `grader_id`, `graded_at` |
-| `grade_revisions` | Append-only history per `(grade_id, version)` storing `score`, `feedback`, `points_delta`, nullable unique `point_transaction_id`, and `grader_id` |
+| `grades` | One row per `submission_id`: `score` (`0-100`), `feedback` (`1-5000` trimmed visible text), `points_awarded` (`>= 0`, the net points actually credited after any capped regrade), `type_weight` and `weight_multiplier` (weights snapshotted at the initial grade), nullable unique `point_transaction_id`, optimistic `version` (`>= 1`), `grader_id`, `graded_at` |
+| `grade_revisions` | Append-only history per `(grade_id, version)` storing `score`, `feedback`, `points_delta` (the delta actually applied to the ledger), `points_unrecovered` (`>= 0`, default `0`), nullable unique `point_transaction_id`, and `grader_id` |
 
 All foreign keys use `ON DELETE RESTRICT`. `SubmissionResponseDto.status` (`submissions.dto.ts`) derives `'graded' | 'submitted'` from `grade !== null`.
 
@@ -36,7 +36,7 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 - **Weight snapshot:** The initial grade stores the `typeWeight` and `weightMultiplier` it used on `Grade`. Regrades compute points from that snapshot, never from the current activity weight or `GRADE_WEIGHT_*` configuration, so a regrade with an unchanged score never moves points.
 - Calculation uses exact integer ten-thousandths arithmetic and half-up rounding (`Math.trunc((score * typeHundredths * activityHundredths + 5000) / 10000)`) so binary floating-point drift cannot misround boundary scores.
 - **Zero-point skip:** When initial `pointsAwarded === 0`, no `PointTransaction` is inserted (`pointTransactionId = null`). If a later regrade increases points above zero (`pointTransactionId === null && delta > 0`), `PointsLedgerService.credit` creates the initial `EARNING` row and links it on both `Grade` and `GradeRevision`.
-- **Regrade compensation:** When `delta !== 0` after an initial earning exists, `PointsLedgerService.compensate` appends a signed `COMPENSATION` entry (`sourceType: 'submission_grade'`, `sourceId: grade.id`), throwing `409` if `balance + delta < 0`. When `delta === 0`, no ledger entry is written.
+- **Regrade compensation:** When `delta !== 0` after an initial earning exists, `PointsLedgerService.compensate` appends a signed `COMPENSATION` entry (`sourceType: 'submission_grade'`, `sourceId: grade.id`). A positive delta uses `compensate`. A negative delta uses `PointsLedgerService.compensateCapped`, so a regrade always succeeds: the delta is applied up to the student's available balance (read under the ledger's membership `FOR UPDATE` lock, race-free with shop debits), the balance never goes negative and no debt is kept. The shortfall is stored in `GradeRevision.pointsUnrecovered`, `GradeRevision.pointsDelta` holds the delta actually applied, and `Grade.pointsAwarded` becomes `previous + applied` (the net credited) so a later upward regrade computes `newPoints - pointsAwarded` correctly. Example: `pointsAwarded 80`, balance `10`, regrade worth `40` (delta `-40`) writes a `-10` entry, leaves balance `0`, `pointsUnrecovered 30`, `pointsAwarded 70`. When the balance is `0`, no ledger entry is written (`pointTransactionId = null` on the revision). When `delta === 0`, no ledger entry is written.
 
 ## Concurrency and transaction order
 

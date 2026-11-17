@@ -304,32 +304,40 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(stored.pointsAwarded);
   });
 
-  it('prevents negative balance under concurrent Promise.all downward regrade vs ShopService.purchase', async () => {
-    await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+  it('never leaves a negative balance when a capped downward regrade races ShopService.purchase', async () => {
+    const initial = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
       score: 80, // 80 * 1.5 = 120 points
       feedback: 'Initial points 120',
     });
 
-    // Purchase costs 80 (needs 80), regrade to 20 subtracts 90 (needs 90) -> only one can fit in 120.
+    // Purchase costs 80; the regrade to 20 (30 pts) wants -90 but is capped at the balance.
     const outcomes = await Promise.allSettled([
       grades.regradeSubmission(ids.teacher, ids.examSubmission, {
-        score: 20, // 20 * 1.5 = 30 -> delta -90
+        score: 20,
         feedback: 'Downward adjustment',
         version: 1,
       }),
       shop.purchase(ids.student, ids.classroom, { shopItemId: ids.shopItem }, 'race-buy-1'),
     ]);
 
-    const fulfilled = outcomes.filter((o) => o.status === 'fulfilled');
-    const rejected = outcomes.filter((o) => o.status === 'rejected');
+    // A regrade always succeeds regardless of the balance.
+    expect(outcomes[0].status).toBe('fulfilled');
+    if (outcomes[1].status === 'rejected') {
+      expect(outcomes[1].reason).toBeInstanceOf(ConflictException);
+    }
+    const purchased = outcomes[1].status === 'fulfilled' ? 80 : 0;
 
-    expect(fulfilled).toHaveLength(1);
-    expect(rejected).toHaveLength(1);
-    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
-
+    const revision = await prisma.gradeRevision.findUniqueOrThrow({
+      where: { gradeId_version: { gradeId: initial.id, version: 2 } },
+    });
+    const grade = await prisma.grade.findUniqueOrThrow({ where: { id: initial.id } });
     const finalBalance = await ledger.getBalance(ids.classroom, ids.student);
+
     expect(finalBalance).toBeGreaterThanOrEqual(0);
-    expect([30, 40]).toContain(finalBalance);
+    expect([0, 30]).toContain(finalBalance);
+    expect(finalBalance).toBe(120 - purchased + revision.pointsDelta);
+    expect(revision.pointsDelta - revision.pointsUnrecovered).toBe(-90);
+    expect(grade.pointsAwarded).toBe(120 + revision.pointsDelta);
   });
 
   it('rolls back ledger and outbox writes atomically when grade creation fails inside transaction', async () => {
@@ -444,7 +452,7 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     }
   });
 
-  it('supports 0-to-positive regrade, subsequent compensation across 0, delta=0 skip, and negative balance 409', async () => {
+  it('supports 0-to-positive regrade, delta=0 skip, a capped downward regrade, and recovery', async () => {
     // 1. Initial grade with 0 score -> no PointTransaction, pointTransactionId = null
     const v1 = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
       score: 0,
@@ -483,42 +491,140 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       }),
     ).toBe(1);
 
-    // 4. Spend 80 in shop -> remaining balance is 40; downward regrade of -120 must fail 409
+    // 4. Spend 80 in shop -> balance 40; regrade to 0 (-120) succeeds, capped at the 40 available
     await shop.purchase(ids.student, ids.classroom, { shopItemId: ids.shopItem }, 'spend-80');
     expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(40);
 
-    await expect(
-      grades.regradeSubmission(ids.teacher, ids.examSubmission, {
-        score: 0,
-        feedback: 'Cannot go negative',
-        version: 3,
-      }),
-    ).rejects.toThrow(ConflictException);
-    expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(40);
-
-    // 5. Partial downward regrade (-30 pts: 80 -> 60 = 90 pts) succeeds and leaves 10 pts
     const v4 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
-      score: 60,
-      feedback: 'Adjusted to 60',
+      score: 0,
+      feedback: 'Zeroed after spending',
       version: 3,
     });
     expect(v4.version).toBe(4);
-    expect(v4.pointsAwarded).toBe(90);
-    expect(v4.pointTransactionId).toBe(v2.pointTransactionId);
+    expect(v4.pointsAwarded).toBe(80); // net actually credited: 120 - 40
+    expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+
+    // 5. Regrade back up to 60 (90 pts): delta = 90 - 80 = +10 credited
+    const v5 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+      score: 60,
+      feedback: 'Adjusted to 60',
+      version: 4,
+    });
+    expect(v5.version).toBe(5);
+    expect(v5.pointsAwarded).toBe(90);
+    expect(v5.pointTransactionId).toBe(v2.pointTransactionId);
     expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(10);
 
     const revisions = await prisma.gradeRevision.findMany({
       where: { gradeId: v1.id },
       orderBy: { version: 'asc' },
     });
-    expect(revisions.map((r) => [r.version, r.pointsDelta, r.pointTransactionId !== null])).toEqual(
-      [
-        [1, 0, false],
-        [2, 120, true],
-        [3, 0, false],
-        [4, -30, true],
-      ],
-    );
+    expect(
+      revisions.map((r) => [
+        r.version,
+        r.pointsDelta,
+        r.pointsUnrecovered,
+        r.pointTransactionId !== null,
+      ]),
+    ).toEqual([
+      [1, 0, 0, false],
+      [2, 120, 0, true],
+      [3, 0, 0, false],
+      [4, -40, 80, true],
+      [5, 10, 0, true],
+    ]);
+  });
+
+  describe('balance-capped downward regrade', () => {
+    async function gradeExam80() {
+      return grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 80, // 120 points
+        feedback: 'Initial points 120',
+      });
+    }
+
+    it('caps at the available balance, records the unrecovered part, and recovers on a later upward regrade', async () => {
+      const v1 = await gradeExam80();
+      await shop.purchase(ids.student, ids.classroom, { shopItemId: ids.shopItem }, 'cap-spend');
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(40);
+
+      // 20 * 1.5 = 30 pts -> delta -90, only 40 recoverable
+      const v2 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 20,
+        feedback: 'Down',
+        version: 1,
+      });
+      expect(v2.pointsAwarded).toBe(80);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+      const rev2 = await prisma.gradeRevision.findUniqueOrThrow({
+        where: { gradeId_version: { gradeId: v1.id, version: 2 } },
+      });
+      expect(rev2.pointsDelta).toBe(-40);
+      expect(rev2.pointsUnrecovered).toBe(50);
+      expect(rev2.pointTransactionId).not.toBeNull();
+
+      // back to 80 -> 120 pts: delta = 120 - 80 = +40
+      const v3 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 80,
+        feedback: 'Up',
+        version: 2,
+      });
+      expect(v3.pointsAwarded).toBe(120);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(40);
+    });
+
+    it('writes no ledger entry when the balance is zero and records the full delta as unrecovered', async () => {
+      const v1 = await gradeExam80();
+      await ledger.debit({
+        classroomId: ids.classroom,
+        studentId: ids.student,
+        amount: 120,
+        sourceType: 'shop_purchase',
+        sourceId: randomUUID(),
+        reason: 'Spend everything',
+      });
+      const entriesBefore = await prisma.pointTransaction.count({
+        where: { classroomId: ids.classroom, studentId: ids.student },
+      });
+
+      const v2 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 20,
+        feedback: 'Down at zero balance',
+        version: 1,
+      });
+
+      expect(v2.pointsAwarded).toBe(120);
+      expect(
+        await prisma.pointTransaction.count({
+          where: { classroomId: ids.classroom, studentId: ids.student },
+        }),
+      ).toBe(entriesBefore);
+      const rev2 = await prisma.gradeRevision.findUniqueOrThrow({
+        where: { gradeId_version: { gradeId: v1.id, version: 2 } },
+      });
+      expect(rev2.pointsDelta).toBe(0);
+      expect(rev2.pointsUnrecovered).toBe(90);
+      expect(rev2.pointTransactionId).toBeNull();
+    });
+
+    it('compensates in full when the balance covers the delta', async () => {
+      const v1 = await gradeExam80();
+
+      const v2 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 20,
+        feedback: 'Down with funds',
+        version: 1,
+      });
+
+      expect(v2.pointsAwarded).toBe(30);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(30);
+      const rev2 = await prisma.gradeRevision.findUniqueOrThrow({
+        where: { gradeId_version: { gradeId: v1.id, version: 2 } },
+      });
+      expect(rev2.pointsDelta).toBe(-90);
+      expect(rev2.pointsUnrecovered).toBe(0);
+      expect(rev2.pointTransactionId).not.toBeNull();
+    });
   });
 
   it('materializes student-only grade_posted in-app notification without parent or email notifications', async () => {

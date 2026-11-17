@@ -403,6 +403,9 @@ export class GradesService {
 
       let nextGradePointTransactionId = currentGrade.pointTransactionId;
       let revisionPointTransactionId: string | null = null;
+      // Ledger delta actually applied; a downward delta is capped at the available balance.
+      let appliedDelta = delta;
+      let pointsUnrecovered = 0;
       if (delta !== 0) {
         const reason = buildLedgerReason(`Regrade v${nextVersion}`, activity.title, dto.score);
         if (currentGrade.pointTransactionId === null && delta > 0) {
@@ -420,7 +423,7 @@ export class GradesService {
           );
           nextGradePointTransactionId = creditResult.entry.id;
           revisionPointTransactionId = creditResult.entry.id;
-        } else {
+        } else if (delta > 0) {
           const compensateResult = await this.pointsLedger.compensate(
             {
               classroomId: context.activity.classroomId,
@@ -434,6 +437,23 @@ export class GradesService {
             tx,
           );
           revisionPointTransactionId = compensateResult.entry.id;
+        } else {
+          // A regrade must always succeed: recover at most the balance still available.
+          const capped = await this.pointsLedger.compensateCapped(
+            {
+              classroomId: context.activity.classroomId,
+              studentId: submission.studentId,
+              actorId,
+              delta,
+              sourceType: SUBMISSION_GRADE_SOURCE_TYPE,
+              sourceId: currentGrade.id,
+              reason,
+            },
+            tx,
+          );
+          appliedDelta = capped.applied;
+          pointsUnrecovered = capped.unrecovered;
+          revisionPointTransactionId = capped.entry?.id ?? null;
         }
       }
 
@@ -444,7 +464,8 @@ export class GradesService {
           graderId: actorId,
           score: dto.score,
           feedback: dto.feedback,
-          pointsAwarded: newPoints,
+          // Net actually credited, so later regrades compute their delta against it.
+          pointsAwarded: currentGrade.pointsAwarded + appliedDelta,
           pointTransactionId: nextGradePointTransactionId,
           version: nextVersion,
           gradedAt: now,
@@ -458,7 +479,8 @@ export class GradesService {
           version: nextVersion,
           score: dto.score,
           feedback: dto.feedback,
-          pointsDelta: delta,
+          pointsDelta: appliedDelta,
+          pointsUnrecovered,
           pointTransactionId: revisionPointTransactionId,
         },
       });
@@ -473,7 +495,7 @@ export class GradesService {
 
       return {
         response: toGradeResponseDto(updated, activity.id, submission.studentId),
-        pointsDelta: delta,
+        pointsDelta: appliedDelta,
       };
     });
 

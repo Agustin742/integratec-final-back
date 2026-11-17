@@ -28,6 +28,7 @@ CREATE TABLE "grade_revisions" (
     "score" INTEGER NOT NULL,
     "feedback" TEXT NOT NULL,
     "points_delta" INTEGER NOT NULL,
+    "points_unrecovered" INTEGER NOT NULL DEFAULT 0,
     "point_transaction_id" UUID,
     "created_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -98,6 +99,10 @@ CHECK ("version" >= 1);
 ALTER TABLE "grade_revisions"
 ADD CONSTRAINT "grade_revisions_version_check"
 CHECK ("version" >= 1);
+
+ALTER TABLE "grade_revisions"
+ADD CONSTRAINT "grade_revisions_points_unrecovered_check"
+CHECK ("points_unrecovered" >= 0);
 
 ALTER TABLE "grade_revisions"
 ADD CONSTRAINT "grade_revisions_score_check"
