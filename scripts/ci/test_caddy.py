@@ -6,12 +6,17 @@ when Docker is not available (CI runners have it).
 """
 
 from pathlib import Path
+import base64
+import hashlib
+import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -169,6 +174,95 @@ class CaddyStack(unittest.TestCase):
 
 
 
+WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+WEBSOCKET_ECHO_IMAGE = "python:3.13.1-alpine"
+# Stdlib-only upstream: completes the RFC 6455 handshake, reports the path it received, then echoes text frames.
+WEBSOCKET_ECHO_SERVER = r"""
+import base64, hashlib, socketserver
+
+def send(sock, text):
+    sock.sendall(bytes([0x81, len(text.encode())]) + text.encode())
+
+class Handler(socketserver.StreamRequestHandler):
+    def handle(self):
+        path = self.rfile.readline().split()[1].decode()
+        headers = {}
+        while (line := self.rfile.readline().strip()):
+            name, _, value = line.decode().partition(":")
+            headers[name.strip().lower()] = value.strip()
+        accept = base64.b64encode(hashlib.sha1((headers["sec-websocket-key"] + "{GUID}").encode()).digest()).decode()
+        self.wfile.write(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                          "Sec-WebSocket-Accept: " + accept + "\r\n\r\n").encode())
+        send(self.request, "path " + path)
+        head = self.rfile.read(2)
+        mask = self.rfile.read(4)
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(self.rfile.read(head[1] & 0x7F)))
+        send(self.request, "echo " + payload.decode())
+
+socketserver.ThreadingTCPServer.allow_reuse_address = True
+socketserver.ThreadingTCPServer(("", 2567), Handler).serve_forever()
+""".replace("{GUID}", WEBSOCKET_GUID)
+
+
+def websocket_exchange(base, path, message):
+    """Performs a WebSocket handshake through `base`; returns the handshake and the first two text frames."""
+    key = base64.b64encode(os.urandom(16)).decode()
+    host = urllib.parse.urlsplit(base).netloc
+    request = (
+        f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n"
+        f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    )
+    with socket.create_connection((host.split(":")[0], int(host.split(":")[1])), timeout=5) as sock:
+        reader = sock.makefile("rb")
+        sock.sendall(request.encode())
+        status_line = reader.readline().decode().strip()
+        headers = {}
+        while (line := reader.readline().strip()):
+            name, _, value = line.decode().partition(":")
+            headers[name.strip().lower()] = value.strip()
+        expected = base64.b64encode(hashlib.sha1((key + WEBSOCKET_GUID).encode()).digest()).decode()
+        handshake = (status_line, headers, expected)
+        if not status_line.startswith("HTTP/1.1 101"):
+            return handshake, []
+
+        def read_frame():
+            opcode_byte, length = reader.read(2)
+            if length & 0x7F >= 126:
+                raise AssertionError("frames this large are not expected in the test")
+            return opcode_byte & 0x0F, reader.read(length & 0x7F).decode()
+
+        payload = message.encode()
+        mask = os.urandom(4)
+        masked = bytes(byte ^ mask[i % 4] for i, byte in enumerate(payload))
+        sock.sendall(bytes([0x81, 0x80 | len(payload)]) + mask + masked)
+        return handshake, [read_frame(), read_frame()]
+
+
+class CaddyWebSocketTests(CaddyStack):
+    """Colyseus clients connect over WebSocket, so the proxy must complete a real upgrade."""
+
+    @classmethod
+    def start_stub(cls, image, alias, port, suffix):
+        if alias != "realtime":
+            return super().start_stub(image, alias, port, suffix)
+        name = f"caddy-routing-{alias}-{suffix}"
+        docker(
+            "run", "-d", "--name", name, "--network", cls.network, "--network-alias", alias,
+            WEBSOCKET_ECHO_IMAGE, "python", "-u", "-c", WEBSOCKET_ECHO_SERVER,
+        )
+        return name
+
+    def test_websocket_upgrade_and_messages_pass_through_the_realtime_route(self):
+        (status_line, headers, expected_accept), frames = websocket_exchange(
+            self.base, "/realtime/abc/def?room=1", "hello through caddy"
+        )
+        self.assertTrue(status_line.startswith("HTTP/1.1 101"), status_line)
+        self.assertEqual(headers.get("upgrade", "").lower(), "websocket")
+        self.assertEqual(headers.get("sec-websocket-accept"), expected_accept)
+        # First frame: the upstream reports the path it received; second: the echoed message.
+        self.assertEqual(frames, [(1, "path /abc/def?room=1"), (1, "echo hello through caddy")])
+
+
 class CaddyRoutingTests(CaddyStack):
     def test_api_requests_reach_the_api_with_the_prefix_stripped(self):
         status, body, _ = self.get("/api/health?x=1")
@@ -181,13 +275,6 @@ class CaddyRoutingTests(CaddyStack):
     def test_realtime_requests_reach_colyseus_with_the_prefix_stripped(self):
         status, body, _ = self.get("/realtime/matchmake/joinOrCreate/classroom", method="POST")
         self.assertEqual((status, body), (200, "realtime POST /matchmake/joinOrCreate/classroom"))
-
-    def test_websocket_upgrade_headers_are_forwarded(self):
-        status, body, _ = self.get(
-            "/realtime/abc/def",
-            headers={"Connection": "Upgrade", "Upgrade": "websocket"},
-        )
-        self.assertEqual((status, body), (200, "realtime GET /abc/def"))
 
     def test_internal_paths_are_not_reachable(self):
         paths = [
