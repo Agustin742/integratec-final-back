@@ -373,6 +373,76 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     ).toBe(0);
   });
 
+  it('regrades from the stored weight snapshot after the activity weight changes', async () => {
+    const v1 = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+      score: 80,
+      feedback: 'Initial',
+    });
+    expect(v1.pointsAwarded).toBe(120);
+
+    await prisma.activity.update({
+      where: { id: ids.examActivity },
+      data: { weightMultiplier: new Prisma.Decimal('2.00') },
+    });
+
+    const noScoreChange = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+      score: 80,
+      feedback: 'Feedback only',
+      version: 1,
+    });
+    expect(noScoreChange.pointsAwarded).toBe(120);
+    expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(120);
+    expect(
+      await prisma.pointTransaction.count({
+        where: { classroomId: ids.classroom, studentId: ids.student },
+      }),
+    ).toBe(1);
+    const revision = await prisma.gradeRevision.findUniqueOrThrow({
+      where: { gradeId_version: { gradeId: v1.id, version: 2 } },
+    });
+    expect(revision.pointsDelta).toBe(0);
+    expect(revision.pointTransactionId).toBeNull();
+
+    // A score change after the weight change still uses the stored multiplier (1.00).
+    const scoreChange = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+      score: 60,
+      feedback: 'Lower score',
+      version: 2,
+    });
+    expect(scoreChange.pointsAwarded).toBe(90);
+    expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(90);
+  });
+
+  it('regrades from the stored type weight after the configured type weight changes', async () => {
+    await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+      score: 80,
+      feedback: 'Initial',
+    });
+
+    const holder = grades as unknown as { config: Record<string, unknown> };
+    const originalConfig = holder.config;
+    holder.config = { ...originalConfig, gradeWeightTp: 1, gradeWeightExam: 3 };
+    try {
+      const sameScore = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 80,
+        feedback: 'Feedback only',
+        version: 1,
+      });
+      expect(sameScore.pointsAwarded).toBe(120);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(120);
+
+      const changed = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 60,
+        feedback: 'Lower score',
+        version: 2,
+      });
+      expect(changed.pointsAwarded).toBe(90);
+      expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(90);
+    } finally {
+      holder.config = originalConfig;
+    }
+  });
+
   it('supports 0-to-positive regrade, subsequent compensation across 0, delta=0 skip, and negative balance 409', async () => {
     // 1. Initial grade with 0 score -> no PointTransaction, pointTransactionId = null
     const v1 = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
@@ -502,6 +572,10 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       { score: 50, feedback: 'x'.repeat(5001), pointsAwarded: 0, version: 1 },
       { score: 50, feedback: 'ok', pointsAwarded: -1, version: 1 },
       { score: 50, feedback: 'ok', pointsAwarded: 0, version: 0 },
+      { score: 50, feedback: 'ok', pointsAwarded: 0, version: 1, typeWeight: 0.05 },
+      { score: 50, feedback: 'ok', pointsAwarded: 0, version: 1, typeWeight: 10.01 },
+      { score: 50, feedback: 'ok', pointsAwarded: 0, version: 1, weightMultiplier: 0.4 },
+      { score: 50, feedback: 'ok', pointsAwarded: 0, version: 1, weightMultiplier: 3.1 },
     ]) {
       await expect(
         prisma.grade.create({
@@ -509,6 +583,8 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
             submissionId: ids.tpSubmission,
             graderId: ids.teacher,
             gradedAt: new Date(),
+            typeWeight: 1,
+            weightMultiplier: 1,
             ...badGrade,
           },
         }),

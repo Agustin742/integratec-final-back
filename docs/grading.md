@@ -6,7 +6,7 @@
 
 | Table | Purpose |
 |---|---|
-| `grades` | One row per `submission_id`: `score` (`0-100`), `feedback` (`1-5000` trimmed visible text), `points_awarded` (`>= 0`), nullable unique `point_transaction_id`, optimistic `version` (`>= 1`), `grader_id`, `graded_at` |
+| `grades` | One row per `submission_id`: `score` (`0-100`), `feedback` (`1-5000` trimmed visible text), `points_awarded` (`>= 0`), `type_weight` and `weight_multiplier` (weights snapshotted at the initial grade), nullable unique `point_transaction_id`, optimistic `version` (`>= 1`), `grader_id`, `graded_at` |
 | `grade_revisions` | Append-only history per `(grade_id, version)` storing `score`, `feedback`, `points_delta`, nullable unique `point_transaction_id`, and `grader_id` |
 
 All foreign keys use `ON DELETE RESTRICT`. `SubmissionResponseDto.status` (`submissions.dto.ts`) derives `'graded' | 'submitted'` from `grade !== null`.
@@ -31,6 +31,7 @@ All routes require a Bearer session and use the [shared error envelope](api-conv
 ## Weighted points conversion and ledger rules
 
 - Weights come from validated configuration ([`ApiConfig`](../apps/api/src/config/api-config.ts)): `GRADE_WEIGHT_TP` (default `1`) and `GRADE_WEIGHT_EXAM` (default `1.5`, strictly greater than `GRADE_WEIGHT_TP`), combined with `activity.weightMultiplier` (`0.50-3.00`).
+- **Weight snapshot:** The initial grade stores the `typeWeight` and `weightMultiplier` it used on `Grade`. Regrades compute points from that snapshot, never from the current activity weight or `GRADE_WEIGHT_*` configuration, so a regrade with an unchanged score never moves points.
 - Calculation uses exact integer ten-thousandths arithmetic and half-up rounding (`Math.trunc((score * typeHundredths * activityHundredths + 5000) / 10000)`) so binary floating-point drift cannot misround boundary scores.
 - **Zero-point skip:** When initial `pointsAwarded === 0`, no `PointTransaction` is inserted (`pointTransactionId = null`). If a later regrade increases points above zero (`pointTransactionId === null && delta > 0`), `PointsLedgerService.credit` creates the initial `EARNING` row and links it on both `Grade` and `GradeRevision`.
 - **Regrade compensation:** When `delta !== 0` after an initial earning exists, `PointsLedgerService.compensate` appends a signed `COMPENSATION` entry (`sourceType: 'submission_grade'`, `sourceId: grade.id`), throwing `409` if `balance + delta < 0`. When `delta === 0`, no ledger entry is written.

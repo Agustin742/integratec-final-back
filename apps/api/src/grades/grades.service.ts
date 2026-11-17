@@ -45,6 +45,8 @@ type LockedGradeRow = {
   score: number;
   feedback: string;
   pointsAwarded: number;
+  typeWeight: Prisma.Decimal | number | string;
+  weightMultiplier: Prisma.Decimal | number | string;
   pointTransactionId: string | null;
   version: number;
   gradedAt: Date | string;
@@ -280,6 +282,8 @@ export class GradesService {
             score: dto.score,
             feedback: dto.feedback,
             pointsAwarded,
+            typeWeight: new Prisma.Decimal(typeWeight.toFixed(2)),
+            weightMultiplier: new Prisma.Decimal(activity.weightMultiplier.toString()),
             pointTransactionId,
             version: 1,
             gradedAt: now,
@@ -370,11 +374,11 @@ export class GradesService {
         );
       }
 
-      const typeWeight = resolveActivityTypeWeight(mapActivityType(activity.type), this.config);
+      // Regrades reuse the weights snapshotted at the initial grade, never current activity/config.
       const newPoints = calculateWeightedGradePoints(
         dto.score,
-        typeWeight,
-        activity.weightMultiplier,
+        currentGrade.typeWeight,
+        currentGrade.weightMultiplier,
       );
       const delta = newPoints - currentGrade.pointsAwarded;
       const nextVersion = currentGrade.version + 1;
@@ -686,6 +690,8 @@ export class GradesService {
         "score",
         "feedback",
         "points_awarded" AS "pointsAwarded",
+        "type_weight" AS "typeWeight",
+        "weight_multiplier" AS "weightMultiplier",
         "point_transaction_id" AS "pointTransactionId",
         "version",
         "graded_at" AS "gradedAt",

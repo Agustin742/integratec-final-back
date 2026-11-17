@@ -8,6 +8,8 @@ CREATE TABLE "grades" (
     "score" INTEGER NOT NULL,
     "feedback" TEXT NOT NULL,
     "points_awarded" INTEGER NOT NULL,
+    "type_weight" DECIMAL(4,2) NOT NULL,
+    "weight_multiplier" DECIMAL(3,2) NOT NULL,
     "point_transaction_id" UUID,
     "version" INTEGER NOT NULL DEFAULT 1,
     "graded_at" TIMESTAMPTZ(6) NOT NULL,
@@ -80,6 +82,14 @@ CHECK (char_length(btrim("feedback")) BETWEEN 1 AND 5000);
 ALTER TABLE "grades"
 ADD CONSTRAINT "grades_points_awarded_check"
 CHECK ("points_awarded" >= 0);
+
+ALTER TABLE "grades"
+ADD CONSTRAINT "grades_type_weight_check"
+CHECK ("type_weight" BETWEEN 0.1 AND 10);
+
+ALTER TABLE "grades"
+ADD CONSTRAINT "grades_weight_multiplier_check"
+CHECK ("weight_multiplier" BETWEEN 0.5 AND 3);
 
 ALTER TABLE "grades"
 ADD CONSTRAINT "grades_version_check"

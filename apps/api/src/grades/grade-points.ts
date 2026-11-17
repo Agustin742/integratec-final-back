@@ -59,7 +59,7 @@ export function resolveActivityTypeWeight(
  */
 export function calculateWeightedGradePoints(
   score: number,
-  typeWeight: number,
+  typeWeight: number | Prisma.Decimal | string,
   activityWeightMultiplier: number | Prisma.Decimal | string,
 ): number {
   if (!Number.isInteger(score) || score < GRADE_SCORE_MIN || score > GRADE_SCORE_MAX) {

@@ -785,6 +785,9 @@ model Grade {
   score              Int
   feedback           String
   pointsAwarded      Int      @map("points_awarded")
+  /// Weights used at the initial grade; regrades reuse them so later activity/config edits never move points.
+  typeWeight         Decimal  @map("type_weight") @db.Decimal(4, 2)
+  weightMultiplier   Decimal  @map("weight_multiplier") @db.Decimal(3, 2)
   pointTransactionId String?  @unique @map("point_transaction_id") @db.Uuid
   version            Int      @default(1)
   gradedAt           DateTime @map("graded_at") @db.Timestamptz(6)
