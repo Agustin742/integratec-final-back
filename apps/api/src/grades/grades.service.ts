@@ -8,13 +8,15 @@ import {
 } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
-import { RequestConflictException } from '../http/conflict';
+import { conflict } from '../http/conflict';
+import { toIsoString } from '../http/iso-string';
 import { RequestValidationException } from '../http/validation';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation } from '../prisma/unique-violation';
 import {
   calculateWeightedGradePoints,
   resolveActivityTypeWeight,
@@ -93,14 +95,6 @@ const QUEUE_SELECT = {
 
 type QueueRow = Prisma.SubmissionGetPayload<{ select: typeof QUEUE_SELECT }>;
 
-function conflict(field: string, message: string): RequestConflictException {
-  return new RequestConflictException([{ field, messages: [message] }]);
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
-}
-
 function mapActivityType(raw: ActivityType | string): ActivityType {
   switch (raw) {
     case ActivityType.TP:
@@ -125,10 +119,6 @@ function mapActivityFormat(raw: ActivityFormat | string): ActivityFormat {
     default:
       throw new Error(`Unsupported activity format: ${String(raw)}`);
   }
-}
-
-function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function assertScoreWithinMaxScore(score: number, maxScore: number): void {

@@ -11,3 +11,8 @@ export class RequestConflictException extends ConflictException {
     super('Request conflicts with the current state');
   }
 }
+
+/** Builds a 409 whose single detail names the blocked `field` and the user-facing reason. */
+export function conflict(field: string, message: string): RequestConflictException {
+  return new RequestConflictException([{ field, messages: [message] }]);
+}

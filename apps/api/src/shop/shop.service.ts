@@ -6,6 +6,7 @@ import { paginated, toSkipTake, type Paginated } from '../http/pagination/pagina
 import { parseSort } from '../http/pagination/sort';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation } from '../prisma/unique-violation';
 import { ShopPurchaseRateLimiter } from './shop-purchase-rate-limiter.service';
 import {
   parseIdempotencyKeyHeader,
@@ -115,10 +116,6 @@ function toClassroomItemDto(row: ClassroomItemRow): ClassroomItemDto {
     state: row.state,
     createdAt: row.createdAt.toISOString(),
   };
-}
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
 /**
@@ -380,7 +377,7 @@ export class ShopService {
         };
       });
     } catch (error) {
-      if (isUniqueConstraintError(error)) {
+      if (isUniqueViolation(error)) {
         throw new ConflictException('Shop item is already owned');
       }
       throw error;

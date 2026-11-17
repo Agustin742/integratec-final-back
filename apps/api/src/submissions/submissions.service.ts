@@ -8,11 +8,12 @@ import {
 } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
-import { RequestConflictException } from '../http/conflict';
+import { conflict } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
+import { isUniqueViolation } from '../prisma/unique-violation';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
 import {
   type AcceptedSubmissionFile,
@@ -101,14 +102,6 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
       position: file.position,
     })),
   };
-}
-
-function conflict(field: string, message: string): RequestConflictException {
-  return new RequestConflictException([{ field, messages: [message] }]);
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
 /**

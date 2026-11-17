@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PointEntryKind, Prisma } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
+import { toIsoString } from '../http/iso-string';
 import { paginated, toSkipTake } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { PrismaService } from '../prisma/prisma.service';
@@ -130,10 +131,6 @@ function mapEntryKind(raw: PointEntryKind | string): PointEntryKind {
     default:
       throw new Error(`Unsupported point entry kind: ${String(raw)}`);
   }
-}
-
-function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function toTransactionDto(row: PointRow): PointTransactionDto {
