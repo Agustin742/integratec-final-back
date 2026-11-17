@@ -114,3 +114,9 @@ variable "password_reset_url_base" {
     error_message = "password_reset_url_base must be an absolute https URL without query string or fragment, such as https://app.example.com/reset-password."
   }
 }
+
+variable "database_backup_retention_period" {
+  description = "Days of automated RDS backups (point-in-time restore window). Defaults to 1 because the AWS Free plan account rejects longer retention (FreeTierRestrictionError); raise it after upgrading the account plan."
+  type        = number
+  default     = 1
+}

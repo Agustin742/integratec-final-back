@@ -93,8 +93,8 @@ run "instance_is_private_encrypted_and_protected" {
   }
 
   assert {
-    condition     = module.database.instance_settings.backup_retention_period == 7
-    error_message = "Backups must be retained for 7 days by default."
+    condition     = module.database.instance_settings.backup_retention_period == 1
+    error_message = "Prod must retain backups for 1 day by default, the limit the AWS Free plan accepts."
   }
 
   assert {
@@ -498,5 +498,18 @@ run "accepts_backup_retention_of_35" {
   assert {
     condition     = aws_db_instance.this.backup_retention_period == 35
     error_message = "The retention of 35 days must be applied."
+  }
+}
+
+run "prod_backup_retention_can_be_raised_on_a_paid_plan" {
+  command = plan
+
+  variables {
+    database_backup_retention_period = 7
+  }
+
+  assert {
+    condition     = module.database.instance_settings.backup_retention_period == 7
+    error_message = "The prod database_backup_retention_period variable must reach the database module."
   }
 }

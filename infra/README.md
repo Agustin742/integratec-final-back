@@ -174,7 +174,7 @@ Read `Status` and `StandardOutputContent`:
 | Public IPv4 (Elastic IP) | about USD 0.005 per hour, charged even when attached | about USD 3.7 |
 | RDS `db.t4g.micro`, PostgreSQL, single-AZ (#60) | about USD 0.016 per hour, 730 hours | about USD 12 |
 | RDS gp3 storage, 20 GiB (#60) | about USD 0.115 per GiB-month | about USD 2.3 |
-| RDS backup storage (#60) | free up to the size of the database; 7 days of retention are expected to stay within it | about USD 0 |
+| RDS backup storage (#60) | free up to the size of the database; 1 day of retention (the prod default) is expected to stay within it | about USD 0 |
 | Secrets Manager secret for the master password (#60) | about USD 0.40 per secret per month | about USD 0.4 |
 | Total | | about USD 35 |
 
@@ -224,7 +224,7 @@ The URL and the password are never written to images, Git, logs or the `realtime
 
 | Setting | Value |
 |---------|-------|
-| Automated backups | 7 days of retention, which also enables point-in-time restore. |
+| Automated backups | 1 day of retention in prod (`database_backup_retention_period`), which also enables point-in-time restore. The AWS Free plan account rejects longer retention with `FreeTierRestrictionError`; after upgrading the account plan, raise the variable (the module accepts 1 to 35 days). |
 | Backup window | 06:00-07:00 UTC (03:00-04:00 in Argentina). |
 | Maintenance window | Sunday 08:00-09:00 UTC. |
 | Snapshots | Tags are copied to snapshots. |
