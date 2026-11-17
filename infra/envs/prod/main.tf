@@ -53,6 +53,24 @@ module "storage" {
   name_prefix = "${var.project}-${local.environment}"
 }
 
+# Least-privilege runtime access of the host role (ECR pull, secrets, config, files
+# bucket, log writes) and the service log groups.
+module "runtime_access" {
+  source = "../../modules/runtime_access"
+
+  name_prefix = "${var.project}-${local.environment}"
+  role_name   = module.host.instance_role_name
+
+  ecr_repository_arns = module.registry.repository_arns
+  # The RDS master secret is always managed (manage_master_user_password is asserted
+  # in database_instance.tftest.hcl); compact only keeps the plan working when a test
+  # mock leaves the managed secret block empty.
+  secret_arns             = compact(concat(values(module.app_config.secret_arns), [module.database.master_user_secret_arn]))
+  ssm_parameter_arns      = flatten(values(module.app_config.parameter_arns))
+  ssm_parameter_path_arns = values(module.app_config.parameter_path_arns)
+  s3_bucket_arn           = module.storage.bucket_arn
+}
+
 module "app_config" {
   source = "../../modules/app_config"
 

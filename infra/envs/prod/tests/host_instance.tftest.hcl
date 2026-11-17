@@ -117,7 +117,7 @@ run "elastic_ip_is_attached_to_the_instance" {
   }
 }
 
-run "instance_role_trusts_ec2_and_only_has_ssm_core" {
+run "instance_role_trusts_ec2_and_only_has_ssm_core_managed_policy" {
   command = apply
 
   assert {
@@ -131,7 +131,7 @@ run "instance_role_trusts_ec2_and_only_has_ssm_core" {
 
   assert {
     condition     = module.host.instance_role_managed_policy_arns == ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
-    error_message = "The role must have exactly the AmazonSSMManagedInstanceCore managed policy."
+    error_message = "The role must have exactly the AmazonSSMManagedInstanceCore managed policy; deployment permissions are one inline policy from modules/runtime_access, never extra managed policies."
   }
 
   assert {
@@ -235,7 +235,7 @@ run "user_data_does_not_touch_ssh_or_install_caddy" {
 
   assert {
     condition     = !strcontains(lower(module.host.user_data), "caddy")
-    error_message = "Caddy is installed by a later task, not by this user data."
+    error_message = "Caddy runs as a Compose service, not from this user data."
   }
 }
 
@@ -243,8 +243,9 @@ run "host_module_has_no_extra_iam_or_key_resources" {
   command = plan
 
   # Static guard (the var.project reference only satisfies the test framework's
-  # requirement that a condition refer to configuration): deployment permissions
-  # belong to #61, and the host has no SSH key.
+  # requirement that a condition refer to configuration): the host module itself
+  # declares no policies (deployment permissions live in modules/runtime_access,
+  # see runtime_access.tftest.hcl), and the host has no SSH key.
   assert {
     condition = var.project != "" && length([
       for f in fileset("../../modules/host", "*.tf") : f

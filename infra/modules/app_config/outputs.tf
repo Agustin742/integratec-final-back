@@ -31,6 +31,16 @@ output "parameter_arns" {
   }
 }
 
+output "parameter_path_arns" {
+  description = "ARN of the config path of each service (parameter/<prefix>/config/<service>), keyed by service name, for ssm:GetParametersByPath policies."
+  value = {
+    # A parameter ARN is the path ARN plus "/<ENV_NAME>", so trimming that suffix yields the path ARN.
+    for service in keys(local.config) : service => [
+      for k, p in aws_ssm_parameter.this : trimsuffix(p.arn, "/${element(split("/", p.name), length(split("/", p.name)) - 1)}") if local.parameters[k].service == service
+    ][0]
+  }
+}
+
 output "parameters" {
   description = "Name, type and value of each non-secret config parameter, keyed by <service>/<ENV_NAME>, for tests and review."
   value       = { for k, p in aws_ssm_parameter.this : k => { name = p.name, type = p.type, value = p.value } }

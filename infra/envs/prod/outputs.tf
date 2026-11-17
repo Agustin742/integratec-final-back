@@ -113,6 +113,11 @@ output "app_config_parameter_arns" {
   value       = module.app_config.parameter_arns
 }
 
+output "log_group_names" {
+  description = "CloudWatch log group of each container (api, realtime, caddy), keyed by service; the Compose awslogs-group option uses them."
+  value       = module.runtime_access.log_group_names
+}
+
 output "storage_bucket_name" {
   description = "Name of the private S3 bucket for application files (student submissions and materials); also published to the API as S3_BUCKET."
   value       = module.storage.bucket_name

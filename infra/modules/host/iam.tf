@@ -1,6 +1,7 @@
-# Instance role of the host. It only carries SSM Session Manager access: the
-# permissions to pull from ECR, read secrets and write logs belong to the
-# deployment issue (#61), which attaches them to this role by name.
+# Instance role of the host. This module only attaches SSM Session Manager access
+# (AmazonSSMManagedInstanceCore). The deployment permissions (ECR pull, secrets,
+# config, files bucket, log writes) live in modules/runtime_access, which attaches
+# one inline policy to this role by name (instance_role_name).
 resource "aws_iam_role" "host" {
   name = "${var.name_prefix}-host-role"
 
