@@ -9,6 +9,8 @@ import type { EmailMessage, EmailPort } from './email.port';
 export class InMemoryEmailAdapter implements EmailPort {
   private readonly logger = new Logger(InMemoryEmailAdapter.name);
   private readonly messages: EmailMessage[] = [];
+  // Process-local fake only; a production adapter must persist deduplication at its boundary.
+  private readonly acceptedKeys = new Set<string>();
 
   /** Messages recorded so far (a copy; mutating it does not affect the adapter). */
   get sent(): readonly EmailMessage[] {
@@ -16,6 +18,10 @@ export class InMemoryEmailAdapter implements EmailPort {
   }
 
   send(message: EmailMessage): Promise<void> {
+    if (message.idempotencyKey !== undefined) {
+      if (this.acceptedKeys.has(message.idempotencyKey)) return Promise.resolve();
+      this.acceptedKeys.add(message.idempotencyKey);
+    }
     this.messages.push({ ...message });
     this.logger.log({
       operation: 'email.send',
@@ -27,5 +33,6 @@ export class InMemoryEmailAdapter implements EmailPort {
 
   clear(): void {
     this.messages.length = 0;
+    this.acceptedKeys.clear();
   }
 }

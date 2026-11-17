@@ -7,7 +7,7 @@ import { NotificationRequestedHandler } from './notification-requested.handler';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 
-/** Durable producer API and session-protected notification center. */
+/** Durable producer API, session-protected notification center and email channel. */
 @Module({
   imports: [PrismaModule, AccessModule, OutboxModule],
   controllers: [NotificationsController],

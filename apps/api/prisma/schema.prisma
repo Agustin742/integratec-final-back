@@ -149,6 +149,8 @@ model User {
   forumPosts               ActivityForumPost[]   @relation("ActivityForumPostAuthor")
   equippedItems            EquippedItem[]
   submissions              Submission[]
+  authoredAnnouncements    Announcement[]        @relation("AnnouncementAuthor")
+  mentions                 Mention[]             @relation("MentionedUsers")
 
   @@map("users")
 }
@@ -280,6 +282,7 @@ model Classroom {
   classroomItems     ClassroomItem[]
   studentPurchases   StudentPurchase[]
   activities         Activity[]
+  announcements      Announcement[]
   studyMaterials     StudyMaterial[]
   equippedItems      EquippedItem[]
 
@@ -766,6 +769,43 @@ model ClassroomItem {
   @@index([classroomId, state])
   @@index([shopItemId])
   @@map("classroom_items")
+}
+
+/// Bulletin-board notice owned by a classroom; removal is logical (`deletedAt`)
+/// and announcements authored by users who later leave are preserved.
+model Announcement {
+  id          String    @id @default(uuid()) @db.Uuid
+  classroomId String    @map("classroom_id") @db.Uuid
+  authorId    String    @map("author_id") @db.Uuid
+  title       String    @db.VarChar(200)
+  content     String    @db.Text
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  author    User      @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([classroomId, deletedAt, createdAt, id])
+  @@index([authorId])
+  @@map("announcements")
+}
+
+/// Resolved @ reference in a source resource (announcement, later message).
+/// The source follows the PointTransaction pattern (type + id columns without a
+/// shared polymorphic foreign key); the mentioned user is a declared foreign key.
+model Mention {
+  id              String   @id @default(uuid()) @db.Uuid
+  sourceType      String   @map("source_type") @db.VarChar(40)
+  sourceId        String   @map("source_id") @db.Uuid
+  mentionedUserId String   @map("mentioned_user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  mentionedUser User @relation("MentionedUsers", fields: [mentionedUserId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId, mentionedUserId])
+  @@index([mentionedUserId])
+  @@map("mentions")
 }
 
 /// One equipped purchase per (classroom, student, slot). Classroom-scoped so an accessory
