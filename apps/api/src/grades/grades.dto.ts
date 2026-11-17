@@ -130,7 +130,8 @@ export class GradeResponseDto {
     type: String,
     format: 'uuid',
     nullable: true,
-    description: 'Initial earning ledger transaction id, or null when 0 points were awarded.',
+    description:
+      'Id of the initial earning ledger entry. It is never replaced by later regrade entries (even after a regrade to 0 points), and is null only when the first award was 0 points and no later regrade has credited points.',
   })
   pointTransactionId!: string | null;
 
