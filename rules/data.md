@@ -32,6 +32,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
 | ClassroomItem | Classroom-wide item unlocked after purchasing a `classroom_item`, with state (`unlocked`, `active`, `disabled`) | Belongs to a classroom; references a ShopItem and its originating StudentPurchase |
 | StudentPurchase | Immutable student purchase record storing `pricePaid`, `idempotencyKey`, and debit transaction link | Belongs to a classroom and student; references a ShopItem and PointTransaction |
+| EquippedItem | Equipped purchase in one slot (`head`, `face`, `back`, `desk_decor` derived from `ShopItem.metadata.slot`) | Belongs to a classroom and student; references a ShopItem; unique per (classroom, student, slot) |
 | Pet / PetAccessory | The classroom's single pet and the accessories it owns or has equipped | Pet belongs to a classroom |
 | Streak | Current and best streak per student, with last qualifying day | Belongs to a student |
 | Announcement | Bulletin-board notice | Belongs to a classroom; has an author |
@@ -70,6 +71,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 - A ClassroomShopItem **MUST** be unique per (classroom, shop item), and `priceOverride`, when set, **MUST** be positive.
 - A StudentPurchase **MUST** be unique per (classroom, student, shop item) and per (classroom, student, idempotency key).
 - A ClassroomItem **MUST** be unique per (classroom, shop item).
+- An EquippedItem **MUST** be unique per (classroom, student, slot); equipment **MUST NOT** cross classrooms (a purchase is only equipable in its classroom).
 - Streak **MUST** have one row per student, and the qualifying-day record **MUST** be unique per (student, local day).
 - Mention **MUST** be unique per (source, mentioned user).
 - AllowedMaterial **MUST** be unique per (classroom, material).
@@ -115,7 +117,7 @@ Per [master §6.4](../master-document.md#64-modelo-de-información-general): eve
 - Final table and column names, enum values, and field limits.
 - Exact shape of the join code: decided in issue #14 (D7) as a single `Invitation` entity with a `kind` discriminator (`email` vs `join_code`) plus `JoinCodeUsage`.
 - Medal catalog.
-- Resubmission history; grade history is decided as `Grade` + append-only `GradeRevision` (issue #32, [D17](../docs/technical-justification.md#d17-submission-grading-weighted-points-conversion-and-grade-revision-history)).
+- Resubmission history; grade history is decided as `Grade` + append-only `GradeRevision` (issue #32, [D18](../docs/technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history)).
 - Message, bot-conversation, and file retention; whether bot conversations are persisted.
 - School, classroom, and account deletion effects.
 - Whether one user may hold a school path and an independent-teacher path under one account.

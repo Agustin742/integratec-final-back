@@ -63,6 +63,8 @@ describe('loadApiConfig', () => {
       shopPurchaseRateLimitMaxAttempts: 20,
       gradeWeightTp: 1,
       gradeWeightExam: 1.5,
+      equipRateLimitWindowSeconds: 60,
+      equipRateLimitMaxAttempts: 20,
     });
   });
 

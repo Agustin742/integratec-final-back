@@ -98,6 +98,49 @@ describe('OpenAPI document', () => {
     expect(schemas.ErrorCode).toMatchObject({ enum: Object.values(ERROR_CODES) });
   });
 
+  it('publishes private material upload, discovery, download and logical-removal contracts', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+    const root = '/classrooms/{id}/materials';
+    for (const [path, method, success] of [
+      [root, 'get', '200'],
+      [root, 'post', '201'],
+      [`${root}/{materialId}/download`, 'get', '200'],
+      [`${root}/{materialId}`, 'delete', '204'],
+    ] as const) {
+      const operation = doc.paths[path]?.[method];
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      for (const status of [success, '401', '403', '404']) {
+        expect(operation?.responses[status]).toBeDefined();
+      }
+    }
+    expect(doc.paths[root]?.post?.requestBody).toMatchObject({
+      content: {
+        'multipart/form-data': {
+          schema: {
+            required: ['file'],
+            properties: { file: { type: 'string', format: 'binary' } },
+          },
+        },
+      },
+    });
+    expect(doc.paths[root]?.post?.responses['413']).toBeDefined();
+    expect(doc.paths[root]?.post?.responses['503']).toBeDefined();
+    const schema = doc.components?.schemas?.MaterialDto;
+    expect(schema && 'properties' in schema && Object.keys(schema.properties ?? {})).toEqual([
+      'id',
+      'classroomId',
+      'authorId',
+      'filename',
+      'contentType',
+      'sizeBytes',
+      'createdAt',
+    ]);
+    expect(doc.components?.schemas?.MaterialDownloadDto).toMatchObject({
+      required: ['url', 'expiresInSeconds'],
+    });
+  });
+
   it('publishes authenticated notification navigation and read contracts without storage internals', async () => {
     app = await createApp('test');
     const doc = buildOpenApiDocument(app);

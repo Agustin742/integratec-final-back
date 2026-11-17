@@ -1,5 +1,6 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { AccessModule } from './access/access.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
 import { AuthModule } from './auth/auth.module';
 import { ClassroomsModule } from './classrooms/classrooms.module';
 import { ClassroomContextDeliveryModule } from './classrooms/context-delivery.module';
@@ -14,6 +15,8 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PointsModule } from './points/points.module';
 import { ShopModule } from './shop/shop.module';
 import { GradesModule } from './grades/grades.module';
+import { MaterialsModule } from './materials/materials.module';
+import { EquipmentModule } from './equipment/equipment.module';
 
 @Module({
   controllers: [HealthController],
@@ -32,10 +35,13 @@ export class AppModule {
         ClassroomsModule,
         ClassroomContextDeliveryModule,
         NotificationsModule,
+        AnnouncementsModule,
         SubmissionsModule,
         PointsModule,
         ShopModule,
         GradesModule,
+        MaterialsModule,
+        EquipmentModule,
       ],
     };
   }

@@ -3,7 +3,7 @@ import type { ErrorDetail } from '../http/error-envelope';
 import { RequestValidationException } from '../http/validation';
 import { AvatarDto, BASE_OPTIONS } from './avatar.dto';
 
-/** Future shop adapter must verify persisted ownership before allowing paid options. */
+/** Base-avatar access port; classroom-scoped paid equipment ownership is verified in `EquipmentService`. */
 export abstract class AvatarAccessPort {
   abstract assertCanUse(userId: string, appearance: AvatarDto): Promise<void>;
 }
