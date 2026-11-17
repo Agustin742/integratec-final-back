@@ -46,13 +46,14 @@ Activities, submissions, and grades are persisted, classroom-scoped records. The
 
 ## Grades and weighted points
 
-- Only staff with authority over the classroom may grade. The server **MUST** reject a grade for a submission outside the actor's authority and **MUST** validate the value against the activity's grading scale (grades use a **0-100** scale).
+- Only staff with authority over the classroom may grade. The server **MUST** reject a grade for a submission outside the actor's authority and **MUST** validate the value against the activity's grading scale (grades use a **0-100** scale and **MUST NOT** exceed the activity's current `maxScore`; see [D18](../docs/technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history)).
 - A grade belongs to exactly one submission; regrading updates it and **MUST** keep a history sufficient to correct points (see below).
 - **A grade is converted to points on the server, weighted by activity type.** An exam is worth more than a TP; the weights are configuration values, not constants in code, and their numeric values are deferred to implementation.
 - The conversion and the resulting ledger entry **MUST** happen in the same transaction as the grade, so a grade without its points, or points without a grade, cannot persist.
 - Publishing the grade to the student and linked parents, and notifying them, happens after the commit; see [Communication and notifications](./communication-and-notifications.md).
 - Regrading **MUST** adjust points through compensating ledger entries, never by editing past ones; see [Points and shop](./points-and-shop.md).
-- A grade for a student who has left the classroom is preserved and attributed.
+- A grade for a student who has left the classroom is preserved and attributed, but grading or regrading that student is refused with `409` regardless of the score, and the grading queue excludes them ([D18](../docs/technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history)).
+- Regrades reuse the weights snapshotted at the initial grade, and a downward regrade recovers points only up to the student's available balance; the unrecovered remainder is recorded on the revision and never collected later ([D18](../docs/technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history)).
 
 ## Review workflow for teachers
 

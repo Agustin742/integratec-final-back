@@ -25,8 +25,8 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | Activity | TP or exam; format file or multiple choice; due date or exam window | Belongs to a classroom |
 | Question / Option | Multiple-choice question and its options, with correct marking | Belong to an activity |
 | Submission | A student's work for an activity (files or answers); status (`submitted \| graded`) is derived from `Grade` | Joins Activity and student |
-| Grade | Score (`0-100`), feedback, weighted points, and optimistic `version` for a submission | One per submission; references the initial earning ledger entry when points > 0 |
-| GradeRevision | Immutable history of initial grading and each regrade (`pointsDelta`) | Belongs to Grade (`(grade, version)` unique); references the earning/compensating ledger entry when points change |
+| Grade | Score (`0-100`, within the activity `maxScore`), feedback, net weighted points, the weight snapshot, and optimistic `version` for a submission | One per submission; references the initial earning ledger entry when points > 0 |
+| GradeRevision | Immutable history of initial grading and each regrade (`pointsDelta`, `pointsUnrecovered`) | Belongs to Grade (`(grade, version)` unique); references the earning/compensating ledger entry when points change |
 | PointsTransaction | Immutable ledger entry of points (earning, purchase, correction) | Belongs to a student; references its source |
 | ShopItem | Server-owned catalog entry: code, name, kind (`classroom_item`, `avatar_accessory`, `desk_upgrade`, `pet_accessory`), default price, `isActive`, `isImplemented`, metadata | Referenced by classroom overrides, purchases, and classroom items |
 | ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
