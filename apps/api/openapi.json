@@ -2542,6 +2542,348 @@
         "tags": ["activities"]
       }
     },
+    "/classrooms/{id}/activities/{activityId}/forum/threads": {
+      "post": {
+        "description": "Enrolled students and teaching staff only. Creates a thread scoped to the activity; the first post is the question. Bodies are trimmed and bounded (2000 chars).",
+        "operationId": "ActivityForumController_createThread",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateForumThreadDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForumThreadDetailDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role (for example a parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom, activity or thread.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Create a query thread",
+        "tags": ["activities"]
+      },
+      "get": {
+        "description": "Enrolled students and teaching staff only. Paginated, newest first by default (`sort=createdAt` or `-createdAt`); `id` is the tiebreaker. Each item carries the first post body (the question) and the reply count. Students only see threads of published activities.",
+        "operationId": "ActivityForumController_listThreads",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (`createdAt` or `-createdAt`).",
+            "schema": {
+              "default": "-createdAt",
+              "type": "string",
+              "enum": ["createdAt", "-createdAt"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of query threads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ForumThreadSummaryDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom, activity or thread.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List query threads",
+        "tags": ["activities"]
+      }
+    },
+    "/classrooms/{id}/activities/{activityId}/forum/threads/{threadId}/posts": {
+      "get": {
+        "description": "Enrolled students and teaching staff only. Paginated, oldest first by default (`sort=createdAt` or `-createdAt`); `id` is the tiebreaker.",
+        "operationId": "ActivityForumController_listPosts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "threadId",
+            "required": true,
+            "in": "path",
+            "description": "Thread UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (`createdAt` or `-createdAt`).",
+            "schema": {
+              "default": "createdAt",
+              "type": "string",
+              "enum": ["createdAt", "-createdAt"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of thread posts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ForumPostDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom, activity or thread.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List the posts of one thread",
+        "tags": ["activities"]
+      },
+      "post": {
+        "description": "Enrolled students and teaching staff only. When a teacher-level member replies in someone else's thread, one `activity_forum_reply` notification request is recorded for the thread author in the same transaction, so the notice is delivered only after the reply commits.",
+        "operationId": "ActivityForumController_createPost",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "activityId",
+            "required": true,
+            "in": "path",
+            "description": "Activity UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "threadId",
+            "required": true,
+            "in": "path",
+            "description": "Thread UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/CreateForumPostDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ForumPostDto" } }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom but insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or out-of-scope classroom, activity or thread.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Reply inside a thread",
+        "tags": ["activities"]
+      }
+    },
     "/classrooms/{id}/context-events": {
       "get": {
         "operationId": "ClassroomContextEventsController_connect",
@@ -3619,7 +3961,13 @@
           "id": { "type": "string", "format": "uuid" },
           "kind": {
             "type": "string",
-            "enum": ["activity_published", "grade_posted", "announcement", "mention"]
+            "enum": [
+              "activity_published",
+              "grade_posted",
+              "announcement",
+              "mention",
+              "activity_forum_reply"
+            ]
           },
           "resourceId": {
             "type": "string",
@@ -4437,6 +4785,60 @@
             "items": { "$ref": "#/components/schemas/QuestionInputDto" }
           }
         }
+      },
+      "CreateForumThreadDto": {
+        "type": "object",
+        "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } },
+        "required": ["body"]
+      },
+      "ForumPostDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "threadId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "body": {
+            "type": "string",
+            "description": "Plain text; the server trims and bounds it."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "threadId", "authorId", "body", "createdAt"]
+      },
+      "ForumThreadDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "posts": {
+            "description": "Only the posts created by this request.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ForumPostDto" }
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "activityId", "authorId", "posts", "createdAt"]
+      },
+      "ForumThreadSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "activityId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "firstPostBody": {
+            "type": "string",
+            "description": "Body of the first post (the original question)."
+          },
+          "replyCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "activityId", "authorId", "firstPostBody", "replyCount", "createdAt"]
+      },
+      "CreateForumPostDto": {
+        "type": "object",
+        "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } },
+        "required": ["body"]
       },
       "ClassroomPanelKey": {
         "type": "string",
