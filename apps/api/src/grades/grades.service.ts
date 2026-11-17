@@ -398,7 +398,22 @@ export class GradesService {
         currentGrade.typeWeight,
         currentGrade.weightMultiplier,
       );
-      const delta = newPoints - currentGrade.pointsAwarded;
+      // `pointsAwarded` is the net credited and always >= the points of the stored score; the gap is
+      // what a capped regrade previously waived. Waived points are never collected later:
+      //  - target >= awarded: credit the positive difference;
+      //  - prevPoints <= target < awarded (includes the same score): no ledger movement;
+      //  - target < prevPoints: decrease by target - prevPoints, capped at the available balance.
+      const prevPoints = calculateWeightedGradePoints(
+        currentGrade.score,
+        currentGrade.typeWeight,
+        currentGrade.weightMultiplier,
+      );
+      let delta = 0;
+      if (newPoints >= currentGrade.pointsAwarded) {
+        delta = newPoints - currentGrade.pointsAwarded;
+      } else if (newPoints < prevPoints) {
+        delta = newPoints - prevPoints;
+      }
       const nextVersion = currentGrade.version + 1;
 
       let nextGradePointTransactionId = currentGrade.pointTransactionId;

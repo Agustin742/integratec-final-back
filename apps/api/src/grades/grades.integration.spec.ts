@@ -607,6 +607,118 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       expect(rev2.pointTransactionId).toBeNull();
     });
 
+    describe('after a waiver (never recover waived points)', () => {
+      // 120 pts, spend 80 -> balance 40; regrade to score 40 (60 pts): applied -40, unrecovered 20, awarded 80.
+      async function waived() {
+        const v1 = await gradeExam80();
+        await shop.purchase(ids.student, ids.classroom, { shopItemId: ids.shopItem }, 'waive');
+        const v2 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 40,
+          feedback: 'Waived',
+          version: 1,
+        });
+        expect(v2.pointsAwarded).toBe(80);
+        expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+        return v1;
+      }
+
+      async function entryCount() {
+        return prisma.pointTransaction.count({
+          where: { classroomId: ids.classroom, studentId: ids.student },
+        });
+      }
+
+      async function lastRevision(gradeId: string, version: number) {
+        return prisma.gradeRevision.findUniqueOrThrow({
+          where: { gradeId_version: { gradeId, version } },
+        });
+      }
+
+      it('a same-score feedback-only regrade moves no points even after new earnings', async () => {
+        const v1 = await waived();
+        await ledger.credit({
+          classroomId: ids.classroom,
+          studentId: ids.student,
+          amount: 50,
+          sourceType: 'activity_bonus',
+          sourceId: randomUUID(),
+          reason: 'Newly earned',
+        });
+        const before = await entryCount();
+
+        const v3 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 40,
+          feedback: 'Only feedback',
+          version: 2,
+        });
+
+        expect(v3.pointsAwarded).toBe(80);
+        expect(await entryCount()).toBe(before);
+        expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(50);
+        const rev = await lastRevision(v1.id, 3);
+        expect([rev.pointsDelta, rev.pointsUnrecovered, rev.pointTransactionId]).toEqual([
+          0,
+          0,
+          null,
+        ]);
+      });
+
+      it('an upward regrade first absorbs what was already credited', async () => {
+        const v1 = await waived();
+
+        // 52 * 1.5 = 78 pts: prev (60) <= 78 < awarded (80) -> no ledger write
+        const v3 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 52,
+          feedback: 'Partly back up',
+          version: 2,
+        });
+        expect(v3.pointsAwarded).toBe(80);
+        expect(await entryCount()).toBe(3);
+        expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+        const rev3 = await lastRevision(v1.id, 3);
+        expect([rev3.pointsDelta, rev3.pointsUnrecovered, rev3.pointTransactionId]).toEqual([
+          0,
+          0,
+          null,
+        ]);
+
+        // back to 120 pts: only target - awarded = +40 is credited
+        const v4 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 80,
+          feedback: 'Fully back',
+          version: 3,
+        });
+        expect(v4.pointsAwarded).toBe(120);
+        expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(40);
+        expect((await lastRevision(v1.id, 4)).pointsDelta).toBe(40);
+      });
+
+      it('a second downward regrade below the previous score applies only target - prev, capped', async () => {
+        const v1 = await waived();
+        await ledger.credit({
+          classroomId: ids.classroom,
+          studentId: ids.student,
+          amount: 10,
+          sourceType: 'activity_bonus',
+          sourceId: randomUUID(),
+          reason: 'Small balance',
+        });
+
+        // score 20 = 30 pts; prev = 60 -> requested -30, only 10 available
+        const v3 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 20,
+          feedback: 'Lower still',
+          version: 2,
+        });
+
+        expect(v3.pointsAwarded).toBe(70);
+        expect(await ledger.getBalance(ids.classroom, ids.student)).toBe(0);
+        const rev = await lastRevision(v1.id, 3);
+        expect(rev.pointsDelta).toBe(-10);
+        expect(rev.pointsUnrecovered).toBe(20);
+      });
+    });
+
     it('compensates in full when the balance covers the delta', async () => {
       const v1 = await gradeExam80();
 
