@@ -65,7 +65,7 @@ class CaddyfileStaticTests(unittest.TestCase):
     def test_unmatched_requests_answer_404(self):
         self.assertRegex(self.text, r"(?s)handle \{\s*respond 404\s*\}")
 
-    def test_logs_go_to_stdout_as_redacted_json(self):
+    def test_logs_are_redacted_json_on_stdout_and_stderr(self):
         self.assertRegex(self.text, r"(?s)log \{\s*output stdout\s*format filter \{\s*wrap json")
         self.assertRegex(self.text, r"(?s)log \{\s*output stderr\s*format filter \{\s*wrap json")
 
@@ -226,8 +226,8 @@ class CaddyRoutingTests(CaddyStack):
         self.assertNotIn("Server", headers)
 
 
-class CaddyLogRedactionTests(CaddyStack):
-    """Colyseus clients send credentials in the WebSocket query string; logs must never keep them."""
+class CaddyLogStack(CaddyStack):
+    """Shared helpers: Colyseus clients send credentials in the WebSocket query string; logs must never keep them."""
 
     SECRETS = {
         "sessionId": "SYNTHETIC-SESSION-VALUE",
@@ -235,33 +235,51 @@ class CaddyLogRedactionTests(CaddyStack):
         "_authToken": "SYNTHETIC-AUTH-VALUE",
     }
 
-    @classmethod
-    def query(cls):
-        return "&".join(f"{key}={value}" for key, value in cls.SECRETS.items())
+    def request_path(self):
+        # A unique marker lets each test read only the log entries of its own request.
+        self.marker = uuid.uuid4().hex
+        query = "&".join(f"{key}={value}" for key, value in self.SECRETS.items())
+        return f"/realtime/process/room?{query}&marker={self.marker}"
 
-    def assert_redacted(self, logs):
+    def wait_for_entries(self, logger_prefix, timeout=5.0):
+        """Poll the proxy logs until an entry of this request from `logger_prefix` appears."""
+        deadline = time.monotonic() + timeout
+        while True:
+            logs = docker("logs", self.proxy, check=False)
+            entries = [
+                line for line in (logs.stdout + logs.stderr).splitlines()
+                if self.marker in line and f'"logger":"{logger_prefix}' in line
+            ]
+            if entries:
+                return entries
+            if time.monotonic() >= deadline:
+                self.fail(f"no {logger_prefix} entry for the request within {timeout}s")
+            time.sleep(0.1)
+
+    def assert_redacted(self, entries):
+        text = "\n".join(entries)
         for key, value in self.SECRETS.items():
             with self.subTest(key=key):
-                self.assertNotIn(value, logs)
-                self.assertIn(f"{key}=REDACTED", logs)
+                self.assertNotIn(value, text)
+                self.assertIn(f"{key}=REDACTED", text)
 
+
+class CaddyAccessLogRedactionTests(CaddyLogStack):
     def test_credentials_are_redacted_in_the_access_log_but_still_forwarded(self):
-        path = f"/realtime/process/room?{self.query()}"
+        path = self.request_path()
         status, body, _ = self.get(path)
-        self.assertEqual((status, body), (200, f"realtime GET /process/room?{self.query()}"))
-        logs = docker("logs", self.proxy, check=False)
-        output = logs.stdout + logs.stderr
-        self.assertIn('"logger":"http.log.access', output)
-        self.assert_redacted(output)
+        self.assertEqual((status, body), (200, f"realtime GET {path.removeprefix('/realtime')}"))
+        self.assert_redacted(self.wait_for_entries("http.log.access"))
+
+
+class CaddyErrorLogRedactionTests(CaddyLogStack):
+    """Has its own stack because it stops the realtime stub."""
 
     def test_credentials_are_redacted_in_the_error_log_when_the_upstream_is_down(self):
         docker("stop", self.containers[1])  # the realtime stub
-        status, _, _ = self.get(f"/realtime/process/room?{self.query()}")
+        status, _, _ = self.get(self.request_path())
         self.assertEqual(status, 502)
-        logs = docker("logs", self.proxy, check=False)
-        output = logs.stdout + logs.stderr
-        self.assertIn('"logger":"http.log.error', output)
-        self.assert_redacted(output)
+        self.assert_redacted(self.wait_for_entries("http.log.error"))
 
 
 if __name__ == "__main__":

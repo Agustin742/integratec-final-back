@@ -17,7 +17,7 @@
 # optional through an environment variable. Let's Encrypt works without one; add a global
 # `email` here if expiry notices are wanted.
 #
-# Logs are JSON on stdout. Colyseus clients send credentials in the WebSocket query string
+# Logs are JSON: access on stdout, errors on stderr. Colyseus clients send credentials in the WebSocket query string
 # (`sessionId`, `reconnectionToken`, `_authToken`), so the log encoder replaces those values with
 # REDACTED in `request.uri`; the keys stay visible to show they were sent. Access entries go
 # through the site `log`, but errors (e.g. 502 when an upstream is down) go to the default logger,
