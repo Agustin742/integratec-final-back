@@ -82,3 +82,48 @@ output "database_master_user_secret_arn" {
   description = "ARN of the Secrets Manager secret holding the RDS master credentials; the deployment reads it at runtime. Only the ARN is exposed, never the secret value."
   value       = module.database.master_user_secret_arn
 }
+
+output "ecr_repository_urls" {
+  description = "ECR repository URL of each service, keyed by service name; images are pushed and pulled here."
+  value       = module.registry.repository_urls
+}
+
+output "ecr_repository_arns" {
+  description = "ECR repository ARN of each service, keyed by service name, for least-privilege IAM policies."
+  value       = module.registry.repository_arns
+}
+
+output "app_secret_arns" {
+  description = "ARN of each generated application secret, keyed by env var name. Only ARNs are exposed, never values."
+  value       = module.app_config.secret_arns
+}
+
+output "app_service_secret_arns" {
+  description = "Secret ARNs each service may read, keyed by service then env var (realtime only gets INTERNAL_SERVICE_SECRET)."
+  value       = module.app_config.service_secret_arns
+}
+
+output "app_config_parameter_path_prefixes" {
+  description = "SSM path prefix of the non-secret config of each service, keyed by service name."
+  value       = module.app_config.parameter_path_prefixes
+}
+
+output "app_config_parameter_arns" {
+  description = "ARNs of the SSM config parameters of each service, keyed by service name, for least-privilege IAM policies."
+  value       = module.app_config.parameter_arns
+}
+
+output "log_group_names" {
+  description = "CloudWatch log group of each container (api, realtime, caddy), keyed by service; the Compose awslogs-group option uses them."
+  value       = module.runtime_access.log_group_names
+}
+
+output "storage_bucket_name" {
+  description = "Name of the private S3 bucket for application files (student submissions and materials); also published to the API as S3_BUCKET."
+  value       = module.storage.bucket_name
+}
+
+output "storage_bucket_arn" {
+  description = "ARN of the application files bucket; grant object access on \"<arn>/*\"."
+  value       = module.storage.bucket_arn
+}

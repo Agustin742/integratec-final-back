@@ -98,6 +98,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The runner's system Python is externally managed (PEP 668), so a managed Python
+      # is set up to install PyYAML; without it the compose structure tests would skip.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install CI test dependencies
+        run: python3 -m pip install --disable-pip-version-check pyyaml==6.0.3
+
       - name: Check documentation and CI regressions
         env:
           PYTHONDONTWRITEBYTECODE: '1'

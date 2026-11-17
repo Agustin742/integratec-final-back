@@ -1,4 +1,22 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
+  # format, so the bucket ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.storage.aws_s3_bucket.this
+    values = {
+      arn = "arn:aws:s3:::aula-virtual-prod-files-20260101000000000000000001"
+    }
+  }
+
+  # The mock returns a random string for data source JSON, so the ECR lifecycle
+  # policy document is pinned to a well-formed value.
+  override_data {
+    target = module.registry.data.aws_ecr_lifecycle_policy_document.this
+    values = {
+      json = "{\"rules\":[]}"
+    }
+  }
+
   # The mock generates random values for computed nested blocks, so the managed
   # master user secret is pinned to a well-formed value.
   override_resource {
@@ -17,7 +35,9 @@ mock_provider "aws" {
 }
 
 variables {
-  project = "aula-virtual"
+  project                 = "aula-virtual"
+  allowed_origins         = ["https://app.example.com"]
+  password_reset_url_base = "https://app.example.com/reset-password"
 }
 
 run "instance_engine_and_sizing" {
@@ -73,8 +93,8 @@ run "instance_is_private_encrypted_and_protected" {
   }
 
   assert {
-    condition     = module.database.instance_settings.backup_retention_period == 7
-    error_message = "Backups must be retained for 7 days by default."
+    condition     = module.database.instance_settings.backup_retention_period == 1
+    error_message = "Prod must retain backups for 1 day by default, the limit the AWS Free plan accepts."
   }
 
   assert {
@@ -478,5 +498,18 @@ run "accepts_backup_retention_of_35" {
   assert {
     condition     = aws_db_instance.this.backup_retention_period == 35
     error_message = "The retention of 35 days must be applied."
+  }
+}
+
+run "prod_backup_retention_can_be_raised_on_a_paid_plan" {
+  command = plan
+
+  variables {
+    database_backup_retention_period = 7
+  }
+
+  assert {
+    condition     = module.database.instance_settings.backup_retention_period == 7
+    error_message = "The prod database_backup_retention_period variable must reach the database module."
   }
 }

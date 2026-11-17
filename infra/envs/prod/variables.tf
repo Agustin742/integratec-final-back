@@ -92,3 +92,31 @@ variable "availability_zones" {
     error_message = "availability_zones must list at least two distinct availability zones."
   }
 }
+
+variable "allowed_origins" {
+  description = "Browser origins the API accepts (CORS); published to SSM as ALLOWED_ORIGINS. Required: there is no real frontend URL yet."
+  type        = list(string)
+
+  validation {
+    # Must match the API check new URL(value).origin === value: lowercase host, no
+    # default :443 port and no zero-padded port, since URL parsing rewrites all three.
+    condition     = length(var.allowed_origins) > 0 && alltrue([for o in var.allowed_origins : can(regex("^https://[a-z0-9.-]+(:[1-9][0-9]{0,4})?$", o)) && !endswith(o, ":443")])
+    error_message = "allowed_origins must list at least one canonical https origin: lowercase host, no path, query or trailing slash, and no default :443 port, such as https://app.example.com."
+  }
+}
+
+variable "password_reset_url_base" {
+  description = "Frontend page that receives the password reset token; published to SSM as PASSWORD_RESET_URL_BASE. Required: there is no real frontend URL yet."
+  type        = string
+
+  validation {
+    condition     = can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^?#[:space:]]*)?$", var.password_reset_url_base))
+    error_message = "password_reset_url_base must be an absolute https URL without query string or fragment, such as https://app.example.com/reset-password."
+  }
+}
+
+variable "database_backup_retention_period" {
+  description = "Days of automated RDS backups (point-in-time restore window). Defaults to 1 because the AWS Free plan account rejects longer retention (FreeTierRestrictionError); raise it after upgrading the account plan."
+  type        = number
+  default     = 1
+}

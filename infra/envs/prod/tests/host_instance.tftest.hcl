@@ -1,4 +1,38 @@
-mock_provider "aws" {}
+mock_provider "aws" {
+  # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
+  # format, so the bucket ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.storage.aws_s3_bucket.this
+    values = {
+      arn = "arn:aws:s3:::aula-virtual-prod-files-20260101000000000000000001"
+    }
+  }
+
+  # The mock returns a random string for data source JSON, so the ECR lifecycle
+  # policy document is pinned to a well-formed value.
+  override_data {
+    target = module.registry.data.aws_ecr_lifecycle_policy_document.this
+    values = {
+      json = "{\"rules\":[]}"
+    }
+  }
+
+  # The mock leaves the managed master secret empty and returns random values for the
+  # endpoint; app_config validates the database connection settings it publishes, so
+  # the instance is pinned to well-formed values.
+  override_resource {
+    target = module.database.aws_db_instance.this
+    values = {
+      address = "aula-virtual-prod-db.abcdefghij.us-east-2.rds.amazonaws.com"
+      port    = 5432
+      master_user_secret = [{
+        secret_arn    = "arn:aws:secretsmanager:us-east-2:123456789012:secret:rds!db-00000000-0000-0000-0000-000000000000-AbCdEf"
+        kms_key_id    = "arn:aws:kms:us-east-2:123456789012:key/00000000-0000-0000-0000-000000000000"
+        secret_status = "active"
+      }]
+    }
+  }
+}
 
 # The mock returns random strings for data sources, so the AMI lookup is pinned.
 override_data {
@@ -19,7 +53,9 @@ override_resource {
 }
 
 variables {
-  project = "aula-virtual"
+  project                 = "aula-virtual"
+  allowed_origins         = ["https://app.example.com"]
+  password_reset_url_base = "https://app.example.com/reset-password"
 }
 
 run "instance_defaults_and_placement" {
@@ -106,7 +142,7 @@ run "elastic_ip_is_attached_to_the_instance" {
   }
 }
 
-run "instance_role_trusts_ec2_and_only_has_ssm_core" {
+run "instance_role_trusts_ec2_and_only_has_ssm_core_managed_policy" {
   command = apply
 
   assert {
@@ -120,7 +156,7 @@ run "instance_role_trusts_ec2_and_only_has_ssm_core" {
 
   assert {
     condition     = module.host.instance_role_managed_policy_arns == ["arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"]
-    error_message = "The role must have exactly the AmazonSSMManagedInstanceCore managed policy."
+    error_message = "The role must have exactly the AmazonSSMManagedInstanceCore managed policy; deployment permissions are one inline policy from modules/runtime_access, never extra managed policies."
   }
 
   assert {
@@ -224,7 +260,7 @@ run "user_data_does_not_touch_ssh_or_install_caddy" {
 
   assert {
     condition     = !strcontains(lower(module.host.user_data), "caddy")
-    error_message = "Caddy is installed by a later task, not by this user data."
+    error_message = "Caddy runs as a Compose service, not from this user data."
   }
 }
 
@@ -232,8 +268,9 @@ run "host_module_has_no_extra_iam_or_key_resources" {
   command = plan
 
   # Static guard (the var.project reference only satisfies the test framework's
-  # requirement that a condition refer to configuration): deployment permissions
-  # belong to #61, and the host has no SSH key.
+  # requirement that a condition refer to configuration): the host module itself
+  # declares no policies (deployment permissions live in modules/runtime_access,
+  # see runtime_access.tftest.hcl), and the host has no SSH key.
   assert {
     condition = var.project != "" && length([
       for f in fileset("../../modules/host", "*.tf") : f
