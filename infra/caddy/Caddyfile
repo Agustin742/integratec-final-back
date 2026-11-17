@@ -1,0 +1,89 @@
+# Caddy reverse proxy: the only public entry on the EC2 host (issue #59).
+#
+# Image: caddy:2.11.7-alpine
+# Pinned for the production Compose file (issue #61); released 2026-10-03, bump deliberately.
+#
+# Environment:
+#   SITE_ADDRESS  Public host name served over HTTPS, e.g. 203-0-113-10.sslip.io (the prod
+#                 output `host_sslip_domain`) until a real domain exists. Caddy gets and renews
+#                 the Let's Encrypt certificate by itself and redirects HTTP to HTTPS.
+#
+# Services are reached by their Compose names on the private Docker network.
+#   /api/*       -> api:3000       the API has no global prefix, so `/api` is stripped.
+#   /realtime/*  -> realtime:2567  Colyseus matchmaking (HTTP) and its WebSocket; `/realtime` is
+#                                  stripped, so clients use `https://<host>/realtime` as endpoint.
+#
+# No ACME contact email is configured: Caddy's `email` option cannot be empty, so it cannot be
+# optional through an environment variable. Let's Encrypt works without one; add a global
+# `email` here if expiry notices are wanted.
+#
+# Logs are JSON: access on stdout, errors on stderr. Colyseus clients send credentials in the WebSocket query string
+# (`sessionId`, `reconnectionToken`, `_authToken`), so the log encoder replaces those values with
+# REDACTED in `request.uri`; the keys stay visible to show they were sent. Access entries go
+# through the site `log`, but errors (e.g. 502 when an upstream is down) go to the default logger,
+# so both carry the same filter (a snippet cannot be imported from the global block, so it is
+# written twice: keep both in sync). Only logging is filtered: the request forwarded to the
+# services is unchanged. Add any new credential parameter to both filters.
+#
+# CORS is answered by the applications (they know the allowed origins); Caddy adds no CORS headers.
+# There is no request body limit: Caddy has none by default and the upload design (file size and
+# count) is not implemented yet. Set `request_body { max_size ... }` once it is.
+{
+	log {
+		output stderr
+		format filter {
+			wrap json
+			request>uri query {
+				replace sessionId REDACTED
+				replace reconnectionToken REDACTED
+				replace _authToken REDACTED
+			}
+		}
+	}
+}
+
+{$SITE_ADDRESS} {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			request>uri query {
+				replace sessionId REDACTED
+				replace reconnectionToken REDACTED
+				replace _authToken REDACTED
+			}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+		-X-Powered-By
+	}
+
+	# Service-to-service endpoints (`/internal/*` on both services) belong to the private Docker
+	# network and are never routed. This block is first, so it wins over the proxy routes below.
+	# Path matching is case-insensitive and decodes percent-encoding.
+	@internal path /api/internal /api/internal/* /realtime/internal /realtime/internal/*
+	handle @internal {
+		respond 404
+	}
+
+	handle_path /api/* {
+		reverse_proxy api:3000
+	}
+
+	# WebSocket upgrades are proxied automatically by reverse_proxy. Idle WebSockets are never
+	# timed out by Caddy (Colyseus pings its clients); `stream_close_delay` only gives open
+	# sockets 5 minutes to finish when the config is reloaded, instead of dropping them at once.
+	handle_path /realtime/* {
+		reverse_proxy realtime:2567 {
+			stream_close_delay 5m
+		}
+	}
+
+	handle {
+		respond 404
+	}
+}

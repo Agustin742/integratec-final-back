@@ -33,7 +33,8 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 - RDS **MUST** be in private subnets with no public access. Its security group **MUST** allow inbound connections only from the EC2 host security group on port 5432. Only the NestJS container (and any migration task) uses the database credentials.
 - Colyseus **MUST NOT** have network access or credentials to the database; it reaches persisted data through NestJS ([Architecture](./architecture.md)). Its calls to the internal NestJS endpoint use a service secret from Secrets Manager.
 - The host security group **MUST** allow inbound traffic only on ports 443 and 80, and **MUST NOT** open SSH. Administration uses SSM Session Manager. Only Caddy publishes host ports; `api` and `realtime` listen on the private Docker network. The internal NestJS and Colyseus channel stays on that network and **MUST NOT** be routed by Caddy.
-- The host uses an Elastic IP (a public IPv4 address has an hourly charge). Let's Encrypt needs a DNS name that points to it; see the open decisions.
+- The host uses an Elastic IP (a public IPv4 address has an hourly charge). Let's Encrypt needs a DNS name that points to it. The interim name is `<elastic-ip-with-dashes>.sslip.io` (Terraform output `host_sslip_domain`), served by Caddy with a Let's Encrypt certificate; a real domain replaces it if one exists later by changing `SITE_ADDRESS` (decision D13, update 2026-11-17).
+- Caddy **MUST** route by path on that single host: `/api/*` to NestJS and `/realtime` to Colyseus (HTTP matchmaking and WSS), stripping the prefix in both cases. Clients use `https://<host>/api` and `wss://<host>/realtime`. `/api/internal*` and `/realtime/internal*` **MUST NOT** be routed. If the Elastic IP is replaced, the hostname, certificate, and frontend configuration change.
 - Production traffic **MUST** use HTTPS and WSS. CORS and allowed origins follow [Security](./security.md).
 - Container health checks **MUST** target a lightweight endpoint per service and **MUST NOT** be presented as proof of a working user flow.
 - Colyseus runs as one container for the MVP; horizontal scaling is a decision, not a default ([Realtime and presence](./realtime-and-presence.md)). WebSocket idle timeouts in Caddy **MUST** be set deliberately and documented.
@@ -67,7 +68,8 @@ Evidence **MUST** identify the environment and deployed revision and confirm: ex
 
 ## Open decisions
 
-- Exact routing (path versus host) for Colyseus in Caddy, and RDS instance sizing.
-- Domain and DNS name for the Elastic IP, which Let's Encrypt requires; a free wildcard DNS name (for example sslip.io) is a candidate interim option, not decided. S3 usage is also open (uploads are not defined yet).
+- RDS instance sizing.
+- S3 usage (uploads are not defined yet).
+- A real domain to replace the interim `sslip.io` name, if the team obtains one.
 - Amazon Bedrock model: the Free plan does not support global or geographic cross-Region inference, so the bot **MUST** use a model with in-Region on-demand inference in `us-east-2` (to be checked in the console; see [D5](../docs/technical-justification.md#d5-aws-region)).
 - Scaling strategy for Colyseus beyond one instance.

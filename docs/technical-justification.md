@@ -45,7 +45,7 @@ This document justifies the relevant technical choices of the project: what was 
 - **Trade-off:** The EC2 host and RDS have continuous cost even at low traffic, so a budget and cleanup ownership are required; D13 lists the availability and operations costs of the single host.
 - **Infrastructure as code:** Terraform defines the AWS resources, with remote state in S3 and reviewed plans; see [Infrastructure as code](../rules/infrastructure-as-code.md). AWS CDK in TypeScript was the main alternative: it shares the application language but relies on CloudFormation, whose failed rollbacks can block deployments. Terraform was chosen for its explicit plan, its industry adoption, and state the team controls, at the cost of learning HCL and operating the state backend.
 - **Decided and approved by Agustin on 2026-11-02:** repository layout ([D3](#d3-repository-layout)), contract distribution ([D4](#d4-contract-distribution)), AWS region ([D5](#d5-aws-region)), and pipeline authentication ([D6](#d6-pipeline-authentication-to-aws)); see [API contracts](../rules/api-contracts.md). Production compute was decided later, on 2026-11-05 ([D13](#d13-production-compute-on-a-single-ec2-host)).
-- **Open:** Domain and DNS name (Let's Encrypt needs one), and the Amazon Bedrock model with in-Region inference in `us-east-2` (see D5).
+- **Open:** A real domain (the interim `sslip.io` name is decided in [D13](#d13-production-compute-on-a-single-ec2-host)), and the Amazon Bedrock model with in-Region inference in `us-east-2` (see D5).
 
 ## 6. Artificial intelligence
 
@@ -204,7 +204,14 @@ Decided and approved by Agustin (decision owner) on 2026-11-02. This is not a cl
 - **Trade-off:** The host is a single point of failure for the API and realtime. The team patches the OS and Docker itself, and scaling is vertical only. Colyseus multi-instance scaling stays open (gap 22). Recovery is to re-provision the host from Terraform and redeploy; data is protected by RDS automated backups.
 - **Affected contracts:** [AWS infrastructure](../rules/aws-infrastructure.md), [Infrastructure as code](../rules/infrastructure-as-code.md), [Realtime and presence](../rules/realtime-and-presence.md), [Architecture](../rules/architecture.md), and the deployment sections of the project document. Supersedes the compute and public-entry parts of section 5.
 - **Approval:** Approved by Agustin (decision owner) on 2026-11-05.
-- **Open:** Domain and routing. Path versus host routing for Colyseus remains open (gap 20). Let's Encrypt needs a DNS name that points to the Elastic IP; a free wildcard DNS name (for example sslip.io) is a candidate interim option, not decided.
+- **Update 2026-11-17 (domain and routing, approved by Agustin):**
+  1. **Public entry:** one hostname, `<elastic-ip-with-dashes>.sslip.io` (Terraform output `host_sslip_domain`), is the interim DNS name; Caddy obtains the Let's Encrypt certificate for it. A real domain replaces it if one exists later (change `SITE_ADDRESS`).
+  2. **Path routing on that single host:** `https://<host>/api/*` goes to NestJS and `https://<host>/realtime` goes to Colyseus HTTP matchmaking, with `wss://<host>/realtime/...` for the WebSocket; Caddy strips the prefix in both cases. `/api/internal*` and `/realtime/internal*` are not routed (404).
+  3. **Client contract:** the deployed frontend uses `VITE_API_BASE_URL=https://<host>/api` and `VITE_REALTIME_URL=wss://<host>/realtime`; the frontend repository records its side separately.
+  - **Rationale:** no domain purchase or DNS setup is needed; sslip.io resolves the name to the Elastic IP, so the Let's Encrypt HTTP-01 challenge works; one hostname means one certificate and one Caddy site; path routing needs no extra DNS name.
+  - **Alternatives:** buying a real domain (cost and setup, deferred); host-based routing for Colyseus, for example a second sslip.io name (a second certificate and site block for no functional gain now).
+  - **Trade-off:** dependency on a third-party wildcard DNS service; the hostname is tied to the Elastic IP, so if the Elastic IP is replaced the hostname, certificate, and frontend configuration change; Colyseus clients must use the `/realtime` path prefix.
+- **Open:** A real domain, if the team obtains one (gap 20 keeps only RDS sizing and S3 usage open).
 
 ### D14. Realtime presence and movement policy
 
