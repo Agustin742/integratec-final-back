@@ -51,7 +51,8 @@ export class SubmissionGradesController {
   @ApiCreatedResponse({ type: GradeResponseDto, description: 'Grade created and points credited.' })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Invalid score, blank/control-character feedback, or extra body fields.',
+    description:
+      'Invalid score (outside 0-100 or above the activity maxScore), blank/control-character feedback, or extra body fields.',
   })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,
@@ -86,7 +87,8 @@ export class SubmissionGradesController {
   @ApiOkResponse({ type: GradeResponseDto, description: 'Grade updated and revision appended.' })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Invalid score, feedback, version, or extra body fields.',
+    description:
+      'Invalid score (outside 0-100, or changed above the activity maxScore), feedback, version, or extra body fields.',
   })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,

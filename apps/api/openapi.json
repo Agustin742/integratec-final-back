@@ -2020,7 +2020,7 @@
             }
           },
           "400": {
-            "description": "Invalid score, blank/control-character feedback, or extra body fields.",
+            "description": "Invalid score (outside 0-100 or above the activity maxScore), blank/control-character feedback, or extra body fields.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -2082,7 +2082,7 @@
             }
           },
           "400": {
-            "description": "Invalid score, feedback, version, or extra body fields.",
+            "description": "Invalid score (outside 0-100, or changed above the activity maxScore), feedback, version, or extra body fields.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }

@@ -17,6 +17,7 @@ import { authTestConfig } from '../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../config/config.module';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
 import { NOTIFICATION_REQUESTED_EVENT } from '../notifications/notification-recorder.service';
+import { RequestValidationException } from '../http/validation';
 import { OutboxDispatcher } from '../platform/outbox/outbox.dispatcher';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -598,6 +599,98 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     });
     await expect(prisma.submission.delete({ where: { id: ids.tpSubmission } })).rejects.toThrow();
     await expect(prisma.grade.delete({ where: { id: created.id } })).rejects.toThrow();
+  });
+
+  describe('activity maxScore', () => {
+    const setMaxScore = (maxScore: number) =>
+      prisma.activity.update({ where: { id: ids.examActivity }, data: { maxScore } });
+
+    async function countWrites() {
+      const [grades_, revisions, ledgerRows, outbox] = await Promise.all([
+        prisma.grade.count({ where: { submissionId: ids.examSubmission } }),
+        prisma.gradeRevision.count({ where: { grade: { submissionId: ids.examSubmission } } }),
+        prisma.pointTransaction.count({ where: { classroomId: ids.classroom } }),
+        prisma.outboxEvent.count({
+          where: {
+            type: NOTIFICATION_REQUESTED_EVENT,
+            payload: { path: ['classroomId'], equals: ids.classroom },
+          },
+        }),
+      ]);
+      return { grades: grades_, revisions, ledgerRows, outbox };
+    }
+
+    it('rejects an initial score above maxScore on field score and writes nothing, and accepts the maximum', async () => {
+      await setMaxScore(20);
+      const before = await countWrites();
+
+      const error = await grades
+        .gradeSubmission(ids.teacher, ids.examSubmission, { score: 21, feedback: 'Too high' })
+        .catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(RequestValidationException);
+      expect((error as RequestValidationException).details).toEqual([
+        { field: 'score', messages: ['score must not exceed the activity maxScore (20)'] },
+      ]);
+      expect(await countWrites()).toEqual(before);
+
+      const ok = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 20,
+        feedback: 'At the maximum',
+      });
+      expect(ok.score).toBe(20);
+    });
+
+    it('rejects a regrade that raises the score above maxScore and writes nothing', async () => {
+      await setMaxScore(20);
+      const v1 = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 10,
+        feedback: 'Initial',
+      });
+      const before = await countWrites();
+
+      await expect(
+        grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 21,
+          feedback: 'Too high',
+          version: v1.version,
+        }),
+      ).rejects.toThrow(RequestValidationException);
+      expect(await countWrites()).toEqual(before);
+    });
+
+    it('keeps a feedback-only regrade working after maxScore drops below the stored score, but rejects a score change above the new maxScore', async () => {
+      const v1 = await grades.gradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 80,
+        feedback: 'Initial',
+      });
+      await setMaxScore(50);
+
+      const v2 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 80,
+        feedback: 'Feedback only',
+        version: v1.version,
+      });
+      expect(v2.score).toBe(80);
+      expect(v2.version).toBe(2);
+      expect(v2.feedback).toBe('Feedback only');
+      const before = await countWrites();
+
+      await expect(
+        grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+          score: 60,
+          feedback: 'Still above the new maximum',
+          version: v2.version,
+        }),
+      ).rejects.toThrow(RequestValidationException);
+      expect(await countWrites()).toEqual(before);
+
+      const v3 = await grades.regradeSubmission(ids.teacher, ids.examSubmission, {
+        score: 50,
+        feedback: 'At the new maximum',
+        version: v2.version,
+      });
+      expect(v3.score).toBe(50);
+    });
   });
 
   describe('departed students', () => {

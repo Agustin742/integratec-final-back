@@ -9,6 +9,7 @@ import {
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { RequestConflictException } from '../http/conflict';
+import { RequestValidationException } from '../http/validation';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
@@ -35,6 +36,7 @@ type LockedActivityRow = {
   type: ActivityType | string;
   format: ActivityFormat | string;
   title: string;
+  maxScore: number;
   weightMultiplier: Prisma.Decimal | number | string;
 };
 
@@ -127,6 +129,14 @@ function mapActivityFormat(raw: ActivityFormat | string): ActivityFormat {
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function assertScoreWithinMaxScore(score: number, maxScore: number): void {
+  if (score > maxScore) {
+    throw new RequestValidationException([
+      { field: 'score', messages: [`score must not exceed the activity maxScore (${maxScore})`] },
+    ]);
+  }
 }
 
 function buildLedgerReason(prefix: string, activityTitle: string, score: number): string {
@@ -248,6 +258,7 @@ export class GradesService {
         if (existingGrade) {
           throw conflict('submission', 'Submission has already been graded');
         }
+        assertScoreWithinMaxScore(dto.score, activity.maxScore);
 
         const typeWeight = resolveActivityTypeWeight(mapActivityType(activity.type), this.config);
         const pointsAwarded = calculateWeightedGradePoints(
@@ -374,6 +385,11 @@ export class GradesService {
           'version',
           'Grade has been modified by another request; reload the latest version and retry',
         );
+      }
+
+      // Only a changed score is checked: a feedback-only regrade survives a lowered maxScore.
+      if (dto.score !== currentGrade.score) {
+        assertScoreWithinMaxScore(dto.score, activity.maxScore);
       }
 
       // Regrades reuse the weights snapshotted at the initial grade, never current activity/config.
@@ -665,6 +681,7 @@ export class GradesService {
         a."type"::text AS "type",
         a."format"::text AS "format",
         a."title",
+        a."max_score" AS "maxScore",
         a."weight_multiplier" AS "weightMultiplier"
       FROM "activities" a
       INNER JOIN "classrooms" c ON c."id" = a."classroom_id"

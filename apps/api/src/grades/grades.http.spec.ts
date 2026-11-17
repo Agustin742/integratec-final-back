@@ -724,4 +724,19 @@ describe('Grades & Grading Queue HTTP contract (real PostgreSQL, #26 isolation)'
       'VALIDATION_FAILED',
     );
   });
+
+  it('rejects a score above the activity maxScore with 400 VALIDATION_FAILED details on score and persists nothing', async () => {
+    await prisma.activity.update({ where: { id: ids.tpActivity }, data: { maxScore: 20 } });
+
+    const res = await postGrade(ids.sub1, ids.teacher, { score: 21, feedback: 'Too high' }).expect(
+      400,
+    );
+    assertEnvelope(res.body, 'VALIDATION_FAILED');
+    expect(res.body.error.details).toEqual([
+      { field: 'score', messages: ['score must not exceed the activity maxScore (20)'] },
+    ]);
+    expect(await prisma.grade.count({ where: { submissionId: ids.sub1 } })).toBe(0);
+
+    await postGrade(ids.sub1, ids.teacher, { score: 20, feedback: 'At the maximum' }).expect(201);
+  });
 });
