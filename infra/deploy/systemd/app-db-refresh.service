@@ -1,8 +1,10 @@
 # Redeploys the stack when RDS has rotated the master password (see start-app.sh, "Rotation").
 # Until the timer fires after a rotation, new api database connections fail: up to about 10 minutes.
 # Install on the host under /etc/systemd/system (steps: infra/README.md, issue #61). The environment
-# file holds NON-secret inputs only: NAME_PREFIX, AWS_REGION, API_IMAGE, REALTIME_IMAGE, SITE_ADDRESS,
-# DB_ENDPOINT, DB_NAME and DB_SECRET_ARN.
+# file holds NON-secret inputs only: NAME_PREFIX, AWS_REGION, SITE_ADDRESS, DB_ENDPOINT, DB_NAME and
+# DB_SECRET_ARN. It needs no image values: a refresh redeploys the images recorded by the last
+# successful start-app.sh run (that state wins), so it never rolls back to older images. API_IMAGE and
+# REALTIME_IMAGE here would only matter on a host that has never been deployed.
 [Unit]
 Description=Redeploy the app when the RDS master secret rotates
 

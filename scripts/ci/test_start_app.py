@@ -65,6 +65,12 @@ fi
 cat "$f"
 """
 
+# Fake flock: records its call; STUB_FLOCK_FAIL simulates a lock that is never released.
+FLOCK_STUB = r"""#!/usr/bin/env bash
+echo "$*" >> "$STUB_LOG/flock.log"
+if [ -n "${STUB_FLOCK_FAIL:-}" ]; then exit 1; fi
+"""
+
 # Fake docker: `login` keeps the password from stdin; `compose` dumps its environment.
 DOCKER_STUB = r"""#!/usr/bin/env bash
 echo "$*" >> "$STUB_LOG/docker.log"
@@ -101,8 +107,9 @@ class SystemdUnitTests(unittest.TestCase):
 
     def test_timer_checks_every_ten_minutes_and_after_boot(self):
         text = (SYSTEMD / "app-db-refresh.timer").read_text()
-        for line in ("OnBootSec=2min", "OnUnitActiveSec=10min", "Persistent=true", "WantedBy=timers.target"):
+        for line in ("OnBootSec=2min", "OnUnitActiveSec=10min", "WantedBy=timers.target"):
             self.assertIn(line, text)
+        self.assertNotIn("Persistent", text, "Persistent= has no effect on monotonic timers")
 
 
 class StaticTests(unittest.TestCase):
@@ -118,7 +125,7 @@ class StaticTests(unittest.TestCase):
         self.assertNotRegex(self.code, r"\btee\b")
         self.assertNotRegex(self.code, r"\.env\b")
         self.assertNotRegex(self.code, r"--env-file")
-        self.assertNotRegex(self.code, r"(?m)>>?\s*(?!/dev/null|&|\"\$state_file\")[\"$\w./]")
+        self.assertNotRegex(self.code, r"(?m)>>?\s*(?!/dev/null|&|\"\$(state|lock)_file\")[\"$\w./]")
 
     def test_secret_variables_are_never_echoed(self):
         for line in self.code.replace("\\\n", " ").splitlines():
@@ -134,7 +141,16 @@ class StaticTests(unittest.TestCase):
         self.assertIn("--password-stdin", self.code)
         self.assertRegex(self.code, r"aws ecr get-login-password[^|\n]*\|[^\n]*docker login --username AWS --password-stdin")
 
-    def test_compose_runs_with_wait_and_without_env_files(self):
+    def test_header_says_where_the_ecr_token_lands(self):
+        header = self.text.split("set -euo pipefail")[0]
+        self.assertIn("docker login", header)
+        self.assertRegex(header, r"(?s)12 hours.*Docker config")
+
+    def test_state_line_is_written_on_one_line(self):
+        self.assertNotRegex(self.code, r"(?m)printf '[^'\n]*$")
+        self.assertIn("printf 'db_secret_version=%s\\n'", self.code)
+
+    def test_compose_runs_with_wait(self):
         self.assertRegex(self.code, r"docker compose -f \"\$compose_file\" up -d --remove-orphans --wait")
 
 
@@ -149,12 +165,12 @@ class BehaviorTests(unittest.TestCase):
         self.work = self.tmp / "work"
         for d in (self.bin, self.fixtures, self.logs, self.work):
             d.mkdir()
-        for name, body in (("aws", AWS_STUB), ("docker", DOCKER_STUB)):
+        for name, body in (("aws", AWS_STUB), ("docker", DOCKER_STUB), ("flock", FLOCK_STUB)):
             stub = self.bin / name
             stub.write_text(body, newline="\n")
             stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
         self.runs = 0
-        self.state = self.tmp / "state" / "db-secret-version"
+        self.state = self.tmp / "state" / "deployed-state"
         self.write_defaults()
 
     # fixtures -------------------------------------------------------------------------------
@@ -196,7 +212,7 @@ class BehaviorTests(unittest.TestCase):
                   "DB_NAME", "DB_SECRET_ARN")
         env = dict((k, v) for k, v in os.environ.items() if k not in inputs)
         env.update(STUB_LOG=str(self.logs), STUB_FIXTURES=str(self.fixtures),
-                   STUB_RUN=str(self.runs), DB_SECRET_STATE_FILE=str(self.state), PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
+                   STUB_RUN=str(self.runs), DEPLOY_STATE_FILE=str(self.state), PATH=str(self.bin) + os.pathsep + os.environ["PATH"])
         env.update(extra_env or {})
         result = subprocess.run([BASH, str(SCRIPT)] + (self.args() if args is None else args),
                                 capture_output=True, env=env, cwd=self.work)
@@ -205,6 +221,12 @@ class BehaviorTests(unittest.TestCase):
     def log(self, name):
         path = self.logs / name
         return path.read_text().splitlines() if path.exists() else []
+
+    def compose_calls(self):
+        return [c for c in self.log("docker.log") if c.startswith("compose")]
+
+    def state_values(self):
+        return dict(line.split("=", 1) for line in self.state.read_text().splitlines())
 
     def compose_env(self, run=None):
         path = self.logs / f"compose-env.{run or self.runs}"
@@ -219,7 +241,7 @@ class BehaviorTests(unittest.TestCase):
     def test_happy_path_starts_compose_with_the_expected_environment(self):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
-        compose_calls = [c for c in self.log("docker.log") if c.startswith("compose")]
+        compose_calls = self.compose_calls()
         self.assertEqual(len(compose_calls), 1)
         self.assertRegex(compose_calls[0], r"^compose -f \S+compose\.prod\.yaml up -d --remove-orphans --wait")
         env = self.compose_env()
@@ -295,14 +317,14 @@ class BehaviorTests(unittest.TestCase):
                 result, out = self.run_script()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(label.split()[0], out)
-                self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+                self.assertFalse(bool(self.compose_calls()))
 
     def test_empty_secret_value_fails_closed(self):
         self.write_secret("jwt-secret", "None\n")
         result, out = self.run_script()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("JWT_SECRET", out)
-        self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+        self.assertFalse(bool(self.compose_calls()))
 
     def test_missing_config_parameter_fails_closed(self):
         for service, params in (("api", API_PARAMS), ("realtime", REALTIME_PARAMS)):
@@ -317,14 +339,14 @@ class BehaviorTests(unittest.TestCase):
                     result, out = self.run_script()
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn(name, out)
-                    self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+                    self.assertFalse(bool(self.compose_calls()))
 
     def test_unreadable_parameter_path_fails_closed(self):
         self.remove_fixture(fixture_name("ssm", f"/{PREFIX}/config/realtime"))
         result, out = self.run_script()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("realtime", out)
-        self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+        self.assertFalse(bool(self.compose_calls()))
 
     def test_database_secret_without_a_usable_password_fails_closed(self):
         for body in ('{"username":"u"}', '{"password":"p"}', '{"username":"u","password":"a\\\\b"}', "not json"):
@@ -332,14 +354,14 @@ class BehaviorTests(unittest.TestCase):
                 (self.fixtures / fixture_name("secret", DB_SECRET_ARN)).write_text(body, newline="\n")
                 result, out = self.run_script()
                 self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+                self.assertFalse(bool(self.compose_calls()))
                 self.assertNotIn("not json", out)
 
     def test_failed_ecr_login_stops_before_compose(self):
         self.remove_fixture("ecr_token")
         result, out = self.run_script()
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(any(c.startswith("compose") for c in self.log("docker.log")))
+        self.assertFalse(bool(self.compose_calls()))
 
     def test_missing_or_invalid_inputs_are_usage_errors_without_aws_calls(self):
         base = self.args()
@@ -360,13 +382,14 @@ class BehaviorTests(unittest.TestCase):
                 self.assertEqual(self.log("aws.log"), [])
                 self.assertEqual(self.log("docker.log"), [])
 
-    def compose_calls(self):
-        return [c for c in self.log("docker.log") if c.startswith("compose")]
 
     def test_deploy_records_only_the_secret_version(self):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
-        self.assertEqual(self.state.read_text(), "v1\n")
+        self.assertEqual(self.state_values(), {
+            "db_secret_version": "v1", "api_image": API_IMAGE, "realtime_image": REALTIME_IMAGE})
+        for value in SECRET_VALUES:
+            self.assertNotIn(value, self.state.read_text())
 
     def test_refresh_with_the_same_version_does_nothing(self):
         self.run_script()
@@ -383,20 +406,20 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, out)
         self.assertEqual(len(self.compose_calls()), 2)
         self.assertIn(":rotated@", self.compose_env()["DATABASE_URL"])
-        self.assertEqual(self.state.read_text(), "v2\n")
+        self.assertEqual(self.state_values()["db_secret_version"], "v2")
 
     def test_refresh_without_state_deploys(self):
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual(result.returncode, 0, out)
         self.assertEqual(len(self.compose_calls()), 1)
-        self.assertEqual(self.state.read_text(), "v1\n")
+        self.assertEqual(self.state_values()["db_secret_version"], "v1")
 
     def test_state_is_not_written_when_compose_fails(self):
         self.run_script()
         self.write_version("v2")
         result, out = self.run_script(extra_env={"STUB_COMPOSE_FAIL": "1"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.state.read_text(), "v1\n")
+        self.assertEqual(self.state_values()["db_secret_version"], "v1")
 
     def test_unreadable_version_fails_closed(self):
         self.remove_fixture(fixture_name("version", DB_SECRET_ARN))
@@ -405,6 +428,72 @@ class BehaviorTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.compose_calls())
             self.assertFalse(self.state.exists())
+
+    def args_without(self, *flags):
+        args = self.args()
+        for flag in flags:
+            i = args.index(flag)
+            args = args[:i] + args[i + 2:]
+        return args
+
+    def test_refresh_redeploys_the_images_last_deployed_not_the_environment_ones(self):
+        image_b = {"--api-image": f"{REGISTRY}/{PREFIX}/api:release-2",
+                   "--realtime-image": f"{REGISTRY}/{PREFIX}/realtime:release-2"}
+        args = self.args()
+        for flag, value in image_b.items():
+            args[args.index(flag) + 1] = value
+        self.assertEqual(self.run_script(args=args)[0].returncode, 0)
+        self.write_version("v2")
+        stale = {"API_IMAGE": API_IMAGE, "REALTIME_IMAGE": REALTIME_IMAGE}
+        result, out = self.run_script(
+            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"], extra_env=stale)
+        self.assertEqual(result.returncode, 0, out)
+        env = self.compose_env()
+        self.assertEqual((env["API_IMAGE"], env["REALTIME_IMAGE"]), tuple(image_b.values()))
+        self.assertEqual(self.state_values()["api_image"], image_b["--api-image"])
+
+    def test_refresh_without_state_or_images_fails_closed(self):
+        result, out = self.run_script(
+            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.compose_calls())
+
+    def test_a_deploy_runs_under_one_lock_with_a_bounded_wait(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertEqual(len(self.log("flock.log")), 1)
+        self.assertRegex(self.log("flock.log")[0], r"^-w 300 \d+$")
+
+    def test_lock_timeout_fails_with_a_clear_message_before_any_work(self):
+        result, out = self.run_script(extra_env={"STUB_FLOCK_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("another deployment", out.lower())
+        self.assertEqual(self.log("aws.log"), [])
+        self.assertFalse(self.compose_calls())
+
+    @unittest.skipIf(shutil.which("flock") is None, "flock is not installed here (it ships with util-linux)")
+    def test_a_held_lock_is_respected_with_the_real_flock(self):
+        (self.bin / "flock").unlink()
+        lock = self.state.parent / "deploy.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen(["flock", str(lock), "sleep", "10"])
+        self.addCleanup(holder.kill)
+        import time
+        time.sleep(0.5)
+        result, out = self.run_script(extra_env={"DEPLOY_LOCK_WAIT": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("another deployment", out.lower())
+        self.assertFalse(self.compose_calls())
+
+    def test_two_registries_get_two_logins(self):
+        other = "999988887777.dkr.ecr.us-east-2.amazonaws.com"
+        args = self.args()
+        args[args.index("--realtime-image") + 1] = f"{other}/{PREFIX}/realtime:release-1"
+        result, out = self.run_script(args=args)
+        self.assertEqual(result.returncode, 0, out)
+        logins = [c for c in self.log("docker.log") if c.startswith("login")]
+        self.assertEqual(logins, [f"login --username AWS --password-stdin {REGISTRY}",
+                                  f"login --username AWS --password-stdin {other}"])
 
     def test_inputs_may_come_from_the_environment(self):
         args = self.args()

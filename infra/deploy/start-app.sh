@@ -20,10 +20,18 @@
 # rds:Describe permission.
 #
 # Rotation: RDS rotates the managed master password about every 7 days, and DATABASE_URL is built
-# once per start. The version id of the secret that was deployed is saved (DB_SECRET_STATE_FILE,
-# default /var/lib/aula-app/db-secret-version). With --refresh-if-rotated the script exits quietly
-# when that version is still current and otherwise redeploys, which recreates the api with the new
-# URL. systemd/app-db-refresh.{service,timer} run it every 10 minutes (installation: T6 docs).
+# once per start. After a successful start the script saves a small state file (DEPLOY_STATE_FILE,
+# default /var/lib/aula-app/deployed-state) with three non-secret lines: db_secret_version (the
+# version id of the master secret, never its value), api_image and realtime_image. With
+# --refresh-if-rotated it exits quietly while that version is still current; otherwise it redeploys
+# the images recorded in the state (the state wins over API_IMAGE/REALTIME_IMAGE, so a refresh never
+# rolls back to older images; they are needed from the caller only if no state exists yet), which
+# recreates the api with the new URL. systemd/app-db-refresh.{service,timer} run it every 10 minutes
+# (installation: T6 docs).
+#
+# Concurrency: the whole run holds an exclusive flock on DEPLOY_LOCK_FILE (default: deploy.lock next
+# to the state file) and waits up to DEPLOY_LOCK_WAIT seconds (default 300) for another deployment or
+# refresh to finish, then fails with a message.
 #
 # What it does:
 #   1. Reads the non-secret config of each service from SSM Parameter Store, by path
@@ -35,9 +43,11 @@
 #      the api service alone.
 #   4. Logs in to ECR (password on stdin) and runs `docker compose up -d --wait`.
 #
-# Handling of values: they live in shell variables and in the environment of the single
-# `docker compose` process, nowhere else. They are never written to a file, never printed, never
-# passed as command-line arguments, and tracing (set -x) is never enabled. Messages name the
+# Handling of values: secret values live in shell variables and in the environment of the single
+# `docker compose` process, nowhere else. This script never writes them to a file, never prints
+# them, never passes them as command-line arguments, and never enables tracing (set -x). One
+# credential does reach disk: `docker login` stores the short-lived ECR token (valid about 12 hours)
+# in root's Docker config (~/.docker/config.json). Messages name the
 # missing item, never a value. Any missing or empty value stops the script before the stack is
 # touched. Running it again with the same inputs re-applies the same state (idempotent).
 
@@ -57,7 +67,9 @@ site_address="${SITE_ADDRESS:-}"
 db_endpoint="${DB_ENDPOINT:-}"
 db_name="${DB_NAME:-}"
 db_secret_arn="${DB_SECRET_ARN:-}"
-state_file="${DB_SECRET_STATE_FILE:-/var/lib/aula-app/db-secret-version}"
+state_file="${DEPLOY_STATE_FILE:-/var/lib/aula-app/deployed-state}"
+lock_file="${DEPLOY_LOCK_FILE:-$(dirname "$state_file")/deploy.lock}"
+lock_wait="${DEPLOY_LOCK_WAIT:-300}"
 refresh_only=""
 
 while [ $# -gt 0 ]; do
@@ -95,16 +107,11 @@ require() {
 }
 require --name-prefix "$name_prefix" "for example aula-virtual-prod"
 require --region "$region" "for example us-east-2"
-require --api-image "$api_image" "ECR image URI with tag"
-require --realtime-image "$realtime_image" "ECR image URI with tag"
 require --site-address "$site_address" "output host_sslip_domain"
 require --db-endpoint "$db_endpoint" "output database_endpoint, host:port"
 require --db-name "$db_name" "output database_name"
 require --db-secret-arn "$db_secret_arn" "output database_master_user_secret_arn"
 
-ecr_image_pattern='^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
-[[ "$api_image" =~ $ecr_image_pattern ]] || usage_error "--api-image must be an ECR image URI with a tag."
-[[ "$realtime_image" =~ $ecr_image_pattern ]] || usage_error "--realtime-image must be an ECR image URI with a tag."
 [[ "$name_prefix" =~ ^[a-z][a-z0-9-]{1,29}$ ]] || usage_error "--name-prefix must be lowercase letters, digits and hyphens."
 [[ "$db_endpoint" =~ ^([A-Za-z0-9.-]+):([0-9]{1,5})$ ]] || usage_error "--db-endpoint must look like host:port."
 [[ "$db_name" =~ ^[a-z][a-z0-9_]{0,62}$ ]] || usage_error "--db-name must be lowercase letters, digits and underscores."
@@ -123,9 +130,10 @@ fail() {
 
 # Prints the VersionId of the AWSCURRENT version of a secret (an identifier, not a value).
 current_version() {
-  local version
-  if ! version="$(aws secretsmanager get-secret-value --region "$region" --secret-id "$1"     --query VersionId --output text)" || [ -z "$version" ] || [ "$version" = "None" ]; then
-    fail "RDS master secret: could not read its current version; nothing was started."
+  local label="$1" id="$2" version
+  if ! version="$(aws secretsmanager get-secret-value --region "$region" --secret-id "$id" \
+    --query VersionId --output text)" || [ -z "$version" ] || [ "$version" = "None" ]; then
+    fail "${label}: could not read its current version; nothing was started."
   fi
   printf '%s' "$version"
 }
@@ -183,10 +191,39 @@ json_member() {
   [[ "$json" =~ $pattern ]] && [ -n "${BASH_REMATCH[1]}" ] && printf '%s' "${BASH_REMATCH[1]}"
 }
 
+# One deployment at a time: a timer refresh must not overlap a manual deploy.
+command -v flock >/dev/null || usage_error "flock is required (util-linux)."
+mkdir -p "$(dirname "$lock_file")"
+exec 9>"$lock_file"
+flock -w "$lock_wait" 9 || fail "Another deployment holds ${lock_file}; gave up after ${lock_wait}s."
+
+# State of the last successful start: key=value lines, read without eval.
+state_version="" state_api_image="" state_realtime_image=""
+if [ -f "$state_file" ]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      db_secret_version) state_version="$value" ;;
+      api_image) state_api_image="$value" ;;
+      realtime_image) state_realtime_image="$value" ;;
+    esac
+  done <"$state_file"
+fi
+
+# A refresh redeploys what is running, not whatever the environment file says.
+if [ -n "$refresh_only" ] && [ -n "$state_api_image" ] && [ -n "$state_realtime_image" ]; then
+  api_image="$state_api_image"
+  realtime_image="$state_realtime_image"
+fi
+require --api-image "$api_image" "ECR image URI with tag"
+require --realtime-image "$realtime_image" "ECR image URI with tag"
+ecr_image_pattern='^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
+[[ "$api_image" =~ $ecr_image_pattern ]] || usage_error "--api-image must be an ECR image URI with a tag."
+[[ "$realtime_image" =~ $ecr_image_pattern ]] || usage_error "--realtime-image must be an ECR image URI with a tag."
+
 # Read before the secret itself: if the secret rotates in between, the recorded version is older
 # than what was deployed, and the next refresh redeploys once more, which is harmless.
-db_secret_version="$(current_version "$db_secret_arn")"
-if [ -n "$refresh_only" ] && [ -f "$state_file" ] && [ "$(<"$state_file")" = "$db_secret_version" ]; then
+db_secret_version="$(current_version "RDS master secret" "$db_secret_arn")"
+if [ -n "$refresh_only" ] && [ "$state_version" = "$db_secret_version" ]; then
   exit 0
 fi
 
@@ -224,8 +261,10 @@ done <<<"$registries"
   export REALTIME_INTERNAL_URL="${api_config[REALTIME_INTERNAL_URL]}" API_INTERNAL_URL="${realtime_config[API_INTERNAL_URL]}"
   exec docker compose -f "$compose_file" up -d --remove-orphans --wait --wait-timeout 180
 )
-# Recorded only after a successful start; it holds the version id, never the secret.
-mkdir -p "$(dirname "$state_file")"
-printf '%s
-' "$db_secret_version" > "$state_file"
+# Recorded only after a successful start; it holds the version id and the images, never a secret.
+{
+  printf 'db_secret_version=%s\n' "$db_secret_version"
+  printf 'api_image=%s\n' "$api_image"
+  printf 'realtime_image=%s\n' "$realtime_image"
+} > "$state_file"
 echo "Stack started: caddy, api and realtime are healthy."
