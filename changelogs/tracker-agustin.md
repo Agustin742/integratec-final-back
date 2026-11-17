@@ -10,6 +10,16 @@
 - **Open points for the PR:** The `create_grades` migration was edited in place (unmerged), so local databases built from the old version need `prisma migrate reset`. Accepted residual race: a zero-point or feedback-only grade can land while the student leaves concurrently. Waived points are a deliberate loss to the ledger. Deferred advisories: the `P2002` target shape is only unit-tested, and the `gradedAt` ordering tests could set explicit timestamps. The seed does not clear `ActivityMetric`, `Notification`, `NotificationDelivery` and `OutboxEvent` (pre-existing on `develop`, out of scope).
 - **Next step:** Push after approval, let CI pass, and obtain teammate approval and merge on PR #98.
 
+## 2026-11-16 — Prod RDS PostgreSQL (#60)
+
+- **Status:** completed (PR #101 merged into `develop` on 2026-11-17; nothing applied to AWS)
+- **Area / files:** `infra/modules/database/`, `infra/envs/prod/` (`main.tf`, `outputs.tf`, `tests/`), `infra/README.md`
+- **Change:** Added the database module and wired it in `envs/prod`. A database security group allows TCP 5432 only from the host security group and has no egress. A DB subnet group uses the private subnets, validated to span two distinct Availability Zones. The RDS instance runs PostgreSQL 16 (automatic minor upgrades) on `db.t4g.micro` with 20 GiB encrypted gp3, single-AZ and not public, with 7 days of backups (point-in-time restore), `deletion_protection`, `prevent_destroy` and a final snapshot `aula-virtual-prod-db-final`. RDS generates the master password in Secrets Manager; Terraform never sees it and the only credential output is `database_master_user_secret_arn`. Other outputs: endpoint, port and database name. Documented the resources, credentials, how #61 will read the secret and build `DATABASE_URL` for the api container only, backups and the point-in-time restore command, deletion procedure and snapshot cleanup, and the cost rows in `infra/README.md`. `terraform test` has 78 passing tests in `envs/prod`.
+- **Decisions (2026-11-16):** PostgreSQL 16 to match Docker Compose and CI; `db.t4g.micro`, 20 GiB, single-AZ, 7-day retention; the API uses the master user for the MVP.
+- **Reason:** The API cannot start without its database, and #61 needs the endpoint and the secret to deploy it.
+- **Open points for the PR:** nothing has been applied, so the apply-dependent criteria (connectivity from the host, second plan with no changes) are not verified. The restore path is documented but not tested. Cost figures are unverified and Free plan eligibility is not checked. A least-privilege application user is a follow-up. The host's permission to read the secret and `DATABASE_URL` belong to #61. Team access to the private database is tracked in #100.
+- **Next step:** #61 (deployment); the reviewed `terraform plan` and the first apply happen there.
+
 ## 2026-11-16 — Prod network and EC2 host with Caddy config (#59)
 
 - **Status:** completed (PR #99 merged into `develop` on 2026-11-17; nothing applied to AWS)

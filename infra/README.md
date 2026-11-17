@@ -1,6 +1,6 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host (see [Network and EC2 host](#network-and-ec2-host)), and the GitHub Actions OIDC role (disabled by default, see below). **Nothing in `infra/` has been applied to AWS yet.** RDS, ECR and the container deployment are added by later issues.
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host and the database (see [Network and EC2 host](#network-and-ec2-host) and [Database (RDS PostgreSQL)](#database-rds-postgresql)), and the GitHub Actions OIDC role (disabled by default, see below). **Nothing in `infra/` has been applied to AWS yet.** ECR and the container deployment are added by a later issue.
 
 Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
 
@@ -9,12 +9,12 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: network and EC2 host, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network, EC2 host and RDS database, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
 - **Every root module has a `versions.tf`.** CI detects roots by that file and fails if a root is missing from the `terraform` job matrix in `.github/workflows/ci.yml`.
-- Reusable child modules go under `infra/modules/` (`network`, `host`) and have no `versions.tf` of their own.
+- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`) and have no `versions.tf` of their own.
 - The `project` prefix (`aula-virtual` by default) **MUST** be the same in every root. The CI role policy in `envs/prod` derives the state bucket name from it and the account ID.
 - Tags `Project`, `Environment`, and `ManagedBy = "terraform"` are applied through provider `default_tags`.
 
@@ -172,9 +172,110 @@ Read `Status` and `StandardOutputContent`:
 | EC2 `t3.small` | about USD 0.0208 per hour, 730 hours | about USD 15.2 |
 | EBS gp3, 20 GiB | about USD 0.08 per GiB-month | about USD 1.6 |
 | Public IPv4 (Elastic IP) | about USD 0.005 per hour, charged even when attached | about USD 3.7 |
-| Total | | about USD 20.5 |
+| RDS `db.t4g.micro`, PostgreSQL, single-AZ (#60) | about USD 0.016 per hour, 730 hours | about USD 12 |
+| RDS gp3 storage, 20 GiB (#60) | about USD 0.115 per GiB-month | about USD 2.3 |
+| RDS backup storage (#60) | free up to the size of the database; 7 days of retention are expected to stay within it | about USD 0 |
+| Secrets Manager secret for the master password (#60) | about USD 0.40 per secret per month | about USD 0.4 |
+| Total | | about USD 35 |
 
-Not included: data transfer out, RDS (#60), ECR and any other later resource. Whether the Free plan credits cover this for the intended duration is not known.
+Not included: data transfer out, ECR and any other later resource. Whether the Free plan credits cover this for the intended duration is not known.
+
+## Database (RDS PostgreSQL)
+
+Issue #60 adds the production database. It is declared in `envs/prod` through `modules/database` and covered by `terraform test` with a mocked AWS provider. **None of it has been applied to AWS**; the steps below describe what `terraform apply` would create. The first apply is planned together with #61.
+
+### Resources
+
+| Area | Resource | Notes |
+|------|----------|-------|
+| Database | RDS instance `aula-virtual-prod-db` | PostgreSQL 16 (major version only; AWS applies minor upgrades automatically), `db.t4g.micro`, single Availability Zone, **not publicly accessible**. |
+| Database | Storage: gp3, 20 GiB, encrypted | No storage autoscaling. Variables `instance_class` and `allocated_storage` in the module. |
+| Database | Initial database `aula_virtual`, master user `aula_admin` | Defaults of the module variables `db_name` and `master_username`. |
+| Security | Database security group | Inbound only TCP 5432 and only from the host security group (no CIDR ranges). No outbound rules. |
+| Network | DB subnet group | The two private subnets, which must be in two distinct Availability Zones (RDS requirement). |
+
+### Credentials
+
+RDS generates the master password and stores it in AWS Secrets Manager (`manage_master_user_password`). Terraform never sees the password, so it is not in the state file, in the plan output or in any variable. The only credential-related output is the secret's ARN:
+
+```sh
+terraform output database_master_user_secret_arn
+```
+
+For the MVP the API connects with the master user. A separate user with limited permissions (for the API, and another for migrations) is a follow-up; Terraform cannot create it because it cannot reach the private database.
+
+### How the deployment will use it (#61)
+
+This is the pattern #61 will implement; it is not done here. When the application is deployed or started, the host:
+
+1. Reads the secret by its ARN. The secret value is JSON with `username` and `password`:
+
+   ```sh
+   aws secretsmanager get-secret-value --region us-east-2 \
+     --secret-id "$(terraform output -raw database_master_user_secret_arn)"
+   ```
+
+2. Builds `DATABASE_URL` from that secret and the outputs `database_endpoint` (host and port together), `database_port` and `database_name`. The password must be URL-encoded.
+3. Passes `DATABASE_URL` only to the environment of the `api` container.
+
+The URL and the password are never written to images, Git, logs or the `realtime` container, which has no database access. The host's IAM permission to read that one secret is added by #61; today the host role only has the SSM permission.
+
+### Backups and restore
+
+| Setting | Value |
+|---------|-------|
+| Automated backups | 7 days of retention, which also enables point-in-time restore. |
+| Backup window | 06:00-07:00 UTC (03:00-04:00 in Argentina). |
+| Maintenance window | Sunday 08:00-09:00 UTC. |
+| Snapshots | Tags are copied to snapshots. |
+
+A point-in-time restore never changes the running instance: it creates a **new** instance with the data as it was at the chosen moment. Replace the placeholders:
+
+```sh
+aws rds restore-db-instance-to-point-in-time --region us-east-2 \
+  --source-db-instance-identifier aula-virtual-prod-db \
+  --target-db-instance-identifier <new-id> \
+  --restore-time <UTC time, for example 2026-01-31T14:30:00Z>
+```
+
+Use `--use-latest-restorable-time` instead of `--restore-time` to restore to the latest possible moment. Then check that the new instance is `available`, and point the API to its endpoint. Bringing the restored instance under Terraform (import) or switching the application permanently to it is a deliberate follow-up that has to be planned when it is needed. **This restore path has not been tested.**
+
+### Deletion protection
+
+The instance has `deletion_protection` enabled and `prevent_destroy` in Terraform, so `terraform destroy` and any change that would replace the instance fail. A plan that would destroy or replace the database must be called out in the pull request.
+
+To delete it on purpose:
+
+1. Open a reviewed change that removes `prevent_destroy` from `modules/database/instance.tf`.
+2. Disable deletion protection and apply.
+3. Run `terraform destroy`.
+
+When it is destroyed, RDS keeps a final snapshot named `aula-virtual-prod-db-final`. If the database is created again and destroyed a second time, the destroy fails because that snapshot name already exists. Delete the old snapshot first, only after confirming it is no longer needed:
+
+```sh
+aws rds delete-db-snapshot --region us-east-2 --db-snapshot-identifier aula-virtual-prod-db-final
+```
+
+### Connect manually
+
+The database is private, so it cannot be reached from your computer. Port forwarding through the host with Session Manager is a possible future option, tied to the team access work in back #100; it is not set up here.
+
+### Plan and apply
+
+Follow [Plan and apply, step by step](#plan-and-apply-step-by-step). The plan adds the instance, the security group and the subnet group, and it must show no destroy. The apply starts billing for the database. Then read the outputs:
+
+```sh
+terraform output database_endpoint
+terraform output database_port
+terraform output database_name
+terraform output database_master_user_secret_arn
+terraform output database_security_group_id
+terraform output database_subnet_group_name
+```
+
+### Cost
+
+The database rows are part of the [estimated monthly cost](#estimated-monthly-cost-unverified) table above. They are unverified, and whether the Free plan covers `db.t4g.micro` is not checked.
 
 ## GitHub Actions OIDC role
 
