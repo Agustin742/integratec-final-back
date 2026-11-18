@@ -1542,6 +1542,52 @@
         "tags": ["chat"]
       }
     },
+    "/classrooms/{id}/messages/{messageId}": {
+      "delete": {
+        "description": "Current classroom staff only (Owner, Admin or Teacher); students and parents denied. Logical moderation: the server sets the hiddenAt/hiddenById audit pair atomically and the row is never deleted. Repeating moderation returns 204 without overwriting the original actor/time. Independent of the send rate limit. No unhide operation exists.",
+        "operationId": "ChatController_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "description": "Message UUID inside this classroom",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Message hidden, or already hidden by a first moderation." },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Student or parent role in a visible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom, or unknown/foreign/invalid message UUID in it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Hide a classroom chat message (teacher moderation)",
+        "tags": ["chat"]
+      }
+    },
     "/activities/{activityId}/submissions": {
       "post": {
         "description": "Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes) to a published FILE activity of the student's classroom. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new; a different key after a submission exists is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",

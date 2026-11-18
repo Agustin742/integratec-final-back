@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AccessVerificationService } from '../access/access-verification.service';
+import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import type { ChatHistoryMessageDto, ListMessagesQueryDto } from './chat.dto';
 import { resolveMentionedUserIds } from '../announcements/announcements.service';
@@ -172,5 +172,32 @@ export class ChatService {
       },
       { timeout: 15_000 },
     );
+  }
+
+  /**
+   * Teacher moderation as a logical state change: the message row is never
+   * deleted. Staff-only authorization first (students and parents get 403,
+   * outsiders and unknown classrooms 404), then the message is resolved inside
+   * this classroom so foreign or unknown identifiers never leak existence.
+   * Moderation sets the audit pair atomically only while the row is still
+   * visible, so repeating moderation cannot overwrite the original actor/time.
+   */
+  async hide(actorId: string, classroomId: string, messageId: string): Promise<void> {
+    if (!UUID_PATTERN.test(messageId)) throw new NotFoundException('Message not found');
+    const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
+      requiredRole: 'STAFF',
+    });
+    const row = await this.prisma.message.findFirst({
+      where: { id: messageId, classroomId: access.classroom.id },
+      select: { id: true, hiddenAt: true },
+    });
+    if (!row) throw new NotFoundException('Message not found');
+    if (row.hiddenAt !== null) return; // First moderation wins; the audit pair is immutable.
+    const [clock] = await this.prisma.$queryRaw<{ now: Date }[]>`
+      SELECT date_trunc('milliseconds', clock_timestamp()) AS now`;
+    await this.prisma.message.updateMany({
+      where: { id: row.id, classroomId: access.classroom.id, hiddenAt: null },
+      data: { hiddenAt: clock!.now, hiddenById: actorId },
+    });
   }
 }

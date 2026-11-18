@@ -26,6 +26,15 @@ const send = (actor: string, body: object = { body: 'Hello' }, id = classroom) =
     .post(path(id))
     .set('Authorization', `Bearer chat-http:${actor}`)
     .send(body);
+const moderate = (actor: string | null, messageId: string, id = classroom) => {
+  const req = request(app.getHttpServer()).delete(`/classrooms/${id}/messages/${messageId}`);
+  return actor === null ? req : req.set('Authorization', `Bearer chat-http:${actor}`);
+};
+const rowAudit = (id: string) =>
+  prisma.message.findUnique({
+    where: { id },
+    select: { hiddenAt: true, hiddenById: true },
+  });
 
 beforeAll(async () => {
   // Only session verification is synthetic. The real global guard, application module
@@ -347,5 +356,103 @@ describe('GET /classrooms/:id/messages public history', () => {
     expect((await history().expect(200)).body.items).toEqual([
       { ...message, hiddenAt: null, hiddenById: null },
     ]);
+  });
+});
+
+describe('DELETE /classrooms/:id/messages/:messageId moderation', () => {
+  it('hides with fresh server audit while students lose and staff retain the row', async () => {
+    const message = (await send(student, { body: 'Rule break @Teacher' }).expect(201)).body;
+    const response = await moderate(teacher, message.id);
+    expect(response.status).toBe(204);
+    expect(response.text).toBe('');
+    const row = await rowAudit(message.id);
+    expect(row!.hiddenById).toBe(teacher);
+    // Server clock, not any client-provided instant: within a small wall-clock window.
+    expect(Math.abs(row!.hiddenAt!.getTime() - Date.now())).toBeLessThan(2_000);
+    expect((await history(student).expect(200)).body).toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 20,
+    });
+    expect((await history(teacher).expect(200)).body).toEqual({
+      items: [
+        {
+          id: message.id,
+          classroomId: classroom,
+          authorId: student,
+          body: 'Rule break @Teacher',
+          mentionedUserIds: [teacher],
+          createdAt: message.createdAt,
+          hiddenAt: row!.hiddenAt!.toISOString(),
+          hiddenById: teacher,
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+  });
+
+  it.each(['owner', 'admin'])('lets school %s hide without classroom membership', async (role) => {
+    const actor = role === 'owner' ? owner : admin;
+    const message = (await send(student).expect(201)).body;
+    const response = await moderate(actor, message.id);
+    expect(response.status).toBe(204);
+    expect(response.text).toBe('');
+    expect(await rowAudit(message.id)).toEqual({
+      hiddenById: actor,
+      hiddenAt: expect.any(Date),
+    });
+  });
+
+  it('keeps the original audit on repeat moderation', async () => {
+    const message = (await send(student).expect(201)).body;
+    await moderate(teacher, message.id).expect(204);
+    const first = await rowAudit(message.id);
+    expect(first!.hiddenAt).not.toBeNull();
+    await moderate(teacher, message.id).expect(204);
+    await moderate(admin, message.id).expect(204);
+    expect(await rowAudit(message.id)).toEqual(first);
+  });
+
+  it('denies students and parents without touching the row or visible history', async () => {
+    const message = (await send(student, { body: 'Still visible @Teacher' }).expect(201)).body;
+    const studentBefore = (await history(student).expect(200)).body;
+    const staffBefore = (await history(teacher).expect(200)).body;
+    const rowBefore = await rowAudit(message.id);
+    for (const actor of [student, parent]) {
+      await reject(moderate(actor, message.id), 403, 'FORBIDDEN');
+    }
+    expect((await history(student).expect(200)).body).toEqual(studentBefore);
+    expect((await history(teacher).expect(200)).body).toEqual(staffBefore);
+    expect(await rowAudit(message.id)).toEqual(rowBefore);
+  });
+
+  it('rejects missing credentials, outsiders, foreign paths and unknown messages', async () => {
+    const message = (await send(student).expect(201)).body;
+    await reject(moderate(null, message.id), 401, 'UNAUTHENTICATED');
+    for (const actor of [stranger, removed])
+      await reject(moderate(actor, message.id), 404, 'NOT_FOUND');
+    for (const actor of [student, teacher])
+      for (const id of [foreign, randomUUID(), 'not-a-uuid'])
+        await reject(moderate(actor, message.id, id), 404, 'NOT_FOUND');
+    for (const messageId of [randomUUID(), 'not-a-uuid'])
+      await reject(moderate(teacher, messageId), 404, 'NOT_FOUND');
+  });
+
+  it('keeps foreign-classroom messages unreachable through this classroom path', async () => {
+    const outside = (await send(stranger, { body: 'Other room' }, foreign).expect(201)).body;
+    await reject(moderate(teacher, outside.id), 404, 'NOT_FOUND');
+    expect(await rowAudit(outside.id)).toEqual({ hiddenAt: null, hiddenById: null });
+  });
+
+  it('neither consumes nor consults the send rate limit', async () => {
+    let messageId = '';
+    for (let i = 0; i < 5; i++) messageId = (await send(student).expect(201)).body.id;
+    await moderate(teacher, messageId).expect(204);
+    await reject(send(student), 429, 'TOO_MANY_REQUESTS');
+    for (let i = 0; i < 5; i++) await send(teacher).expect(201);
+    await reject(send(teacher), 429, 'TOO_MANY_REQUESTS');
   });
 });

@@ -1,9 +1,20 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOperation,
   ApiParam,
@@ -85,5 +96,33 @@ export class ChatController {
     @Body() dto: SendMessageDto,
   ): Promise<ChatMessageDto> {
     return this.chat.send(actorId, classroomId, dto.body);
+  }
+
+  @Delete(':messageId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiParam({ name: 'id', description: 'Classroom UUID' })
+  @ApiParam({ name: 'messageId', description: 'Message UUID inside this classroom' })
+  @ApiOperation({
+    summary: 'Hide a classroom chat message (teacher moderation)',
+    description:
+      'Current classroom staff only (Owner, Admin or Teacher); students and parents denied. Logical moderation: the server sets the hiddenAt/hiddenById audit pair atomically and the row is never deleted. Repeating moderation returns 204 without overwriting the original actor/time. Independent of the send rate limit. No unhide operation exists.',
+  })
+  @ApiNoContentResponse({ description: 'Message hidden, or already hidden by a first moderation.' })
+  @ApiUnauthorizedResponse({ type: ErrorEnvelopeDto, description: 'Authentication required.' })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Student or parent role in a visible classroom.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Invalid, nonexistent or inaccessible classroom, or unknown/foreign/invalid message UUID in it.',
+  })
+  hide(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('messageId') messageId: string,
+  ): Promise<void> {
+    return this.chat.hide(actorId, classroomId, messageId);
   }
 }

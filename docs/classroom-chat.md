@@ -65,8 +65,32 @@ revokes access but leaves the original author attribution and mention history.
 Count, selected items and resolved mention rows use one PostgreSQL RepeatableRead
 snapshot. Offset pages are stable within each response, not a frozen multi-request
 feed: new messages between requests can shift offsets. POST response fields are
-unchanged. Moderation writes remain the next unit; hidden-row read tests currently
-seed the persisted state directly through Prisma.
+unchanged. Moderation now performs these writes through `DELETE`; read tests keep
+seeding moderation state directly through Prisma.
+
+## REST moderation
+
+`DELETE /classrooms/:id/messages/:messageId` performs teacher moderation as a
+logical state change: the message row is never deleted or rewritten. Current
+classroom staff only — school Owner/Admin without a classroom membership, the
+classroom's teacher, or an independent teacher of their own classroom. Linked
+parents and enrolled students receive 403 `FORBIDDEN`; unrelated or removed
+users, foreign or invalid classroom ids and unknown message ids receive 404
+`NOT_FOUND` without revealing existence, and missing credentials receive 401.
+A message that belongs to another classroom is unreachable through this
+classroom's path.
+
+On success the server assigns both audit fields itself: `hiddenAt` from the
+database UTC clock at millisecond precision and `hiddenById` from the acting
+moderator, written atomically in one UPDATE while the row is still visible. The
+response is 204 with an empty body. Moderation is idempotent: hiding an already
+hidden message returns 204 without overwriting the original actor/time, so the
+audit pair records only the first moderation. There is no unhide operation.
+Moderation neither consumes nor consults the send rate limit.
+
+After moderation students stop seeing the row entirely, including its text and
+mentions; teacher-level staff keep the full history with body, author, mentions,
+moderator and time.
 
 ## Send application service
 
@@ -99,7 +123,7 @@ Alejo approved REST send, non-empty trimmed text up to 2,000 characters, at most
 including staff. Excess admission returns HTTP 429. `chat-policy.ts` records the
 constants; the send application service enforces these limits.
 
-The moderation endpoint remains subsequent work. Realtime delivery belongs to #48;
+Realtime delivery belongs to #48;
 frontend, parent conversations and mute controls remain excluded. Final retention
 policy is open; there is no purge.
 
