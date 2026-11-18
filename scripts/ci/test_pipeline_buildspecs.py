@@ -209,7 +209,7 @@ class ImagesBuildspecTests(unittest.TestCase):
         self.assertIn("apps/api/Dockerfile", self.text)
         self.assertIn("apps/realtime/Dockerfile", self.text)
         self.assertRegex(self.text, r"--target migrate")
-        self.assertRegex(self.text, r"(?m)^\s*(?:\S+ )*docker build .*\s\.\s*$")
+        self.assertRegex(self.text, r"(?m)^\s*(?:\S+ )*docker build .*\s\.(?:\s*&&)?\s*$")
         # Only the migrate image selects a target; api keeps the final (runner) stage.
         self.assertEqual(len(re.findall(r"--target", self.text)), 1)
 
@@ -220,8 +220,59 @@ class ImagesBuildspecTests(unittest.TestCase):
         self.assertIn("ImageNotFoundException", self.text)
         self.assertRegex(self.text, r"already exists|skipping")
         # The check runs once per image: the three images go through one function.
-        calls = [c for c in self.commands if re.match(r"^build_and_push ", c)]
+        calls = re.findall(r'(?m)^\s*build_and_push "', self.text)
         self.assertEqual(len(calls), 3)
+
+    def run_build_phase(self, docker_script):
+        """Run each build-phase command in its own bash, like CodeBuild, with stub aws/docker."""
+        with tempfile.TemporaryDirectory() as tmp:
+            stubs = Path(tmp) / "bin"
+            stubs.mkdir()
+            log = Path(tmp) / "docker.log"
+            aws = '#!/bin/bash\necho "An error occurred (ImageNotFoundException)" >&2\nexit 254\n'
+            (stubs / "aws").write_text(aws, encoding="utf-8", newline="\n")
+            (stubs / "docker").write_text(docker_script, encoding="utf-8", newline="\n")
+            for stub in stubs.iterdir():
+                stub.chmod(0o755)
+            env = {
+                "PATH": f"{stubs.as_posix()}:/usr/bin:/bin",
+                "DOCKER_LOG": log.as_posix(),
+                "IMAGE_TAG": "release-20261118-0123456",
+                "ECR_REPOSITORY_API": "repo-api",
+                "ECR_REPOSITORY_MIGRATE": "repo-migrate",
+                "ECR_REPOSITORY_REALTIME": "repo-realtime",
+                "API_IMAGE": "registry/repo-api:tag",
+                "MIGRATE_IMAGE": "registry/repo-migrate:tag",
+                "REALTIME_IMAGE": "registry/repo-realtime:tag",
+            }
+            results = []
+            for command in self.spec["phases"]["build"]["commands"]:
+                result = run_bash(command, env)
+                results.append(result)
+                if result.returncode != 0:
+                    break
+            lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            return results, lines
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_build_phase_pushes_the_three_images_when_each_command_runs_in_its_own_shell(self):
+        results, lines = self.run_build_phase('#!/bin/bash\necho "$@" >> "$DOCKER_LOG"\nexit 0\n')
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stderr)
+        pushes = [line for line in lines if line.startswith("push ")]
+        self.assertEqual(
+            pushes, ["push registry/repo-api:tag", "push registry/repo-migrate:tag", "push registry/repo-realtime:tag"]
+        )
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_a_failed_build_fails_the_phase_and_nothing_is_pushed(self):
+        docker = (
+            '#!/bin/bash\necho "$@" >> "$DOCKER_LOG"\n'
+            'if [ "$1" = build ] && [[ "$*" == *repo-api* ]]; then exit 1; fi\nexit 0\n'
+        )
+        results, lines = self.run_build_phase(docker)
+        self.assertNotEqual(results[-1].returncode, 0)
+        self.assertEqual([line for line in lines if line.startswith("push ")], [])
 
     def test_images_use_the_repositories_and_registry_injected_by_terraform(self):
         for name in ("ECR_REGISTRY", "ECR_REPOSITORY_API", "ECR_REPOSITORY_REALTIME", "ECR_REPOSITORY_MIGRATE"):

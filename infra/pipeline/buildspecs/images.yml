@@ -30,6 +30,8 @@ phases:
       # ECR tags are IMMUTABLE: an image that already exists (a retried run of the same
       # commit) is neither rebuilt nor pushed. Only "image not found" lets the build go on;
       # any other describe error (permissions, throttling, wrong repository) fails it.
+      # CodeBuild runs each command entry in a separate shell, so the function and its
+      # callers must share one entry.
       - |
         build_and_push() {
           local repository="$1" image="$2" dockerfile="$3"
@@ -43,9 +45,9 @@ phases:
             echo "$found" >&2
             return 1
           fi
-          docker build --file "$dockerfile" "$@" --tag "$image" .
-          docker push "$image"
+          docker build --file "$dockerfile" "$@" --tag "$image" . &&
+            docker push "$image"
         }
-      - build_and_push "$ECR_REPOSITORY_API" "$API_IMAGE" apps/api/Dockerfile
-      - build_and_push "$ECR_REPOSITORY_MIGRATE" "$MIGRATE_IMAGE" apps/api/Dockerfile --target migrate
-      - build_and_push "$ECR_REPOSITORY_REALTIME" "$REALTIME_IMAGE" apps/realtime/Dockerfile
+        build_and_push "$ECR_REPOSITORY_API" "$API_IMAGE" apps/api/Dockerfile &&
+          build_and_push "$ECR_REPOSITORY_MIGRATE" "$MIGRATE_IMAGE" apps/api/Dockerfile --target migrate &&
+          build_and_push "$ECR_REPOSITORY_REALTIME" "$REALTIME_IMAGE" apps/realtime/Dockerfile
