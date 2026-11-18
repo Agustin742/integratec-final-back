@@ -23,6 +23,7 @@ REGION = "us-east-2"
 REGISTRY = "111122223333.dkr.ecr.us-east-2.amazonaws.com"
 API_IMAGE = f"{REGISTRY}/{PREFIX}/api:release-1"
 REALTIME_IMAGE = f"{REGISTRY}/{PREFIX}/realtime:release-1"
+MIGRATE_IMAGE = f"{REGISTRY}/{PREFIX}/migrate:release-1"
 DB_SECRET_ARN = "arn:aws:secretsmanager:us-east-2:111122223333:secret:rds!db-1234-AbCdEf"
 
 JWT = "jwt-" + "J" * 60
@@ -205,12 +206,13 @@ class BehaviorTests(unittest.TestCase):
         return [
             "--name-prefix", PREFIX, "--region", REGION,
             "--api-image", API_IMAGE, "--realtime-image", REALTIME_IMAGE,
+            "--migrate-image", MIGRATE_IMAGE,
             "--site-address", "203-0-113-10.sslip.io",
         ]
 
     def run_script(self, args=None, extra_env=None):
         self.runs += 1
-        inputs = ("NAME_PREFIX", "AWS_REGION", "API_IMAGE", "REALTIME_IMAGE", "SITE_ADDRESS", "DB_ENDPOINT",
+        inputs = ("NAME_PREFIX", "AWS_REGION", "API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE", "SITE_ADDRESS", "DB_ENDPOINT",
                   "DB_NAME", "DB_SECRET_ARN", "DB_HOST", "DB_PORT")
         env = dict((k, v) for k, v in os.environ.items() if k not in inputs)
         env.update(STUB_LOG=str(self.logs), STUB_FIXTURES=str(self.fixtures),
@@ -249,6 +251,7 @@ class BehaviorTests(unittest.TestCase):
         env = self.compose_env()
         self.assertEqual(env["API_IMAGE"], API_IMAGE)
         self.assertEqual(env["REALTIME_IMAGE"], REALTIME_IMAGE)
+        self.assertEqual(env["MIGRATE_IMAGE"], MIGRATE_IMAGE)
         self.assertEqual(env["SITE_ADDRESS"], "203-0-113-10.sslip.io")
         self.assertEqual(env["AWS_REGION"], REGION)
         self.assertEqual(env["LOG_GROUP_PREFIX"], f"/{PREFIX}")
@@ -370,10 +373,11 @@ class BehaviorTests(unittest.TestCase):
     def test_missing_or_invalid_inputs_are_usage_errors_without_aws_calls(self):
         base = self.args()
         cases = {}
-        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image", "--site-address"):
+        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image", "--migrate-image", "--site-address"):
             i = base.index(flag)
             cases[f"missing {flag}"] = base[:i] + base[i + 2:]
         cases["non-ECR image"] = [a if a != API_IMAGE else "docker.io/library/nginx:latest" for a in base]
+        cases["non-ECR migrate image"] = [a if a != MIGRATE_IMAGE else "docker.io/library/nginx:latest" for a in base]
         cases["image without tag"] = [a if a != API_IMAGE else f"{REGISTRY}/{PREFIX}/api" for a in base]
         for old in ("--db-endpoint", "--db-name", "--db-secret-arn"):
             cases[f"removed {old}"] = base + [old, "x"]
@@ -391,7 +395,8 @@ class BehaviorTests(unittest.TestCase):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
         self.assertEqual(self.state_values(), {
-            "db_secret_version": "v1", "api_image": API_IMAGE, "realtime_image": REALTIME_IMAGE})
+            "db_secret_version": "v1", "api_image": API_IMAGE, "realtime_image": REALTIME_IMAGE,
+            "migrate_image": MIGRATE_IMAGE})
         for value in SECRET_VALUES:
             self.assertNotIn(value, self.state.read_text())
 
@@ -442,23 +447,45 @@ class BehaviorTests(unittest.TestCase):
 
     def test_refresh_redeploys_the_images_last_deployed_not_the_environment_ones(self):
         image_b = {"--api-image": f"{REGISTRY}/{PREFIX}/api:release-2",
-                   "--realtime-image": f"{REGISTRY}/{PREFIX}/realtime:release-2"}
+                   "--realtime-image": f"{REGISTRY}/{PREFIX}/realtime:release-2",
+                   "--migrate-image": f"{REGISTRY}/{PREFIX}/migrate:release-2"}
         args = self.args()
         for flag, value in image_b.items():
             args[args.index(flag) + 1] = value
         self.assertEqual(self.run_script(args=args)[0].returncode, 0)
         self.write_version("v2")
-        stale = {"API_IMAGE": API_IMAGE, "REALTIME_IMAGE": REALTIME_IMAGE}
+        stale = {"API_IMAGE": API_IMAGE, "REALTIME_IMAGE": REALTIME_IMAGE, "MIGRATE_IMAGE": MIGRATE_IMAGE}
         result, out = self.run_script(
-            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"], extra_env=stale)
+            args=self.args_without("--api-image", "--realtime-image", "--migrate-image") + ["--refresh-if-rotated"],
+            extra_env=stale)
         self.assertEqual(result.returncode, 0, out)
         env = self.compose_env()
-        self.assertEqual((env["API_IMAGE"], env["REALTIME_IMAGE"]), tuple(image_b.values()))
+        self.assertEqual((env["API_IMAGE"], env["REALTIME_IMAGE"], env["MIGRATE_IMAGE"]), tuple(image_b.values()))
         self.assertEqual(self.state_values()["api_image"], image_b["--api-image"])
+        self.assertEqual(self.state_values()["migrate_image"], image_b["--migrate-image"])
+
+    def test_refresh_of_a_state_without_migrate_image_fails_and_asks_for_a_redeploy(self):
+        self.state.parent.mkdir(parents=True)
+        self.state.write_text(
+            f"db_secret_version=v0\napi_image={API_IMAGE}\nrealtime_image={REALTIME_IMAGE}\n", newline="\n")
+        result, out = self.run_script(
+            args=self.args_without("--migrate-image") + ["--refresh-if-rotated"],
+            extra_env={"MIGRATE_IMAGE": MIGRATE_IMAGE})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--migrate-image", out)
+        self.assertFalse(self.compose_calls())
+        self.assertNotIn("migrate_image", self.state.read_text())
+
+    def test_a_failing_migration_makes_the_deploy_fail_and_keeps_the_state(self):
+        self.run_script()
+        self.write_version("v2")
+        result, out = self.run_script(extra_env={"STUB_COMPOSE_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.state_values()["migrate_image"], MIGRATE_IMAGE)
 
     def test_refresh_without_state_or_images_fails_closed(self):
         result, out = self.run_script(
-            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"])
+            args=self.args_without("--api-image", "--realtime-image", "--migrate-image") + ["--refresh-if-rotated"])
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.compose_calls())
 
@@ -549,6 +576,7 @@ class BehaviorTests(unittest.TestCase):
         env = {}
         for flag, var in (("--name-prefix", "NAME_PREFIX"), ("--region", "AWS_REGION"),
                           ("--api-image", "API_IMAGE"), ("--realtime-image", "REALTIME_IMAGE"),
+                          ("--migrate-image", "MIGRATE_IMAGE"),
                           ("--site-address", "SITE_ADDRESS")):
             env[var] = args[args.index(flag) + 1]
         result, out = self.run_script(args=[], extra_env=env)

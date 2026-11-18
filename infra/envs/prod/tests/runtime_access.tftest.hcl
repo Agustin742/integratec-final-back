@@ -170,7 +170,7 @@ run "role_policy_is_attached_to_the_host_role" {
   }
 }
 
-run "ecr_pull_is_limited_to_the_two_repositories" {
+run "ecr_pull_is_limited_to_the_three_repositories" {
   command = apply
 
   assert {
@@ -179,8 +179,8 @@ run "ecr_pull_is_limited_to_the_two_repositories" {
   }
 
   assert {
-    condition     = toset(module.runtime_access.policy_statements["EcrPull"].Resource) == toset(values(module.registry.repository_arns)) && length(module.runtime_access.policy_statements["EcrPull"].Resource) == 2
-    error_message = "ECR pull must be scoped to the ARNs of the api and realtime repositories."
+    condition     = toset(module.runtime_access.policy_statements["EcrPull"].Resource) == toset(values(module.registry.repository_arns)) && length(module.runtime_access.policy_statements["EcrPull"].Resource) == 3
+    error_message = "ECR pull must be scoped to the ARNs of the api, realtime and migrate repositories."
   }
 
   assert {

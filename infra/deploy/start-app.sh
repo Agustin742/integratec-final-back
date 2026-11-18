@@ -7,10 +7,11 @@
 #     --name-prefix aula-virtual-prod --region us-east-2 \
 #     --api-image  <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/api:<tag> \
 #     --realtime-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/realtime:<tag> \
+#     --migrate-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/migrate:<tag> \
 #     --site-address <host_sslip_domain>
 #
 # Every input can also be an environment variable: NAME_PREFIX, AWS_REGION, API_IMAGE,
-# REALTIME_IMAGE, SITE_ADDRESS. An argument wins over the variable. --site-address is the Terraform
+# REALTIME_IMAGE, MIGRATE_IMAGE, SITE_ADDRESS. An argument wins over the variable. --site-address is the Terraform
 # output host_sslip_domain (not a secret). The database connection info is not an input: Terraform
 # publishes DB_HOST, DB_PORT, DB_NAME and DB_SECRET_ARN as SSM parameters under
 # /<name-prefix>/config/api, and this script reads them there (single source of truth; none of them is
@@ -18,12 +19,14 @@
 #
 # Rotation: RDS rotates the managed master password about every 7 days, and DATABASE_URL is built
 # once per start. After a successful start the script saves a small state file (DEPLOY_STATE_FILE,
-# default /var/lib/aula-app/deployed-state) with three non-secret lines: db_secret_version (the
-# version id of the master secret, never its value), api_image and realtime_image. With
+# default /var/lib/aula-app/deployed-state) with four non-secret lines: db_secret_version (the
+# version id of the master secret, never its value), api_image, realtime_image and migrate_image. With
 # --refresh-if-rotated it exits quietly while that version is still current; otherwise it redeploys
-# the images recorded in the state (the state wins over API_IMAGE/REALTIME_IMAGE, so a refresh never
-# rolls back to older images; they are needed from the caller only if no state exists yet), which
-# recreates the api with the new URL. systemd/app-db-refresh.{service,timer} run it every 10 minutes
+# the images recorded in the state (the state wins over API_IMAGE/REALTIME_IMAGE/MIGRATE_IMAGE, so a
+# refresh never rolls back to older images; they are needed from the caller only if no state exists
+# yet), which recreates the api with the new URL. A state written before the migrate service existed
+# has no migrate_image: the refresh then fails and asks for a deploy with --migrate-image, because
+# redeploying without the migration step would skip it silently. systemd/app-db-refresh.{service,timer} run it every 10 minutes
 # (installation: T6 docs).
 #
 # Concurrency: the whole run holds an exclusive flock on DEPLOY_LOCK_FILE (default: deploy.lock next
@@ -38,9 +41,12 @@
 #      internal-service-secret) and the RDS master secret from Secrets Manager.
 #   3. Builds DATABASE_URL as postgresql://user:password@DB_HOST:DB_PORT/DB_NAME (user and
 #      password URL-encoded, sslmode=require because RDS for
-#      PostgreSQL 16 enforces TLS) and exports it for the api only: compose.prod.yaml lists it in
-#      the api service alone.
-#   4. Logs in to ECR (password on stdin) and runs `docker compose up -d --wait`.
+#      PostgreSQL 16 enforces TLS) and exports it for the api and the migrate job only:
+#      compose.prod.yaml lists it in those two services alone.
+#   4. Logs in to ECR (password on stdin) and runs `docker compose up -d --wait`. The one-shot
+#      migrate service (prisma migrate deploy, same DATABASE_URL) runs first and the api starts only
+#      after it exits 0; if it fails, compose up fails, this script exits non-zero and the state is
+#      not updated.
 #
 # Handling of values: secret values live in shell variables and in the environment of the single
 # `docker compose` process, nowhere else. This script never writes them to a file, never prints
@@ -62,6 +68,7 @@ name_prefix="${NAME_PREFIX:-}"
 region="${AWS_REGION:-}"
 api_image="${API_IMAGE:-}"
 realtime_image="${REALTIME_IMAGE:-}"
+migrate_image="${MIGRATE_IMAGE:-}"
 site_address="${SITE_ADDRESS:-}"
 state_file="${DEPLOY_STATE_FILE:-/var/lib/aula-app/deployed-state}"
 lock_file="${DEPLOY_LOCK_FILE:-$(dirname "$state_file")/deploy.lock}"
@@ -70,13 +77,14 @@ refresh_only=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --name-prefix | --region | --api-image | --realtime-image | --site-address)
+    --name-prefix | --region | --api-image | --realtime-image | --migrate-image | --site-address)
       [ $# -ge 2 ] || usage_error "$1 requires a value."
       case "$1" in
         --name-prefix) name_prefix="$2" ;;
         --region) region="$2" ;;
         --api-image) api_image="$2" ;;
         --realtime-image) realtime_image="$2" ;;
+        --migrate-image) migrate_image="$2" ;;
         --site-address) site_address="$2" ;;
       esac
       shift 2
@@ -186,13 +194,14 @@ exec 9>"$lock_file"
 flock -w "$lock_wait" 9 || fail "Another deployment holds ${lock_file}; gave up after ${lock_wait}s."
 
 # State of the last successful start: key=value lines, read without eval.
-state_version="" state_api_image="" state_realtime_image=""
+state_version="" state_api_image="" state_realtime_image="" state_migrate_image=""
 if [ -f "$state_file" ]; then
   while IFS='=' read -r key value; do
     case "$key" in
       db_secret_version) state_version="$value" ;;
       api_image) state_api_image="$value" ;;
       realtime_image) state_realtime_image="$value" ;;
+      migrate_image) state_migrate_image="$value" ;;
     esac
   done <"$state_file"
 fi
@@ -201,12 +210,17 @@ fi
 if [ -n "$refresh_only" ] && [ -n "$state_api_image" ] && [ -n "$state_realtime_image" ]; then
   api_image="$state_api_image"
   realtime_image="$state_realtime_image"
+  [ -n "$state_migrate_image" ] ||
+    fail "The deployed state has no migrate_image (deployed before the migrate service existed); deploy once with --migrate-image so the migrations run. Nothing was started."
+  migrate_image="$state_migrate_image"
 fi
 require --api-image "$api_image" "ECR image URI with tag"
 require --realtime-image "$realtime_image" "ECR image URI with tag"
+require --migrate-image "$migrate_image" "ECR image URI with tag"
 ecr_image_pattern='^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$'
 [[ "$api_image" =~ $ecr_image_pattern ]] || usage_error "--api-image must be an ECR image URI with a tag."
 [[ "$realtime_image" =~ $ecr_image_pattern ]] || usage_error "--realtime-image must be an ECR image URI with a tag."
+[[ "$migrate_image" =~ $ecr_image_pattern ]] || usage_error "--migrate-image must be an ECR image URI with a tag."
 
 declare -A api_config=() realtime_config=()
 read_config api "ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL DB_HOST DB_PORT DB_NAME DB_SECRET_ARN" api_config
@@ -239,7 +253,12 @@ unset db_user db_password
 
 # ECR login: the token travels on stdin only. One login per distinct registry host.
 registries="${api_image%%/*}"
-[ "${realtime_image%%/*}" = "$registries" ] || registries+=$'\n'"${realtime_image%%/*}"
+for image in "$realtime_image" "$migrate_image"; do
+  case $'\n'"$registries"$'\n' in
+    *$'\n'"${image%%/*}"$'\n'*) ;;
+    *) registries+=$'\n'"${image%%/*}" ;;
+  esac
+done
 while IFS= read -r registry; do
   aws ecr get-login-password --region "$region" | docker login --username AWS --password-stdin "$registry" >/dev/null ||
     fail "ECR login to ${registry} failed; nothing was started."
@@ -247,7 +266,7 @@ done <<<"$registries"
 
 # The values exist only in the environment of this subshell, which becomes the compose process.
 (
-  export API_IMAGE="$api_image" REALTIME_IMAGE="$realtime_image" SITE_ADDRESS="$site_address"
+  export API_IMAGE="$api_image" REALTIME_IMAGE="$realtime_image" MIGRATE_IMAGE="$migrate_image" SITE_ADDRESS="$site_address"
   export AWS_REGION="$region" LOG_GROUP_PREFIX="/${name_prefix}"
   export JWT_SECRET="$jwt_secret" INVITATION_TOKEN_KEY="$invitation_token_key"
   export INTERNAL_SERVICE_SECRET="$internal_service_secret" DATABASE_URL="$database_url"
@@ -261,5 +280,6 @@ done <<<"$registries"
   printf 'db_secret_version=%s\n' "$db_secret_version"
   printf 'api_image=%s\n' "$api_image"
   printf 'realtime_image=%s\n' "$realtime_image"
+  printf 'migrate_image=%s\n' "$migrate_image"
 } > "$state_file"
 echo "Stack started: caddy, api and realtime are healthy."

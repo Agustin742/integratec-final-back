@@ -46,6 +46,8 @@ module "registry" {
   source = "../../modules/registry"
 
   name_prefix = "${var.project}-${local.environment}"
+  # migrate is the one-shot prisma migrate deploy image (target `migrate` of apps/api/Dockerfile).
+  services = ["api", "realtime", "migrate"]
 }
 
 module "storage" {
