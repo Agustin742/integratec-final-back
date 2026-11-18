@@ -1,7 +1,8 @@
 variables {
-  enable_github_oidc      = true
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  enable_github_oidc       = true
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 mock_provider "aws" {

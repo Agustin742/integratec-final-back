@@ -53,9 +53,10 @@ override_resource {
 }
 
 variables {
-  project                 = "aula-virtual"
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  project                  = "aula-virtual"
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 run "instance_defaults_and_placement" {

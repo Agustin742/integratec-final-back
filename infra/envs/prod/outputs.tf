@@ -45,7 +45,7 @@ output "host_public_ip" {
 
 output "host_sslip_domain" {
   description = "Interim DNS name of the host: sslip.io resolves it to the Elastic IP, so Let's Encrypt can issue a certificate until a domain is chosen."
-  value       = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
+  value       = local.host_sslip_domain
 }
 
 output "host_security_group_id" {
@@ -126,4 +126,19 @@ output "storage_bucket_name" {
 output "storage_bucket_arn" {
   description = "ARN of the application files bucket; grant object access on \"<arn>/*\"."
   value       = module.storage.bucket_arn
+}
+
+output "frontend_amplify_app_id" {
+  description = "ID of the Amplify Hosting app of the frontend."
+  value       = module.frontend_hosting.app_id
+}
+
+output "frontend_default_domain" {
+  description = "Default Amplify domain of the frontend app."
+  value       = module.frontend_hosting.default_domain
+}
+
+output "frontend_branch_url" {
+  description = "HTTPS URL of the deployed frontend branch (https://<branch>.<default domain>); the origin to allow in allowed_origins."
+  value       = module.frontend_hosting.branch_url
 }

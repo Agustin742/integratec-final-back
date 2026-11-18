@@ -35,9 +35,10 @@ mock_provider "aws" {
 }
 
 variables {
-  project                 = "aula-virtual"
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  project                  = "aula-virtual"
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 run "bucket_is_named_by_prefix_and_never_force_destroyed" {

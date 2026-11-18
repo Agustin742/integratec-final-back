@@ -9,7 +9,7 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: network, EC2 host, RDS database and container deployment resources, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network, EC2 host, RDS database, container deployment resources and the frontend Amplify app, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
@@ -434,6 +434,71 @@ Not fixed in #61:
 - Remove the now-redundant `compact()` in `envs/prod/main.tf`, and centralize the repeated mock overrides in the test files if Terraform supports it.
 - The `scripts/ci` tests that need PyYAML are skipped where it is not installed; decide whether CI installs it.
 
+## Frontend hosting (AWS Amplify)
+
+The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-east-2`, built on every push to its `develop` branch. Front issue `Agustin742/integratec-final-front#22`. The app was created once in the Amplify console (2026-11-17) and brought under Terraform with `import` blocks, through `modules/frontend_hosting` wired in `envs/prod`. It is covered by `terraform test` with a mocked AWS provider.
+
+### What Terraform owns and what it does not
+
+| Owned by Terraform | Not owned by Terraform |
+|--------------------|------------------------|
+| The app (name, repository, `WEB` platform) | The GitHub connection: the Amplify GitHub App was authorized once in the console and scoped to the frontend repository. |
+| The SPA rewrite rule (`/index.html`, status 200), identical to the frontend `docs/routing.md` | The build recipe: it comes from `amplify.yml` in the frontend repository. |
+| The build variables `VITE_APP_ENV`, `VITE_API_BASE_URL` and `VITE_REALTIME_URL` | The security headers: they come from `customHttp.yml` in the frontend repository. |
+| The `develop` branch (`PRODUCTION` stage, auto build on push) | Custom domains and basic auth (none today). |
+
+**Why there is no token.** `access_token` and `oauth_token` are never set: Terraform would store them in the state file, and AWS does not keep them either. The existing GitHub App connection needs neither, and the AWS provider documents omitting `access_token` when importing an existing app. The tests fail if the module ever sets a token, `custom_headers`, `build_spec` or basic auth credentials.
+
+The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret origins belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output); override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss origins) when a real domain exists.
+
+### Import
+
+The `import` blocks in `envs/prod/main.tf` use the app ID (`frontend_amplify_app_id`, default `d61i488hxxotx`) and `<app id>/<branch name>` for the branch, the formats of the AWS provider documentation. A plan shows the two resources as `imported` and no add or destroy. **The only update expected is `tags_all`**: the app and branch were created without tags, so the apply adds `Project`, `Environment` and `ManagedBy`, like every other resource. Anything else in the plan is drift: stop and compare it with the console before applying.
+
+```sh
+cd infra/envs/prod
+terraform plan          # 2 to import, 0 to add, 0 to destroy
+```
+
+The variable `import_existing_frontend` (default `true`) only exists because mock providers cannot import: the tests set it to `false`. After the first apply records the resources in the state, the import blocks have no effect and can be removed in a later change.
+
+### Outputs
+
+```sh
+terraform output frontend_amplify_app_id
+terraform output frontend_default_domain   # d61i488hxxotx.amplifyapp.com
+terraform output frontend_branch_url       # https://develop.<default domain>
+```
+
+`frontend_branch_url` is the origin to put in `allowed_origins` (CORS) and the base of `password_reset_url_base`.
+
+### Move the deployed branch to `main`
+
+### Rebuild after changing the origins
+
+Changing `environment_variables` (for example because the Elastic IP or the domain changed, so `VITE_API_BASE_URL` and `VITE_REALTIME_URL` change) does **not** rebuild the app, and the `VITE_*` values are compiled into the bundle at build time. After applying such a change, start a build of the deployed branch by hand (or push a commit to it):
+
+```sh
+aws amplify start-job --app-id "$(terraform output -raw frontend_amplify_app_id)"   --branch-name develop --job-type RELEASE
+```
+
+Use the branch in `frontend_branch` instead of `develop` when it is different.
+
+### Move the deployed branch to `main`
+
+Moving the branch is a short outage, not a seamless switch. `branch_name` forces a replacement and the resource has no `create_before_destroy`, so Terraform deletes the `develop` branch first and then creates `main`. Creating a branch through the API does not start a build, so `https://main.<default domain>` serves nothing until a build runs.
+
+1. Drop the branch import first (set `import_existing_frontend = false` or remove the import blocks). With `frontend_branch = "main"` the import id becomes `<app id>/main`, which does not exist yet, so the plan would fail.
+2. Set `frontend_branch = "main"` (for example in `terraform.tfvars`) and review the plan: it must destroy `develop` and create `main`, and the output URL changes to `https://main.<default domain>`.
+3. Update `allowed_origins` and `password_reset_url_base` to the new URL in the same change, apply, and restart the stack on the host so the API reads the new SSM values.
+4. Start the first build of `main` (or push to `main`):
+
+   ```sh
+   aws amplify start-job --app-id "$(terraform output -raw frontend_amplify_app_id)"      --branch-name main --job-type RELEASE
+   ```
+
+Until step 4 finishes, the frontend is down.
+
 ## GitHub Actions OIDC role
 
 `envs/prod` can create the `token.actions.githubusercontent.com` OIDC provider and the role `aula-virtual-prod-github-actions` (output `github_actions_role_arn`).
@@ -490,7 +555,7 @@ Test convention: every `*.tftest.hcl` in `envs/prod/tests` carries the same `ove
 | AWS account, sign-in, and the operator role used by `aws login` | Agustin | Account-level identity is created before Terraform and is not project infrastructure. |
 | `bootstrap/` local state file | Agustin | Bootstrap exception: it cannot live in the bucket it creates. |
 | GitHub repository settings (branch protection, required checks, the role ARN as a variable) | Agustin | Configured in GitHub, not in AWS. |
-| Amplify Hosting | To be decided | Open decision in the IaC rule (Terraform or console connection). |
+| GitHub connection of the Amplify app (GitHub App installation) | Agustin | Authorized once in the Amplify console; Terraform manages the app and branch, not the connection. See [Frontend hosting](#frontend-hosting-aws-amplify). |
 
 ## Known gaps
 
