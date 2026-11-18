@@ -35,8 +35,9 @@ mock_provider "aws" {
 }
 
 variables {
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 run "vpc_has_dns_support_and_hostnames" {

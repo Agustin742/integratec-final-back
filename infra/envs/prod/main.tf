@@ -93,3 +93,37 @@ module "app_config" {
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base
 }
+
+# Frontend hosting (AWS Amplify Hosting). The app was created in the console, so it is
+# imported rather than created; see infra/README.md. The browser origins the build bakes
+# in default to the host sslip.io name.
+locals {
+  frontend_api_host     = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
+  frontend_api_base_url = coalesce(var.frontend_api_base_url, "https://${local.frontend_api_host}")
+  frontend_realtime_url = coalesce(var.frontend_realtime_url, "wss://${local.frontend_api_host}")
+}
+
+module "frontend_hosting" {
+  source = "../../modules/frontend_hosting"
+
+  name_prefix    = "${var.project}-${local.environment}"
+  repository_url = var.frontend_repository_url
+  branch_name    = var.frontend_branch
+
+  api_base_url = local.frontend_api_base_url
+  realtime_url = local.frontend_realtime_url
+}
+
+import {
+  for_each = var.import_existing_frontend ? toset(["app"]) : toset([])
+
+  to = module.frontend_hosting.aws_amplify_app.this
+  id = var.frontend_amplify_app_id
+}
+
+import {
+  for_each = var.import_existing_frontend ? toset(["branch"]) : toset([])
+
+  to = module.frontend_hosting.aws_amplify_branch.this
+  id = "${var.frontend_amplify_app_id}/${var.frontend_branch}"
+}

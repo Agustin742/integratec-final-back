@@ -120,3 +120,55 @@ variable "database_backup_retention_period" {
   type        = number
   default     = 1
 }
+
+variable "frontend_amplify_app_id" {
+  description = "ID of the Amplify app created in the console, used by the import blocks. It is not a secret; it also appears in the app ARN and in the default domain."
+  type        = string
+  default     = "d61i488hxxotx"
+
+  validation {
+    condition     = can(regex("^d[a-z0-9]{8,20}$", var.frontend_amplify_app_id))
+    error_message = "frontend_amplify_app_id must be an Amplify app ID such as d61i488hxxotx."
+  }
+}
+
+variable "frontend_repository_url" {
+  description = "HTTPS URL of the frontend GitHub repository connected to Amplify."
+  type        = string
+  default     = "https://github.com/Agustin742/integratec-final-front"
+}
+
+variable "frontend_branch" {
+  description = "Frontend branch deployed as the PRODUCTION stage of the Amplify app."
+  type        = string
+  default     = "develop"
+}
+
+variable "frontend_api_base_url" {
+  description = "HTTPS origin of the API compiled into the frontend as VITE_API_BASE_URL. Null derives it from the host sslip.io name."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.frontend_api_base_url == null || can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.frontend_api_base_url))
+    error_message = "frontend_api_base_url must be an https origin without path or trailing slash."
+  }
+}
+
+variable "frontend_realtime_url" {
+  description = "Secure WebSocket origin of the realtime service compiled into the frontend as VITE_REALTIME_URL. Null derives it from the host sslip.io name."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.frontend_realtime_url == null || can(regex("^wss://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.frontend_realtime_url))
+    error_message = "frontend_realtime_url must be a wss origin without path or trailing slash."
+  }
+}
+
+variable "import_existing_frontend" {
+  description = "Import the console-created Amplify app and branch into the state. It only has an effect until the first apply that records them; tests set it to false because mock providers cannot import."
+  type        = bool
+  default     = true
+  nullable    = false
+}
