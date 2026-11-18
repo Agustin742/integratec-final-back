@@ -162,3 +162,23 @@ output "pipeline_log_group_name" {
   description = "Name of the CloudWatch log group of the CodeBuild projects."
   value       = module.delivery_pipeline.log_group_name
 }
+
+output "pipeline_terraform_plan_project_name" {
+  description = "Name of the CodeBuild project that runs terraform plan."
+  value       = module.delivery_pipeline.terraform_plan_project_name
+}
+
+output "pipeline_terraform_apply_project_name" {
+  description = "Name of the CodeBuild project that applies the approved saved plan."
+  value       = module.delivery_pipeline.terraform_apply_project_name
+}
+
+output "pipeline_terraform_plan_role_arn" {
+  description = "ARN of the read-only service role of the terraform plan project."
+  value       = module.delivery_pipeline.terraform_plan_role_arn
+}
+
+output "pipeline_terraform_apply_role_arn" {
+  description = "ARN of the broad service role of the terraform apply project (D19 trade-off: gated by the manual approval)."
+  value       = module.delivery_pipeline.terraform_apply_role_arn
+}

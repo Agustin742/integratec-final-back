@@ -57,12 +57,22 @@ module "storage" {
 }
 
 # Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
-# by hand in the console), the artifact bucket and the CodeBuild log group. CodeBuild
-# projects, roles and the pipeline itself are added by later changes.
+# by hand in the console), the artifact bucket, the CodeBuild log group and the Terraform
+# runner (CodeBuild plan and apply projects with their roles). The remaining projects and
+# the pipeline itself are added by later changes.
 module "delivery_pipeline" {
   source = "../../modules/delivery_pipeline"
 
   name_prefix = "${var.project}-${local.environment}"
+
+  # Inputs of the Terraform runner (CodeBuild plan and apply). They are injected as
+  # environment variables so the pipeline plan equals the local one (D19).
+  project                 = var.project
+  region                  = var.region
+  state_key               = "${local.environment}/terraform.tfstate"
+  allowed_origins         = var.allowed_origins
+  password_reset_url_base = var.password_reset_url_base
+  enable_github_oidc      = var.enable_github_oidc
 }
 
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files

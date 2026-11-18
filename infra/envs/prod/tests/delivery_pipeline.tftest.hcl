@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The delivery pipeline module builds role and project ARNs from the account ID, and
+  # CodeBuild validates them; the mock would return a random string, so it is pinned.
+  override_data {
+    target = module.delivery_pipeline.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -120,8 +129,21 @@ run "artifact_expiration_is_configurable" {
   }
 
   variables {
+    project                  = "aula-virtual"
+    region                   = "us-east-2"
+    allowed_origins          = ["https://app.example.com"]
+    password_reset_url_base  = "https://app.example.com/reset-password"
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 90
+  }
+
+  # The module resolves the account ID for the state bucket and role ARNs; the mock would
+  # return a random string that CodeBuild rejects as an ARN.
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
   }
 
   assert {
@@ -152,8 +174,19 @@ run "rejects_unsupported_log_retention" {
   }
 
   variables {
-    name_prefix       = "aula-virtual-prod"
-    retention_in_days = 10
+    project                 = "aula-virtual"
+    region                  = "us-east-2"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    name_prefix             = "aula-virtual-prod"
+    retention_in_days       = 10
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
   }
 
   expect_failures = [var.retention_in_days]
@@ -167,8 +200,19 @@ run "rejects_zero_artifact_expiration_days" {
   }
 
   variables {
+    project                  = "aula-virtual"
+    region                   = "us-east-2"
+    allowed_origins          = ["https://app.example.com"]
+    password_reset_url_base  = "https://app.example.com/reset-password"
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 0
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
   }
 
   expect_failures = [var.artifact_expiration_days]
@@ -182,8 +226,19 @@ run "rejects_fractional_artifact_expiration_days" {
   }
 
   variables {
+    project                  = "aula-virtual"
+    region                   = "us-east-2"
+    allowed_origins          = ["https://app.example.com"]
+    password_reset_url_base  = "https://app.example.com/reset-password"
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 1.5
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
   }
 
   expect_failures = [var.artifact_expiration_days]
@@ -197,7 +252,18 @@ run "rejects_name_prefix_longer_than_17_characters" {
   }
 
   variables {
-    name_prefix = "aula-virtual-prod-x"
+    project                 = "aula-virtual"
+    region                  = "us-east-2"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    name_prefix             = "aula-virtual-prod-x"
+  }
+
+  override_data {
+    target = data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
   }
 
   expect_failures = [var.name_prefix]

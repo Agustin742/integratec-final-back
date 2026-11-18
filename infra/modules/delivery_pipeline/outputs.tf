@@ -79,3 +79,72 @@ output "log_group_settings" {
     retention_in_days = aws_cloudwatch_log_group.codebuild.retention_in_days
   }
 }
+
+output "terraform_plan_project_name" {
+  description = "Name of the CodeBuild project that runs terraform plan; the pipeline plan stage references it."
+  value       = aws_codebuild_project.terraform_plan.name
+}
+
+output "terraform_apply_project_name" {
+  description = "Name of the CodeBuild project that applies the saved plan; the pipeline apply stage references it."
+  value       = aws_codebuild_project.terraform_apply.name
+}
+
+output "terraform_plan_role_arn" {
+  description = "ARN of the service role of the terraform plan project."
+  value       = aws_iam_role.terraform_plan.arn
+}
+
+output "terraform_apply_role_arn" {
+  description = "ARN of the service role of the terraform apply project."
+  value       = aws_iam_role.terraform_apply.arn
+}
+
+output "terraform_projects" {
+  description = "Source, environment, logging and environment variables of the plan and apply projects as configured on the resources, for tests and review."
+  value = {
+    for key, project in { plan    = aws_codebuild_project.terraform_plan, apply = aws_codebuild_project.terraform_apply } : key => {
+      name                        = project.name
+      source_type                 = one(project.source).type
+      buildspec                   = one(project.source).buildspec
+      artifacts_type              = one(project.artifacts).type
+      compute_type                = one(project.environment).compute_type
+      environment_type            = one(project.environment).type
+      image                       = one(project.environment).image
+      image_pull_credentials_type = one(project.environment).image_pull_credentials_type
+      privileged_mode             = one(project.environment).privileged_mode
+      build_timeout               = project.build_timeout
+      concurrent_build_limit      = project.concurrent_build_limit
+      vpc_config_count            = length(project.vpc_config)
+      log_group_name              = one(one(project.logs_config).cloudwatch_logs).group_name
+      log_stream_prefix           = one(one(project.logs_config).cloudwatch_logs).stream_name
+      environment_variables       = { for v in one(project.environment).environment_variable : v.name => { value = v.value, type = v.type } }
+    }
+  }
+}
+
+output "terraform_role_trust" {
+  description = "Trust policy of each runner role, decoded from the resource, for tests and review."
+  value = {
+    plan  = jsondecode(aws_iam_role.terraform_plan.assume_role_policy)
+    apply = jsondecode(aws_iam_role.terraform_apply.assume_role_policy)
+  }
+}
+
+output "terraform_role_policy_statements" {
+  description = "Statements of the inline policy of each runner role, decoded from the resource, for tests and review."
+  value = {
+    plan  = jsondecode(aws_iam_role_policy.terraform_plan.policy).Statement
+    apply = jsondecode(aws_iam_role_policy.terraform_apply.policy).Statement
+  }
+}
+
+output "terraform_plan_managed_policy_arns" {
+  description = "AWS managed policies attached to the plan role."
+  value       = [aws_iam_role_policy_attachment.terraform_plan_read_only.policy_arn]
+}
+
+output "terraform_apply_managed_policy_arns" {
+  description = "AWS managed policies attached to the apply role (none: it only has its inline policy)."
+  value       = []
+}

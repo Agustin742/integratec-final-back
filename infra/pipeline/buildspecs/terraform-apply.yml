@@ -1,0 +1,23 @@
+# CodeBuild buildspec of the `terraform-apply` project (decision D19).
+# Runs after the manual approval. Its input is the artifact of the plan build, so it applies
+# the saved plan that was approved and never plans again. Terraform refuses a stale plan
+# (state changed since the plan), which fails this build on purpose.
+version: 0.2
+
+env:
+  variables:
+    # Keep equal to terraform_version in .github/workflows/ci.yml (scripts/ci/test_pipeline_buildspecs.py).
+    TERRAFORM_VERSION: "1.16.6"
+    TF_IN_AUTOMATION: "true"
+
+phases:
+  install:
+    commands:
+      - bash infra/pipeline/scripts/install-terraform.sh
+  build:
+    commands:
+      - cd infra/envs/prod
+      - test -f tfplan || { echo "tfplan is missing from the plan artifact" >&2; exit 1; }
+      - test -f .terraform.lock.hcl || { echo ".terraform.lock.hcl is missing from the plan artifact" >&2; exit 1; }
+      - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
+      - terraform apply -input=false -lock-timeout=5m tfplan
