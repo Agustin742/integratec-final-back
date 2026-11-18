@@ -43,8 +43,9 @@ export class StudentMetricsController {
     summary: "Read the authenticated student's graded activities of one classroom",
     description:
       'One item per graded activity: score, feedback and net credited points, latest grading first. ' +
-      'Ungraded submissions and deleted activities are not listed. This card is the student resource; ' +
-      'staff and parents answer 403 (the parent view is HU-ACT-006, out of scope here).',
+      'The activity title and maxScore are frozen at grading time, so later activity edits never ' +
+      'rewrite the card. Ungraded submissions and deleted activities are not listed. This card is the ' +
+      'student resource; staff and parents answer 403 (the parent view is HU-ACT-006, out of scope here).',
   })
   @ApiPaginatedResponse(ReportCardItemDto, "The student's graded activities, paginated.")
   reportCard(

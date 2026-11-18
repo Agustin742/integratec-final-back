@@ -25,13 +25,17 @@ export class ReportCardItemDto {
   @ApiProperty({ format: 'uuid', description: 'Graded activity UUID.' })
   activityId!: string;
 
-  @ApiProperty({ description: 'Activity title at grading time.' })
+  @ApiProperty({
+    description: 'Activity title frozen at grading time; later edits do not change it.',
+  })
   activityTitle!: string;
 
   @ApiProperty({ enum: ['TP', 'EXAM'], description: 'Activity type.' })
   activityType!: 'TP' | 'EXAM';
 
-  @ApiProperty({ description: 'Activity maxScore (0-100) at grading time.' })
+  @ApiProperty({
+    description: 'Activity maxScore (0-100) frozen at grading time; later edits do not change it.',
+  })
   maxScore!: number;
 
   @ApiProperty({ description: 'Awarded score (0..maxScore).' })

@@ -788,6 +788,11 @@ model Grade {
   graderId           String   @map("grader_id") @db.Uuid
   score              Int
   feedback           String
+  /// Activity metadata frozen at grading time (same snapshot pattern as typeWeight and
+  /// weightMultiplier): later activity edits never rewrite the values a student was graded
+  /// against. A regrade refreshes both to the regrading-time values.
+  activityTitle      String   @map("activity_title") @db.VarChar(120)
+  maxScore           Int      @map("max_score")
   pointsAwarded      Int      @map("points_awarded")
   /// Weights used at the initial grade; regrades reuse them so later activity/config edits never move points.
   typeWeight         Decimal  @map("type_weight") @db.Decimal(4, 2)

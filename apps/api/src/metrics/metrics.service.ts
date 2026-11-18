@@ -56,8 +56,17 @@ export class MetricsService {
           activityId: true,
           submittedAt: true,
           isLate: true,
-          activity: { select: { title: true, type: true, maxScore: true } },
-          grade: { select: { score: true, feedback: true, pointsAwarded: true, gradedAt: true } },
+          activity: { select: { type: true } },
+          grade: {
+            select: {
+              score: true,
+              feedback: true,
+              pointsAwarded: true,
+              gradedAt: true,
+              activityTitle: true,
+              maxScore: true,
+            },
+          },
         },
       }),
       this.prisma.submission.count({ where }),
@@ -66,9 +75,10 @@ export class MetricsService {
     return paginated(
       rows.map((row) => ({
         activityId: row.activityId,
-        activityTitle: row.activity.title,
+        // Frozen at grading time on the grade: later activity edits never rewrite the card.
+        activityTitle: row.grade!.activityTitle,
         activityType: row.activity.type,
-        maxScore: row.activity.maxScore,
+        maxScore: row.grade!.maxScore,
         score: row.grade!.score,
         feedback: row.grade!.feedback,
         pointsAwarded: row.grade!.pointsAwarded,
@@ -159,7 +169,9 @@ export class MetricsService {
     ]);
 
     const sumByUser = new Map(sums.map((row) => [row.userId, row]));
-    const submissionsByUser = new Map(submissionCounts.map((row) => [row.studentId, row._count._all]));
+    const submissionsByUser = new Map(
+      submissionCounts.map((row) => [row.studentId, row._count._all]),
+    );
     const gradedByUser = new Map(gradedCounts.map((row) => [row.studentId, row._count._all]));
 
     return paginated(

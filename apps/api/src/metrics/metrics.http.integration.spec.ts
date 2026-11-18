@@ -25,7 +25,9 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
 
   const [teacherA, s1, s2, sB, parent, teacherB, schoolOwner, schoolAdmin, sC, sLeaving] =
     Array.from({ length: 10 }, () => randomUUID());
-  const [classroomA, classroomB, schoolId, classroomC] = Array.from({ length: 4 }, () => randomUUID());
+  const [classroomA, classroomB, schoolId, classroomC] = Array.from({ length: 4 }, () =>
+    randomUUID(),
+  );
   const token = (actor: string) => `Bearer metrics-test:${actor}`;
 
   const get = (path: string, actor: string) =>
@@ -37,7 +39,17 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     grade: { score: number; feedback: string; pointsAwarded: number; gradedAt: Date },
   ) => {
     const submission = await prisma.submission.create({
-      data: { activityId, studentId, submittedAt: grade.gradedAt, isLate: false, idempotencyKey: randomUUID() },
+      data: {
+        activityId,
+        studentId,
+        submittedAt: grade.gradedAt,
+        isLate: false,
+        idempotencyKey: randomUUID(),
+      },
+    });
+    const activity = await prisma.activity.findUniqueOrThrow({
+      where: { id: activityId },
+      select: { title: true, maxScore: true },
     });
     await prisma.grade.create({
       data: {
@@ -45,6 +57,9 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
         graderId: teacherA,
         score: grade.score,
         feedback: grade.feedback,
+        // Snapshot columns, as the real grading flow writes them.
+        activityTitle: activity.title,
+        maxScore: activity.maxScore,
         pointsAwarded: grade.pointsAwarded,
         typeWeight: 1,
         weightMultiplier: 1,
@@ -54,7 +69,13 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     });
   };
 
-  const metric = (userId: string, classroomId: string, day: Date, connectedSeconds: number, submissionCount: number) =>
+  const metric = (
+    userId: string,
+    classroomId: string,
+    day: Date,
+    connectedSeconds: number,
+    submissionCount: number,
+  ) =>
     prisma.activityMetric.create({
       data: { classroomId, userId, day, connectedSeconds, submissionCount },
     });
@@ -86,7 +107,10 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
           useValue: {
             verifyAuthorizationHeader: async (header?: string) => {
               if (!header?.startsWith('Bearer metrics-test:')) throw new UnauthorizedException();
-              return { userId: header.slice('Bearer metrics-test:'.length), sessionId: randomUUID() };
+              return {
+                userId: header.slice('Bearer metrics-test:'.length),
+                sessionId: randomUUID(),
+              };
             },
           },
         },
@@ -102,18 +126,32 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     const day2 = new Date(now - DAY_MS);
 
     await prisma.$transaction(async (tx) => {
-      const users = [teacherA, s1, s2, sB, parent, teacherB, schoolOwner, schoolAdmin, sC, sLeaving];
+      const users = [
+        teacherA,
+        s1,
+        s2,
+        sB,
+        parent,
+        teacherB,
+        schoolOwner,
+        schoolAdmin,
+        sC,
+        sLeaving,
+      ];
       await tx.user.createMany({
         data: users.map((id) => ({
           id,
           // Distinct initial letters keep any reasonable collation in agreement on the summary order.
-          displayName: id === s1 ? 'Alpha Student' : id === s2 ? 'Beta Student' : `Metrics ${id.slice(0, 6)}`,
+          displayName:
+            id === s1 ? 'Alpha Student' : id === s2 ? 'Beta Student' : `Metrics ${id.slice(0, 6)}`,
           email: `metrics-http-${id}@example.invalid`,
           passwordHash: 'synthetic-unused-metrics-hash',
           registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
         })),
       });
-      await tx.school.create({ data: { id: schoolId, name: 'Metrics School', slug: `metrics-${schoolId}` } });
+      await tx.school.create({
+        data: { id: schoolId, name: 'Metrics School', slug: `metrics-${schoolId}` },
+      });
       await tx.schoolMember.createMany({
         data: [
           { schoolId, userId: schoolOwner, role: SchoolRole.OWNER },
@@ -132,7 +170,12 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
           { classroomId: classroomA, userId: teacherA, role: ClassroomRole.TEACHER },
           { classroomId: classroomA, userId: s1, role: ClassroomRole.STUDENT },
           { classroomId: classroomA, userId: s2, role: ClassroomRole.STUDENT },
-          { classroomId: classroomA, userId: sLeaving, role: ClassroomRole.STUDENT, state: MembershipState.INACTIVE },
+          {
+            classroomId: classroomA,
+            userId: sLeaving,
+            role: ClassroomRole.STUDENT,
+            state: MembershipState.INACTIVE,
+          },
           { classroomId: classroomB, userId: teacherB, role: ClassroomRole.TEACHER },
           { classroomId: classroomB, userId: sB, role: ClassroomRole.STUDENT },
           { classroomId: classroomC, userId: sC, role: ClassroomRole.STUDENT },
@@ -154,7 +197,13 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     });
     // s1 also has an ungraded submission: the report card lists graded activities only.
     await prisma.submission.create({
-      data: { activityId: a2, studentId: s1, submittedAt: new Date(now - HOUR_MS), isLate: false, idempotencyKey: randomUUID() },
+      data: {
+        activityId: a2,
+        studentId: s1,
+        submittedAt: new Date(now - HOUR_MS),
+        isLate: false,
+        idempotencyKey: randomUUID(),
+      },
     });
     await gradedSubmission(a3, s2, {
       score: 60,
@@ -220,8 +269,10 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     });
 
     it('paginates and keeps a stable ordering', async () => {
-      const res = await get(`/classrooms/${classroomA}/me/activity-metrics?pageSize=1&page=2`, s1)
-        .expect(200);
+      const res = await get(
+        `/classrooms/${classroomA}/me/activity-metrics?pageSize=1&page=2`,
+        s1,
+      ).expect(200);
       expect(res.body.total).toBe(2);
       expect(res.body.items).toHaveLength(1);
       expect(res.body.items[0].connectedSeconds).toBe(100);
@@ -239,7 +290,19 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
       const res = await get(`/classrooms/${classroomA}/activity-metrics`, teacherA).expect(200);
       // sLeaving is inactive: the summary covers active enrollments only.
       expect(res.body.total).toBe(2);
-      const byStudent = new Map(res.body.items.map((item: { studentId: string; displayName: string; connectedSeconds: number; submissionCount: number; messageCount: number; gradedCount: number; ungradedCount: number }) => [item.studentId, item]));
+      const byStudent = new Map(
+        res.body.items.map(
+          (item: {
+            studentId: string;
+            displayName: string;
+            connectedSeconds: number;
+            submissionCount: number;
+            messageCount: number;
+            gradedCount: number;
+            ungradedCount: number;
+          }) => [item.studentId, item],
+        ),
+      );
       expect(byStudent.get(s1)).toMatchObject({
         connectedSeconds: 150,
         submissionCount: 3,
@@ -268,7 +331,9 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
     });
 
     it('lets the school owner and admin read any classroom of their school without membership', async () => {
-      const owner = await get(`/classrooms/${classroomC}/activity-metrics`, schoolOwner).expect(200);
+      const owner = await get(`/classrooms/${classroomC}/activity-metrics`, schoolOwner).expect(
+        200,
+      );
       expect(owner.body.total).toBe(1);
       expect(owner.body.items[0]).toMatchObject({
         studentId: sC,
@@ -283,5 +348,35 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
 
   it('answers 401 without a session', async () => {
     await request(app.getHttpServer()).get(`/classrooms/${classroomA}/me/report-card`).expect(401);
+  });
+
+  // Fixture-mutating cases live after every test above: they add graded rows, so earlier
+  // assertions keep reading only the fixtures created in `beforeAll`.
+  describe('report-card activity metadata snapshot', () => {
+    it('keeps the activity title and maxScore frozen at grading time', async () => {
+      const frozen = await publishedActivity(classroomA, `Frozen card ${randomUUID()}`);
+      await gradedSubmission(frozen, s1, {
+        score: 8,
+        feedback: 'Snapshot test',
+        pointsAwarded: 4,
+        gradedAt: new Date(Date.now() - 3 * HOUR_MS),
+      });
+      // Title and maxScore stay editable once submissions exist (D16 freezes questions and
+      // deletion only): the card must keep the values the student was graded against.
+      await prisma.activity.update({
+        where: { id: frozen },
+        data: { title: `Renamed ${randomUUID()}`, maxScore: 50 },
+      });
+
+      const res = await get(`/classrooms/${classroomA}/me/report-card`, s1).expect(200);
+      const item = res.body.items.find(
+        (candidate: { activityId: string }) => candidate.activityId === frozen,
+      );
+      expect(item).toMatchObject({
+        activityTitle: expect.stringContaining('Frozen card'),
+        maxScore: 100,
+        score: 8,
+      });
+    });
   });
 });

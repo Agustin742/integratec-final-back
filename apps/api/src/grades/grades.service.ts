@@ -288,6 +288,9 @@ export class GradesService {
             graderId: actorId,
             score: dto.score,
             feedback: dto.feedback,
+            // Snapshot of the activity at grading time: later edits never rewrite the card.
+            activityTitle: activity.title,
+            maxScore: activity.maxScore,
             pointsAwarded,
             typeWeight: new Prisma.Decimal(typeWeight.toFixed(2)),
             weightMultiplier: new Prisma.Decimal(activity.weightMultiplier.toString()),
@@ -491,6 +494,10 @@ export class GradesService {
           graderId: actorId,
           score: dto.score,
           feedback: dto.feedback,
+          // Refresh the activity snapshot to the regrading-time values (the score was just
+          // validated against the current maxScore, so the card stays coherent).
+          activityTitle: activity.title,
+          maxScore: activity.maxScore,
           // Net actually credited, so later regrades compute their delta against it.
           pointsAwarded: currentGrade.pointsAwarded + appliedDelta,
           pointTransactionId: nextGradePointTransactionId,

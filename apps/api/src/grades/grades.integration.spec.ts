@@ -802,6 +802,9 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
             submissionId: ids.tpSubmission,
             graderId: ids.teacher,
             gradedAt: new Date(),
+            // Snapshot columns must be present so each rejection below is the CHECK, not the NOT NULL.
+            activityTitle: 'TP',
+            maxScore: 100,
             typeWeight: 1,
             weightMultiplier: 1,
             ...badGrade,

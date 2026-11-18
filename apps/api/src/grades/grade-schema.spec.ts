@@ -43,4 +43,12 @@ describe('grade schema — activities-and-grading and data', () => {
       ?.fields.filter((field) => field.relationFromFields && field.relationFromFields.length > 0);
     expect(revFks?.every((field) => field.relationOnDelete === 'Restrict')).toBe(true);
   });
+
+  it('freezes the graded activity title and maxScore on the grade (snapshot pattern)', () => {
+    const gradeFields = new Map(models.get('Grade')?.fields.map((field) => [field.name, field]));
+    expect(gradeFields.get('activityTitle')?.isRequired).toBe(true);
+    expect(gradeFields.get('activityTitle')?.dbName).toBe('activity_title');
+    expect(gradeFields.get('maxScore')?.isRequired).toBe(true);
+    expect(gradeFields.get('maxScore')?.dbName).toBe('max_score');
+  });
 });
