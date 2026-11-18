@@ -192,3 +192,13 @@ output "pipeline_images_role_arn" {
   description = "ARN of the service role of the images project (push access to the three image repositories only)."
   value       = module.delivery_pipeline.images_role_arn
 }
+
+output "pipeline_deploy_project_name" {
+  description = "Name of the CodeBuild project that deploys the release to the host through SSM Run Command and health-checks it."
+  value       = module.delivery_pipeline.deploy_project_name
+}
+
+output "pipeline_deploy_role_arn" {
+  description = "ARN of the service role of the deploy project (SSM Run Command on the host instance only)."
+  value       = module.delivery_pipeline.deploy_role_arn
+}

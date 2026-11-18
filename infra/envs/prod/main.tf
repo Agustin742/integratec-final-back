@@ -77,6 +77,10 @@ module "delivery_pipeline" {
   # Repositories the images project pushes to.
   ecr_repository_names = module.registry.repository_names
   ecr_repository_arns  = module.registry.repository_arns
+
+  # Target and health check of the deploy project (SSM Run Command on this one instance).
+  host_instance_id = module.host.instance_id
+  site_address     = local.host_sslip_domain
 }
 
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files
@@ -98,6 +102,9 @@ module "runtime_access" {
   ssm_parameter_arns      = flatten(values(module.app_config.parameter_arns))
   ssm_parameter_path_arns = values(module.app_config.parameter_path_arns)
   s3_bucket_arn           = module.storage.bucket_arn
+
+  # The deploy pipeline publishes the host files here; the host reads host-files/* only.
+  host_files_bucket_arn = module.delivery_pipeline.artifact_bucket_arn
 }
 
 module "app_config" {

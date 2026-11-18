@@ -125,3 +125,34 @@ variable "images_build_timeout_minutes" {
     error_message = "images_build_timeout_minutes must be a whole number between 5 and 480."
   }
 }
+
+variable "host_instance_id" {
+  description = "ID of the EC2 host the deploy project sends its command to; the deploy role may run commands on exactly this instance."
+  type        = string
+
+  validation {
+    condition     = length(var.host_instance_id) > 0 && !strcontains(var.host_instance_id, "*") && !strcontains(var.host_instance_id, "/")
+    error_message = "host_instance_id must be the exact ID of one instance (no wildcards)."
+  }
+}
+
+variable "site_address" {
+  description = "Public host name of the stack (output host_sslip_domain); the deploy project health-checks https://<site_address>/api/health and /realtime/health."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9.-]+$", var.site_address))
+    error_message = "site_address must be a host name: letters, digits, dots and hyphens only."
+  }
+}
+
+variable "deploy_build_timeout_minutes" {
+  description = "Minutes after which the deploy build is stopped; it waits for the host deployment (up to 20 minutes) and the health check."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.deploy_build_timeout_minutes >= 5 && var.deploy_build_timeout_minutes <= 480 && floor(var.deploy_build_timeout_minutes) == var.deploy_build_timeout_minutes
+    error_message = "deploy_build_timeout_minutes must be a whole number between 5 and 480."
+  }
+}

@@ -20,6 +20,8 @@ BUILDSPEC_DIR = ROOT / "infra/pipeline/buildspecs"
 PLAN = BUILDSPEC_DIR / "terraform-plan.yml"
 APPLY = BUILDSPEC_DIR / "terraform-apply.yml"
 IMAGES = BUILDSPEC_DIR / "images.yml"
+DEPLOY = BUILDSPEC_DIR / "deploy.yml"
+HOST_DEPLOY_SCRIPT = ROOT / "infra/pipeline/scripts/host-deploy.sh"
 START_APP = ROOT / "infra/deploy/start-app.sh"
 INSTALL_SCRIPT = ROOT / "infra/pipeline/scripts/install-terraform.sh"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
@@ -228,6 +230,160 @@ class ImagesBuildspecTests(unittest.TestCase):
         for command in self.commands:
             self.assertNotRegex(command, r"\|\|\s*(true|:)")
         self.assertNotRegex(IMAGES.read_text(encoding="utf-8"), r"[0-9]{12}")
+
+
+VALID_RELEASE_TAG = "release-20261118-0123456"
+DEPLOY_ENV = {
+    "IMAGE_TAG": VALID_RELEASE_TAG,
+    "API_IMAGE": f"123456789012.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-api:{VALID_RELEASE_TAG}",
+    "REALTIME_IMAGE": f"123456789012.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-realtime:{VALID_RELEASE_TAG}",
+    "MIGRATE_IMAGE": f"123456789012.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-migrate:{VALID_RELEASE_TAG}",
+    "INSTANCE_ID": "i-0123456789abcdef0",
+    "ARTIFACT_BUCKET": "aula-virtual-prod-pipeline-artifacts-0123",
+    "SITE_ADDRESS": "203-0-113-10.sslip.io",
+}
+
+
+@unittest.skipIf(yaml is None, "PyYAML is not installed")
+class DeployBuildspecTests(unittest.TestCase):
+    def setUp(self):
+        self.spec = load(DEPLOY)
+        self.commands = commands(self.spec)
+        self.text = "\n".join(self.commands)
+
+    def guard(self):
+        return next(c for c in self.commands if "IMAGE_TAG" in c and "exit 1" in c)
+
+    def test_buildspec_is_version_0_2_and_runs_in_bash(self):
+        self.assertEqual(self.spec["version"], 0.2)
+        self.assertEqual(self.spec["env"]["shell"], "bash")
+
+    def test_it_emits_no_artifact(self):
+        self.assertNotIn("artifacts", self.spec)
+
+    def test_inputs_are_validated_before_anything_is_uploaded_or_sent(self):
+        guard = self.guard()
+        for name in ("IMAGE_TAG", "API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE", "INSTANCE_ID", "ARTIFACT_BUCKET", "SITE_ADDRESS"):
+            self.assertIn(name, guard)
+        self.assertIn("release-", guard)
+        self.assertLess(self.commands.index(guard), min(i for i, c in enumerate(self.commands) if "aws s3 cp" in c))
+        self.assertLess(self.commands.index(guard), min(i for i, c in enumerate(self.commands) if "aws ssm send-command" in c))
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_guard_accepts_the_values_the_pipeline_provides(self):
+        result = run_bash(self.guard(), DEPLOY_ENV)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_guard_fails_when_a_variable_is_missing_or_empty(self):
+        for name in DEPLOY_ENV:
+            for env in ({k: v for k, v in DEPLOY_ENV.items() if k != name}, {**DEPLOY_ENV, name: ""}):
+                result = run_bash(self.guard(), env)
+                self.assertNotEqual(result.returncode, 0, name)
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_guard_rejects_images_that_are_not_release_ecr_uris_of_the_run(self):
+        registry = "123456789012.dkr.ecr.us-east-2.amazonaws.com"
+        bad_images = (
+            f"{registry}/aula-virtual-prod-api:latest",
+            f"{registry}/aula-virtual-prod-api:release-20261117-0123456",
+            f"{registry}/aula-virtual-prod-api",
+            "docker.io/library/nginx:release-20261118-0123456",
+            f"{registry}/aula-virtual-prod-api:{VALID_RELEASE_TAG} --privileged",
+        )
+        for name in ("API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE"):
+            for image in bad_images:
+                result = run_bash(self.guard(), {**DEPLOY_ENV, name: image})
+                self.assertNotEqual(result.returncode, 0, f"{name}={image}")
+        for tag in ("latest", "release-1", "release-20261118-XYZ"):
+            result = run_bash(self.guard(), {**DEPLOY_ENV, "IMAGE_TAG": tag})
+            self.assertNotEqual(result.returncode, 0, tag)
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_guard_rejects_an_instance_id_or_host_name_that_could_inject_shell(self):
+        for name, value in (("INSTANCE_ID", "i-123; reboot"), ("INSTANCE_ID", "web-1"), ("SITE_ADDRESS", "a.example.com/x"), ("SITE_ADDRESS", "a b")):
+            result = run_bash(self.guard(), {**DEPLOY_ENV, name: value})
+            self.assertNotEqual(result.returncode, 0, f"{name}={value}")
+
+    def test_host_files_are_packaged_from_exactly_the_deploy_and_caddy_directories(self):
+        (tar,) = [l for l in self.text.splitlines() if re.search(r"\btar\b.*-czf", l)]
+        self.assertRegex(tar, r"-C infra deploy caddy\s*$")
+        self.assertNotIn("--exclude", tar)
+
+    def test_tarball_and_its_sha256_are_uploaded_under_host_files_of_the_image_tag(self):
+        uploads = [l for l in self.text.splitlines() if "aws s3 cp" in l]
+        self.assertEqual(len(uploads), 2)
+        self.assertTrue(any('"s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz"' in l for l in uploads))
+        self.assertTrue(any('"s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz.sha256"' in l for l in uploads))
+        self.assertIn("sha256sum", self.text)
+        self.assertLess(self.text.index("sha256sum"), self.text.index("aws s3 cp"))
+
+    def test_send_command_targets_the_instance_with_the_shell_document_and_explicit_timeouts(self):
+        send = self.text[self.text.index("aws ssm send-command"):]
+        send = send[: send.index("--output text") + len("--output text")]
+        self.assertIn("--document-name AWS-RunShellScript", send)
+        self.assertIn('--instance-ids "$INSTANCE_ID"', send)
+        self.assertNotIn("--targets", send)
+        self.assertIn('--timeout-seconds "$SSM_DELIVERY_TIMEOUT_SECONDS"', send)
+        self.assertIn("executionTimeout", self.text)
+        self.assertIn("SSM_EXECUTION_TIMEOUT_SECONDS", self.text)
+        self.assertIn("--comment", send)
+        self.assertIn("CODEBUILD_INITIATOR", send)
+        self.assertIn("IMAGE_TAG", send)
+
+    def test_timeouts_are_declared_and_ordered(self):
+        variables = self.spec["env"]["variables"]
+        delivery = int(variables["SSM_DELIVERY_TIMEOUT_SECONDS"])
+        execution = int(variables["SSM_EXECUTION_TIMEOUT_SECONDS"])
+        poll = int(variables["SSM_POLL_DEADLINE_SECONDS"])
+        self.assertGreaterEqual(delivery, 30)
+        self.assertGreater(poll, delivery + execution)
+
+    def test_remote_script_is_the_checked_in_file_and_the_values_travel_shell_quoted(self):
+        self.assertIn("infra/pipeline/scripts/host-deploy.sh", self.text)
+        self.assertIn("--rawfile", self.text)
+        for name in ("HOST_FILES_URI", "HOST_FILES_SHA256", "API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE"):
+            self.assertIn(name, self.text)
+        self.assertIn("@sh", self.text)
+        self.assertIn("file://", self.text)
+
+    def test_the_run_is_polled_until_a_terminal_status_within_a_deadline(self):
+        self.assertIn("aws ssm get-command-invocation", self.text)
+        self.assertIn("SSM_POLL_DEADLINE_SECONDS", self.text)
+        for status in ("Pending", "InProgress", "Delayed", "Cancelling"):
+            self.assertIn(status, self.text)
+        self.assertIn("InvocationDoesNotExist", self.text)
+        self.assertIn("sleep", self.text)
+        self.assertIn("StandardOutputContent", self.text)
+        self.assertIn("StandardErrorContent", self.text)
+        self.assertRegex(self.text, r'"\$status" = "Success"|"\$status" != "Success"')
+
+    def test_health_checks_cover_both_public_paths_with_retries_and_a_deadline(self):
+        self.assertIn("https://${SITE_ADDRESS}/api/health", self.text)
+        self.assertIn("https://${SITE_ADDRESS}/realtime/health", self.text)
+        self.assertIn("HEALTH_CHECK_DEADLINE_SECONDS", self.text)
+        self.assertIn("curl", self.text)
+        self.assertIn("^2[0-9][0-9]$", self.text)
+        self.assertLess(self.text.index("aws ssm get-command-invocation"), self.text.index("/api/health"))
+
+    def test_nothing_swallows_a_failure_traces_or_writes_an_account_id(self):
+        for command in self.commands:
+            self.assertNotRegex(command, r"\|\|\s*(true|:)")
+        text = DEPLOY.read_text(encoding="utf-8")
+        self.assertNotRegex(text, r"\bset\s+-[a-z]*x")
+        self.assertNotRegex(text, r"[0-9]{12}")
+        self.assertNotRegex(text, r"AKIA[0-9A-Z]{16}")
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", text)
+
+
+class HostDeployScriptSourceTests(unittest.TestCase):
+    def test_script_is_strict_never_traces_and_fits_a_heredoc(self):
+        text = HOST_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+        self.assertRegex(text, r"(?m)^set -euo pipefail$")
+        self.assertNotRegex(text, r"\bset\s+-[a-z]*x")
+        self.assertTrue(text.endswith("\n"))
+        # The buildspec sends the file through a quoted heredoc ended by this word.
+        self.assertNotIn("HOST_DEPLOY_SCRIPT", text)
 
 
 class InstallScriptTests(unittest.TestCase):
