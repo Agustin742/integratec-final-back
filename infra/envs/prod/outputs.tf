@@ -45,7 +45,7 @@ output "host_public_ip" {
 
 output "host_sslip_domain" {
   description = "Interim DNS name of the host: sslip.io resolves it to the Elastic IP, so Let's Encrypt can issue a certificate until a domain is chosen."
-  value       = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
+  value       = local.host_sslip_domain
 }
 
 output "host_security_group_id" {

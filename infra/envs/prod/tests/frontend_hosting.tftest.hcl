@@ -174,6 +174,16 @@ run "api_and_realtime_urls_must_be_secure" {
   expect_failures = [var.frontend_api_base_url]
 }
 
+run "realtime_url_must_be_secure_websocket" {
+  command = plan
+
+  variables {
+    frontend_realtime_url = "ws://16-59-248-180.sslip.io"
+  }
+
+  expect_failures = [var.frontend_realtime_url]
+}
+
 run "static_scan_keeps_tokens_headers_and_build_spec_out_of_terraform" {
   command = plan
 

@@ -436,7 +436,7 @@ Not fixed in #61:
 
 ## Frontend hosting (AWS Amplify)
 
-The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-east-2`, built on every push to its `develop` branch. Front issue `Agustin742/integratec-final-front#22`. The app was created once in the Amplify console (2026-11-18) and brought under Terraform with `import` blocks, through `modules/frontend_hosting` wired in `envs/prod`. It is covered by `terraform test` with a mocked AWS provider.
+The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-east-2`, built on every push to its `develop` branch. Front issue `Agustin742/integratec-final-front#22`. The app was created once in the Amplify console (2026-11-17) and brought under Terraform with `import` blocks, through `modules/frontend_hosting` wired in `envs/prod`. It is covered by `terraform test` with a mocked AWS provider.
 
 ### What Terraform owns and what it does not
 
@@ -449,7 +449,7 @@ The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-
 
 **Why there is no token.** `access_token` and `oauth_token` are never set: Terraform would store them in the state file, and AWS does not keep them either. The existing GitHub App connection needs neither, and the AWS provider documents omitting `access_token` when importing an existing app. The tests fail if the module ever sets a token, `custom_headers`, `build_spec` or basic auth credentials.
 
-The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret origins belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP; override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss origins) when a real domain exists.
+The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret origins belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output); override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss origins) when a real domain exists.
 
 ### Import
 
@@ -474,7 +474,30 @@ terraform output frontend_branch_url       # https://develop.<default domain>
 
 ### Move the deployed branch to `main`
 
-When the frontend promotes `main`, set `frontend_branch = "main"` (for example in `terraform.tfvars`) and review the plan: Terraform replaces the branch, creating `main` and deleting `develop`, and the output URL changes to `https://main.<default domain>`. Update `allowed_origins` and `password_reset_url_base` in the same change, apply, and restart the stack on the host so the API reads the new SSM values. The `import` of the branch must be dropped first (set `import_existing_frontend = false` or remove the block), because it points at `develop`.
+### Rebuild after changing the origins
+
+Changing `environment_variables` (for example because the Elastic IP or the domain changed, so `VITE_API_BASE_URL` and `VITE_REALTIME_URL` change) does **not** rebuild the app, and the `VITE_*` values are compiled into the bundle at build time. After applying such a change, start a build of the deployed branch by hand (or push a commit to it):
+
+```sh
+aws amplify start-job --app-id "$(terraform output -raw frontend_amplify_app_id)"   --branch-name develop --job-type RELEASE
+```
+
+Use the branch in `frontend_branch` instead of `develop` when it is different.
+
+### Move the deployed branch to `main`
+
+Moving the branch is a short outage, not a seamless switch. `branch_name` forces a replacement and the resource has no `create_before_destroy`, so Terraform deletes the `develop` branch first and then creates `main`. Creating a branch through the API does not start a build, so `https://main.<default domain>` serves nothing until a build runs.
+
+1. Drop the branch import first (set `import_existing_frontend = false` or remove the import blocks). With `frontend_branch = "main"` the import id becomes `<app id>/main`, which does not exist yet, so the plan would fail.
+2. Set `frontend_branch = "main"` (for example in `terraform.tfvars`) and review the plan: it must destroy `develop` and create `main`, and the output URL changes to `https://main.<default domain>`.
+3. Update `allowed_origins` and `password_reset_url_base` to the new URL in the same change, apply, and restart the stack on the host so the API reads the new SSM values.
+4. Start the first build of `main` (or push to `main`):
+
+   ```sh
+   aws amplify start-job --app-id "$(terraform output -raw frontend_amplify_app_id)"      --branch-name main --job-type RELEASE
+   ```
+
+Until step 4 finishes, the frontend is down.
 
 ## GitHub Actions OIDC role
 

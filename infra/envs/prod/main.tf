@@ -96,11 +96,13 @@ module "app_config" {
 
 # Frontend hosting (AWS Amplify Hosting). The app was created in the console, so it is
 # imported rather than created; see infra/README.md. The browser origins the build bakes
-# in default to the host sslip.io name.
+# in default to the host sslip.io name. The VITE_* values are compiled into the bundle and
+# changing them does not rebuild the app: after any change to these origins, start a build
+# with `aws amplify start-job --app-id <id> --branch-name <branch> --job-type RELEASE`.
 locals {
-  frontend_api_host     = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
-  frontend_api_base_url = coalesce(var.frontend_api_base_url, "https://${local.frontend_api_host}")
-  frontend_realtime_url = coalesce(var.frontend_realtime_url, "wss://${local.frontend_api_host}")
+  host_sslip_domain     = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
+  frontend_api_base_url = coalesce(var.frontend_api_base_url, "https://${local.host_sslip_domain}")
+  frontend_realtime_url = coalesce(var.frontend_realtime_url, "wss://${local.host_sslip_domain}")
 }
 
 module "frontend_hosting" {
