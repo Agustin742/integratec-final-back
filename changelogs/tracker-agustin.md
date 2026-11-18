@@ -1,8 +1,16 @@
 # Tracker — Agustin
 
+## 2026-11-18 — Keyless deploy pipeline applied and verified (#58, T9)
+
+- **Status:** done (#58 closed; PRs #111, #112 merged)
+- **Area / files:** `infra/pipeline/buildspecs/images.yml`, `scripts/ci/test_pipeline_buildspecs.py`, `infra/README.md`
+- **Change:** Local `terraform apply` from `develop` created the pipeline (26 resources added, 1 changed); the GitHub connection handshake was completed in the console. The first run failed in Images because CodeBuild runs each buildspec command in its own shell, so `build_and_push` was undefined in the later commands; #112 keeps the function and its calls in one command and adds tests that run each command in a separate shell. The next run, started automatically by the merge to `develop`, succeeded end to end: clean plan, images `release-20261118-6bd8544`, migrations before the stack, `/api/health` and `/realtime/health` return 200, `migrate` runs as `node`.
+- **Reason:** Finish #58 by proving the pipeline in AWS, not only in tests.
+- **Next step:** none for #58. Spanish diagram docs still describe OIDC deploy.
+
 ## 2026-11-18 — Keyless deploy pipeline inside AWS (#58), T1-T8
 
-- **Status:** in-progress (branch `feat/58-keyless-deploy-pipeline`; not pushed yet)
+- **Status:** merged (PR #111); applied and verified in the T9 entry above
 - **Area / files:** `docs/technical-justification.md` (D19), `rules/`, `apps/api/Dockerfile`, `infra/deploy/` (`compose.prod.yaml`, `start-app.sh`), `infra/modules/delivery_pipeline/`, `infra/pipeline/` (buildspecs and scripts), `infra/envs/prod/`, `infra/README.md`, `scripts/ci` tests
 - **Change:** CodePipeline V2 (`aula-virtual-prod-backend`, QUEUED, push to `develop`) with Source, Plan, manual Approval, Apply of the saved plan, Images and Deploy through SSM Run Command, plus a one-shot `migrate` service that runs before the api. Done so far, one line each:
   - T1 `39129aa`: decision D19 and infrastructure rules.
