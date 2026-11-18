@@ -95,14 +95,15 @@ module "app_config" {
 }
 
 # Frontend hosting (AWS Amplify Hosting). The app was created in the console, so it is
-# imported rather than created; see infra/README.md. The browser origins the build bakes
-# in default to the host sslip.io name. The VITE_* values are compiled into the bundle and
-# changing them does not rebuild the app: after any change to these origins, start a build
-# with `aws amplify start-job --app-id <id> --branch-name <branch> --job-type RELEASE`.
+# imported rather than created; see infra/README.md. The browser base URLs the build bakes
+# in default to the host sslip.io name plus the paths Caddy serves (infra/caddy/Caddyfile):
+# the API under /api and realtime under /realtime, with the prefix stripped before the
+# service. The VITE_* values are compiled into the bundle and changing them does not
+# rebuild the app: after any change to these URLs, start a build with `aws amplify start-job --app-id <id> --branch-name <branch> --job-type RELEASE`.
 locals {
   host_sslip_domain     = "${replace(module.host.public_ip, ".", "-")}.sslip.io"
-  frontend_api_base_url = coalesce(var.frontend_api_base_url, "https://${local.host_sslip_domain}")
-  frontend_realtime_url = coalesce(var.frontend_realtime_url, "wss://${local.host_sslip_domain}")
+  frontend_api_base_url = coalesce(var.frontend_api_base_url, "https://${local.host_sslip_domain}/api")
+  frontend_realtime_url = coalesce(var.frontend_realtime_url, "wss://${local.host_sslip_domain}/realtime")
 }
 
 module "frontend_hosting" {

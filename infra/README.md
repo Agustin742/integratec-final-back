@@ -449,7 +449,7 @@ The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-
 
 **Why there is no token.** `access_token` and `oauth_token` are never set: Terraform would store them in the state file, and AWS does not keep them either. The existing GitHub App connection needs neither, and the AWS provider documents omitting `access_token` when importing an existing app. The tests fail if the module ever sets a token, `custom_headers`, `build_spec` or basic auth credentials.
 
-The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret origins belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output); override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss origins) when a real domain exists.
+The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret URLs belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output), plus the paths Caddy serves: `https://<host>.sslip.io/api` and `wss://<host>.sslip.io/realtime` (`infra/caddy/Caddyfile` strips the `/api` and `/realtime` prefixes before the services). Override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss base URLs with an optional path, no trailing slash, query or fragment) when a real domain exists, keeping the same path if it still sits behind that Caddy. After changing them, start an Amplify build by hand (see [Rebuild after changing the origins](#rebuild-after-changing-the-origins)).
 
 ### Import
 
