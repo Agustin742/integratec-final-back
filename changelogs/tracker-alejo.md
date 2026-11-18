@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-18 — Issue #38: persisted classroom chat
+
+- **Status:** in-progress
+- **Area / files:** dedicated `odd/worktrees/issue-38`, branch `feat/38-chat-persistence`; planned chat persistence/API/contracts/tests/documentation.
+- **Change:** With AI assistance directed by Alejo: confirmed dependencies #19/#22 are completed, fetched latest `origin/develop` and created a clean isolated worktree at `5530b72`. Recorded scope and approved limits in local `odd/tasks/38-chat-persistence.md`; inspecting reusable access, mention and notification patterns before source changes. Existing root checkout and its uncommitted tracker remain untouched.
+- **Reason:** Deliver #38 fully verified locally before publication, without absorbing realtime broadcast (#48), mute controls, parent messaging or frontend work.
+- **Policy approved by Alejo:** REST send; trimmed text max 2,000 characters; max 20 distinct mentioned users; max 5 messages per 10 seconds per user/classroom including staff, HTTP 429 on excess; no automatic history purge. Final retention policy remains open.
+- **Persistence evidence:** Additive `Message` schema/migration and rollback-only PostgreSQL tests implemented in T1 (314 added/1 removed authored lines). Worker observed RED 13/13 missing delegate, then GREEN 13/13 and post-format GREEN 13/13. Prisma validate/generate/deploy and migration/schema diff passed; focused Prettier/ESLint/API typecheck and whitespace passed. Initial Git Bash Docker-path conversion, formatting failure, and wrong root Prisma executable were corrected and remain disclosed. Dedicated `odd38-node` (Node 22), `odd38-postgres` and task-owned volumes only; no shared data or host dependency writes. Parent read back schema, SQL constraints, all tests, constants and guide. Full suite and independent proof remain pending.
+- **Next step:** Implement REST send/history/moderation with atomic mentions/notifications and concurrency-safe admission; then independent verification, full applicable checks and candidate review assessment before publication. Native initial untracked ASSESS unavailable; intended-untracked argument rejected by ASSESS, so assessment will use the committed work-unit range. No merge authorized.
+
 ## 2026-11-15 — Issue #37: announcements backend (HU-COM-001)
 
 - **Status:** completed (PR #97 review feedback resolved and verified; current-head CI and teammate re-review tracked in [PR #97](https://github.com/Agustin742/integratec-final-back/pull/97))
