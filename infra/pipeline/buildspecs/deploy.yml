@@ -1,0 +1,140 @@
+# CodeBuild buildspec of the `deploy` project (decision D19).
+# Deploys a release to the EC2 host through SSM Run Command, then health-checks the public
+# endpoints. The input is the pipeline source artifact (the repository files).
+#
+# Provided by the pipeline from the exported variables of the images action:
+#   IMAGE_TAG, API_IMAGE, REALTIME_IMAGE, MIGRATE_IMAGE
+# Injected by Terraform as project environment variables (none is a secret):
+#   INSTANCE_ID       the EC2 host, the only target of the command
+#   ARTIFACT_BUCKET   pipeline artifact bucket; the host files are published under host-files/
+#   SITE_ADDRESS      public host name served by Caddy (output host_sslip_domain)
+#
+# Flow: validate the inputs, pack infra/deploy and infra/caddy, upload the tarball and its
+# sha256 to host-files/<IMAGE_TAG>/, send infra/pipeline/scripts/host-deploy.sh to the host,
+# wait for the command to finish, print its output and check /api/health and /realtime/health.
+# The remote output holds no secret: start-app.sh never prints secret values.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    # Seconds SSM waits for the agent to pick the command up before it gives up on delivery.
+    SSM_DELIVERY_TIMEOUT_SECONDS: '120'
+    # Seconds the command may run on the host (start-app.sh waits up to 300 for the deploy lock
+    # and 180 for the containers to become healthy).
+    SSM_EXECUTION_TIMEOUT_SECONDS: '900'
+    # Longer than delivery plus execution, so the host timeout is what ends a stuck command.
+    SSM_POLL_DEADLINE_SECONDS: '1200'
+    HEALTH_CHECK_DEADLINE_SECONDS: '300'
+
+phases:
+  pre_build:
+    commands:
+      # Fail fast: every input must be present and look like what the pipeline and Terraform
+      # provide. The values reach a remote shell later, so they are matched against strict
+      # patterns here, and the images must carry the tag of this release.
+      - |
+        fail() { echo "$1" >&2; exit 1; }
+        for name in IMAGE_TAG API_IMAGE REALTIME_IMAGE MIGRATE_IMAGE INSTANCE_ID ARTIFACT_BUCKET SITE_ADDRESS; do
+          [ -n "${!name:-}" ] || fail "${name} is empty; the pipeline or Terraform must provide it."
+        done
+        [[ "$IMAGE_TAG" =~ ^release-[0-9]{8}-[0-9a-f]{7}$ ]] || fail "IMAGE_TAG must look like release-<yyyymmdd>-<short commit id>."
+        image_pattern='^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/[a-z0-9][a-z0-9._/-]*:release-[0-9]{8}-[0-9a-f]{7}$'
+        for name in API_IMAGE REALTIME_IMAGE MIGRATE_IMAGE; do
+          [[ "${!name}" =~ $image_pattern ]] || fail "${name} must be an ECR image URI with a release- tag."
+          [ "${!name##*:}" = "$IMAGE_TAG" ] || fail "${name} does not carry the tag ${IMAGE_TAG} of this release."
+        done
+        [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]{8,17}$ ]] || fail "INSTANCE_ID must be an EC2 instance ID."
+        [[ "$ARTIFACT_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || fail "ARTIFACT_BUCKET must be an S3 bucket name."
+        [[ "$SITE_ADDRESS" =~ ^[A-Za-z0-9.-]+$ ]] || fail "SITE_ADDRESS must be a host name."
+  build:
+    commands:
+      # Exactly the files the host keeps under /opt/aula/infra: deploy/ (compose, start-app.sh,
+      # systemd units) and caddy/. The sha256 is computed here and travels in the remote
+      # command, so the host checks the download against a value that did not come from S3.
+      - |
+        set -euo pipefail
+        rm -rf host-files-build && mkdir host-files-build
+        tar --owner=0 --group=0 --numeric-owner -czf host-files-build/host-files.tar.gz -C infra deploy caddy
+        (cd host-files-build && sha256sum host-files.tar.gz > host-files.tar.gz.sha256)
+        HOST_FILES_SHA256="$(cut -d' ' -f1 host-files-build/host-files.tar.gz.sha256)"
+        HOST_FILES_URI="s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz"
+        echo "Packed the host files of ${IMAGE_TAG} (sha256 ${HOST_FILES_SHA256})"
+        set +eu +o pipefail
+      - aws s3 cp host-files-build/host-files.tar.gz "s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz" --only-show-errors
+      - aws s3 cp host-files-build/host-files.tar.gz.sha256 "s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz.sha256" --only-show-errors
+      # The remote command is the checked-in script, written to a temporary file on the host
+      # through a quoted heredoc (no expansion) and run by bash with the release values in its
+      # environment. Every value is quoted with jq @sh and was validated above.
+      - |
+        jq -n --rawfile body infra/pipeline/scripts/host-deploy.sh \
+          --arg uri "$HOST_FILES_URI" --arg sha "$HOST_FILES_SHA256" \
+          --arg api "$API_IMAGE" --arg realtime "$REALTIME_IMAGE" --arg migrate "$MIGRATE_IMAGE" \
+          --arg timeout "$SSM_EXECUTION_TIMEOUT_SECONDS" '
+          {
+            commands: [
+              "script=\"$(mktemp /tmp/host-deploy.XXXXXX)\"",
+              "cat > \"$script\" <<\"HOST_DEPLOY_SCRIPT\"\n" + $body + "HOST_DEPLOY_SCRIPT",
+              "HOST_FILES_URI=" + ($uri | @sh) + " HOST_FILES_SHA256=" + ($sha | @sh)
+                + " API_IMAGE=" + ($api | @sh) + " REALTIME_IMAGE=" + ($realtime | @sh)
+                + " MIGRATE_IMAGE=" + ($migrate | @sh) + " bash \"$script\"",
+              "status=$?",
+              "rm -f \"$script\"",
+              "exit \"$status\""
+            ],
+            executionTimeout: [$timeout]
+          }' > ssm-parameters.json
+      # Only this instance, only AWS-RunShellScript. The comment names the pipeline run in the
+      # SSM console (at most 100 characters).
+      - |
+        command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript --comment "$(printf 'Release %s from %s' "$IMAGE_TAG" "${CODEBUILD_INITIATOR:-manual}" | cut -c1-100)" --timeout-seconds "$SSM_DELIVERY_TIMEOUT_SECONDS" --parameters file://ssm-parameters.json --query Command.CommandId --output text)"
+        [[ "$command_id" =~ ^[0-9a-f-]{36}$ ]] || { echo "send-command returned no command ID" >&2; exit 1; }
+        echo "Sent SSM command ${command_id} to ${INSTANCE_ID}"
+      # Poll until the command leaves the running statuses or the deadline passes. The invocation
+      # does not exist for a moment after send-command; any other error fails the build.
+      - |
+        deadline=$((SECONDS + SSM_POLL_DEADLINE_SECONDS))
+        while :; do
+          if ! status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>&1)"; then
+            grep -q InvocationDoesNotExist <<<"$status" || { echo "$status" >&2; exit 1; }
+            status=Pending
+          fi
+          case "$status" in
+            Pending | InProgress | Delayed | Cancelling) ;;
+            *) break ;;
+          esac
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            # The build must not leave the command running on the host after it fails.
+            if aws ssm cancel-command --command-id "$command_id" --instance-ids "$INSTANCE_ID"; then
+              echo "Cancelled SSM command ${command_id}: it did not finish within ${SSM_POLL_DEADLINE_SECONDS}s."
+            else
+              echo "Could not cancel SSM command ${command_id}; check it in the SSM console." >&2
+            fi
+            status="NoResultWithinDeadline"
+            break
+          fi
+          sleep 10
+        done
+        echo "SSM command ${command_id} ended with status ${status}"
+        echo "----- remote stdout -----"
+        aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardOutputContent --output text
+        echo "----- remote stderr -----"
+        aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query StandardErrorContent --output text
+        [ "$status" = "Success" ] || { echo "The deployment to ${INSTANCE_ID} did not succeed (${status})." >&2; exit 1; }
+      # The api and realtime services answer GET /health; Caddy strips the /api and /realtime
+      # prefixes. Only a 2xx counts. Caddy may need a moment after the containers are replaced.
+      - |
+        http_ok() {
+          local code
+          code="$(curl --silent --output /dev/null --max-time 10 --write-out '%{http_code}' "$1")" || return 1
+          [[ "$code" =~ ^2[0-9][0-9]$ ]]
+        }
+        deadline=$((SECONDS + HEALTH_CHECK_DEADLINE_SECONDS))
+        for url in "https://${SITE_ADDRESS}/api/health" "https://${SITE_ADDRESS}/realtime/health"; do
+          until http_ok "$url"; do
+            [ "$SECONDS" -lt "$deadline" ] || { echo "${url} did not answer 2xx within ${HEALTH_CHECK_DEADLINE_SECONDS}s" >&2; exit 1; }
+            echo "Waiting for ${url}"
+            sleep 10
+          done
+          echo "${url} is healthy"
+        done

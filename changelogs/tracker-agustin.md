@@ -1,5 +1,22 @@
 # Tracker — Agustin
 
+## 2026-11-18 — Keyless deploy pipeline inside AWS (#58), T1-T8
+
+- **Status:** in-progress (branch `feat/58-keyless-deploy-pipeline`; not pushed yet)
+- **Area / files:** `docs/technical-justification.md` (D19), `rules/`, `apps/api/Dockerfile`, `infra/deploy/` (`compose.prod.yaml`, `start-app.sh`), `infra/modules/delivery_pipeline/`, `infra/pipeline/` (buildspecs and scripts), `infra/envs/prod/`, `infra/README.md`, `scripts/ci` tests
+- **Change:** CodePipeline V2 (`aula-virtual-prod-backend`, QUEUED, push to `develop`) with Source, Plan, manual Approval, Apply of the saved plan, Images and Deploy through SSM Run Command, plus a one-shot `migrate` service that runs before the api. Done so far, one line each:
+  - T1 `39129aa`: decision D19 and infrastructure rules.
+  - T2 `ee974ec`, `b82b43e`: `migrate` image target, Compose service and ECR repository; start-app.sh migrates before recreating the api.
+  - T3 `ceec064`: CodeConnections link, artifact bucket, CodeBuild log group.
+  - T4 `d718986`: Terraform plan and apply CodeBuild projects, roles and buildspecs.
+  - T5 `8b5de15`: images project that builds and pushes `release-<date>-<sha>` images.
+  - T6 `3451c7c`, `79a1108`: SSM deploy stage, host files from the artifact, Caddy recreate on Caddyfile change, host read access to the artifact bucket.
+  - T7 `dc3f844`: pipeline wiring and role; apply build timeout raised to 120 minutes.
+  - T8 (this commit): `infra/README.md` documents the flow, one-time console handshake, approval, migrations, roll back, permissions and a cost estimate; the manual deploy is now the documented fallback.
+- **Reason:** The account SCP denies the GitHub OIDC provider, and production ran with an empty schema because no deploy step ran migrations.
+- **Open points for the PR:** nothing is applied yet, so the apply-dependent checks are unverified (ReadOnlyAccess coverage of the plan role, `jq` in the CodeBuild image, `migrate` image running as non-root, the first end-to-end run). The cost estimate (about USD 1.5 per month at 20 runs) uses official prices read on 2026-11-18; whether the Free plan credits cover CodePipeline, CodeBuild and CodeConnections is unknown. Spanish diagram docs still describe OIDC (`docs/diagrams/02-system-architecture/deployment-and-network.md`, `docs/diagrams/05-reference/gaps.md`).
+- **Next step:** PR review. Then T9 after merge to `develop`: local apply, console handshake of the GitHub connection, first pipeline run verified end to end.
+
 ## 2026-11-17 — Frontend API and realtime base URLs include the Caddy paths (#22)
 
 - **Status:** in review once the PR opens (branch `fix/22-frontend-base-url-paths`; not pushed yet)

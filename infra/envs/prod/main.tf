@@ -46,12 +46,44 @@ module "registry" {
   source = "../../modules/registry"
 
   name_prefix = "${var.project}-${local.environment}"
+  # migrate is the one-shot prisma migrate deploy image (target `migrate` of apps/api/Dockerfile).
+  services = ["api", "realtime", "migrate"]
 }
 
 module "storage" {
   source = "../../modules/storage"
 
   name_prefix = "${var.project}-${local.environment}"
+}
+
+# Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
+# by hand in the console), the artifact bucket, the CodeBuild log group and the Terraform
+# runner (CodeBuild plan and apply projects with their roles), the image build, the host
+# deploy and the CodePipeline that chains them.
+module "delivery_pipeline" {
+  source = "../../modules/delivery_pipeline"
+
+  name_prefix = "${var.project}-${local.environment}"
+
+  # Inputs of the Terraform runner (CodeBuild plan and apply). They are injected as
+  # environment variables so the pipeline plan equals the local one (D19).
+  project                 = var.project
+  region                  = var.region
+  state_key               = "${local.environment}/terraform.tfstate"
+  allowed_origins         = var.allowed_origins
+  password_reset_url_base = var.password_reset_url_base
+  enable_github_oidc      = var.enable_github_oidc
+
+  # Repositories the images project pushes to.
+  ecr_repository_names = module.registry.repository_names
+  ecr_repository_arns  = module.registry.repository_arns
+
+  # Target and health check of the deploy project (SSM Run Command on this one instance).
+  host_instance_id = module.host.instance_id
+  site_address     = local.host_sslip_domain
+
+  # The pipeline watches this repository (branch develop) through the CodeConnections link.
+  github_repository = var.github_repository
 }
 
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files
@@ -73,6 +105,9 @@ module "runtime_access" {
   ssm_parameter_arns      = flatten(values(module.app_config.parameter_arns))
   ssm_parameter_path_arns = values(module.app_config.parameter_path_arns)
   s3_bucket_arn           = module.storage.bucket_arn
+
+  # The deploy pipeline publishes the host files here; the host reads host-files/* only.
+  host_files_bucket_arn = module.delivery_pipeline.artifact_bucket_arn
 }
 
 module "app_config" {

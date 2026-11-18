@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The delivery pipeline module builds role and project ARNs from the account ID, and
+  # CodeBuild validates them; the mock would return a random string, so it is pinned.
+  override_data {
+    target = module.delivery_pipeline.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -46,17 +55,17 @@ run "one_repository_per_service" {
   command = apply
 
   assert {
-    condition     = toset(keys(module.registry.repository_names)) == toset(["api", "realtime"])
-    error_message = "There must be exactly one repository per service: api and realtime."
+    condition     = toset(keys(module.registry.repository_names)) == toset(["api", "realtime", "migrate"])
+    error_message = "There must be exactly one repository per service: api, realtime and migrate."
   }
 
   assert {
-    condition     = module.registry.repository_names["api"] == "${var.project}-prod-api" && module.registry.repository_names["realtime"] == "${var.project}-prod-realtime"
+    condition     = module.registry.repository_names["api"] == "${var.project}-prod-api" && module.registry.repository_names["realtime"] == "${var.project}-prod-realtime" && module.registry.repository_names["migrate"] == "${var.project}-prod-migrate"
     error_message = "Repository names must be <prefix>-<service>."
   }
 
   assert {
-    condition     = toset(keys(output.ecr_repository_urls)) == toset(["api", "realtime"]) && toset(keys(output.ecr_repository_arns)) == toset(["api", "realtime"])
+    condition     = toset(keys(output.ecr_repository_urls)) == toset(["api", "realtime", "migrate"]) && toset(keys(output.ecr_repository_arns)) == toset(["api", "realtime", "migrate"])
     error_message = "The root must expose the URL and ARN of each repository, keyed by service."
   }
 }
@@ -89,7 +98,7 @@ run "lifecycle_policy_is_attached_to_each_repository" {
   command = apply
 
   assert {
-    condition     = toset(keys(module.registry.lifecycle_policies)) == toset(["api", "realtime"])
+    condition     = toset(keys(module.registry.lifecycle_policies)) == toset(["api", "realtime", "migrate"])
     error_message = "Each repository must have a lifecycle policy."
   }
 

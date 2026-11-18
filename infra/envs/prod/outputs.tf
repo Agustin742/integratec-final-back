@@ -142,3 +142,68 @@ output "frontend_branch_url" {
   description = "HTTPS URL of the deployed frontend branch (https://<branch>.<default domain>); the origin to allow in allowed_origins."
   value       = module.frontend_hosting.branch_url
 }
+
+output "pipeline_connection_arn" {
+  description = "ARN of the CodeConnections GitHub connection used as the pipeline source; authorize it once in the console while its status is PENDING."
+  value       = module.delivery_pipeline.connection_arn
+}
+
+output "pipeline_connection_status" {
+  description = "Status of the GitHub connection (PENDING until the console handshake is done, then AVAILABLE)."
+  value       = module.delivery_pipeline.connection_status
+}
+
+output "pipeline_artifact_bucket_name" {
+  description = "Name of the private S3 bucket that holds CodePipeline artifacts."
+  value       = module.delivery_pipeline.artifact_bucket_name
+}
+
+output "pipeline_log_group_name" {
+  description = "Name of the CloudWatch log group of the CodeBuild projects."
+  value       = module.delivery_pipeline.log_group_name
+}
+
+output "pipeline_terraform_plan_project_name" {
+  description = "Name of the CodeBuild project that runs terraform plan."
+  value       = module.delivery_pipeline.terraform_plan_project_name
+}
+
+output "pipeline_terraform_apply_project_name" {
+  description = "Name of the CodeBuild project that applies the approved saved plan."
+  value       = module.delivery_pipeline.terraform_apply_project_name
+}
+
+output "pipeline_terraform_plan_role_arn" {
+  description = "ARN of the read-only service role of the terraform plan project."
+  value       = module.delivery_pipeline.terraform_plan_role_arn
+}
+
+output "pipeline_terraform_apply_role_arn" {
+  description = "ARN of the broad service role of the terraform apply project (D19 trade-off: gated by the manual approval)."
+  value       = module.delivery_pipeline.terraform_apply_role_arn
+}
+
+output "pipeline_images_project_name" {
+  description = "Name of the CodeBuild project that builds the release images and pushes them to ECR."
+  value       = module.delivery_pipeline.images_project_name
+}
+
+output "pipeline_images_role_arn" {
+  description = "ARN of the service role of the images project (push access to the three image repositories only)."
+  value       = module.delivery_pipeline.images_role_arn
+}
+
+output "pipeline_deploy_project_name" {
+  description = "Name of the CodeBuild project that deploys the release to the host through SSM Run Command and health-checks it."
+  value       = module.delivery_pipeline.deploy_project_name
+}
+
+output "pipeline_name" {
+  description = "Name of the CodePipeline pipeline that deploys the backend on every push to develop."
+  value       = module.delivery_pipeline.pipeline_name
+}
+
+output "pipeline_deploy_role_arn" {
+  description = "ARN of the service role of the deploy project (SSM Run Command on the host instance only)."
+  value       = module.delivery_pipeline.deploy_role_arn
+}
