@@ -486,5 +486,22 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
       ).gradedCount;
       expect(afterCount).toBe(beforeCount);
     });
+
+    it('lists graded published activities only, like the other student-facing queries', async () => {
+      const unpublished = await publishedActivity(classroomA, `Unpublished card ${randomUUID()}`);
+      await gradedSubmission(unpublished, s1, {
+        score: 65,
+        feedback: 'unpublished',
+        pointsAwarded: 5,
+        gradedAt: new Date(Date.now() - HOUR_MS),
+      });
+      // No unpublish exists yet; the guard is exercised with the state the row would take.
+      await prisma.activity.update({ where: { id: unpublished }, data: { state: 'DRAFT' } });
+
+      const card = await get(`/classrooms/${classroomA}/me/report-card`, s1).expect(200);
+      expect(
+        card.body.items.some((item: { activityId: string }) => item.activityId === unpublished),
+      ).toBe(false);
+    });
   });
 });

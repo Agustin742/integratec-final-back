@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
+import { AccessVerificationService } from '../access/access-verification.service';
 import { toIsoString } from '../http/iso-string';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { PrismaService } from '../prisma/prisma.service';
@@ -40,12 +40,13 @@ export class MetricsService {
     query: ListReportCardQueryDto,
   ): Promise<Paginated<ReportCardItemDto>> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'STUDENT' });
-    if (!UUID_PATTERN.test(classroomId)) throw this.notFound();
 
     const where = {
       studentId: actorId,
       grade: { isNot: null },
-      activity: { classroomId, deletedAt: null },
+      // Published only, like every other student-facing classroom query: an unpublished
+      // activity leaves the card (no unpublish exists yet; revisit with it).
+      activity: { classroomId, deletedAt: null, state: 'PUBLISHED' },
     } satisfies Prisma.SubmissionWhereInput;
     const [rows, total] = await Promise.all([
       this.prisma.submission.findMany({
@@ -98,7 +99,6 @@ export class MetricsService {
     query: ListDailyMetricsQueryDto,
   ): Promise<Paginated<DailyMetricDto>> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'STUDENT' });
-    if (!UUID_PATTERN.test(classroomId)) throw this.notFound();
 
     const where = { classroomId, userId: actorId } satisfies Prisma.ActivityMetricWhereInput;
     const [rows, total] = await Promise.all([
@@ -125,6 +125,10 @@ export class MetricsService {
   /**
    * Staff summary of raw per-student totals for every active enrolled student, display name
    * ascending. Students who left keep their history in the daily rows but no longer appear here.
+   *
+   * Known limit: the page is sliced in memory over all active student ids of the classroom, so
+   * it is O(classroom size) per request, not O(page). Fine for course-sized classrooms; revisit
+   * with database-side pagination if real classrooms grow past that.
    */
   async classroomMetrics(
     actorId: string,
@@ -132,7 +136,6 @@ export class MetricsService {
     query: ListClassroomMetricsQueryDto,
   ): Promise<Paginated<StudentMetricSummaryDto>> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'TEACHER' });
-    if (!UUID_PATTERN.test(classroomId)) throw this.notFound();
 
     const studentIds = await this.access.listActiveStudentIds(classroomId);
     const students = await this.prisma.user.findMany({
@@ -192,9 +195,5 @@ export class MetricsService {
       students.length,
       query,
     );
-  }
-
-  private notFound(): NotFoundException {
-    return new NotFoundException('Classroom not found');
   }
 }
