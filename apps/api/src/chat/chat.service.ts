@@ -88,7 +88,7 @@ export class ChatService {
           query,
         );
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 10_000 },
     );
   }
 
@@ -113,6 +113,7 @@ export class ChatService {
         // Recheck after waiting. Access uses current persisted state, not session claims.
         const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
           requiredRole: 'ANY',
+          client: tx,
         });
         if (access.myRole === 'PARENT')
           throw new ForbiddenException('Parents cannot use classroom chat');
@@ -170,7 +171,7 @@ export class ChatService {
           createdAt: row.createdAt.toISOString(),
         };
       },
-      { timeout: 15_000 },
+      { maxWait: 10_000, timeout: 15_000 },
     );
   }
 
