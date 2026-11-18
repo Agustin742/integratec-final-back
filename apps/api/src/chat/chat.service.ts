@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AccessVerificationService } from '../access/access-verification.service';
+import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
+import type { ChatHistoryMessageDto, ListMessagesQueryDto } from './chat.dto';
 import { resolveMentionedUserIds } from '../announcements/announcements.service';
 import { RequestValidationException } from '../http/validation';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
@@ -24,6 +27,70 @@ export class ChatService {
     private readonly access: AccessVerificationService,
     private readonly notifications: NotificationRecorder,
   ) {}
+
+  async list(
+    actorId: string,
+    classroomId: string,
+    query: ListMessagesQueryDto,
+  ): Promise<Paginated<ChatHistoryMessageDto>> {
+    const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
+      requiredRole: 'ANY',
+    });
+    if (access.myRole === 'PARENT')
+      throw new ForbiddenException('Parents cannot use classroom chat');
+    const where: Prisma.MessageWhereInput = {
+      classroomId: access.classroom.id,
+      ...(access.myRole === 'STUDENT' ? { hiddenAt: null } : {}),
+    };
+    return this.prisma.$transaction(
+      async (tx) => {
+        const total = await tx.message.count({ where });
+        const rows = await tx.message.findMany({
+          where,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          ...toSkipTake(query),
+          select: {
+            id: true,
+            classroomId: true,
+            authorId: true,
+            body: true,
+            createdAt: true,
+            hiddenAt: true,
+            hiddenById: true,
+          },
+        });
+        const mentions = await tx.mention.findMany({
+          where: {
+            sourceType: CHAT_MENTION_SOURCE_TYPE,
+            sourceId: { in: rows.map((row) => row.id) },
+          },
+          select: { sourceId: true, mentionedUserId: true },
+          orderBy: { mentionedUserId: 'asc' },
+        });
+        const mentionedBySource = new Map<string, string[]>();
+        for (const mention of mentions) {
+          const users = mentionedBySource.get(mention.sourceId) ?? [];
+          users.push(mention.mentionedUserId);
+          mentionedBySource.set(mention.sourceId, users);
+        }
+        return paginated(
+          rows.map((row) => ({
+            id: row.id,
+            classroomId: row.classroomId!,
+            authorId: row.authorId,
+            body: row.body,
+            mentionedUserIds: mentionedBySource.get(row.id) ?? [],
+            createdAt: row.createdAt.toISOString(),
+            hiddenAt: row.hiddenAt?.toISOString() ?? null,
+            hiddenById: row.hiddenById,
+          })),
+          total,
+          query,
+        );
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
 
   async send(actorId: string, classroomId: string, input: unknown) {
     if (typeof input !== 'string') invalidBody('body must be a string');

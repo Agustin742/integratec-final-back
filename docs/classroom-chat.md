@@ -43,6 +43,31 @@ Failures use the standard error envelope with correlation id: 401
 admission. Rejected sends do not persist message/mention/outbox rows or consume quota.
 The committed [OpenAPI contract](../apps/api/openapi.json) describes the route.
 
+## REST history
+
+`GET /classrooms/:id/messages` requires the same current classroom access as send:
+students and staff may read; linked parents receive 403, unrelated/removed users
+and invalid/foreign classrooms receive 404, and missing credentials receive 401.
+Mute does not prevent reading. ParentLink conversations are never included.
+
+Only `page` and `pageSize` are accepted (defaults 1/20, maxima 10,000/100,
+positive integers). Unsupported `sort` or other query fields return 400
+`VALIDATION_FAILED`. The standard response is `{ items, page, pageSize, total }`,
+ordered latest first by `createdAt DESC, id DESC`, including stable timestamp ties.
+An out-of-range page returns empty items while retaining the filtered total.
+
+History items contain the send response fields plus `hiddenAt` and `hiddenById`:
+both are explicitly null for visible messages. Students omit hidden rows entirely,
+including their text and mentions; staff receive full retained text, mentions and
+moderator/time audit. Totals reflect that role's visibility. Membership removal
+revokes access but leaves the original author attribution and mention history.
+
+Count, selected items and resolved mention rows use one PostgreSQL RepeatableRead
+snapshot. Offset pages are stable within each response, not a frozen multi-request
+feed: new messages between requests can shift offsets. POST response fields are
+unchanged. Moderation writes remain the next unit; hidden-row read tests currently
+seed the persisted state directly through Prisma.
+
 ## Send application service
 
 `ChatService.send` reuses shared access verification and the existing exported
@@ -74,7 +99,7 @@ Alejo approved REST send, non-empty trimmed text up to 2,000 characters, at most
 including staff. Excess admission returns HTTP 429. `chat-policy.ts` records the
 constants; the send application service enforces these limits.
 
-History and moderation endpoints remain subsequent work. Realtime delivery belongs to #48;
+The moderation endpoint remains subsequent work. Realtime delivery belongs to #48;
 frontend, parent conversations and mute controls remain excluded. Final retention
 policy is open; there is no purge.
 
@@ -98,5 +123,7 @@ Storage-constraint tests roll back every synthetic fixture. Service/HTTP tests
 retain uniquely identified synthetic fixtures only in the disposable test database.
 Together they cover storage invariants, send validation/access/mute, mention
 atomicity, admission across clients/HTTP requests, and post-lock clock sampling.
-Until history is implemented, rejection checks combine HTTP responses/subsequent
-successful sends with database integrity counts; they do not claim public history proof.
+Rejection checks compare public history before/after (including total, items and
+mentions), supplemented by database counts. Invalid sends are followed by five
+accepted sends to verify quota preservation. Read tests cover pagination ties,
+role-filtered audit, retained attribution, and concurrent count/items/mention consistency.

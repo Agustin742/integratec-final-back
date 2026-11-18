@@ -1400,6 +1400,87 @@
       }
     },
     "/classrooms/{id}/messages": {
+      "get": {
+        "description": "Current students and staff only; parents denied. Latest first (createdAt DESC, id DESC). Students omit hidden rows and their mentions; staff retain full text and audit. Visible rows have null hiddenAt/hiddenById. Count, items and mentions share a repeatable-read snapshot. Only page/pageSize queries are accepted.",
+        "operationId": "ChatController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ChatHistoryMessageDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or unsupported query.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read classroom chat history",
+        "tags": ["chat"]
+      },
       "post": {
         "description": "Current students and teaching staff only; parents denied. Muted classrooms reject students but allow staff. Message, resolved mentions and notification requests commit atomically before any future broadcast (#48). At most 5 sends per rolling 10 seconds per user/classroom, including staff and hidden messages. Only body is accepted; author and time are server-assigned.",
         "operationId": "ChatController_send",
@@ -4901,6 +4982,41 @@
             "maxLength": 5000
           }
         }
+      },
+      "ChatHistoryMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed plain text, never interpreted as HTML."
+          },
+          "mentionedUserIds": {
+            "description": "Distinct resolved active classroom members.",
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server-assigned UTC creation instant."
+          },
+          "hiddenAt": { "type": "string", "format": "date-time", "nullable": true },
+          "hiddenById": { "type": "string", "format": "uuid", "nullable": true }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "authorId",
+          "body",
+          "mentionedUserIds",
+          "createdAt",
+          "hiddenAt",
+          "hiddenById"
+        ]
       },
       "SendMessageDto": {
         "type": "object",

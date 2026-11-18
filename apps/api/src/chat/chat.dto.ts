@@ -1,6 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, PickType } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../http/pagination/pagination-query.dto';
 import { IsString } from 'class-validator';
 import { CHAT_MAX_BODY_LENGTH } from './chat-policy';
+
+export class ListMessagesQueryDto extends PickType(PaginationQueryDto, [
+  'page',
+  'pageSize',
+] as const) {}
 
 export class SendMessageDto {
   @ApiProperty({
@@ -38,4 +44,12 @@ export class ChatMessageDto {
 
   @ApiProperty({ format: 'date-time', description: 'Server-assigned UTC creation instant.' })
   createdAt!: string;
+}
+
+export class ChatHistoryMessageDto extends ChatMessageDto {
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  hiddenAt!: string | null;
+
+  @ApiProperty({ type: String, format: 'uuid', nullable: true })
+  hiddenById!: string | null;
 }
