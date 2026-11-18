@@ -5,9 +5,9 @@
 #
 #   infra/deploy/start-app.sh \
 #     --name-prefix aula-virtual-prod --region us-east-2 \
-#     --api-image  <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/api:<tag> \
-#     --realtime-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/realtime:<tag> \
-#     --migrate-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod/migrate:<tag> \
+#     --api-image  <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-api:<tag> \
+#     --realtime-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-realtime:<tag> \
+#     --migrate-image <account>.dkr.ecr.us-east-2.amazonaws.com/aula-virtual-prod-migrate:<tag> \
 #     --site-address <host_sslip_domain>
 #
 # Every input can also be an environment variable: NAME_PREFIX, AWS_REGION, API_IMAGE,
