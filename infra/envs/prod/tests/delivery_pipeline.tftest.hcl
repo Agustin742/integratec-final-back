@@ -137,6 +137,7 @@ run "artifact_expiration_is_configurable" {
     artifact_expiration_days = 90
     ecr_repository_names     = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id         = "i-0123456789abcdef0"
+    github_repository        = "Agustin742/integratec-final-back"
     site_address             = "203-0-113-10.sslip.io"
     ecr_repository_arns = {
       api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
@@ -189,6 +190,7 @@ run "rejects_unsupported_log_retention" {
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
+    github_repository       = "Agustin742/integratec-final-back"
     site_address            = "203-0-113-10.sslip.io"
     ecr_repository_arns = {
       api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
@@ -223,6 +225,7 @@ run "rejects_zero_artifact_expiration_days" {
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
+    github_repository       = "Agustin742/integratec-final-back"
     site_address            = "203-0-113-10.sslip.io"
     ecr_repository_arns = {
       api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
@@ -257,6 +260,7 @@ run "rejects_fractional_artifact_expiration_days" {
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
+    github_repository       = "Agustin742/integratec-final-back"
     site_address            = "203-0-113-10.sslip.io"
     ecr_repository_arns = {
       api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
@@ -291,6 +295,7 @@ run "rejects_name_prefix_longer_than_17_characters" {
     name_prefix             = "aula-virtual-prod-x"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
+    github_repository       = "Agustin742/integratec-final-back"
     site_address            = "203-0-113-10.sslip.io"
     ecr_repository_arns = {
       api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"

@@ -1,7 +1,6 @@
 # CodeBuild projects that run Terraform for the deploy pipeline (decision D19): `plan`
 # saves the plan, and `apply` (after the manual approval) applies exactly that saved plan.
-# The buildspecs live in infra/pipeline/buildspecs; the pipeline that chains the projects
-# is added by a later change.
+# The buildspecs live in infra/pipeline/buildspecs; the pipeline (pipeline.tf) chains the projects.
 data "aws_caller_identity" "current" {}
 
 locals {

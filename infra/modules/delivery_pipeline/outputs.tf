@@ -237,3 +237,84 @@ output "deploy_managed_policy_arns" {
   description = "AWS managed policies attached to the deploy role (none: it only has its inline policy)."
   value       = []
 }
+
+output "pipeline_name" {
+  description = "Name of the CodePipeline pipeline that chains the deploy."
+  value       = aws_codepipeline.this.name
+}
+
+output "pipeline_arn" {
+  description = "ARN of the CodePipeline pipeline."
+  value       = aws_codepipeline.this.arn
+}
+
+output "approval_stage_name" {
+  description = "Name of the stage that holds the manual approval."
+  value       = local.approval_stage_name
+}
+
+output "pipeline_role_arn" {
+  description = "ARN of the service role of the pipeline."
+  value       = aws_iam_role.pipeline.arn
+}
+
+output "pipeline" {
+  description = "Name, type, execution mode, role and artifact store of the pipeline as configured on the resource, for tests and review."
+  value = {
+    name           = aws_codepipeline.this.name
+    arn            = aws_codepipeline.this.arn
+    pipeline_type  = aws_codepipeline.this.pipeline_type
+    execution_mode = aws_codepipeline.this.execution_mode
+    role_arn       = aws_codepipeline.this.role_arn
+    artifact_store = {
+      location             = one(aws_codepipeline.this.artifact_store).location
+      type                 = one(aws_codepipeline.this.artifact_store).type
+      encryption_key_count = length(one(aws_codepipeline.this.artifact_store).encryption_key)
+    }
+  }
+}
+
+output "pipeline_stages" {
+  description = "Stages of the pipeline in order, with the actions of each, as configured on the resource, for tests and review."
+  value = [for s in aws_codepipeline.this.stage : {
+    name = s.name
+    actions = [for a in s.action : {
+      name               = a.name
+      category           = a.category
+      owner              = a.owner
+      provider           = a.provider
+      version            = a.version
+      namespace          = a.namespace
+      timeout_in_minutes = a.timeout_in_minutes
+      input_artifacts    = a.input_artifacts == null ? [] : tolist(a.input_artifacts)
+      output_artifacts   = a.output_artifacts == null ? [] : tolist(a.output_artifacts)
+      configuration      = a.configuration
+    }]
+  }]
+}
+
+output "pipeline_trigger" {
+  description = "Trigger of the pipeline as configured on the resource, for tests and review."
+  value = {
+    provider_type      = one(aws_codepipeline.this.trigger).provider_type
+    source_action_name = one(one(aws_codepipeline.this.trigger).git_configuration).source_action_name
+    push_branches      = flatten([for p in one(one(aws_codepipeline.this.trigger).git_configuration).push : [for b in p.branches : b.includes]])
+    push_tags          = flatten([for p in one(one(aws_codepipeline.this.trigger).git_configuration).push : [for t in p.tags : t.includes]])
+    pull_request_count = length(one(one(aws_codepipeline.this.trigger).git_configuration).pull_request)
+  }
+}
+
+output "pipeline_role_trust" {
+  description = "Trust policy of the pipeline role, decoded from the resource, for tests and review."
+  value       = jsondecode(aws_iam_role.pipeline.assume_role_policy)
+}
+
+output "pipeline_role_policy_statements" {
+  description = "Statements of the inline policy of the pipeline role, decoded from the resource, for tests and review."
+  value       = jsondecode(aws_iam_role_policy.pipeline.policy).Statement
+}
+
+output "pipeline_managed_policy_arns" {
+  description = "AWS managed policies attached to the pipeline role (none: it only has its inline policy)."
+  value       = []
+}

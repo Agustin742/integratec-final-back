@@ -58,8 +58,8 @@ module "storage" {
 
 # Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
 # by hand in the console), the artifact bucket, the CodeBuild log group and the Terraform
-# runner (CodeBuild plan and apply projects with their roles). The remaining projects and
-# the pipeline itself are added by later changes.
+# runner (CodeBuild plan and apply projects with their roles), the image build, the host
+# deploy and the CodePipeline that chains them.
 module "delivery_pipeline" {
   source = "../../modules/delivery_pipeline"
 
@@ -81,6 +81,9 @@ module "delivery_pipeline" {
   # Target and health check of the deploy project (SSM Run Command on this one instance).
   host_instance_id = module.host.instance_id
   site_address     = local.host_sslip_domain
+
+  # The pipeline watches this repository (branch develop) through the CodeConnections link.
+  github_repository = var.github_repository
 }
 
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files

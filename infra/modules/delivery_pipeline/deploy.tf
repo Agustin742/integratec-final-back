@@ -2,7 +2,7 @@
 # health-checks the public endpoints (decision D19). The buildspec lives in
 # infra/pipeline/buildspecs/deploy.yml and sends infra/pipeline/scripts/host-deploy.sh to the
 # host. The image variables (IMAGE_TAG, API_IMAGE, REALTIME_IMAGE, MIGRATE_IMAGE) are not set
-# here: the pipeline that chains the project, added by a later change, sets them from the
+# here: the pipeline (pipeline.tf) sets them from the
 # exported variables of the images action.
 locals {
   deploy_project_name = "${var.name_prefix}-deploy"

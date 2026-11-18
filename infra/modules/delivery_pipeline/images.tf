@@ -1,7 +1,6 @@
 # CodeBuild project that builds the api, migrate and realtime images and pushes them to ECR
 # with the immutable release-<date>-<short commit> tag (decision D19). The buildspec lives in
-# infra/pipeline/buildspecs/images.yml; the pipeline that chains the project is added by a
-# later change.
+# infra/pipeline/buildspecs/images.yml; the pipeline (pipeline.tf) chains the project.
 locals {
   images_project_name = "${var.name_prefix}-images"
 

@@ -198,6 +198,11 @@ output "pipeline_deploy_project_name" {
   value       = module.delivery_pipeline.deploy_project_name
 }
 
+output "pipeline_name" {
+  description = "Name of the CodePipeline pipeline that deploys the backend on every push to develop."
+  value       = module.delivery_pipeline.pipeline_name
+}
+
 output "pipeline_deploy_role_arn" {
   description = "ARN of the service role of the deploy project (SSM Run Command on the host instance only)."
   value       = module.delivery_pipeline.deploy_role_arn

@@ -85,9 +85,9 @@ variable "plan_build_timeout_minutes" {
 }
 
 variable "apply_build_timeout_minutes" {
-  description = "Minutes after which the terraform apply build is stopped; longer than plan because creating resources such as RDS instances takes minutes."
+  description = "Minutes after which the terraform apply build is stopped; longer than plan, and above the 80 minute update timeout of an RDS instance in the AWS provider, so a slow database change is not cut off halfway."
   type        = number
-  default     = 60
+  default     = 120
 
   validation {
     condition     = var.apply_build_timeout_minutes >= 5 && var.apply_build_timeout_minutes <= 480 && floor(var.apply_build_timeout_minutes) == var.apply_build_timeout_minutes
@@ -154,5 +154,37 @@ variable "deploy_build_timeout_minutes" {
   validation {
     condition     = var.deploy_build_timeout_minutes >= 5 && var.deploy_build_timeout_minutes <= 480 && floor(var.deploy_build_timeout_minutes) == var.deploy_build_timeout_minutes
     error_message = "deploy_build_timeout_minutes must be a whole number between 5 and 480."
+  }
+}
+
+variable "github_repository" {
+  description = "GitHub repository (owner/name) the pipeline watches through the connection."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$", var.github_repository))
+    error_message = "github_repository must have the form owner/name."
+  }
+}
+
+variable "source_branch" {
+  description = "Branch whose pushes start the pipeline."
+  type        = string
+  default     = "develop"
+
+  validation {
+    condition     = length(var.source_branch) > 0 && !strcontains(var.source_branch, "*")
+    error_message = "source_branch must be the exact name of one branch (no wildcards)."
+  }
+}
+
+variable "approval_timeout_minutes" {
+  description = "Minutes the manual approval waits for a decision. When it expires the run fails at the Approval stage and nothing is applied, built or deployed; the next push starts a fresh run. CodePipeline accepts 5 minutes to 7 days."
+  type        = number
+  default     = 1440
+
+  validation {
+    condition     = var.approval_timeout_minutes >= 5 && var.approval_timeout_minutes <= 10080 && floor(var.approval_timeout_minutes) == var.approval_timeout_minutes
+    error_message = "approval_timeout_minutes must be a whole number between 5 and 10080 (7 days)."
   }
 }

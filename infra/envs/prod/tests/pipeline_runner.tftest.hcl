@@ -88,7 +88,7 @@ run "projects_use_a_small_unprivileged_curated_image_without_a_vpc" {
   }
 
   assert {
-    condition     = module.delivery_pipeline.terraform_projects.plan.build_timeout == 30 && module.delivery_pipeline.terraform_projects.apply.build_timeout == 60
+    condition     = module.delivery_pipeline.terraform_projects.plan.build_timeout == 30 && module.delivery_pipeline.terraform_projects.apply.build_timeout == 120
     error_message = "Timeouts must be explicit: 30 minutes for plan and 60 for apply."
   }
 }
