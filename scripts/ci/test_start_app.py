@@ -83,7 +83,8 @@ case "$1" in
   login) echo "login-stdin: $(cat)" >> "$STUB_LOG/docker-login.log" ;;
   compose)
     env > "$STUB_LOG/compose-env.$STUB_RUN"
-    if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi ;;
+    if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi
+    case " $* " in *" run "*) if [ -n "${STUB_MIGRATE_FAIL:-}" ]; then exit 1; fi ;; esac ;;
 esac
 """
 
@@ -229,6 +230,12 @@ class BehaviorTests(unittest.TestCase):
     def compose_calls(self):
         return [c for c in self.log("docker.log") if c.startswith("compose")]
 
+    def up_calls(self):
+        return [c for c in self.compose_calls() if " up " in c]
+
+    def migrate_calls(self):
+        return [c for c in self.compose_calls() if " run " in c]
+
     def state_values(self):
         return dict(line.split("=", 1) for line in self.state.read_text().splitlines())
 
@@ -245,7 +252,7 @@ class BehaviorTests(unittest.TestCase):
     def test_happy_path_starts_compose_with_the_expected_environment(self):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
-        compose_calls = self.compose_calls()
+        compose_calls = self.up_calls()
         self.assertEqual(len(compose_calls), 1)
         self.assertRegex(compose_calls[0], r"^compose -f \S+compose\.prod\.yaml up -d --remove-orphans --wait")
         env = self.compose_env()
@@ -404,7 +411,7 @@ class BehaviorTests(unittest.TestCase):
         self.run_script()
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual((result.returncode, out), (0, ""))
-        self.assertEqual(len(self.compose_calls()), 1)
+        self.assertEqual(len(self.up_calls()), 1)
 
     def test_refresh_after_rotation_redeploys_with_the_new_password(self):
         self.run_script()
@@ -413,14 +420,14 @@ class BehaviorTests(unittest.TestCase):
             '{"username":"aula_admin","password":"rotated"}', newline="\n")
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual(result.returncode, 0, out)
-        self.assertEqual(len(self.compose_calls()), 2)
+        self.assertEqual(len(self.up_calls()), 2)
         self.assertIn(":rotated@", self.compose_env()["DATABASE_URL"])
         self.assertEqual(self.state_values()["db_secret_version"], "v2")
 
     def test_refresh_without_state_deploys(self):
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual(result.returncode, 0, out)
-        self.assertEqual(len(self.compose_calls()), 1)
+        self.assertEqual(len(self.up_calls()), 1)
         self.assertEqual(self.state_values()["db_secret_version"], "v1")
 
     def test_state_is_not_written_when_compose_fails(self):
@@ -476,12 +483,36 @@ class BehaviorTests(unittest.TestCase):
         self.assertFalse(self.compose_calls())
         self.assertNotIn("migrate_image", self.state.read_text())
 
-    def test_a_failing_migration_makes_the_deploy_fail_and_keeps_the_state(self):
+    def test_migrations_run_once_before_up_with_the_same_compose_file(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual(len(calls), 2, calls)
+        self.assertRegex(calls[0], r"^compose -f \S+compose\.prod\.yaml run --rm --no-deps migrate$")
+        self.assertRegex(calls[1], r" up -d --remove-orphans --wait")
+        self.assertEqual(calls[0].split()[2], calls[1].split()[2])
+
+        self.assertTrue(self.compose_env()["DATABASE_URL"].startswith("postgresql://"))
+
+    def test_refresh_after_rotation_also_migrates_before_up(self):
         self.run_script()
         self.write_version("v2")
-        result, out = self.run_script(extra_env={"STUB_COMPOSE_FAIL": "1"})
+        result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual([" run " in c for c in calls], [True, False, True, False])
+
+    def test_a_failing_migration_aborts_before_up_and_keeps_the_previous_state(self):
+        self.run_script()
+        previous = self.state.read_text()
+        self.write_version("v2")
+        up_before = len(self.up_calls())
+        result, out = self.run_script(extra_env={"STUB_MIGRATE_FAIL": "1"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.state_values()["migrate_image"], MIGRATE_IMAGE)
+        self.assertIn("migration", out.lower())
+        self.assertEqual(len(self.migrate_calls()), 2)
+        self.assertEqual(len(self.up_calls()), up_before, "up must not run after a failed migration")
+        self.assertEqual(self.state.read_text(), previous)
 
     def test_refresh_without_state_or_images_fails_closed(self):
         result, out = self.run_script(

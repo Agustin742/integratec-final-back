@@ -20,10 +20,12 @@
 # database URL; the realtime service lists its own variables only, so nothing else in the shared
 # environment reaches it.
 #
-# migrate runs `prisma migrate deploy` once per `up` and exits; the api starts only after it exits with
-# code 0 (service_completed_successfully), so a failed migration leaves the previous api running and
-# fails the deployment. Prisma serializes concurrent runs with a database advisory lock. Its logs go to
-# the api log group under their own stream prefix.
+# migrate runs `prisma migrate deploy` and exits. start-app.sh runs it first on its own
+# (`docker compose run --rm --no-deps migrate`) and aborts before `up` when it fails, so a failed
+# migration leaves the previous api running. `up` recreates containers before starting them, so the
+# api's depends_on (service_completed_successfully) is only a second guard, a no-op when nothing is
+# pending. Prisma serializes concurrent runs with a database advisory lock. Its logs go to the api log
+# group under their own stream prefix.
 #
 # Logs go to CloudWatch through the Docker awslogs driver with the host's instance role. The log
 # groups and their retention are created by Terraform (module runtime_access), so the driver never

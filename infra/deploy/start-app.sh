@@ -43,10 +43,10 @@
 #      password URL-encoded, sslmode=require because RDS for
 #      PostgreSQL 16 enforces TLS) and exports it for the api and the migrate job only:
 #      compose.prod.yaml lists it in those two services alone.
-#   4. Logs in to ECR (password on stdin) and runs `docker compose up -d --wait`. The one-shot
-#      migrate service (prisma migrate deploy, same DATABASE_URL) runs first and the api starts only
-#      after it exits 0; if it fails, compose up fails, this script exits non-zero and the state is
-#      not updated.
+#   4. Logs in to ECR (password on stdin), runs the one-shot migrate service on its own
+#      (`docker compose run --rm --no-deps migrate`: prisma migrate deploy with the same DATABASE_URL)
+#      and only then `docker compose up -d --wait`. If the migration fails the script exits non-zero
+#      before `up`, so the running api is not touched and the state is not updated.
 #
 # Handling of values: secret values live in shell variables and in the environment of the single
 # `docker compose` process, nowhere else. This script never writes them to a file, never prints
@@ -273,6 +273,12 @@ done <<<"$registries"
   export ALLOWED_ORIGINS="${api_config[ALLOWED_ORIGINS]}" PASSWORD_RESET_URL_BASE="${api_config[PASSWORD_RESET_URL_BASE]}"
   export S3_REGION="${api_config[S3_REGION]}" S3_BUCKET="${api_config[S3_BUCKET]}"
   export REALTIME_INTERNAL_URL="${api_config[REALTIME_INTERNAL_URL]}" API_INTERNAL_URL="${realtime_config[API_INTERNAL_URL]}"
+  # Migrations first, on their own: `up` recreates the containers (stopping the running api) before it
+  # starts anything, so a migration that failed inside `up` would already have taken the api down.
+  docker compose -f "$compose_file" run --rm --no-deps migrate || {
+    echo "Database migration failed; the running stack was not touched and the state was not updated." >&2
+    exit 1
+  }
   exec docker compose -f "$compose_file" up -d --remove-orphans --wait --wait-timeout 180
 )
 # Recorded only after a successful start; it holds the version id and the images, never a secret.
