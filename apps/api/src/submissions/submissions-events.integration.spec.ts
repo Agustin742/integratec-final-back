@@ -146,6 +146,7 @@ describe('submission outbox event PostgreSQL HTTP — activities-and-grading, pl
           await tx.submissionFile.deleteMany({
             where: { submission: { activityId: { in: ids } } },
           });
+          await tx.activityMetric.deleteMany({ where: { classroomId } });
           await tx.submission.deleteMany({ where: { activityId: { in: ids } } });
           await tx.activity.deleteMany({ where: { classroomId } });
           await tx.classroomMembership.deleteMany({ where: { classroomId } });

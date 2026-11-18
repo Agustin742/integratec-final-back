@@ -290,6 +290,40 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       expect(metric.submissionCount).toBe(1);
       expect(metric.messageCount).toBe(0);
     });
+
+    it('counts two different activities of the same UTC day in the same row', async () => {
+      // A dedicated student again: the day row is per user, so foreign submissions must not leak in.
+      const twoActivityStudent = randomUUID();
+      await prisma.$transaction([
+        prisma.user.create({
+          data: {
+            id: twoActivityStudent,
+            displayName: 'Two Activity Student',
+            email: `submissions-two-activities-${twoActivityStudent}@example.invalid`,
+            passwordHash: 'synthetic-unused-submissions-hash',
+            registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+          },
+        }),
+        prisma.classroomMembership.create({
+          data: {
+            classroomId: classroomA,
+            userId: twoActivityStudent,
+            role: ClassroomRole.STUDENT,
+          },
+        }),
+      ]);
+
+      const first = await publishedActivity();
+      const second = await publishedActivity();
+      await submit(first, { actor: twoActivityStudent }).expect(201);
+      await submit(second, { actor: twoActivityStudent }).expect(201);
+
+      const rows = await prisma.activityMetric.findMany({
+        where: { classroomId: classroomA, userId: twoActivityStudent },
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ submissionCount: 2, messageCount: 0 });
+    });
   });
 
   describe('request validation', () => {

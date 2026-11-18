@@ -12,14 +12,18 @@ describe('activity metric schema — data and activities-and-grading', () => {
   });
 
   it('stores connected time only as a coarse aggregate', () => {
-    const fields = new Map(models.get('ActivityMetric')?.fields.map((field) => [field.name, field]));
+    const fields = new Map(
+      models.get('ActivityMetric')?.fields.map((field) => [field.name, field]),
+    );
     expect(fields.get('connectedSeconds')?.default).toBe(0);
     // No per-instant column exists: rows grow with days, never with movement or ticks.
     expect([...fields.keys()].filter((name) => /instant|tick|position/i.test(name))).toEqual([]);
   });
 
   it('counts submissions and participation as raw values with a zero default', () => {
-    const fields = new Map(models.get('ActivityMetric')?.fields.map((field) => [field.name, field]));
+    const fields = new Map(
+      models.get('ActivityMetric')?.fields.map((field) => [field.name, field]),
+    );
     expect(fields.get('submissionCount')?.type).toBe('Int');
     expect(fields.get('submissionCount')?.default).toBe(0);
     expect(fields.get('messageCount')?.type).toBe('Int');

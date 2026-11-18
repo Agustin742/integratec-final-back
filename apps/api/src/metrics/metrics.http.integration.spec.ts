@@ -379,4 +379,112 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
       });
     });
   });
+
+  describe('report-card ordering and exclusions', () => {
+    it('orders graded activities by gradedAt desc', async () => {
+      const older = await publishedActivity(classroomA, `Card older ${randomUUID()}`);
+      const newer = await publishedActivity(classroomA, `Card newer ${randomUUID()}`);
+      await gradedSubmission(older, s1, {
+        score: 70,
+        feedback: 'older',
+        pointsAwarded: 10,
+        gradedAt: new Date(Date.now() - 5 * HOUR_MS),
+      });
+      await gradedSubmission(newer, s1, {
+        score: 90,
+        feedback: 'newer',
+        pointsAwarded: 20,
+        gradedAt: new Date(Date.now() - 4 * HOUR_MS),
+      });
+
+      const res = await get(`/classrooms/${classroomA}/me/report-card`, s1).expect(200);
+      const ordered = res.body.items
+        .filter((item: { feedback: string }) => ['older', 'newer'].includes(item.feedback))
+        .map((item: { activityId: string }) => item.activityId);
+      expect(ordered).toEqual([newer, older]);
+    });
+
+    it('breaks gradedAt ties by submission id ascending', async () => {
+      const tieFirst = await publishedActivity(classroomA, `Card tie first ${randomUUID()}`);
+      const tieSecond = await publishedActivity(classroomA, `Card tie second ${randomUUID()}`);
+      const sameInstant = new Date(Date.now() - 6 * HOUR_MS);
+      const gradeAt = async (activityId: string) => {
+        const submission = await prisma.submission.create({
+          data: {
+            activityId,
+            studentId: s1,
+            submittedAt: sameInstant,
+            isLate: false,
+            idempotencyKey: randomUUID(),
+          },
+        });
+        await prisma.grade.create({
+          data: {
+            submissionId: submission.id,
+            graderId: teacherA,
+            score: 60,
+            feedback: 'tie',
+            activityTitle: `Tie ${randomUUID()}`,
+            maxScore: 100,
+            pointsAwarded: 10,
+            typeWeight: 1,
+            weightMultiplier: 1,
+            version: 1,
+            gradedAt: sameInstant,
+          },
+        });
+        return submission.id;
+      };
+      const firstSubmission = await gradeAt(tieFirst);
+      const secondSubmission = await gradeAt(tieSecond);
+
+      const res = await get(`/classrooms/${classroomA}/me/report-card`, s1).expect(200);
+      const tiedActivities = res.body.items
+        .filter((item: { feedback: string; activityId: string }) => item.feedback === 'tie')
+        .map((item: { activityId: string }) => item.activityId);
+      expect(tiedActivities).toHaveLength(2);
+      // Same grading instant: the older submission id wins the earlier position.
+      const firstIsOlder = firstSubmission < secondSubmission;
+      expect(tiedActivities).toEqual(firstIsOlder ? [tieFirst, tieSecond] : [tieSecond, tieFirst]);
+    });
+
+    it('paginates the teacher summary with page and pageSize', async () => {
+      const res = await get(
+        `/classrooms/${classroomA}/activity-metrics?pageSize=1&page=2`,
+        teacherA,
+      ).expect(200);
+      expect(res.body.total).toBe(2);
+      expect(res.body.items).toHaveLength(1);
+      // Second student in the displayName ascending order.
+      expect(res.body.items[0].displayName).toBe('Beta Student');
+    });
+
+    it('excludes deleted activities from the report card and the summary counts', async () => {
+      const before = await get(`/classrooms/${classroomA}/activity-metrics`, teacherA).expect(200);
+      const beforeCount = before.body.items.find(
+        (item: { studentId: string }) => item.studentId === s1,
+      ).gradedCount;
+
+      const doomed = await publishedActivity(classroomA, `Doomed card ${randomUUID()}`);
+      await gradedSubmission(doomed, s1, {
+        score: 55,
+        feedback: 'doomed',
+        pointsAwarded: 5,
+        gradedAt: new Date(Date.now() - 2 * HOUR_MS),
+      });
+      // Deleting an activity with submissions is refused by the service, so the guard is
+      // exercised the way historical data would look: the row is marked deleted directly.
+      await prisma.activity.update({ where: { id: doomed }, data: { deletedAt: new Date() } });
+
+      const card = await get(`/classrooms/${classroomA}/me/report-card`, s1).expect(200);
+      expect(
+        card.body.items.some((item: { activityId: string }) => item.activityId === doomed),
+      ).toBe(false);
+      const after = await get(`/classrooms/${classroomA}/activity-metrics`, teacherA).expect(200);
+      const afterCount = after.body.items.find(
+        (item: { studentId: string }) => item.studentId === s1,
+      ).gradedCount;
+      expect(afterCount).toBe(beforeCount);
+    });
+  });
 });
