@@ -35,7 +35,7 @@ mock_provider "aws" {
 }
 
 # The Elastic IP address is pinned (the mock would otherwise return a random string),
-# so the sslip.io origin the frontend is built against can be asserted. It is the real
+# so the sslip.io host the frontend is built against can be asserted. It is the real
 # address of the production host.
 override_resource {
   target          = module.host.aws_eip.host
@@ -99,16 +99,16 @@ run "spa_rewrite_rule_is_exact" {
   }
 }
 
-run "build_env_vars_point_at_the_api_host" {
+run "build_env_vars_point_at_the_caddy_api_and_realtime_paths" {
   command = apply
 
   assert {
     condition = module.frontend_hosting.app_settings.environment_variables == tomap({
       VITE_APP_ENV      = "production"
-      VITE_API_BASE_URL = "https://16-59-248-180.sslip.io"
-      VITE_REALTIME_URL = "wss://16-59-248-180.sslip.io"
+      VITE_API_BASE_URL = "https://16-59-248-180.sslip.io/api"
+      VITE_REALTIME_URL = "wss://16-59-248-180.sslip.io/realtime"
     })
-    error_message = "The app variables must be exactly VITE_APP_ENV=production plus the https API origin and the wss realtime origin derived from the host sslip.io name."
+    error_message = "The app variables must be exactly VITE_APP_ENV=production plus the https API base URL (/api) and the wss realtime base URL (/realtime) derived from the host sslip.io name; they must match the Caddy routes."
   }
 
   assert {
@@ -179,6 +179,98 @@ run "realtime_url_must_be_secure_websocket" {
 
   variables {
     frontend_realtime_url = "ws://16-59-248-180.sslip.io"
+  }
+
+  expect_failures = [var.frontend_realtime_url]
+}
+
+run "api_and_realtime_urls_accept_an_optional_path" {
+  command = apply
+
+  variables {
+    frontend_api_base_url = "https://api.example.com:8443/v1/api"
+    frontend_realtime_url = "wss://rt.example.com/realtime"
+  }
+
+  assert {
+    condition = module.frontend_hosting.app_settings.environment_variables == tomap({
+      VITE_APP_ENV      = "production"
+      VITE_API_BASE_URL = "https://api.example.com:8443/v1/api"
+      VITE_REALTIME_URL = "wss://rt.example.com/realtime"
+    })
+    error_message = "Overrides with a path must reach the app variables unchanged."
+  }
+}
+
+run "api_and_realtime_urls_accept_a_bare_host" {
+  command = apply
+
+  variables {
+    frontend_api_base_url = "https://api.example.com"
+    frontend_realtime_url = "wss://rt.example.com"
+  }
+
+  assert {
+    condition     = module.frontend_hosting.app_settings.environment_variables["VITE_API_BASE_URL"] == "https://api.example.com" && module.frontend_hosting.app_settings.environment_variables["VITE_REALTIME_URL"] == "wss://rt.example.com"
+    error_message = "A base URL without a path must still be accepted."
+  }
+}
+
+run "api_url_rejects_a_trailing_slash" {
+  command = plan
+
+  variables {
+    frontend_api_base_url = "https://16-59-248-180.sslip.io/api/"
+  }
+
+  expect_failures = [var.frontend_api_base_url]
+}
+
+run "api_url_rejects_a_query" {
+  command = plan
+
+  variables {
+    frontend_api_base_url = "https://16-59-248-180.sslip.io/api?x=1"
+  }
+
+  expect_failures = [var.frontend_api_base_url]
+}
+
+run "api_url_rejects_a_fragment" {
+  command = plan
+
+  variables {
+    frontend_api_base_url = "https://16-59-248-180.sslip.io/api#top"
+  }
+
+  expect_failures = [var.frontend_api_base_url]
+}
+
+run "api_url_rejects_whitespace" {
+  command = plan
+
+  variables {
+    frontend_api_base_url = "https://16-59-248-180.sslip.io/my api"
+  }
+
+  expect_failures = [var.frontend_api_base_url]
+}
+
+run "realtime_url_rejects_a_trailing_slash" {
+  command = plan
+
+  variables {
+    frontend_realtime_url = "wss://16-59-248-180.sslip.io/realtime/"
+  }
+
+  expect_failures = [var.frontend_realtime_url]
+}
+
+run "realtime_url_rejects_a_query" {
+  command = plan
+
+  variables {
+    frontend_realtime_url = "wss://16-59-248-180.sslip.io/realtime?x=1"
   }
 
   expect_failures = [var.frontend_realtime_url]

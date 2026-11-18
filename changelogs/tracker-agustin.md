@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-17 — Frontend API and realtime base URLs include the Caddy paths (#22)
+
+- **Status:** in review once the PR opens (branch `fix/22-frontend-base-url-paths`; not pushed yet)
+- **Area / files:** `infra/envs/prod/` (`main.tf`, `variables.tf`, `tests/frontend_hosting.tftest.hcl`), `infra/modules/frontend_hosting/variables.tf`, `infra/README.md`
+- **Change:** The derived build variables are now `VITE_API_BASE_URL=https://<host>.sslip.io/api` and `VITE_REALTIME_URL=wss://<host>.sslip.io/realtime`, the routes Caddy serves with the prefix stripped (`infra/caddy/Caddyfile`). The validations in the prod root and the Amplify module accept an https (wss) base URL with an optional path, and still reject http/ws, a trailing slash, a query, a fragment, whitespace and dot-only segments. Error messages and descriptions say "base URL" instead of "origin". Tests cover the new defaults, overrides with and without a path, and the rejections; `terraform test` has 164 passing tests in `envs/prod`.
+- **Reason:** On the live host `POST /auth/login` returns 404 and `POST /api/auth/login` returns 400, so the deployed frontend could not reach the API or realtime service.
+- **Open points for the PR:** the `VITE_*` values are compiled into the bundle, so the fix only reaches users after a new Amplify build.
+- **Next step:** merge, apply from `develop`, start an Amplify build with `aws amplify start-job --job-type RELEASE`, then smoke check login and realtime from the Amplify URL.
+
 ## 2026-11-17 — Review fixes on the grading PR (#98, issue #32)
 
 - **Status:** in review (fixes applied on Luis's branch `feat/32-grade-submissions`; not pushed yet, waiting on the decision owner's OK)

@@ -29,22 +29,22 @@ variable "branch_name" {
 }
 
 variable "api_base_url" {
-  description = "HTTPS origin of the backend API, baked into the build as VITE_API_BASE_URL."
+  description = "HTTPS base URL of the backend API (host plus the optional path it is served under), baked into the build as VITE_API_BASE_URL."
   type        = string
 
   validation {
-    condition     = can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.api_base_url))
-    error_message = "api_base_url must be an https origin without path or trailing slash, such as https://api.example.com."
+    condition     = can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*$", var.api_base_url)) && !can(regex("/[.]+(/|$)", var.api_base_url))
+    error_message = "api_base_url must be an https base URL with an optional path, without trailing slash, query or fragment, such as https://api.example.com/api."
   }
 }
 
 variable "realtime_url" {
-  description = "Secure WebSocket origin of the realtime service, baked into the build as VITE_REALTIME_URL."
+  description = "Secure WebSocket base URL of the realtime service (host plus the optional path it is served under), baked into the build as VITE_REALTIME_URL."
   type        = string
 
   validation {
-    condition     = can(regex("^wss://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.realtime_url))
-    error_message = "realtime_url must be a wss origin without path or trailing slash, such as wss://api.example.com."
+    condition     = can(regex("^wss://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*$", var.realtime_url)) && !can(regex("/[.]+(/|$)", var.realtime_url))
+    error_message = "realtime_url must be a wss base URL with an optional path, without trailing slash, query or fragment, such as wss://api.example.com/realtime."
   }
 }
 
