@@ -7,8 +7,8 @@ version: 0.2
 env:
   variables:
     # Keep equal to terraform_version in .github/workflows/ci.yml (scripts/ci/test_pipeline_buildspecs.py).
-    TERRAFORM_VERSION: "1.16.6"
-    TF_IN_AUTOMATION: "true"
+    TERRAFORM_VERSION: '1.16.6'
+    TF_IN_AUTOMATION: 'true'
 
 phases:
   install:

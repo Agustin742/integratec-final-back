@@ -19,13 +19,13 @@ env:
   shell: bash
   variables:
     # Seconds SSM waits for the agent to pick the command up before it gives up on delivery.
-    SSM_DELIVERY_TIMEOUT_SECONDS: "120"
+    SSM_DELIVERY_TIMEOUT_SECONDS: '120'
     # Seconds the command may run on the host (start-app.sh waits up to 300 for the deploy lock
     # and 180 for the containers to become healthy).
-    SSM_EXECUTION_TIMEOUT_SECONDS: "900"
+    SSM_EXECUTION_TIMEOUT_SECONDS: '900'
     # Longer than delivery plus execution, so the host timeout is what ends a stuck command.
-    SSM_POLL_DEADLINE_SECONDS: "1200"
-    HEALTH_CHECK_DEADLINE_SECONDS: "300"
+    SSM_POLL_DEADLINE_SECONDS: '1200'
+    HEALTH_CHECK_DEADLINE_SECONDS: '300'
 
 phases:
   pre_build:
