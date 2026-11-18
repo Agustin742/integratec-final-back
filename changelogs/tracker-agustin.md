@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-17 — Keyless deploy pipeline inside AWS (#58), T1 docs
+
+- **Status:** in-progress (branch `feat/58-keyless-deploy-pipeline`; not pushed yet)
+- **Area / files:** `docs/technical-justification.md` (D19, D6 update), `rules/aws-infrastructure.md`, `rules/infrastructure-as-code.md`
+- **Change:** Recorded decision D19: CodePipeline V2 and CodeBuild inside AWS, triggered from `develop` through a CodeConnections GitHub connection, with plan, manual approval, apply of the saved plan, image build and push, SSM Run Command deploy and a health check. Migrations run on the host as a one-shot `migrate` Compose service before the api. Updated the infrastructure rules to replace the GitHub Actions OIDC wording.
+- **Reason:** The account SCP denies the GitHub OIDC provider, and production ran with an empty schema because no deploy step ran migrations.
+- **Next step:** T2, the `migrate` image target and Compose service.
+
 ## 2026-11-17 — Frontend API and realtime base URLs include the Caddy paths (#22)
 
 - **Status:** in review once the PR opens (branch `fix/22-frontend-base-url-paths`; not pushed yet)
