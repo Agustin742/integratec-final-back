@@ -1,0 +1,109 @@
+import { createHash } from 'node:crypto';
+import { ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { AccessVerificationService } from '../access/access-verification.service';
+import { resolveMentionedUserIds } from '../announcements/announcements.service';
+import { RequestValidationException } from '../http/validation';
+import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  CHAT_MAX_BODY_LENGTH,
+  CHAT_MAX_MENTIONED_USERS,
+  CHAT_MENTION_SOURCE_TYPE,
+  CHAT_RATE_LIMIT_MAX_MESSAGES,
+  CHAT_RATE_LIMIT_WINDOW_MS,
+} from './chat-policy';
+
+function invalidBody(message: string): never {
+  throw new RequestValidationException([{ field: 'body', messages: [message] }]);
+}
+
+@Injectable()
+export class ChatService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly access: AccessVerificationService,
+    private readonly notifications: NotificationRecorder,
+  ) {}
+
+  async send(actorId: string, classroomId: string, input: unknown) {
+    if (typeof input !== 'string') invalidBody('body must be a string');
+    const body = input.trim();
+    // eslint-disable-next-line no-control-regex -- Allow tab/newline/CR, reject unsafe C0/C1 bytes.
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/u.test(input)) {
+      invalidBody('body must not contain control characters');
+    }
+    if (!/[^\s\u200B-\u200D\uFEFF]/u.test(body) || body.length > CHAT_MAX_BODY_LENGTH) {
+      invalidBody(`body must contain 1 to ${CHAT_MAX_BODY_LENGTH} characters of text`);
+    }
+    // UUID spelling must not split a pair's lock. Hash collisions only serialize extra pairs.
+    const key = createHash('sha256')
+      .update(`chat:${classroomId.toLowerCase()}:${actorId.toLowerCase()}`)
+      .digest()
+      .readBigInt64BE(0);
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(${key})`;
+        // Recheck after waiting. Access uses current persisted state, not session claims.
+        const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
+          requiredRole: 'ANY',
+        });
+        if (access.myRole === 'PARENT')
+          throw new ForbiddenException('Parents cannot use classroom chat');
+        classroomId = access.classroom.id;
+        const [state] = await tx.$queryRaw<{ chat_muted: boolean }[]>`
+        SELECT chat_muted FROM classrooms WHERE id = ${classroomId}::uuid AND deleted_at IS NULL FOR SHARE`;
+        if (!state) throw new NotFoundException('Classroom not found');
+        if (state.chat_muted && access.myRole === 'STUDENT')
+          throw new ForbiddenException('Classroom chat is muted');
+        const roster = await this.access.listActiveMentionCandidates(classroomId, tx);
+        const mentionedUserIds = resolveMentionedUserIds(body, roster);
+        if (mentionedUserIds.length > CHAT_MAX_MENTIONED_USERS)
+          invalidBody(`body resolves to more than ${CHAT_MAX_MENTIONED_USERS} @mentions`);
+        // Sample AFTER admission lock, never transaction-start CURRENT_TIMESTAMP. Millisecond
+        // precision matches Prisma Date and the explicitly persisted creation instant.
+        const [clock] = await tx.$queryRaw<
+          { now: Date }[]
+        >`SELECT date_trunc('milliseconds', clock_timestamp()) AS now`;
+        const now = clock!.now;
+        const count = await tx.message.count({
+          where: {
+            classroomId,
+            authorId: actorId,
+            createdAt: { gt: new Date(now.getTime() - CHAT_RATE_LIMIT_WINDOW_MS) },
+          },
+        });
+        if (count >= CHAT_RATE_LIMIT_MAX_MESSAGES)
+          throw new HttpException('Chat rate limit exceeded', 429);
+        const row = await tx.message.create({
+          data: { classroomId, authorId: actorId, body, createdAt: now },
+        });
+        if (mentionedUserIds.length)
+          await tx.mention.createMany({
+            data: mentionedUserIds.map((mentionedUserId) => ({
+              sourceType: CHAT_MENTION_SOURCE_TYPE,
+              sourceId: row.id,
+              mentionedUserId,
+            })),
+          });
+        for (const recipientId of mentionedUserIds) {
+          await this.notifications.record(tx, {
+            kind: 'mention',
+            classroomId,
+            resourceId: row.id,
+            recipientId,
+          });
+        }
+        // Explicit application view, never a persistence entity exposed to consumers.
+        return {
+          id: row.id,
+          classroomId,
+          authorId: row.authorId,
+          body: row.body,
+          mentionedUserIds,
+          createdAt: row.createdAt.toISOString(),
+        };
+      },
+      { timeout: 15_000 },
+    );
+  }
+}
