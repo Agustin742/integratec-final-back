@@ -22,9 +22,8 @@ resource "aws_codebuild_project" "deploy" {
   service_role  = local.deploy_role_arn
   build_timeout = var.deploy_build_timeout_minutes
 
-  # Two deployments at once would race for the host; a second one waits in the queue.
-  concurrent_build_limit = 1
-
+  # No project concurrency limit: CodeBuild rejects a build over the limit instead of queueing it.
+  # The pipeline runs in QUEUED mode, which serializes the deployments.
   source {
     type      = "CODEPIPELINE"
     buildspec = "infra/pipeline/buildspecs/deploy.yml"

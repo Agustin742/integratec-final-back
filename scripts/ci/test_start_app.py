@@ -84,6 +84,7 @@ case "$1" in
   compose)
     env > "$STUB_LOG/compose-env.$STUB_RUN"
     if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi
+    case " $* " in *" --force-recreate "*) if [ -n "${STUB_RECREATE_FAIL:-}" ]; then exit 1; fi ;; esac
     case " $* " in *" run "*) if [ -n "${STUB_MIGRATE_FAIL:-}" ]; then exit 1; fi ;; esac ;;
 esac
 """
@@ -493,6 +494,25 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(calls[0].split()[2], calls[1].split()[2])
 
         self.assertTrue(self.compose_env()["DATABASE_URL"].startswith("postgresql://"))
+
+    def test_recreate_caddy_runs_a_second_up_for_caddy_only_after_the_stack_is_up(self):
+        result, out = self.run_script(args=self.args() + ["--recreate-caddy"])
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual(len(calls), 3, calls)
+        self.assertRegex(calls[2], r"^compose -f \S+compose\.prod\.yaml up -d --no-deps --force-recreate --wait --wait-timeout 180 caddy$")
+        self.assertEqual(calls[1].split()[2], calls[2].split()[2])
+        self.assertEqual(self.compose_env(self.runs)["SITE_ADDRESS"], "203-0-113-10.sslip.io")
+
+    def test_without_the_flag_caddy_is_not_recreated(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertFalse(any("--force-recreate" in c for c in self.compose_calls()))
+
+    def test_a_failed_recreate_fails_the_run_and_leaves_the_state_unwritten(self):
+        result, out = self.run_script(args=self.args() + ["--recreate-caddy"], extra_env={"STUB_RECREATE_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertFalse(self.state.exists())
 
     def test_refresh_after_rotation_also_migrates_before_up(self):
         self.run_script()

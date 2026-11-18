@@ -29,6 +29,10 @@
 # redeploying without the migration step would skip it silently. systemd/app-db-refresh.{service,timer} run it every 10 minutes
 # (installation: T6 docs).
 #
+# --recreate-caddy: after the stack is up, recreate only the caddy container (`up -d --no-deps
+# --force-recreate caddy`), so it mounts a Caddyfile that a deployment replaced. The deploy pipeline
+# (infra/pipeline/scripts/host-deploy.sh) passes it when the Caddyfile changed.
+#
 # Concurrency: the whole run holds an exclusive flock on DEPLOY_LOCK_FILE (default: deploy.lock next
 # to the state file) and waits up to DEPLOY_LOCK_WAIT seconds (default 300) for another deployment or
 # refresh to finish, then fails with a message.
@@ -74,6 +78,7 @@ state_file="${DEPLOY_STATE_FILE:-/var/lib/aula-app/deployed-state}"
 lock_file="${DEPLOY_LOCK_FILE:-$(dirname "$state_file")/deploy.lock}"
 lock_wait="${DEPLOY_LOCK_WAIT:-300}"
 refresh_only=""
+recreate_caddy=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -91,6 +96,10 @@ while [ $# -gt 0 ]; do
       ;;
     --refresh-if-rotated)
       refresh_only=1
+      shift
+      ;;
+    --recreate-caddy)
+      recreate_caddy=1
       shift
       ;;
     *) usage_error "Unknown argument: $1" ;;
@@ -279,7 +288,12 @@ done <<<"$registries"
     echo "Database migration failed; the running stack was not touched and the state was not updated." >&2
     exit 1
   }
-  exec docker compose -f "$compose_file" up -d --remove-orphans --wait --wait-timeout 180
+  docker compose -f "$compose_file" up -d --remove-orphans --wait --wait-timeout 180
+  # Caddy bind-mounts the Caddyfile by inode: when a deployment replaced the file (a new directory
+  # tree), the running container still serves the old one. Recreating it mounts the new file.
+  if [ -n "$recreate_caddy" ]; then
+    docker compose -f "$compose_file" up -d --no-deps --force-recreate --wait --wait-timeout 180 caddy
+  fi
 )
 # Recorded only after a successful start; it holds the version id and the images, never a secret.
 {

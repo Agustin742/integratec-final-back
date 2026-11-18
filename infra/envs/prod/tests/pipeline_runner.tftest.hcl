@@ -91,11 +91,6 @@ run "projects_use_a_small_unprivileged_curated_image_without_a_vpc" {
     condition     = module.delivery_pipeline.terraform_projects.plan.build_timeout == 30 && module.delivery_pipeline.terraform_projects.apply.build_timeout == 60
     error_message = "Timeouts must be explicit: 30 minutes for plan and 60 for apply."
   }
-
-  assert {
-    condition     = module.delivery_pipeline.terraform_projects.apply.concurrent_build_limit == 1
-    error_message = "The apply project must never run two builds at once."
-  }
 }
 
 run "projects_log_to_the_shared_group_with_distinct_stream_prefixes" {

@@ -7,6 +7,7 @@ the tests that need it are skipped when it is missing.
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -357,6 +358,31 @@ class DeployBuildspecTests(unittest.TestCase):
         self.assertIn("StandardOutputContent", self.text)
         self.assertIn("StandardErrorContent", self.text)
         self.assertRegex(self.text, r'"\$status" = "Success"|"\$status" != "Success"')
+
+    def packaging_block(self):
+        return next(c for c in self.commands if re.search(r"\btar\b.*-czf", c))
+
+    def test_packaging_block_fails_the_build_on_any_error(self):
+        block = self.packaging_block()
+        self.assertRegex(block, r"(?m)^set -euo pipefail$")
+        # The options must not leak into the later commands, which handle statuses themselves.
+        self.assertRegex(block, r"(?m)^set \+eu \+o pipefail$")
+
+    @unittest.skipUnless(bash_works(), "a working bash is required")
+    def test_packaging_block_exits_non_zero_when_the_host_files_are_missing(self):
+        with tempfile.TemporaryDirectory() as empty:
+            result = subprocess.run(
+                [shutil.which("bash"), "-c", self.packaging_block()],
+                capture_output=True, text=True, timeout=60, cwd=empty,
+                env={"PATH": "/usr/bin:/bin", **DEPLOY_ENV},
+            )
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_a_poll_deadline_cancels_the_command_before_failing(self):
+        poll = next(c for c in self.commands if "aws ssm get-command-invocation" in c and "deadline" in c)
+        self.assertIn('aws ssm cancel-command --command-id "$command_id" --instance-ids "$INSTANCE_ID"', poll)
+        self.assertRegex(poll, r"(?i)cancel(l)?ed")
+        self.assertLess(poll.index("cancel-command"), poll.index("did not succeed"))
 
     def test_health_checks_cover_both_public_paths_with_retries_and_a_deadline(self):
         self.assertIn("https://${SITE_ADDRESS}/api/health", self.text)

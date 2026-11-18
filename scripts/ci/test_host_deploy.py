@@ -130,7 +130,7 @@ class HostDeployScriptTests(unittest.TestCase):
         self.assertEqual((self.aula / "infra" / "caddy" / "Caddyfile").read_text().strip(), "# new")
         self.assertEqual(
             self.log("start-app.log")[0],
-            f"args: --api-image {API_IMAGE} --realtime-image {REALTIME_IMAGE} --migrate-image {MIGRATE_IMAGE}",
+            f"args: --api-image {API_IMAGE} --realtime-image {REALTIME_IMAGE} --migrate-image {MIGRATE_IMAGE} --recreate-caddy",
         )
         self.assertEqual(len(self.log("start-app.log")), 3, "start-app.sh runs exactly once")
 
@@ -212,6 +212,48 @@ class HostDeployScriptTests(unittest.TestCase):
         result, out = self.run_script()
         self.assertNotEqual(result.returncode, 0, out)
         self.assertEqual(self.release(), "old")
+
+    def test_a_changed_caddyfile_asks_start_app_to_recreate_caddy(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertTrue(self.log("start-app.log")[0].endswith(" --recreate-caddy"))
+
+    def test_an_unchanged_caddyfile_does_not_recreate_caddy(self):
+        (self.aula / "infra" / "caddy" / "Caddyfile").write_text("# new\n", newline="\n")
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertNotIn("--recreate-caddy", self.log("start-app.log")[0])
+
+    def test_a_first_deployment_without_a_previous_tree_recreates_caddy(self):
+        shutil.rmtree(self.aula / "infra")
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertTrue(self.log("start-app.log")[0].endswith(" --recreate-caddy"))
+
+    def test_unsafe_member_paths_abort_before_the_swap(self):
+        for name in ("/etc/evil", "../evil", "deploy/../../evil"):
+            buffer = io.BytesIO()
+            with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+                info = tarfile.TarInfo(name)
+                info.size = 1
+                archive.addfile(info, io.BytesIO(b"x"))
+            self.publish(buffer.getvalue())
+            result, out = self.run_script()
+            self.assertNotEqual(result.returncode, 0, name)
+            self.assertEqual(self.release(), "old", name)
+            self.assertEqual(self.log("start-app.log"), [], name)
+            self.assertEqual(self.leftovers(), [], name)
+
+    def test_a_tarball_that_cannot_be_listed_aborts_before_the_swap(self):
+        self.publish(tarball("new")[:-40])  # truncated gzip stream; the checksum matches what was published
+        result, out = self.run_script()
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertEqual(self.release(), "old")
+        self.assertEqual(self.log("start-app.log"), [])
+        self.assertIn("list", out.lower())
+
+    def test_the_member_guard_is_not_a_pipeline_that_can_hide_a_listing_failure(self):
+        self.assertNotRegex(SCRIPT.read_text(), r"tar -tzf [^\n|]*\|(?!\|)")
 
     def test_missing_or_malformed_inputs_fail_before_any_download(self):
         cases = [({}, (name,)) for name in ("HOST_FILES_URI", "HOST_FILES_SHA256", "API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE")]

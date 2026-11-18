@@ -91,9 +91,8 @@ resource "aws_codebuild_project" "terraform_apply" {
   service_role  = local.apply_role_arn
   build_timeout = var.apply_build_timeout_minutes
 
-  # Two applies at once would fight over the state lock; a second one waits in the queue.
-  concurrent_build_limit = 1
-
+  # No project concurrency limit: CodeBuild rejects a build over the limit instead of queueing it.
+  # The pipeline runs in QUEUED mode, so two applies never run at once.
   source {
     type      = "CODEPIPELINE"
     buildspec = "infra/pipeline/buildspecs/terraform-apply.yml"

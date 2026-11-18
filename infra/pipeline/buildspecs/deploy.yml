@@ -53,12 +53,14 @@ phases:
       # systemd units) and caddy/. The sha256 is computed here and travels in the remote
       # command, so the host checks the download against a value that did not come from S3.
       - |
+        set -euo pipefail
         rm -rf host-files-build && mkdir host-files-build
         tar --owner=0 --group=0 --numeric-owner -czf host-files-build/host-files.tar.gz -C infra deploy caddy
         (cd host-files-build && sha256sum host-files.tar.gz > host-files.tar.gz.sha256)
         HOST_FILES_SHA256="$(cut -d' ' -f1 host-files-build/host-files.tar.gz.sha256)"
         HOST_FILES_URI="s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz"
         echo "Packed the host files of ${IMAGE_TAG} (sha256 ${HOST_FILES_SHA256})"
+        set +eu +o pipefail
       - aws s3 cp host-files-build/host-files.tar.gz "s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz" --only-show-errors
       - aws s3 cp host-files-build/host-files.tar.gz.sha256 "s3://${ARTIFACT_BUCKET}/host-files/${IMAGE_TAG}/host-files.tar.gz.sha256" --only-show-errors
       # The remote command is the checked-in script, written to a temporary file on the host
@@ -102,6 +104,12 @@ phases:
             *) break ;;
           esac
           if [ "$SECONDS" -ge "$deadline" ]; then
+            # The build must not leave the command running on the host after it fails.
+            if aws ssm cancel-command --command-id "$command_id" --instance-ids "$INSTANCE_ID"; then
+              echo "Cancelled SSM command ${command_id}: it did not finish within ${SSM_POLL_DEADLINE_SECONDS}s."
+            else
+              echo "Could not cancel SSM command ${command_id}; check it in the SSM console." >&2
+            fi
             status="NoResultWithinDeadline"
             break
           fi

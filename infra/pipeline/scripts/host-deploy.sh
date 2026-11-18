@@ -23,6 +23,9 @@
 #   4. Keep the current tree as $AULA_ROOT/infra.prev (the one backup there is) and rename the
 #      new tree into place. Two renames, so there is a gap of milliseconds with no infra directory;
 #      a refresh timer that fires in it fails once and runs again 10 minutes later.
+#      The Caddyfile of the new tree is compared with the current one first (sha256); when it
+#      changed, or there is none, start-app.sh gets --recreate-caddy, because the running caddy
+#      container bind-mounts the old file by inode and would keep serving it.
 #   5. Run start-app.sh from the new tree. It runs the migrations first and leaves the running
 #      containers alone when they fail. If it fails for any reason, the previous tree is restored
 #      and this script exits with the exit code of start-app.sh. Containers that start-app.sh
@@ -78,8 +81,11 @@ aws s3 cp "$HOST_FILES_URI" "${stage}/host-files.tar.gz" --region "$AWS_REGION" 
 echo "sha256 verified."
 
 # Member names are validated before extraction so a bad tarball cannot write outside the tree.
+# The listing goes to a file first, so a tar failure aborts here instead of being hidden in a pipeline.
 cd "$stage"
-if tar -tzf host-files.tar.gz | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+tar -tzf host-files.tar.gz > members.txt || fail "could not list the tarball; nothing was changed."
+[ -s members.txt ] || fail "the tarball is empty; nothing was changed."
+if grep -Eq '(^/|(^|/)\.\.(/|$))' members.txt; then
   fail "the tarball has absolute or parent-relative paths; nothing was changed."
 fi
 mkdir -m 755 tree
@@ -90,6 +96,14 @@ done
 chmod +x "${stage}/tree/deploy/start-app.sh"
 # Leave the staging directory: it is removed on exit, and start-app.sh should not run inside it.
 cd /
+
+# Caddy mounts the Caddyfile by inode, so a changed (or first) Caddyfile needs a recreated container.
+start_args=()
+if [ ! -f "${infra}/caddy/Caddyfile" ] ||
+  [ "$(sha256sum < "${infra}/caddy/Caddyfile")" != "$(sha256sum < "${stage}/tree/caddy/Caddyfile")" ]; then
+  start_args+=(--recreate-caddy)
+  echo "The Caddyfile changed (or is new): caddy will be recreated."
+fi
 
 rm -rf "$previous"
 had_previous=""
@@ -102,7 +116,7 @@ echo "Installed the new host files in ${infra}."
 
 status=0
 "${infra}/deploy/start-app.sh" \
-  --api-image "$API_IMAGE" --realtime-image "$REALTIME_IMAGE" --migrate-image "$MIGRATE_IMAGE" || status=$?
+  --api-image "$API_IMAGE" --realtime-image "$REALTIME_IMAGE" --migrate-image "$MIGRATE_IMAGE" "${start_args[@]}" || status=$?
 if [ "$status" -ne 0 ]; then
   echo "host-deploy: start-app.sh failed with exit code ${status}." >&2
   if [ -n "$had_previous" ]; then

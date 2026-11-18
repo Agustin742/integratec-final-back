@@ -114,7 +114,6 @@ output "terraform_projects" {
       image_pull_credentials_type = one(project.environment).image_pull_credentials_type
       privileged_mode             = one(project.environment).privileged_mode
       build_timeout               = project.build_timeout
-      concurrent_build_limit      = project.concurrent_build_limit
       vpc_config_count            = length(project.vpc_config)
       log_group_name              = one(one(project.logs_config).cloudwatch_logs).group_name
       log_stream_prefix           = one(one(project.logs_config).cloudwatch_logs).stream_name

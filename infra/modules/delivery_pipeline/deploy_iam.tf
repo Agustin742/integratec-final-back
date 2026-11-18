@@ -1,7 +1,7 @@
 # Service role of the deploy project (decision D19): assumable only by CodeBuild on behalf of
 # that project in this account. It can write its logs, read the pipeline input artifact,
 # publish the host files under host-files/ of the artifact bucket, run AWS-RunShellScript on
-# the one host instance and read the result of that command, and nothing else.
+# the one host instance and read the result of that command (and cancel it when the build gives up waiting), and nothing else.
 locals {
   deploy_role_name = "${local.deploy_project_name}-role"
 
@@ -53,6 +53,15 @@ locals {
       Sid      = "ReadCommandResult"
       Effect   = "Allow"
       Action   = ["ssm:GetCommandInvocation"]
+      Resource = ["*"]
+    },
+    {
+      # Cancels the command when the build gives up waiting for it. CancelCommand has no
+      # resource-level support (the service authorization reference lists no resource type
+      # for it), so "*" is the only valid value.
+      Sid      = "CancelHostDeploy"
+      Effect   = "Allow"
+      Action   = ["ssm:CancelCommand"]
       Resource = ["*"]
     },
   ]

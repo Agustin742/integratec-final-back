@@ -189,8 +189,26 @@ run "deploy_role_runs_the_shell_document_on_the_host_only" {
   }
 
   assert {
-    condition     = [for x in module.delivery_pipeline.deploy_role_policy_statements : x.Sid if contains(x.Resource, "*")] == ["ReadCommandResult"]
-    error_message = "No statement other than the command result read may use a wildcard resource."
+    condition     = [for x in module.delivery_pipeline.deploy_role_policy_statements : x.Sid if contains(x.Resource, "*")] == ["ReadCommandResult", "CancelHostDeploy"]
+    error_message = "Only the command result read and the cancel statement (no resource-level support) may use a wildcard resource."
+  }
+}
+
+run "deploy_role_may_cancel_a_command_it_sent" {
+  command = apply
+
+  assert {
+    condition     = one([for x in module.delivery_pipeline.deploy_role_policy_statements : x if x.Sid == "CancelHostDeploy"]).Action == ["ssm:CancelCommand"] && one([for x in module.delivery_pipeline.deploy_role_policy_statements : x if x.Sid == "CancelHostDeploy"]).Resource == ["*"]
+    error_message = "The role must be able to cancel a command when the poll deadline passes: ssm:CancelCommand alone, on * (no resource-level support)."
+  }
+}
+
+run "builds_are_queued_by_the_pipeline_not_rejected_by_a_project_limit" {
+  command = plan
+
+  assert {
+    condition     = var.project != "" && !strcontains(file("../../modules/delivery_pipeline/deploy.tf"), "concurrent_build_limit") && !strcontains(file("../../modules/delivery_pipeline/terraform_runner.tf"), "concurrent_build_limit")
+    error_message = "A project concurrency limit rejects a second build instead of queueing it; the pipeline (QUEUED mode) serializes the runs."
   }
 }
 
@@ -208,8 +226,8 @@ run "deploy_role_has_no_other_service_and_no_managed_policy" {
   }
 
   assert {
-    condition     = toset([for x in module.delivery_pipeline.deploy_role_policy_statements : x.Sid]) == toset(["WriteBuildLogs", "ReadPipelineArtifacts", "PublishHostFiles", "ArtifactBucketLocation", "RunHostDeploy", "ReadCommandResult"])
-    error_message = "The role must have exactly the six documented statements."
+    condition     = toset([for x in module.delivery_pipeline.deploy_role_policy_statements : x.Sid]) == toset(["WriteBuildLogs", "ReadPipelineArtifacts", "PublishHostFiles", "ArtifactBucketLocation", "RunHostDeploy", "ReadCommandResult", "CancelHostDeploy"])
+    error_message = "The role must have exactly the seven documented statements."
   }
 
   assert {
