@@ -135,6 +135,12 @@ run "artifact_expiration_is_configurable" {
     password_reset_url_base  = "https://app.example.com/reset-password"
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 90
+    ecr_repository_names     = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
+    ecr_repository_arns = {
+      api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
+      realtime = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-realtime"
+      migrate  = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-migrate"
+    }
   }
 
   # The module resolves the account ID for the state bucket and role ARNs; the mock would
@@ -179,7 +185,13 @@ run "rejects_unsupported_log_retention" {
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
     name_prefix             = "aula-virtual-prod"
-    retention_in_days       = 10
+    ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
+    ecr_repository_arns = {
+      api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
+      realtime = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-realtime"
+      migrate  = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-migrate"
+    }
+    retention_in_days = 10
   }
 
   override_data {
@@ -200,11 +212,17 @@ run "rejects_zero_artifact_expiration_days" {
   }
 
   variables {
-    project                  = "aula-virtual"
-    region                   = "us-east-2"
-    allowed_origins          = ["https://app.example.com"]
-    password_reset_url_base  = "https://app.example.com/reset-password"
-    name_prefix              = "aula-virtual-prod"
+    project                 = "aula-virtual"
+    region                  = "us-east-2"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    name_prefix             = "aula-virtual-prod"
+    ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
+    ecr_repository_arns = {
+      api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
+      realtime = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-realtime"
+      migrate  = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-migrate"
+    }
     artifact_expiration_days = 0
   }
 
@@ -226,11 +244,17 @@ run "rejects_fractional_artifact_expiration_days" {
   }
 
   variables {
-    project                  = "aula-virtual"
-    region                   = "us-east-2"
-    allowed_origins          = ["https://app.example.com"]
-    password_reset_url_base  = "https://app.example.com/reset-password"
-    name_prefix              = "aula-virtual-prod"
+    project                 = "aula-virtual"
+    region                  = "us-east-2"
+    allowed_origins         = ["https://app.example.com"]
+    password_reset_url_base = "https://app.example.com/reset-password"
+    name_prefix             = "aula-virtual-prod"
+    ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
+    ecr_repository_arns = {
+      api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
+      realtime = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-realtime"
+      migrate  = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-migrate"
+    }
     artifact_expiration_days = 1.5
   }
 
@@ -257,6 +281,12 @@ run "rejects_name_prefix_longer_than_17_characters" {
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
     name_prefix             = "aula-virtual-prod-x"
+    ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
+    ecr_repository_arns = {
+      api      = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-api"
+      realtime = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-realtime"
+      migrate  = "arn:aws:ecr:us-east-2:123456789012:repository/aula-virtual-prod-migrate"
+    }
   }
 
   override_data {

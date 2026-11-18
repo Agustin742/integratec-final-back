@@ -182,3 +182,13 @@ output "pipeline_terraform_apply_role_arn" {
   description = "ARN of the broad service role of the terraform apply project (D19 trade-off: gated by the manual approval)."
   value       = module.delivery_pipeline.terraform_apply_role_arn
 }
+
+output "pipeline_images_project_name" {
+  description = "Name of the CodeBuild project that builds the release images and pushes them to ECR."
+  value       = module.delivery_pipeline.images_project_name
+}
+
+output "pipeline_images_role_arn" {
+  description = "ARN of the service role of the images project (push access to the three image repositories only)."
+  value       = module.delivery_pipeline.images_role_arn
+}

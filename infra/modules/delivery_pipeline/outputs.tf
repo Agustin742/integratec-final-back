@@ -148,3 +148,48 @@ output "terraform_apply_managed_policy_arns" {
   description = "AWS managed policies attached to the apply role (none: it only has its inline policy)."
   value       = []
 }
+
+output "images_project_name" {
+  description = "Name of the CodeBuild project that builds and pushes the release images; the pipeline images stage references it."
+  value       = aws_codebuild_project.images.name
+}
+
+output "images_role_arn" {
+  description = "ARN of the service role of the images project."
+  value       = aws_iam_role.images.arn
+}
+
+output "images_project" {
+  description = "Source, environment, logging and environment variables of the images project as configured on the resource, for tests and review."
+  value = {
+    name                        = aws_codebuild_project.images.name
+    source_type                 = one(aws_codebuild_project.images.source).type
+    buildspec                   = one(aws_codebuild_project.images.source).buildspec
+    artifacts_type              = one(aws_codebuild_project.images.artifacts).type
+    compute_type                = one(aws_codebuild_project.images.environment).compute_type
+    environment_type            = one(aws_codebuild_project.images.environment).type
+    image                       = one(aws_codebuild_project.images.environment).image
+    image_pull_credentials_type = one(aws_codebuild_project.images.environment).image_pull_credentials_type
+    privileged_mode             = one(aws_codebuild_project.images.environment).privileged_mode
+    build_timeout               = aws_codebuild_project.images.build_timeout
+    vpc_config_count            = length(aws_codebuild_project.images.vpc_config)
+    log_group_name              = one(one(aws_codebuild_project.images.logs_config).cloudwatch_logs).group_name
+    log_stream_prefix           = one(one(aws_codebuild_project.images.logs_config).cloudwatch_logs).stream_name
+    environment_variables       = { for v in one(aws_codebuild_project.images.environment).environment_variable : v.name => { value = v.value, type = v.type } }
+  }
+}
+
+output "images_role_trust" {
+  description = "Trust policy of the images role, decoded from the resource, for tests and review."
+  value       = jsondecode(aws_iam_role.images.assume_role_policy)
+}
+
+output "images_role_policy_statements" {
+  description = "Statements of the inline policy of the images role, decoded from the resource, for tests and review."
+  value       = jsondecode(aws_iam_role_policy.images.policy).Statement
+}
+
+output "images_managed_policy_arns" {
+  description = "AWS managed policies attached to the images role (none: it only has its inline policy)."
+  value       = []
+}

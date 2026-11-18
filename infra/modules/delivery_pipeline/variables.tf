@@ -94,3 +94,34 @@ variable "apply_build_timeout_minutes" {
     error_message = "apply_build_timeout_minutes must be a whole number between 5 and 480."
   }
 }
+
+variable "ecr_repository_names" {
+  description = "Repository name of each service image, keyed by service name (api, realtime and migrate); the images project pushes to them."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for service in ["api", "realtime", "migrate"] : contains(keys(var.ecr_repository_names), service)])
+    error_message = "ecr_repository_names must have the keys api, realtime and migrate."
+  }
+}
+
+variable "ecr_repository_arns" {
+  description = "Repository ARN of each service image, keyed by service name (api, realtime and migrate); the images role may push to exactly these."
+  type        = map(string)
+
+  validation {
+    condition     = alltrue([for service in ["api", "realtime", "migrate"] : contains(keys(var.ecr_repository_arns), service)])
+    error_message = "ecr_repository_arns must have the keys api, realtime and migrate."
+  }
+}
+
+variable "images_build_timeout_minutes" {
+  description = "Minutes after which the images build is stopped; it builds and pushes three Docker images on a small instance."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.images_build_timeout_minutes >= 5 && var.images_build_timeout_minutes <= 480 && floor(var.images_build_timeout_minutes) == var.images_build_timeout_minutes
+    error_message = "images_build_timeout_minutes must be a whole number between 5 and 480."
+  }
+}

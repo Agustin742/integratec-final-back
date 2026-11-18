@@ -73,6 +73,10 @@ module "delivery_pipeline" {
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base
   enable_github_oidc      = var.enable_github_oidc
+
+  # Repositories the images project pushes to.
+  ecr_repository_names = module.registry.repository_names
+  ecr_repository_arns  = module.registry.repository_arns
 }
 
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files

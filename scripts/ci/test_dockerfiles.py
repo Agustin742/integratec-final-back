@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class DockerfileTests(unittest.TestCase):
-    def test_service_stages_share_an_immutable_node_22_image(self):
+    def test_service_stages_share_an_immutable_node_22_image_from_the_ecr_public_mirror(self):
         images = []
         for service in ("api", "realtime"):
             with self.subTest(service=service):
@@ -27,7 +27,7 @@ class DockerfileTests(unittest.TestCase):
                     with self.subTest(stage=stage):
                         self.assertRegex(
                             image,
-                            r"^node:22\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}$",
+                            r"^public\.ecr\.aws/docker/library/node:22\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}$",
                         )
                     images.append(image)
         self.assertEqual(len(set(images)), 1)
