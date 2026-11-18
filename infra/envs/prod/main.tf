@@ -56,6 +56,15 @@ module "storage" {
   name_prefix = "${var.project}-${local.environment}"
 }
 
+# Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
+# by hand in the console), the artifact bucket and the CodeBuild log group. CodeBuild
+# projects, roles and the pipeline itself are added by later changes.
+module "delivery_pipeline" {
+  source = "../../modules/delivery_pipeline"
+
+  name_prefix = "${var.project}-${local.environment}"
+}
+
 # Least-privilege runtime access of the host role (ECR pull, secrets, config, files
 # bucket, log writes) and the service log groups.
 module "runtime_access" {

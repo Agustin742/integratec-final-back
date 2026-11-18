@@ -142,3 +142,23 @@ output "frontend_branch_url" {
   description = "HTTPS URL of the deployed frontend branch (https://<branch>.<default domain>); the origin to allow in allowed_origins."
   value       = module.frontend_hosting.branch_url
 }
+
+output "pipeline_connection_arn" {
+  description = "ARN of the CodeConnections GitHub connection used as the pipeline source; authorize it once in the console while its status is PENDING."
+  value       = module.delivery_pipeline.connection_arn
+}
+
+output "pipeline_connection_status" {
+  description = "Status of the GitHub connection (PENDING until the console handshake is done, then AVAILABLE)."
+  value       = module.delivery_pipeline.connection_status
+}
+
+output "pipeline_artifact_bucket_name" {
+  description = "Name of the private S3 bucket that holds CodePipeline artifacts."
+  value       = module.delivery_pipeline.artifact_bucket_name
+}
+
+output "pipeline_log_group_name" {
+  description = "Name of the CloudWatch log group of the CodeBuild projects."
+  value       = module.delivery_pipeline.log_group_name
+}
