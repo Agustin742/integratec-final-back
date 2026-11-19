@@ -14,6 +14,7 @@ import { configureHttp } from '../http/configure-http';
 import { buildOpenApiDocument } from '../openapi/openapi-document';
 import { PrismaService } from '../prisma/prisma.service';
 import { AvatarAccessPort } from './avatar-access.port';
+import { DEFAULT_AVATAR } from './avatar.dto';
 
 const base = {
   bodyId: 'male',
@@ -146,7 +147,7 @@ describe('Own profile and base avatar (#20)', () => {
       id: ids[0],
       email: emails[0],
       displayName: 'Profile Tester',
-      avatar: base,
+      avatar: DEFAULT_AVATAR,
     });
   });
 
@@ -178,12 +179,12 @@ describe('Own profile and base avatar (#20)', () => {
     await me();
     expect(
       (await patch('profile', { displayName: 'No avatar row' }).expect(200)).body.avatar,
-    ).toEqual(base);
+    ).toEqual(DEFAULT_AVATAR);
     expect(await prisma.avatarConfiguration.findUnique({ where: { userId: ids[0] } })).toBeNull();
     const before = await prisma.avatarConfiguration.findUniqueOrThrow({
       where: { userId: ids[1] },
     });
-    expect((await me(otherToken)).body.avatar).toEqual(base);
+    expect((await me(otherToken)).body.avatar).toEqual(DEFAULT_AVATAR);
     await request(app.getHttpServer())
       .patch('/users/me/profile')
       .set('Authorization', `Bearer ${otherToken}`)
@@ -201,7 +202,7 @@ describe('Own profile and base avatar (#20)', () => {
         id: ids[0],
         email: emails[0],
         displayName: name,
-        avatar: base,
+        avatar: DEFAULT_AVATAR,
       });
       expect((await me(await login())).body).toEqual(res.body);
     }
@@ -290,7 +291,7 @@ describe('Own profile and base avatar (#20)', () => {
     }).expect(200);
     expect(res.body).toEqual(alternate);
     expect((await me(await login())).body.avatar).toEqual(alternate);
-    expect((await me(otherToken)).body.avatar).toEqual(base);
+    expect((await me(otherToken)).body.avatar).toEqual(DEFAULT_AVATAR);
   });
 
   it('replaces unsupported base-only storage on explicit avatar PATCH without changing profile or peers', async () => {
@@ -316,7 +317,7 @@ describe('Own profile and base avatar (#20)', () => {
   const invalidAvatars = [
     [{ ...base, bodyId: 'robot' }, 'bodyId'],
     [{ ...base, hairId: 'original' }, 'hairId'],
-    [{ ...base, topId: 'tshirt' }, 'topId'],
+    [{ ...base, topId: 'cape' }, 'topId'],
     [{ ...alternate, hairId: 'dreads' }, 'hairId'],
     [{ ...base, topId: 'uniform' }, 'topId'],
     [{ ...base, hairColor: '#000000' }, 'hairColor'],
@@ -365,8 +366,16 @@ describe('Own profile and base avatar (#20)', () => {
 
   it('accepts every body-compatible free hairstyle/top and each palette color', async () => {
     const choices = [
-      { bodyId: 'male', hairs: ['afro', 'dreads'], tops: ['hoodie', 'tank'] },
-      { bodyId: 'female', hairs: ['afro', 'original'], tops: ['hoodie', 'tank', 'tshirt'] },
+      {
+        bodyId: 'male',
+        hairs: ['afro', 'dreads', 'short-messy', 'buzz', 'curls'],
+        tops: ['hoodie', 'tank', 'tshirt', 'sweater-shirt-tie'],
+      },
+      {
+        bodyId: 'female',
+        hairs: ['afro', 'original', 'ponytail', 'bob', 'bun'],
+        tops: ['hoodie', 'tank', 'tshirt', 'sweater-shirt-tie'],
+      },
     ];
     for (const { bodyId, hairs, tops } of choices) {
       for (const hairId of hairs) {
@@ -456,7 +465,7 @@ describe('Own profile and base avatar (#20)', () => {
       });
       const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       try {
-        expect((await me(credential)).body.avatar).toEqual(base);
+        expect((await me(credential)).body.avatar).toEqual(DEFAULT_AVATAR);
         const res = await request(app.getHttpServer())
           .patch('/users/me/profile')
           .set('Authorization', `Bearer ${credential}`)
@@ -466,7 +475,7 @@ describe('Own profile and base avatar (#20)', () => {
           id: ids[2],
           email: emails[2],
           displayName: 'Recovered Profile',
-          avatar: base,
+          avatar: DEFAULT_AVATAR,
         });
         expect((await me(credential)).body).toEqual(res.body);
         expect(warn.mock.calls).toEqual(
