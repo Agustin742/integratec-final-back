@@ -164,7 +164,8 @@ export class ActivitiesController {
     description:
       'Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` ' +
       'replaces all questions and stays editable only until the first submission exists (409 ' +
-      'afterwards); title, description and dates remain editable.',
+      'afterwards). On a multiple-choice activity `maxScore` is frozen the same way: a different ' +
+      'value is refused (409) once a submission exists. Title, description and dates remain editable.',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiOkResponse({ type: TeacherActivityResponseDto })
@@ -172,7 +173,8 @@ export class ActivitiesController {
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
   @ApiConflictResponse({
     type: ErrorEnvelopeDto,
-    description: 'Questions can no longer change because a submission exists.',
+    description:
+      'Questions, or the `maxScore` of a multiple-choice activity, can no longer change because a submission exists.',
   })
   update(
     @CurrentUser('userId') actorId: string,

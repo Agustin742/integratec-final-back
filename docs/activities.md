@@ -44,7 +44,7 @@ All routes live under `/classrooms/:id/activities`, require a Bearer session and
 | `401` | Missing or invalid session |
 | `403` | The classroom is visible to the caller but the role is not allowed: a student on a mutation, or a linked parent on any activity route |
 | `404` | Malformed UUID, unknown or foreign classroom or activity, a deactivated activity, a draft requested by a student, or a stranger |
-| `409` | Publishing an activity that is already published; `PATCH` with `questions` and `DELETE` once a submission exists (reason in `details`, see [Concurrency](#concurrency)) |
+| `409` | Publishing an activity that is already published; `PATCH` with `questions` (or a changed `maxScore` on a multiple-choice activity) and `DELETE` once a submission exists (reason in `details`, see [Concurrency](#concurrency)) |
 
 Linked parents are not part of the activity row of the permission matrix (they only see the grades of their linked child), so they receive `403`; the matrix is not extended here.
 
@@ -114,7 +114,7 @@ Publishing is one way: there is no unpublish.
 
 `PATCH` and publish take the same row lock before reading the state they overwrite, so concurrent writers are serialized rather than racing. A `PATCH` queued behind a `DELETE` returns `404` and never writes to the deactivated row; two `PATCH` requests that are each valid alone but not together produce one `200` and one `400`, never a `500` from a database `CHECK`; concurrent question replacements never interleave. `DELETE` waits for a pending lock and then deactivates.
 
-**Submission lock.** `PATCH`, publish and `DELETE` all take `FOR UPDATE` on the row (`DELETE` used to be a bare update and now does too); a submission takes `FOR SHARE` on it ([Submissions: Concurrency](submissions.md#concurrency)). After the lock, `PATCH` with `questions` returns `409` (field `questions`) and `DELETE` returns `409` (field `state`) if any submission exists, so a submit cannot commit between the check and the write. Title, description, dates, `allowLate`, `maxScore` and `weightMultiplier` stay editable. A `FILE` activity carries no questions, so the questions lock is reachable once multiple choice answers exist (#47); the deletion lock applies to every format.
+**Submission lock.** `PATCH`, publish and `DELETE` all take `FOR UPDATE` on the row (`DELETE` used to be a bare update and now does too); a submission takes `FOR SHARE` on it ([Submissions: Concurrency](submissions.md#concurrency)). After the lock, `PATCH` with `questions` returns `409` (field `questions`), `PATCH` with a `maxScore` that differs from the stored one on a `MULTIPLE_CHOICE` activity returns `409` (field `maxScore`, because `autoScore` is stored on that scale at submit time; resending the same value is allowed) and `DELETE` returns `409` (field `state`) if any submission exists, so a submit cannot commit between the check and the write. Title, description, dates, `allowLate` and `weightMultiplier` stay editable, as does `maxScore` on a `FILE` activity (graded manually). A `FILE` activity carries no questions, so the questions lock is reachable once multiple choice answers exist (#47); the deletion lock applies to every format.
 
 ## Time zone
 

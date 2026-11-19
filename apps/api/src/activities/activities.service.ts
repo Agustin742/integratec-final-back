@@ -430,7 +430,7 @@ export class ActivitiesService {
       if (locked.length === 0) throw this.notFound();
       const existing = await tx.activity.findFirst({
         where: { id: activityId, classroomId, deletedAt: null },
-        select: { type: true, format: true, opensAt: true, dueAt: true },
+        select: { type: true, format: true, opensAt: true, dueAt: true, maxScore: true },
       });
       if (!existing) throw this.notFound();
 
@@ -446,6 +446,25 @@ export class ActivitiesService {
       const dueAt = dto.dueAt === undefined ? existing.dueAt : new Date(dto.dueAt);
       assertValidWindow(existing.type, opensAt, dueAt);
 
+      const hasSubmission = async () =>
+        (await tx.submission.findFirst({ where: { activityId }, select: { id: true } })) !== null;
+      // A multiple-choice `autoScore` is stored on the 0..maxScore scale at submit time, so
+      // changing maxScore afterwards would silently rescale (or invalidate) stored grades. FILE
+      // activities are graded manually and keep an editable maxScore.
+      if (
+        dto.maxScore !== undefined &&
+        dto.maxScore !== existing.maxScore &&
+        existing.format === 'MULTIPLE_CHOICE' &&
+        (await hasSubmission())
+      ) {
+        throw new RequestConflictException([
+          {
+            field: 'maxScore',
+            messages: ['maxScore cannot change after students have submitted'],
+          },
+        ]);
+      }
+
       const data: Prisma.ActivityUpdateInput = {
         ...(dto.title !== undefined ? { title: dto.title } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
@@ -459,7 +478,7 @@ export class ActivitiesService {
         // Freeze after the first submission: replacing questions would change what stored answers
         // mean and retroactively change grades. The row lock above keeps a submit (FOR SHARE)
         // from committing between this check and the delete.
-        if (await tx.submission.findFirst({ where: { activityId }, select: { id: true } })) {
+        if (await hasSubmission()) {
           throw new RequestConflictException([
             {
               field: 'questions',
