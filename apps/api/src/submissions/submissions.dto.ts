@@ -30,6 +30,22 @@ export class SubmissionFileResponseDto {
   position!: number;
 }
 
+/** One chosen option per question of a multiple-choice submission. Never carries `isCorrect`. */
+export class SubmissionAnswerResponseDto {
+  @ApiProperty({ format: 'uuid' })
+  questionId!: string;
+
+  @ApiProperty({ format: 'uuid' })
+  optionId!: string;
+
+  @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    description: 'Zero-based order in which the answers were sent.',
+  })
+  position!: number;
+}
+
 export class SubmissionResponseDto {
   @ApiProperty({ format: 'uuid' })
   id!: string;
@@ -50,6 +66,17 @@ export class SubmissionResponseDto {
   isLate!: boolean;
 
   @ApiProperty({
+    type: 'integer',
+    minimum: 0,
+    maximum: 100,
+    nullable: true,
+    description:
+      'Server-computed score of a MULTIPLE_CHOICE submission (0..maxScore), never supplied by ' +
+      'the client; null for file submissions, which a teacher grades through the grade endpoint.',
+  })
+  autoScore!: number | null;
+
+  @ApiProperty({
     type: String,
     enum: ['submitted', 'graded'],
     description: 'Derived state of the work.',
@@ -58,6 +85,14 @@ export class SubmissionResponseDto {
 
   @ApiProperty({ type: [SubmissionFileResponseDto] })
   files!: SubmissionFileResponseDto[];
+
+  @ApiProperty({
+    type: [SubmissionAnswerResponseDto],
+    description:
+      'Chosen options of a MULTIPLE_CHOICE submission in the order they were sent; empty for ' +
+      'file submissions.',
+  })
+  answers!: SubmissionAnswerResponseDto[];
 }
 
 /** A stored file on the read endpoints: the upload shape plus a short-lived signed URL. */
@@ -94,7 +129,18 @@ export class CreateSubmissionBodyDto {
     maxItems: SUBMISSION_MAX_FILES,
     description:
       `1-${SUBMISSION_MAX_FILES} files of at most ${SUBMISSION_MAX_FILE_BYTES / (1024 * 1024)} MB each. ` +
-      'Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX.',
+      'Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX. Required for FILE ' +
+      'activities; rejected for MULTIPLE_CHOICE activities.',
   })
   files!: string[];
+
+  @ApiProperty({
+    type: String,
+    required: false,
+    description:
+      'MULTIPLE_CHOICE answers: a JSON-encoded array of { questionId, optionId } pairs, at least ' +
+      'one. Required for MULTIPLE_CHOICE activities; rejected for FILE activities. The server ' +
+      'grades the answers and returns the score; correct answers are never sent back.',
+  })
+  answers?: string;
 }

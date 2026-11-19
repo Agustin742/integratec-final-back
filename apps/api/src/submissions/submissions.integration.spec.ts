@@ -157,8 +157,13 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
         const classrooms = [classroomA, classroomB];
         await prisma.$transaction(async (tx) => {
           const activity = { classroomId: { in: classrooms } };
+          // Answers reference questions and options with restrict; remove them first.
+          await tx.submissionAnswer.deleteMany({ where: { submission: { activity } } });
           await tx.submissionFile.deleteMany({ where: { submission: { activity } } });
           await tx.submission.deleteMany({ where: { activity } });
+          // Multiple-choice activities carry questions and options with restrict FKs.
+          await tx.option.deleteMany({ where: { question: { activity } } });
+          await tx.question.deleteMany({ where: { activity } });
           await tx.activity.deleteMany({ where: activity });
           await tx.parentLink.deleteMany({ where: { classroomId: { in: classrooms } } });
           await tx.classroomMembership.deleteMany({ where: { classroomId: { in: classrooms } } });
@@ -841,7 +846,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       await expect(
         app
           .get(SubmissionsService)
-          .submit(s1, activityId, key, [{ originalName: 'a.pdf', bytes: pdfBytes() }]),
+          .submit(s1, activityId, key, [{ originalName: 'a.pdf', bytes: pdfBytes() }], undefined),
       ).rejects.toBe(error);
       const [row] = await rowsOf(activityId);
       expect(Buffer.from(storage.peek(row.files[0].storageKey)!.body)).toEqual(
@@ -988,6 +993,301 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       const res = await submit(activityId).expect(500);
       expect(res.body.error.code).toBe('INTERNAL_ERROR');
       expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+  });
+
+  describe('multiple-choice submissions (server-side auto-grading)', () => {
+    interface McQuestion {
+      id: string;
+      correct: string;
+      wrong: string;
+    }
+
+    /** Published MULTIPLE_CHOICE activity with `count` questions of one correct option each. */
+    const mcActivity = async (
+      count = 2,
+      overrides: Partial<Prisma.ActivityUncheckedCreateInput> = {},
+    ): Promise<{ activityId: string; questions: McQuestion[] }> => {
+      const activityId = (
+        await prisma.activity.create({
+          data: {
+            classroomId: classroomA,
+            createdById: teacher,
+            type: 'TP',
+            format: 'MULTIPLE_CHOICE',
+            state: 'PUBLISHED',
+            publishedAt: new Date(Date.now() - HOUR_MS),
+            title: `MC ${randomUUID()}`,
+            dueAt: futureInstant(7, 12),
+            maxScore: 100,
+            ...overrides,
+          },
+        })
+      ).id;
+      const questions = await prisma.$transaction(
+        Array.from({ length: count }, (_, q) =>
+          prisma.question.create({
+            data: {
+              activityId,
+              position: q,
+              prompt: `Question ${q + 1}`,
+              options: {
+                create: [
+                  { position: 0, label: `q${q + 1} wrong`, isCorrect: false },
+                  { position: 1, label: `q${q + 1} right`, isCorrect: true },
+                  { position: 2, label: `q${q + 1} other`, isCorrect: false },
+                ],
+              },
+            },
+            include: { options: true },
+          }),
+        ),
+      );
+      return {
+        activityId,
+        questions: questions.map((question) => ({
+          id: question.id,
+          correct: question.options.find((option) => option.isCorrect)!.id,
+          wrong: question.options.find((option) => !option.isCorrect)!.id,
+        })),
+      };
+    };
+
+    const submitMc = (
+      activityId: string,
+      answers: ReadonlyArray<{ questionId: string; optionId: string }>,
+      options: { actor?: string; key?: string | null; raw?: string } = {},
+    ) => {
+      const req = request(app.getHttpServer())
+        .post(`/activities/${activityId}/submissions`)
+        .set('Authorization', token(options.actor ?? s1));
+      if (options.key !== null) req.set('Idempotency-Key', options.key ?? randomUUID());
+      req.field('answers', options.raw ?? JSON.stringify(answers));
+      return req;
+    };
+
+    it('stores one submission with the server-computed autoScore and the chosen answers', async () => {
+      const { activityId, questions } = await mcActivity(2);
+      const puts = putCalls();
+      const key = randomUUID();
+      const res = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+        { key },
+      ).expect(201);
+
+      expect(res.body).toMatchObject({
+        activityId,
+        isLate: false,
+        status: 'submitted',
+        autoScore: 100,
+        files: [],
+      });
+      expect(res.body.answers).toHaveLength(2);
+      const chosen = new Map(
+        res.body.answers.map((answer: { questionId: string; optionId: string }) => [
+          answer.questionId,
+          answer.optionId,
+        ]),
+      );
+      for (const question of questions) {
+        expect(chosen.get(question.id)).toBe(question.correct);
+      }
+      expect(res.body.id).toMatch(/^[0-9a-f-]{36}$/);
+
+      const rows = await rowsOf(activityId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(res.body.id);
+      expect(rows[0].idempotencyKey).toBe(key);
+      expect(rows[0].autoScore).toBe(100);
+      const stored = await prisma.submissionAnswer.findMany({
+        where: { submissionId: rows[0].id },
+        orderBy: { position: 'asc' },
+      });
+      expect(stored).toHaveLength(2);
+      expect(stored.map((answer) => answer.questionId).sort()).toEqual(
+        questions.map((question) => question.id).sort(),
+      );
+      // A multiple-choice submission stores no objects.
+      expect(putCalls()).toBe(puts);
+    });
+
+    it('grades only correct answers: unanswered and wrong answers count as incorrect', async () => {
+      const partial = await mcActivity(2, { maxScore: 10 });
+      const first = await submitMc(partial.activityId, [
+        { questionId: partial.questions[0].id, optionId: partial.questions[0].correct },
+      ]).expect(201);
+      expect(first.body.autoScore).toBe(5);
+
+      const allWrong = await mcActivity(2, { maxScore: 100 });
+      const second = await submitMc(
+        allWrong.activityId,
+        allWrong.questions.map((question) => ({
+          questionId: question.id,
+          optionId: question.wrong,
+        })),
+      ).expect(201);
+      expect(second.body.autoScore).toBe(0);
+    });
+
+    it('never exposes correct answers in any response', async () => {
+      const { activityId, questions } = await mcActivity(2);
+      const created = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+      ).expect(201);
+      expect(JSON.stringify(created.body)).not.toMatch(/isCorrect/i);
+
+      const own = await request(app.getHttpServer())
+        .get(`/activities/${activityId}/submissions/me`)
+        .set('Authorization', token(s1))
+        .expect(200);
+      expect(own.body.autoScore).toBe(100);
+      expect(JSON.stringify(own.body)).not.toMatch(/isCorrect/i);
+
+      const asTeacher = await request(app.getHttpServer())
+        .get(`/submissions/${created.body.id}`)
+        .set('Authorization', token(teacher))
+        .expect(200);
+      expect(asTeacher.body.autoScore).toBe(100);
+      expect(JSON.stringify(asTeacher.body)).not.toMatch(/isCorrect/i);
+    });
+
+    it('replays the same idempotency key without re-scoring, even with different answers', async () => {
+      const { activityId, questions } = await mcActivity(2);
+      const key = randomUUID();
+      const first = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+        { key },
+      ).expect(201);
+      expect(first.body.autoScore).toBe(100);
+
+      const replay = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.wrong })),
+        { key },
+      ).expect(200);
+      expect(replay.body.id).toBe(first.body.id);
+      expect(replay.body.autoScore).toBe(100);
+      expect(replay.body.answers).toEqual(first.body.answers);
+
+      const rows = await rowsOf(activityId);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].autoScore).toBe(100);
+      expect(
+        await prisma.submissionAnswer.findMany({ where: { submissionId: rows[0].id } }),
+      ).toHaveLength(2);
+    });
+
+    it('rejects answers sent to a FILE activity with 409', async () => {
+      const activityId = await publishedActivity();
+      const res = await submitMc(activityId, [
+        { questionId: randomUUID(), optionId: randomUUID() },
+      ]).expect(409);
+      expect(res.body.error.code).toBe('CONFLICT');
+      expect(res.body.error.details[0].messages[0]).toMatch(/multiple-choice answers/i);
+      expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+
+    it('requires at least one answer: a missing or empty answers field is 400', async () => {
+      const { activityId } = await mcActivity(2);
+      const missing = await request(app.getHttpServer())
+        .post(`/activities/${activityId}/submissions`)
+        .set('Authorization', token(s1))
+        .set('Idempotency-Key', randomUUID())
+        .field('note', 'no answers attached')
+        .expect(400);
+      expect(missing.body.error.code).toBe('VALIDATION_FAILED');
+
+      const empty = await submitMc(activityId, [], { raw: '[]' }).expect(400);
+      expect(empty.body.error.code).toBe('VALIDATION_FAILED');
+      expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+
+    it('rejects malformed answer payloads with 400', async () => {
+      const { activityId, questions } = await mcActivity(1);
+      for (const raw of ['{not json', '"answers"', '[{"questionId":"x"}]']) {
+        const res = await submitMc(activityId, [], { raw }).expect(400);
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+        expect(res.body.error.details[0].field).toBe('answers');
+      }
+      // A duplicated question answer is ambiguous and rejected.
+      const question = questions[0];
+      const duplicated = await submitMc(activityId, [
+        { questionId: question.id, optionId: question.correct },
+        { questionId: question.id, optionId: question.wrong },
+      ]).expect(400);
+      expect(duplicated.body.error.code).toBe('VALIDATION_FAILED');
+      expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+
+    it('rejects answers that do not belong to the activity with 400', async () => {
+      const mine = await mcActivity(1);
+      const elsewhere = await mcActivity(1);
+
+      const unknownQuestion = await submitMc(mine.activityId, [
+        { questionId: randomUUID(), optionId: randomUUID() },
+      ]).expect(400);
+      expect(unknownQuestion.body.error.code).toBe('VALIDATION_FAILED');
+
+      // The option exists but belongs to another question of the same activity.
+      const foreignOption = await submitMc(mine.activityId, [
+        { questionId: mine.questions[0].id, optionId: elsewhere.questions[0].correct },
+      ]).expect(400);
+      expect(foreignOption.body.error.code).toBe('VALIDATION_FAILED');
+
+      // The question and option exist but belong to another activity.
+      const foreignQuestion = await submitMc(mine.activityId, [
+        { questionId: elsewhere.questions[0].id, optionId: elsewhere.questions[0].correct },
+      ]).expect(400);
+      expect(foreignQuestion.body.error.code).toBe('VALIDATION_FAILED');
+      expect(await rowsOf(mine.activityId)).toHaveLength(0);
+    });
+
+    it('honors the exam window: before opensAt is 409 and nothing is stored', async () => {
+      const { activityId, questions } = await mcActivity(2, {
+        type: 'EXAM',
+        opensAt: futureInstant(1, 8),
+        dueAt: futureInstant(1, 12),
+      });
+      const res = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+      ).expect(409);
+      expect(res.body.error.details[0].messages[0]).toMatch(/not open yet/i);
+      expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+
+    it('stores a late multiple-choice submission with isLate when allowLate is true', async () => {
+      const { activityId, questions } = await mcActivity(2, {
+        dueAt: new Date(Date.now() - HOUR_MS),
+        allowLate: true,
+      });
+      const res = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+      ).expect(201);
+      expect(res.body.isLate).toBe(true);
+      expect(res.body.autoScore).toBe(100);
+    });
+
+    it('counts the on-time submission in the ActivityMetric like a file submission', async () => {
+      const { activityId, questions } = await mcActivity(2);
+      const before = await prisma.activityMetric.findFirst({
+        where: { classroomId: classroomA, userId: s2 },
+        select: { submissionCount: true },
+      });
+      await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+        { actor: s2 },
+      ).expect(201);
+      const after = await prisma.activityMetric.findFirst({
+        where: { classroomId: classroomA, userId: s2 },
+        select: { submissionCount: true },
+      });
+      expect((after?.submissionCount ?? 0) - (before?.submissionCount ?? 0)).toBe(1);
     });
   });
 });

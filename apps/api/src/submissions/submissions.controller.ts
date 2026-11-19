@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Header,
@@ -70,17 +71,22 @@ export class SubmissionsController {
   )
   @HttpCode(201)
   @ApiOperation({
-    summary: 'Submit files to an activity',
+    summary: 'Submit files or multiple-choice answers to an activity',
     description:
-      'Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected ' +
-      "from the bytes) to a published FILE activity of the student's classroom. One submission " +
-      'per student and activity. The server clock decides the window: before `opensAt` or after ' +
-      '`dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` ' +
-      'is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the ' +
-      'stored submission (200) without storing anything new; a different key after a ' +
-      'submission exists is 409. Unknown, malformed, draft or deactivated activities and ' +
-      'non-members answer 404, so an unpublished activity never leaks its existence; staff ' +
-      'and linked parents answer 403 on published activities only.',
+      "Student only. For a published FILE activity of the student's classroom, uploads 1-5 " +
+      'files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes). For a ' +
+      'published MULTIPLE_CHOICE activity, sends the `answers` field instead: a JSON-encoded ' +
+      'array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity; ' +
+      'the server grades them and stores the `autoScore` with the submission, and correct ' +
+      'answers are never returned. One submission per student and activity. The server clock ' +
+      'decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is ' +
+      'rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. ' +
+      'Retrying with the same `Idempotency-Key` returns the stored submission (200) without ' +
+      'storing anything new and without re-scoring; a different key after a submission exists ' +
+      'is 409. Sending files to a MULTIPLE_CHOICE activity, or answers to a FILE activity, is ' +
+      '409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so ' +
+      'an unpublished activity never leaks its existence; staff and linked parents answer 403 ' +
+      'on published activities only.',
   })
   @ApiHeader({
     name: IDEMPOTENCY_KEY_HEADER,
@@ -98,8 +104,9 @@ export class SubmissionsController {
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
     description:
-      'Missing or invalid `Idempotency-Key`, no files, disallowed or empty files (`VALIDATION_FAILED` ' +
-      'with details), or too many files / unexpected field (`BAD_REQUEST`).',
+      'Missing or invalid `Idempotency-Key`; no files, disallowed or empty files; missing, empty ' +
+      'or malformed `answers` JSON; or answers that do not belong to the activity ' +
+      '(`VALIDATION_FAILED` with details); or too many files / unexpected field (`BAD_REQUEST`).',
   })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,
@@ -112,8 +119,9 @@ export class SubmissionsController {
   @ApiConflictResponse({
     type: ErrorEnvelopeDto,
     description:
-      'Already submitted with another key, window closed or not yet open, or not a file activity ' +
-      '(`details` names the reason).',
+      'Already submitted with another key, window closed or not yet open, a payload that does ' +
+      'not match the activity format (files on a MULTIPLE_CHOICE activity, answers on a FILE ' +
+      'activity), or a multiple-choice activity without questions (`details` names the reason).',
   })
   @ApiPayloadTooLargeResponse({
     type: ErrorEnvelopeDto,
@@ -123,6 +131,9 @@ export class SubmissionsController {
     @CurrentUser('userId') actorId: string,
     @Param('activityId') activityId: string,
     @Headers(IDEMPOTENCY_KEY_HEADER) idempotencyKey: string | undefined,
+    // multer puts the multipart text fields on the request body; the validation pipe does not
+    // parse this multipart body, so the answers JSON is validated by the service, like files.
+    @Body('answers') answersRaw: string | undefined,
     @UploadedFiles() files: Express.Multer.File[] | undefined,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SubmissionResponseDto> {
@@ -135,6 +146,7 @@ export class SubmissionsController {
         declaredContentType: file.mimetype,
         bytes: file.buffer,
       })),
+      answersRaw,
     );
     if (!created) res.status(200);
     return submission;
