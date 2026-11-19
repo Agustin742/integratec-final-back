@@ -1,8 +1,16 @@
 # Tracker — Agustin
 
-## 2026-11-19 — Avatar wardrobe ids and new default outfit (#115)
+## 2026-11-19 — Revert avatar wardrobe ids and new default outfit (#115)
 
 - **Status:** in-progress
+- **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
+- **Change:** Reverts #116. The contract and the default avatar are back to the previous ids (`afro`/`dreads`/`original`, `hoodie`/`tank`/`tshirt`).
+- **Reason:** The new avatar models were rejected and their authoring is on hold, so the merged ids and the new default had no models in the frontend. New users would get a default the frontend cannot render. Stored appearances that fail validation already fall back to the default when read, so no data migration is needed.
+- **Next step:** Review and PR to `develop`; reintroduce the ids when the models exist.
+
+## 2026-11-19 — Avatar wardrobe ids and new default outfit (#115)
+
+- **Status:** reverted (merged in #116, reverted because the models are on hold)
 - **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
 - **Change:** Added top `sweater-shirt-tie` (both bodies), male hair `short-messy`/`buzz`/`curls` and female hair `ponytail`/`bob`/`bun` to the avatar contract; the default avatar for users without a stored one is now `short-messy` hair with `sweater-shirt-tie`. Previously accepted ids stay valid, so saved avatars are unaffected; the OpenAPI enums are derived from `BASE_OPTIONS`.
 - **Reason:** The frontend avatar rebuild introduces these ids and the new default outfit; the contract must accept them first.

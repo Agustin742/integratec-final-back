@@ -3986,25 +3986,15 @@
           "bodyId": { "type": "string", "enum": ["male", "female"], "example": "male" },
           "hairId": {
             "type": "string",
-            "enum": [
-              "afro",
-              "dreads",
-              "short-messy",
-              "buzz",
-              "curls",
-              "original",
-              "ponytail",
-              "bob",
-              "bun"
-            ],
-            "example": "short-messy",
-            "description": "male: afro/dreads/short-messy/buzz/curls; female: afro/original/ponytail/bob/bun."
+            "enum": ["afro", "dreads", "original"],
+            "example": "afro",
+            "description": "male: afro/dreads; female: afro/original."
           },
           "topId": {
             "type": "string",
-            "enum": ["hoodie", "tank", "tshirt", "sweater-shirt-tie"],
-            "example": "sweater-shirt-tie",
-            "description": "Both bodies: hoodie/tank/tshirt/sweater-shirt-tie. Uniforms excluded."
+            "enum": ["hoodie", "tank", "tshirt"],
+            "example": "hoodie",
+            "description": "male: hoodie/tank; female: hoodie/tank/tshirt. Uniforms excluded."
           },
           "hairColor": {
             "type": "string",
