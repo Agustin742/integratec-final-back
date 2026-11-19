@@ -464,6 +464,9 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
       const beforeCount = before.body.items.find(
         (item: { studentId: string }) => item.studentId === s1,
       ).gradedCount;
+      const beforeSubmissions = before.body.items.find(
+        (item: { studentId: string }) => item.studentId === s1,
+      ).submissionCount;
 
       const doomed = await publishedActivity(classroomA, `Doomed card ${randomUUID()}`);
       await gradedSubmission(doomed, s1, {
@@ -472,6 +475,8 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
         pointsAwarded: 5,
         gradedAt: new Date(Date.now() - 2 * HOUR_MS),
       });
+      // The metric row the submission would have recorded; the day is isolated from other seeds.
+      await metric(s1, classroomA, new Date('2000-01-01T00:00:00.000Z'), 0, 1);
       // Deleting an activity with submissions is refused by the service, so the guard is
       // exercised the way historical data would look: the row is marked deleted directly.
       await prisma.activity.update({ where: { id: doomed }, data: { deletedAt: new Date() } });
@@ -485,6 +490,11 @@ describe('Classroom metrics HTTP — HU-ACT-005, classrooms-and-roles', () => {
         (item: { studentId: string }) => item.studentId === s1,
       ).gradedCount;
       expect(afterCount).toBe(beforeCount);
+      // Raw metric rows are history: the deleted activity's submission still counts.
+      const afterSubmissions = after.body.items.find(
+        (item: { studentId: string }) => item.studentId === s1,
+      ).submissionCount;
+      expect(afterSubmissions).toBe(beforeSubmissions + 1);
     });
 
     it('lists graded published activities only, like the other student-facing queries', async () => {

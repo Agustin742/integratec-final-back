@@ -65,7 +65,9 @@ export class DailyMetricDto {
   @ApiProperty({ description: 'Aggregated connected seconds reported by the realtime server.' })
   connectedSeconds!: number;
 
-  @ApiProperty({ description: 'Submissions created that day.' })
+  @ApiProperty({
+    description: 'Raw submission events recorded that day, including to activities deleted later.',
+  })
   submissionCount!: number;
 
   @ApiProperty({
@@ -86,15 +88,23 @@ export class StudentMetricSummaryDto {
   @ApiProperty({ description: 'Sum of connected seconds across all recorded UTC days.' })
   connectedSeconds!: number;
 
-  @ApiProperty({ description: 'Sum of submission counts across all recorded UTC days.' })
+  @ApiProperty({
+    description:
+      'Raw submission events summed over all recorded UTC days, kept as history: it includes ' +
+      'submissions to activities deleted later, so it can exceed gradedCount + ungradedCount.',
+  })
   submissionCount!: number;
 
   @ApiProperty({ description: 'Sum of message counts across all recorded UTC days.' })
   messageCount!: number;
 
-  @ApiProperty({ description: 'Submissions with a grade in this classroom.' })
+  @ApiProperty({
+    description: 'Submissions with a grade to non-deleted activities of this classroom.',
+  })
   gradedCount!: number;
 
-  @ApiProperty({ description: 'Submissions without a grade yet in this classroom.' })
+  @ApiProperty({
+    description: 'Submissions without a grade yet to non-deleted activities of this classroom.',
+  })
   ungradedCount!: number;
 }

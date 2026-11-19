@@ -6163,7 +6163,10 @@
             "type": "number",
             "description": "Aggregated connected seconds reported by the realtime server."
           },
-          "submissionCount": { "type": "number", "description": "Submissions created that day." },
+          "submissionCount": {
+            "type": "number",
+            "description": "Raw submission events recorded that day, including to activities deleted later."
+          },
           "messageCount": {
             "type": "number",
             "description": "Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships."
@@ -6186,7 +6189,7 @@
           },
           "submissionCount": {
             "type": "number",
-            "description": "Sum of submission counts across all recorded UTC days."
+            "description": "Raw submission events summed over all recorded UTC days, kept as history: it includes submissions to activities deleted later, so it can exceed gradedCount + ungradedCount."
           },
           "messageCount": {
             "type": "number",
@@ -6194,11 +6197,11 @@
           },
           "gradedCount": {
             "type": "number",
-            "description": "Submissions with a grade in this classroom."
+            "description": "Submissions with a grade to non-deleted activities of this classroom."
           },
           "ungradedCount": {
             "type": "number",
-            "description": "Submissions without a grade yet in this classroom."
+            "description": "Submissions without a grade yet to non-deleted activities of this classroom."
           }
         },
         "required": [
