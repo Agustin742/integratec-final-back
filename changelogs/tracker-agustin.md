@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Review fixes on PR #107 (student inbox, #29)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/submissions/submission-window.ts`, `apps/api/src/submissions/submission-window.spec.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/activities/activities.service.ts`
+- **Change:** The submission window rules (FILE format, `opensAt`, `dueAt`, `allowLate`) now live in one pure predicate, `submissionWindow`. The submit endpoint maps its result to the same 409 messages as before, and the student inbox `canSubmit` is that predicate plus "no submission yet". The merge of `develop` (2d62991) also added the Grade snapshot fields to the student-inbox spec seed.
+- **Reason:** Review finding on PR #107: `canSubmit` re-implemented `assertAcceptsSubmission`, so the two copies could drift with no test tying them together.
+- **Next step:** CI on PR #107, then merge into `develop`.
+
 ## 2026-11-19 — Review fixes on PR #106 (streak and badges, #33)
 
 - **Status:** in-progress

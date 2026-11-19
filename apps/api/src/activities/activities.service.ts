@@ -16,6 +16,7 @@ import { parseSort } from '../http/pagination/sort';
 import { createValidationPipe, RequestValidationException } from '../http/validation';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { submissionWindow } from '../submissions/submission-window';
 import {
   ACTIVITY_LIMITS,
   ACTIVITY_SORT_OPTIONS,
@@ -368,11 +369,7 @@ export class ActivitiesService {
             : overdue
               ? 'overdue'
               : 'pending',
-          canSubmit:
-            row.format === ActivityFormat.FILE &&
-            !submission &&
-            (row.opensAt === null || now.getTime() >= row.opensAt.getTime()) &&
-            (!overdue || row.allowLate),
+          canSubmit: !submission && submissionWindow(row, now).open,
         };
       });
       return paginated(items, total, query);
