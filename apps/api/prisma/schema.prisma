@@ -153,6 +153,8 @@ model User {
   gradeRevisions           GradeRevision[]       @relation("GradedGradeRevisions")
   authoredAnnouncements    Announcement[]        @relation("AnnouncementAuthor")
   mentions                 Mention[]             @relation("MentionedUsers")
+  authoredMessages         Message[]             @relation("MessageAuthor")
+  hiddenMessages           Message[]             @relation("MessageModerator")
   streak                   Streak?               @relation("StudentStreak")
   streakQualifyingDays     StreakQualifyingDay[] @relation("StudentStreakQualifyingDays")
   badges                   StudentBadge[]        @relation("StudentBadges")
@@ -288,6 +290,7 @@ model Classroom {
   studentPurchases   StudentPurchase[]
   activities         Activity[]
   announcements      Announcement[]
+  messages           Message[]
   studyMaterials     StudyMaterial[]
   equippedItems      EquippedItem[]
 
@@ -384,6 +387,8 @@ model ParentLink {
   child     User      @relation("ChildLinks", fields: [childId], references: [id], onDelete: Restrict)
   classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
 
+  messages Message[]
+
   @@unique([parentId, childId, classroomId])
   @@index([parentId])
   @@index([childId])
@@ -430,7 +435,7 @@ model ActivityMetric {
   day              DateTime @db.Date
   connectedSeconds Int      @default(0) @map("connected_seconds")
   /// Raw counts (gap 17 keeps the composite formula open): submissions created that day, and
-  /// classroom-channel participation. `messageCount` stays 0 until chat (RF-COM-002) ships.
+  /// classroom-channel participation (chat messages sent, RF-COM-002).
   submissionCount  Int      @default(0) @map("submission_count")
   messageCount     Int      @default(0) @map("message_count")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -860,7 +865,33 @@ model Announcement {
   @@map("announcements")
 }
 
-/// Resolved @ reference in a source resource (announcement, later message).
+/// Durable text in exactly one context; context/audit pairing checks live in SQL.
+/// Membership deactivation never removes messages or their attribution.
+model Message {
+  id           String    @id @default(uuid()) @db.Uuid
+  classroomId  String?   @map("classroom_id") @db.Uuid
+  parentLinkId String?   @map("parent_link_id") @db.Uuid
+  authorId     String    @map("author_id") @db.Uuid
+  body         String    @db.Text
+  hiddenAt     DateTime? @map("hidden_at") @db.Timestamptz(6)
+  hiddenById   String?   @map("hidden_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom  Classroom?  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  parentLink ParentLink? @relation(fields: [parentLinkId], references: [id], onDelete: Restrict)
+  author     User        @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  hiddenBy   User?       @relation("MessageModerator", fields: [hiddenById], references: [id], onDelete: Restrict)
+
+  @@index([classroomId, createdAt, id])
+  @@index([classroomId, authorId, createdAt, id])
+  @@index([parentLinkId, createdAt, id])
+  @@index([authorId])
+  @@index([hiddenById])
+  @@map("messages")
+}
+
+/// Resolved @ reference in a source resource (announcement or message).
 /// The source follows the PointTransaction pattern (type + id columns without a
 /// shared polymorphic foreign key); the mentioned user is a declared foreign key.
 model Mention {

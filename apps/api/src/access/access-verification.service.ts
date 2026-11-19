@@ -80,6 +80,7 @@ export interface ClassroomAccessResult {
 
 export interface VerifyClassroomAccessOptions {
   requiredRole?: 'STAFF' | 'TEACHER' | 'STUDENT' | 'ANY';
+  client?: Prisma.TransactionClient;
 }
 
 export interface VerifySchoolAccessOptions {
@@ -307,7 +308,9 @@ export class AccessVerificationService {
       throw new NotFoundException('Classroom not found');
     }
 
-    const classroom = await this.prisma.classroom.findFirst({
+    const client = options?.client ?? this.prisma;
+
+    const classroom = await client.classroom.findFirst({
       where: { id: classroomId, deletedAt: null },
       select: {
         id: true,
@@ -323,7 +326,7 @@ export class AccessVerificationService {
     }
 
     if (classroom.schoolId !== null) {
-      const school = await this.prisma.school.findFirst({
+      const school = await client.school.findFirst({
         where: { id: classroom.schoolId, deletedAt: null },
         select: { id: true },
       });
@@ -335,7 +338,7 @@ export class AccessVerificationService {
     const [schoolMember, membership, parentLinks] = await Promise.all([
       classroom.schoolId === null
         ? Promise.resolve(null)
-        : this.prisma.schoolMember.findFirst({
+        : client.schoolMember.findFirst({
             where: {
               schoolId: classroom.schoolId,
               userId: actorUserId,
@@ -343,7 +346,7 @@ export class AccessVerificationService {
             },
             select: { role: true },
           }),
-      this.prisma.classroomMembership.findFirst({
+      client.classroomMembership.findFirst({
         where: {
           classroomId: classroom.id,
           userId: actorUserId,
@@ -354,7 +357,7 @@ export class AccessVerificationService {
       }),
       classroom.adultMode
         ? Promise.resolve([])
-        : this.prisma.parentLink.findMany({
+        : client.parentLink.findMany({
             where: {
               classroomId: classroom.id,
               parentId: actorUserId,
