@@ -57,6 +57,23 @@ Linked parents are not part of the activity row of the permission matrix (they o
 
 Summary fields: `id`, `classroomId`, `type`, `format`, `state`, `title`, `description`, `opensAt` (nullable), `dueAt`, `allowLate`, `maxScore`, `weightMultiplier` (JSON number), `publishedAt` (nullable), `timeZone`, `questionCount`, `createdAt`, `updatedAt`.
 
+## Student inbox (#29)
+
+`GET /classrooms/:id/activities` adds **only for students** `status` and `canSubmit` to each summary. `state` still means `DRAFT`/`PUBLISHED`; neither staff summaries nor either detail view changes.
+
+Work status uses only the actor's Submission and Grade, in priority order:
+
+1. `graded`: a grade exists, including a zero score.
+2. `submitted`: a submission exists without a grade.
+3. `overdue`: no submission and server time is strictly after `dueAt`, even with `allowLate=true`.
+4. `pending`: no submission and the deadline has not passed (equality is on time).
+
+Optional `?status=pending|submitted|graded|overdue` is lower-case and student-only. The database applies it before both pagination and total counting. Staff supplying `status` still receive `400 VALIDATION_FAILED` with `{ field: 'status', messages: ['property status should not exist'] }`, even for invalid/empty values. Staff validation also aggregates that whitelist error with any other invalid query fields in the original order (for example, `status=pending&page=0` reports both `status` and `page`). The list route reuses the shared HTTP validation pipe with a role-specific DTO; common parameter-validation errors still precede permission errors. Staff requests without `status` retain their previous payload and `state` filtering. Students' valid `state` filter remains ignored; drafts, deactivated and foreign activities stay hidden. Ordering remains `dueAt` ascending by default, with ascending `id` for ties (also for descending sorts).
+
+`canSubmit` requires supported `FILE` format, no existing submission, `opensAt` absent or reached, and server time at/before `dueAt` or `allowLate=true`. Thus an overdue activity allowing late work remains submittable. Both derived fields and filtering use one captured server instant; page and count share a repeatable-read snapshot. This is eligibility at listing time, not a reservation: submission rechecks current policy. `MULTIPLE_CHOICE` activities remain listed with derived status but `canSubmit=false`: the existing submission endpoint accepts files only; multiple-choice answers and automatic evaluation remain #47, out of scope.
+
+Only submission/grade existence is selected for the current actor. No questions, options, answers, submission records, grade contents or classmates' records are included in inbox items. Existing due-date, weight, school time zone and summary fields remain available.
+
 ## Validation
 
 | Field | Rule |
@@ -75,6 +92,7 @@ Summary fields: `id`, `classroomId`, `type`, `format`, `state`, `title`, `descri
 | `sort` (list) | `dueAt` (default, ascending), `-dueAt`, `createdAt`, `-createdAt`; `id` is always the tiebreaker |
 | `page`, `pageSize` | Shared [pagination contract](api-conventions.md#pagination-and-sorting) |
 | `state` (list) | `DRAFT` or `PUBLISHED`; staff only |
+| `status` (list) | `pending`, `submitted`, `graded`, `overdue`; students only, staff get `400` |
 
 Explicit `null` is rejected on every optional field (including `opensAt` on `PATCH`), so `opensAt` cannot be removed once set. Unknown properties are rejected. The cross-field rules (`opensAt` only on exams and before `dueAt`) are checked against the **merged** state on `PATCH`, so a partial update cannot create an invalid window. The limits are the single `ACTIVITY_LIMITS` constant in `apps/api/src/activities/activities.dto.ts`.
 
@@ -124,4 +142,4 @@ Recorded as [D15](technical-justification.md#d15-activity-publishing-defaults) a
 pnpm --filter @aula/api exec vitest run src/activities
 ```
 
-`activities.dto.spec.ts` and `activities.http.spec.ts` need no database. The `*.integration.spec.ts` files need an explicitly supplied `DATABASE_URL` and cover the `CHECK` constraints, role-scoped views, concurrency and the atomic publish and notification behavior. Fixtures use dates relative to the current time, so the suite does not expire.
+`activities.dto.spec.ts` and `activities.http.spec.ts` need no database. The `*.integration.spec.ts` files need an explicitly supplied `DATABASE_URL` and cover the `CHECK` constraints, role-scoped views, concurrency and the atomic publish and notification behavior. Fixtures use relative dates or a fixed server clock, so the suite does not expire. `student-inbox.integration.spec.ts` covers work-status precedence, exact opening/deadline boundaries, late permission, FILE-only eligibility, filter pagination/totals, actor isolation, response secrecy and staff compatibility.

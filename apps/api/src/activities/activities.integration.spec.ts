@@ -187,6 +187,81 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
     }
   }, 30_000);
 
+  const compoundQueries = [
+    [
+      'status=pending&page=0',
+      [
+        { field: 'status', messages: ['property status should not exist'] },
+        { field: 'page', messages: ['page must not be less than 1'] },
+      ],
+    ],
+    [
+      'status=pending&sort=password',
+      [
+        { field: 'status', messages: ['property status should not exist'] },
+        {
+          field: 'sort',
+          messages: ['sort must be one of: dueAt, createdAt (prefix "-" for descending)'],
+        },
+      ],
+    ],
+    [
+      'status=pending&extra=x',
+      [
+        { field: 'status', messages: ['property status should not exist'] },
+        { field: 'extra', messages: ['property extra should not exist'] },
+      ],
+    ],
+    [
+      'status=INVALID&page=0&sort=password&extra=x',
+      [
+        { field: 'status', messages: ['property status should not exist'] },
+        { field: 'extra', messages: ['property extra should not exist'] },
+        {
+          field: 'sort',
+          messages: ['sort must be one of: dueAt, createdAt (prefix "-" for descending)'],
+        },
+        { field: 'page', messages: ['page must not be less than 1'] },
+      ],
+    ],
+  ] as const;
+  for (const [role, actor, classroom] of [
+    ['independent teacher', teacher, classroomA],
+    ['school teacher', schoolTeacher, classroomB],
+    ['owner', owner, classroomB],
+    ['admin', admin, classroomB],
+  ]) {
+    it.each(compoundQueries)(
+      `${role} preserves baseline compound validation: %s`,
+      async (query, details) => {
+        const { body } = await api('get', `?${query}`, actor, classroom).expect(400);
+        expect(body.error.code).toBe('VALIDATION_FAILED');
+        expect(body.error.details).toEqual(details);
+      },
+    );
+  }
+
+  it('retains parameter-validation precedence over permission errors and student query behavior', async () => {
+    for (const actor of [student, parent, stranger]) {
+      for (const query of ['page=0', 'status=pending&page=0', 'status=INVALID&page=0']) {
+        const { body } = await api('get', `?${query}`, actor).expect(400);
+        expect(body.error.details).toEqual([
+          { field: 'page', messages: ['page must not be less than 1'] },
+        ]);
+      }
+    }
+    for (const [actor, status] of [
+      [parent, 403],
+      [stranger, 404],
+    ] as const) {
+      await api('get', '?status=pending', actor).expect(status);
+    }
+    const { body } = await api('get', '?status=pending&extra=x', student).expect(400);
+    expect(body.error.details).toEqual([
+      { field: 'extra', messages: ['property extra should not exist'] },
+    ]);
+  });
+
   it('teacher creates a DRAFT with defaults, UTC ISO instants and the default time zone', async () => {
     const res = await api('post', '', teacher).send(tpBody()).expect(201);
     expect(res.body).toMatchObject({

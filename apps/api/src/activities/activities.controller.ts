@@ -11,18 +11,20 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
-import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../http/pagination/pagination-query.dto';
 import {
   ActivitySummaryDto,
   CreateActivityDto,
   ListActivitiesQueryDto,
   StudentActivityResponseDto,
+  StudentActivitySummaryDto,
   TeacherActivityResponseDto,
   UpdateActivityDto,
 } from './activities.dto';
@@ -72,9 +74,45 @@ export class ActivitiesController {
     description:
       'Staff see drafts and published (filter with `state`); students see published only ' +
       '(their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ' +
-      'ascending) or `createdAt`; `id` is the tiebreaker.',
+      'ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work ' +
+      '`status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). ' +
+      '`status` filters before pagination/count for students; staff receive 400 for this query. ' +
+      'Overdue means no submission and server time strictly after dueAt, regardless of allowLate.',
   })
-  @ApiPaginatedResponse(ActivitySummaryDto, 'Activities without questions.')
+  @ApiQuery({ type: ListActivitiesQueryDto })
+  @ApiExtraModels(ActivitySummaryDto, StudentActivitySummaryDto)
+  @ApiOkResponse({
+    description:
+      'Activities without questions. Staff receive summaries; students receive inbox items.',
+    schema: {
+      type: 'object',
+      required: ['items', 'page', 'pageSize', 'total'],
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            anyOf: [
+              { $ref: getSchemaPath(ActivitySummaryDto) },
+              { $ref: getSchemaPath(StudentActivitySummaryDto) },
+            ],
+          },
+        },
+        page: { type: 'integer', minimum: 1, example: 1 },
+        pageSize: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_PAGE_SIZE,
+          example: DEFAULT_PAGE_SIZE,
+        },
+        total: {
+          type: 'integer',
+          minimum: 0,
+          example: 42,
+          description: 'Item count across all pages.',
+        },
+      },
+    },
+  })
   @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'Invalid query parameters.' })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,
@@ -83,7 +121,8 @@ export class ActivitiesController {
   list(
     @CurrentUser('userId') actorId: string,
     @Param('id') classroomId: string,
-    @Query() query: ListActivitiesQueryDto,
+    // Object metadata deliberately defers only this query to role-aware DTO validation.
+    @Query() query: Record<string, unknown>,
   ) {
     return this.activities.list(actorId, classroomId, query);
   }

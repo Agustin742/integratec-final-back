@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
+import { ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessRole,
@@ -17,6 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
 import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
+import { submissionWindow, type SubmissionWindowRules } from './submission-window';
 import {
   type AcceptedSubmissionFile,
   type SubmissionFileInput,
@@ -74,13 +75,6 @@ export interface SubmitResult {
   created: boolean;
 }
 
-interface ActivityRules {
-  format: ActivityFormat;
-  opensAt: Date | null;
-  dueAt: Date;
-  allowLate: boolean;
-}
-
 interface PlannedFile extends AcceptedSubmissionFile {
   id: string;
   storageKey: string;
@@ -106,27 +100,23 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
   };
 }
 
-/**
- * Whether the activity takes a submission at `now` and whether it would be late (data-and-time
- * D10: the server decides on UTC instants). Rejections are 409 with a student-readable reason.
- */
-function assertAcceptsSubmission(activity: ActivityRules, now: Date): { isLate: boolean } {
-  if (activity.format !== ActivityFormat.FILE) {
-    throw conflict('activity', 'This activity does not accept file submissions');
+/** Maps the shared submission window to the 409 a rejected submit returns. */
+function assertAcceptsSubmission(activity: SubmissionWindowRules, now: Date): { isLate: boolean } {
+  const window = submissionWindow(activity, now);
+  if (window.open) {
+    return { isLate: window.isLate };
   }
-  if (activity.opensAt !== null && now.getTime() < activity.opensAt.getTime()) {
-    throw conflict('activity', 'This activity is not open yet');
-  }
-  if (now.getTime() > activity.dueAt.getTime()) {
-    if (!activity.allowLate) {
+  switch (window.reason) {
+    case 'format':
+      throw conflict('activity', 'This activity does not accept file submissions');
+    case 'not_open':
+      throw conflict('activity', 'This activity is not open yet');
+    case 'closed':
       throw conflict(
         'activity',
         'The deadline has passed and this activity does not accept late submissions',
       );
-    }
-    return { isLate: true };
   }
-  return { isLate: false };
 }
 
 function parseIdempotencyKey(raw: string | undefined): string {
