@@ -1,7 +1,13 @@
 import type { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, EquippedSlot, MembershipState, RegistrationPath, ShopItemKind } from '@prisma/client';
+import {
+  ClassroomRole,
+  EquippedSlot,
+  MembershipState,
+  RegistrationPath,
+  ShopItemKind,
+} from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessModule } from '../../access/access.module';

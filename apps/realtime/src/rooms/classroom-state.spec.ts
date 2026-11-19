@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MapSchema } from '@colyseus/schema';
-import { Avatar, AvatarAppearance, ClassroomState, EquippedItemView } from './classroom-state';
+import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
 
 describe('ClassroomState', () => {
   it('starts with an empty avatar map', () => {
