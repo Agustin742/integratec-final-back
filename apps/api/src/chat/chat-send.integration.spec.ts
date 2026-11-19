@@ -3,6 +3,8 @@ import { HttpException } from '@nestjs/common';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
+import { MetricRecordingService } from '../metrics/metric-recording.service';
+import { utcDayOf } from '../metrics/utc-day';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,7 +15,12 @@ const prisma = new PrismaService();
 const otherClient = new PrismaService();
 const recorder = new NotificationRecorder(new OutboxWriter());
 const service = (client: PrismaService) =>
-  new ChatService(client, new AccessVerificationService(client), recorder);
+  new ChatService(
+    client,
+    new AccessVerificationService(client),
+    recorder,
+    new MetricRecordingService(client),
+  );
 const chat = service(prisma);
 const otherChat = service(otherClient);
 let teacher: string, student: string, parent: string, stranger: string, classroom: string;
@@ -80,6 +87,27 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
       resourceId: row.id,
       recipientId: teacher,
     });
+  });
+
+  it('counts one participation message on the UTC day of the persisted message, only on success', async () => {
+    const metric = async () =>
+      (
+        await prisma.activityMetric.findMany({
+          where: { classroomId: classroom, userId: student },
+        })
+      ).reduce((sum, row) => sum + row.messageCount, 0);
+    expect(await metric()).toBe(0);
+    const row = await chat.send(student, classroom, 'Counted');
+    const day = utcDayOf(new Date(row.createdAt));
+    const stored = await prisma.activityMetric.findUniqueOrThrow({
+      where: { classroomId_userId_day: { classroomId: classroom, userId: student, day } },
+    });
+    expect(stored.messageCount).toBe(1);
+    await rejected(student, '', 400);
+    expect(await metric()).toBe(1);
+    for (let i = 0; i < 4; i++) await chat.send(student, classroom, 'Valid');
+    await rejected(student, 'Sixth', 429);
+    expect(await metric()).toBe(5);
   });
 
   it.each([null, 42, '', ' \n\t ', '\u200B\u200D', 'x'.repeat(2001), 'a\0b', 'a\u0085b'])(

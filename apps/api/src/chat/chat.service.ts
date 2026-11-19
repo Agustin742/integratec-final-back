@@ -6,6 +6,7 @@ import { paginated, toSkipTake, type Paginated } from '../http/pagination/pagina
 import type { ChatHistoryMessageDto, ListMessagesQueryDto } from './chat.dto';
 import { resolveMentionedUserIds } from '../announcements/announcements.service';
 import { RequestValidationException } from '../http/validation';
+import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -26,6 +27,7 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
     private readonly notifications: NotificationRecorder,
+    private readonly metrics: MetricRecordingService,
   ) {}
 
   async list(
@@ -144,6 +146,12 @@ export class ChatService {
           throw new HttpException('Chat rate limit exceeded', 429);
         const row = await tx.message.create({
           data: { classroomId, authorId: actorId, body, createdAt: now },
+        });
+        // Same transaction and instant as the row: the metric exists iff the message commits.
+        await this.metrics.recordMessage(tx, {
+          classroomId,
+          userId: actorId,
+          at: row.createdAt,
         });
         if (mentionedUserIds.length)
           await tx.mention.createMany({

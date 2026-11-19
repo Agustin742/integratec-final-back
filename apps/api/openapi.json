@@ -4005,7 +4005,7 @@
     },
     "/classrooms/{id}/me/activity-metrics": {
       "get": {
-        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount stays 0 until chat ships.",
+        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount counts classroom chat messages sent that day.",
         "operationId": "StudentMetricsController_myDailyMetrics",
         "parameters": [
           {
@@ -6583,7 +6583,7 @@
           },
           "messageCount": {
             "type": "number",
-            "description": "Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships."
+            "description": "Classroom-channel participation that day: classroom chat messages sent (RF-COM-002)."
           }
         },
         "required": ["day", "connectedSeconds", "submissionCount", "messageCount"]

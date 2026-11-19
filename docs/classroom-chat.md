@@ -98,7 +98,8 @@ moderator and time.
 announcement mention matcher. It rejects linked parents, invalid/blank text,
 unsafe controls, excess length and more than 20 distinct roster matches. It reads
 persisted mute state on every call; students are denied while staff may send.
-Message, deduplicated mentions and notification outbox requests commit atomically.
+Message, deduplicated mentions, notification outbox requests and the author's daily
+participation metric (`messageCount` of the message's UTC day) commit atomically.
 
 A PostgreSQL transaction advisory lock serializes each normalized user/classroom
 pair across service instances. After acquiring it, access is rechecked and the

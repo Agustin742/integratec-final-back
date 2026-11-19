@@ -23,7 +23,7 @@ export class MetricRecordingService {
     return this.increment(client, input.classroomId, input.userId, input.at, 'submissionCount');
   }
 
-  /** Counts one classroom-channel participation event (chat wires this when it ships). */
+  /** Counts one classroom-channel participation event (called from the chat send transaction). */
   recordMessage(
     client: Prisma.TransactionClient | PrismaService,
     input: { classroomId: string; userId: string; at: Date },

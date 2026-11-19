@@ -435,7 +435,7 @@ model ActivityMetric {
   day              DateTime @db.Date
   connectedSeconds Int      @default(0) @map("connected_seconds")
   /// Raw counts (gap 17 keeps the composite formula open): submissions created that day, and
-  /// classroom-channel participation. `messageCount` stays 0 until chat (RF-COM-002) ships.
+  /// classroom-channel participation (chat messages sent, RF-COM-002).
   submissionCount  Int      @default(0) @map("submission_count")
   messageCount     Int      @default(0) @map("message_count")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
