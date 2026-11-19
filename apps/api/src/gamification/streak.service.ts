@@ -80,7 +80,10 @@ export class StreakService {
    * not counted yet. Runs inside the caller's transaction so the day record,
    * the streak update, and any badge award commit or fail together. Replayed or
    * same-day events are idempotent no-ops for the chain (badge evaluation stays
-   * safe to run against the live state).
+   * safe to run against the live state). An event whose local day is not after
+   * the stored last qualifying day (transactions racing across the day boundary
+   * can commit out of clock order) still records its day but leaves the chain
+   * and last day untouched.
    */
   async recordQualifying(tx: Prisma.TransactionClient, event: QualifyingEvent): Promise<void> {
     const localDay = toLocalDay(event.at, DEFAULT_LOCAL_DAY_TIME_ZONE);
@@ -119,6 +122,14 @@ export class StreakService {
       bestChainLength: locked.best_chain_length,
       lastQualifyingLocalDay: locked.last_qualifying_local_day,
     };
+    const lastDay = previous.lastQualifyingLocalDay;
+    if (lastDay !== null && localDayDistance(lastDay, localDay) <= 0) {
+      // Out-of-order commit: the day row above is a real activity day (it
+      // still counts for active-days badges), but the chain and last day
+      // must never move backwards.
+      await this.evaluateBadges(tx, event.studentId);
+      return;
+    }
     const nextCurrent = this.nextChainLength(previous, localDay);
     const nextBest = Math.max(previous.bestChainLength, nextCurrent);
 
@@ -154,9 +165,10 @@ export class StreakService {
   /**
    * The chain continues only when the previous qualifying day was exactly the
    * day before (`gap === 1`); any larger gap restarts at 1 because the daily
-   * requirement was not met in between and the streak broke (RN-08). A `gap`
-   * of 0 cannot occur for the day-winner path (the unique constraint elects
-   * one writer per day).
+   * requirement was not met in between and the streak broke (RN-08). Callers
+   * only pass a day strictly after the last one: a gap of 0 cannot occur for
+   * the day-winner path and a negative gap (out-of-order commit) is handled
+   * by `recordQualifying` before chaining.
    */
   private nextChainLength(previous: StreakRow, localDay: string): number {
     const lastDay = previous.lastQualifyingLocalDay;

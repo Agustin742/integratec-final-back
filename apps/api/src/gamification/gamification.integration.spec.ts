@@ -234,6 +234,32 @@ describe('Gamification streak engine and badges (real PostgreSQL & concurrency)'
     });
   });
 
+  it('ignores a late out-of-order qualifying day for the chain but still counts it', async () => {
+    await record(ids.student, instantForLocalDay(-3));
+    await record(ids.student, instantForLocalDay(-1));
+    // A transaction that read its clock before midnight commits after the
+    // later day was recorded: chain and last day must not move backwards.
+    await record(ids.student, instantForLocalDay(-2));
+    expect(
+      await prisma.streak.findUniqueOrThrow({ where: { studentId: ids.student } }),
+    ).toMatchObject({
+      currentChainLength: 1,
+      bestChainLength: 1,
+      lastQualifyingLocalDay: toLocalDay(instantForLocalDay(-1)),
+    });
+    expect(await prisma.streakQualifyingDay.count({ where: { studentId: ids.student } })).toBe(3);
+
+    // The next day still extends from the latest recorded day.
+    await record(ids.student, instantForLocalDay(0));
+    expect(
+      await prisma.streak.findUniqueOrThrow({ where: { studentId: ids.student } }),
+    ).toMatchObject({
+      currentChainLength: 2,
+      bestChainLength: 2,
+      lastQualifyingLocalDay: toLocalDay(instantForLocalDay(0)),
+    });
+  });
+
   it('reports a broken chain as current 0 while preserving the best chain', async () => {
     await record(ids.student, instantForLocalDay(-4));
     const stored = await prisma.streak.findUniqueOrThrow({ where: { studentId: ids.student } });
