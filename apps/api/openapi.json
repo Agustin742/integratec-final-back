@@ -2843,6 +2843,32 @@
         "tags": ["equipment"]
       }
     },
+    "/gamification/me": {
+      "get": {
+        "description": "Own recipient only; computed by the server in America/Argentina/Buenos_Aires. Badges are ordered by unlock time (awardedAt ASC, id ASC). No sort override.",
+        "operationId": "GamificationController_getMySummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Own streak summary and earned badges.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GamificationSummaryDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Own study streak and earned badges",
+        "tags": ["gamification"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -3179,7 +3205,7 @@
         "tags": ["activities"]
       },
       "get": {
-        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker.",
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
         "operationId": "ActivitiesController_list",
         "parameters": [
           {
@@ -3190,24 +3216,24 @@
             "schema": { "type": "string" }
           },
           {
-            "name": "page",
-            "required": false,
-            "in": "query",
             "description": "1-based page number.",
+            "required": false,
+            "name": "page",
+            "in": "query",
             "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
           },
           {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
             "description": "Items per page.",
+            "required": false,
+            "name": "pageSize",
+            "in": "query",
             "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
           },
           {
-            "name": "sort",
-            "required": false,
-            "in": "query",
             "description": "Field to order by; prefix with \"-\" for descending. Default `dueAt` ascending; `id` is the tiebreaker.",
+            "required": false,
+            "name": "sort",
+            "in": "query",
             "schema": {
               "default": "dueAt",
               "example": "-createdAt",
@@ -3216,16 +3242,23 @@
             }
           },
           {
-            "name": "state",
-            "required": false,
-            "in": "query",
             "description": "Staff only. Students always receive published activities only and may not filter drafts.",
+            "required": false,
+            "name": "state",
+            "in": "query",
             "schema": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] }
+          },
+          {
+            "description": "Student-only work status; filters before pagination/count. Staff receive 400 (property status should not exist).",
+            "required": false,
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["pending", "submitted", "graded", "overdue"] }
           }
         ],
         "responses": {
           "200": {
-            "description": "Activities without questions.",
+            "description": "Activities without questions. Staff receive summaries; students receive inbox items.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3234,7 +3267,12 @@
                   "properties": {
                     "items": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/ActivitySummaryDto" }
+                      "items": {
+                        "anyOf": [
+                          { "$ref": "#/components/schemas/ActivitySummaryDto" },
+                          { "$ref": "#/components/schemas/StudentActivitySummaryDto" }
+                        ]
+                      }
                     },
                     "page": { "type": "integer", "minimum": 1, "example": 1 },
                     "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
@@ -3886,6 +3924,237 @@
         "security": [{ "bearer": [] }],
         "summary": "Subscribe to live context hints; refetch classroom context on every connection and hint",
         "tags": ["Classrooms"]
+      }
+    },
+    "/classrooms/{id}/me/report-card": {
+      "get": {
+        "description": "One item per graded activity: score, feedback and net credited points, latest grading first. The activity title and maxScore are frozen at grading time, so later activity edits never rewrite the card. Ungraded, deleted and unpublished activities are not listed, like every other student-facing classroom query. This card is the student resource; staff and parents answer 403 (the parent view is HU-ACT-006, out of scope here).",
+        "operationId": "StudentMetricsController_reportCard",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The student's graded activities, paginated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ReportCardItemDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller lacks the role this resource requires.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the authenticated student's graded activities of one classroom",
+        "tags": ["metrics"]
+      }
+    },
+    "/classrooms/{id}/me/activity-metrics": {
+      "get": {
+        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount stays 0 until chat ships.",
+        "operationId": "StudentMetricsController_myDailyMetrics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw daily metric rows, latest day first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/DailyMetricDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller lacks the role this resource requires.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the authenticated student's own daily activity metrics",
+        "tags": ["metrics"]
+      }
+    },
+    "/classrooms/{id}/activity-metrics": {
+      "get": {
+        "description": "Teaching-staff summary: raw totals per active enrolled student (connected seconds, submissions, messages, graded and ungraded submission counts), display name ascending. Students who left keep their daily history but no longer appear here. The school owner and admin read any classroom of their school without membership.",
+        "operationId": "ClassroomMetricsController_classroomMetrics",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Raw per-student totals, paginated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StudentMetricSummaryDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, but the caller is not teaching staff (students and parents).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read the raw per-student activity totals of one classroom",
+        "tags": ["metrics"]
       }
     }
   },
@@ -4945,7 +5214,8 @@
               "grade_posted",
               "announcement",
               "mention",
-              "activity_forum_reply"
+              "activity_forum_reply",
+              "badge_awarded"
             ]
           },
           "resourceId": {
@@ -4953,7 +5223,12 @@
             "format": "uuid",
             "description": "Navigation only; source endpoint authorizes detail access independently."
           },
-          "classroomId": { "type": "string", "format": "uuid" },
+          "classroomId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for classroom-free notices such as badge awards."
+          },
           "studentId": { "type": "string", "format": "uuid", "nullable": true },
           "readAt": { "type": "string", "format": "date-time", "nullable": true },
           "createdAt": { "type": "string", "format": "date-time" }
@@ -5639,6 +5914,47 @@
           }
         }
       },
+      "StreakSummaryDto": {
+        "type": "object",
+        "properties": {
+          "currentStreak": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Consecutive qualifying local days whose chain is still alive (the last one is today or yesterday). A bare login never changes it."
+          },
+          "bestStreak": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Longest qualifying-day chain ever reached."
+          },
+          "lastQualifyingDay": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Local calendar day (YYYY-MM-DD) of the last qualifying activity in America/Argentina/Buenos_Aires; null when none was recorded yet."
+          }
+        },
+        "required": ["currentStreak", "bestStreak", "lastQualifyingDay"]
+      },
+      "EarnedBadgeDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string", "description": "Stable catalog code of the badge." },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "awardedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "code", "name", "description", "awardedAt"]
+      },
+      "GamificationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "streak": { "$ref": "#/components/schemas/StreakSummaryDto" },
+          "badges": { "type": "array", "items": { "$ref": "#/components/schemas/EarnedBadgeDto" } }
+        },
+        "required": ["streak", "badges"]
+      },
       "RosterGuardianDto": {
         "type": "object",
         "properties": {
@@ -5949,6 +6265,76 @@
           "updatedAt"
         ]
       },
+      "StudentActivitySummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["TP", "EXAM"] },
+          "format": { "type": "string", "enum": ["FILE", "MULTIPLE_CHOICE"] },
+          "state": { "type": "string", "enum": ["DRAFT", "PUBLISHED"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "opensAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "dueAt": { "type": "string", "format": "date-time", "description": "ISO 8601 UTC." },
+          "allowLate": { "type": "boolean" },
+          "maxScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "weightMultiplier": {
+            "type": "number",
+            "example": 1.5,
+            "description": "Number, not a decimal string."
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO 8601 UTC."
+          },
+          "timeZone": {
+            "type": "string",
+            "example": "America/Argentina/Buenos_Aires",
+            "description": "School IANA time zone for rendering the instants above."
+          },
+          "questionCount": { "type": "integer", "minimum": 0 },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "submitted", "graded", "overdue"],
+            "description": "Own work: graded > submitted > overdue > pending. Independent of Activity.state."
+          },
+          "canSubmit": {
+            "type": "boolean",
+            "description": "Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission."
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "type",
+          "format",
+          "state",
+          "title",
+          "description",
+          "opensAt",
+          "dueAt",
+          "allowLate",
+          "maxScore",
+          "weightMultiplier",
+          "publishedAt",
+          "timeZone",
+          "questionCount",
+          "createdAt",
+          "updatedAt",
+          "status",
+          "canSubmit"
+        ]
+      },
       "StudentOptionDto": {
         "type": "object",
         "properties": {
@@ -6126,6 +6512,121 @@
         "type": "object",
         "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } },
         "required": ["body"]
+      },
+      "ReportCardItemDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Graded activity UUID."
+          },
+          "activityTitle": {
+            "type": "string",
+            "description": "Activity title frozen at grading time; later edits do not change it."
+          },
+          "activityType": {
+            "type": "string",
+            "enum": ["TP", "EXAM"],
+            "description": "Activity type."
+          },
+          "maxScore": {
+            "type": "number",
+            "description": "Activity maxScore (0-100) frozen at grading time; later edits do not change it."
+          },
+          "score": { "type": "number", "description": "Awarded score (0..maxScore)." },
+          "feedback": { "type": "string", "description": "Written feedback left by the grader." },
+          "pointsAwarded": {
+            "type": "number",
+            "description": "Net credited weighted points for this grade."
+          },
+          "isLate": { "type": "boolean", "description": "Whether the submission was late." },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Submission instant (UTC)."
+          },
+          "gradedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest grading instant (UTC)."
+          }
+        },
+        "required": [
+          "activityId",
+          "activityTitle",
+          "activityType",
+          "maxScore",
+          "score",
+          "feedback",
+          "pointsAwarded",
+          "isLate",
+          "submittedAt",
+          "gradedAt"
+        ]
+      },
+      "DailyMetricDto": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "type": "string",
+            "format": "date",
+            "description": "UTC calendar date the signals belong to."
+          },
+          "connectedSeconds": {
+            "type": "number",
+            "description": "Aggregated connected seconds reported by the realtime server."
+          },
+          "submissionCount": {
+            "type": "number",
+            "description": "Raw submission events recorded that day, including to activities deleted later."
+          },
+          "messageCount": {
+            "type": "number",
+            "description": "Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships."
+          }
+        },
+        "required": ["day", "connectedSeconds", "submissionCount", "messageCount"]
+      },
+      "StudentMetricSummaryDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Enrolled student UUID."
+          },
+          "displayName": { "type": "string", "description": "Student display name." },
+          "connectedSeconds": {
+            "type": "number",
+            "description": "Sum of connected seconds across all recorded UTC days."
+          },
+          "submissionCount": {
+            "type": "number",
+            "description": "Raw submission events summed over all recorded UTC days, kept as history: it includes submissions to activities deleted later, so it can exceed gradedCount + ungradedCount."
+          },
+          "messageCount": {
+            "type": "number",
+            "description": "Sum of message counts across all recorded UTC days."
+          },
+          "gradedCount": {
+            "type": "number",
+            "description": "Submissions with a grade to non-deleted activities of this classroom."
+          },
+          "ungradedCount": {
+            "type": "number",
+            "description": "Submissions without a grade yet to non-deleted activities of this classroom."
+          }
+        },
+        "required": [
+          "studentId",
+          "displayName",
+          "connectedSeconds",
+          "submissionCount",
+          "messageCount",
+          "gradedCount",
+          "ungradedCount"
+        ]
       },
       "ClassroomPanelKey": {
         "type": "string",

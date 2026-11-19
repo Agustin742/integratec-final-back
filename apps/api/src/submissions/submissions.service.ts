@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityState, Prisma } from '@prisma/client';
+import { ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessRole,
@@ -10,11 +10,14 @@ import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { conflict } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
+import { StreakService } from '../gamification/streak.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
+import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
+import { submissionWindow, type SubmissionWindowRules } from './submission-window';
 import {
   type AcceptedSubmissionFile,
   type SubmissionFileInput,
@@ -72,13 +75,6 @@ export interface SubmitResult {
   created: boolean;
 }
 
-interface ActivityRules {
-  format: ActivityFormat;
-  opensAt: Date | null;
-  dueAt: Date;
-  allowLate: boolean;
-}
-
 interface PlannedFile extends AcceptedSubmissionFile {
   id: string;
   storageKey: string;
@@ -104,27 +100,23 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
   };
 }
 
-/**
- * Whether the activity takes a submission at `now` and whether it would be late (data-and-time
- * D10: the server decides on UTC instants). Rejections are 409 with a student-readable reason.
- */
-function assertAcceptsSubmission(activity: ActivityRules, now: Date): { isLate: boolean } {
-  if (activity.format !== ActivityFormat.FILE) {
-    throw conflict('activity', 'This activity does not accept file submissions');
+/** Maps the shared submission window to the 409 a rejected submit returns. */
+function assertAcceptsSubmission(activity: SubmissionWindowRules, now: Date): { isLate: boolean } {
+  const window = submissionWindow(activity, now);
+  if (window.open) {
+    return { isLate: window.isLate };
   }
-  if (activity.opensAt !== null && now.getTime() < activity.opensAt.getTime()) {
-    throw conflict('activity', 'This activity is not open yet');
-  }
-  if (now.getTime() > activity.dueAt.getTime()) {
-    if (!activity.allowLate) {
+  switch (window.reason) {
+    case 'format':
+      throw conflict('activity', 'This activity does not accept file submissions');
+    case 'not_open':
+      throw conflict('activity', 'This activity is not open yet');
+    case 'closed':
       throw conflict(
         'activity',
         'The deadline has passed and this activity does not accept late submissions',
       );
-    }
-    return { isLate: true };
   }
-  return { isLate: false };
 }
 
 function parseIdempotencyKey(raw: string | undefined): string {
@@ -151,6 +143,8 @@ export class SubmissionsService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly outbox: OutboxWriter,
+    private readonly streaks: StreakService,
+    private readonly metrics: MetricRecordingService,
   ) {}
 
   /**
@@ -459,6 +453,8 @@ export class SubmissionsService {
           },
           select: SUBMISSION_SELECT,
         });
+        // Same transaction as the row: the metric exists if and only if the submission commits.
+        await this.metrics.recordSubmission(tx, { classroomId, userId: studentId, at: now });
         if (!isLate) {
           // Same transaction as the row: the event exists if and only if the submission commits.
           const payload: SubmissionOnTimePayload = {
@@ -470,6 +466,14 @@ export class SubmissionsService {
             submittedAt: row.submittedAt.toISOString(),
           };
           await this.outbox.record(tx, { type: SUBMISSION_ON_TIME_EVENT, payload });
+          // The on-time submission is the day's qualifying activity (RN-08): the
+          // streak day is unique per (student, local day), so repeated or
+          // concurrent same-day submissions count once.
+          await this.streaks.recordQualifying(tx, {
+            studentId,
+            source: StreakQualifyingSource.ON_TIME_SUBMISSION,
+            at: row.submittedAt,
+          });
         }
         return { created: true, row };
       } catch (error) {

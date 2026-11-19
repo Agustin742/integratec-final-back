@@ -1,20 +1,20 @@
 # Infrastructure (Terraform)
 
-AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host and the database (see [Network and EC2 host](#network-and-ec2-host) and [Database (RDS PostgreSQL)](#database-rds-postgresql)), the container deployment resources (see [Container deployment](#container-deployment-ecr-secrets-config-compose)), and the GitHub Actions OIDC role (disabled by default, see below). **`bootstrap` and `envs/prod` are applied** (first deploy on 2026-11-17: images `release-2026-11-17-1`, site `https://16-59-248-180.sslip.io`, `allowed_origins` and `password_reset_url_base` still on the `example.tfvars` placeholders until the frontend has a real URL). The image pipeline that builds and ships images is a later issue (#58).
+AWS infrastructure for the backend, defined with Terraform in `us-east-2` (US East, Ohio). This directory holds a remote state bucket, the `prod` root with the network and the EC2 host and the database (see [Network and EC2 host](#network-and-ec2-host) and [Database (RDS PostgreSQL)](#database-rds-postgresql)), the container deployment resources (see [Container deployment](#container-deployment-ecr-secrets-config-compose)), the keyless deploy pipeline (see [Deploy pipeline](#deploy-pipeline-codepipeline-and-codebuild)), and the GitHub Actions OIDC role (disabled by default, see below). **`bootstrap` and `envs/prod` are applied** (first deploy on 2026-11-17: images `release-2026-11-17-1`, site `https://16-59-248-180.sslip.io`, `allowed_origins` and `password_reset_url_base` still on the `example.tfvars` placeholders until the frontend has a real URL). The deploy pipeline of #58 (CodePipeline V2 with CodeBuild, no long-lived keys) is **applied** (2026-11-18: GitHub connection completed, first end-to-end run deployed `release-20261118-6bd8544`). Every merge to `develop` now starts it; the [manual fallback](#manual-deploy-with-session-manager-fallback) remains for emergencies.
 
-Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws).
+Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infrastructure](../rules/aws-infrastructure.md). Decisions: [D5 region](../docs/technical-justification.md#d5-aws-region), [D6 pipeline authentication](../docs/technical-justification.md#d6-pipeline-authentication-to-aws), [D19 keyless deploy pipeline](../docs/technical-justification.md#d19-keyless-deploy-pipeline-inside-aws).
 
 ## Layout
 
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: network, EC2 host, RDS database, container deployment resources and the frontend Amplify app, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network, EC2 host, RDS database, container deployment resources, the deploy pipeline and the frontend Amplify app, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
 - **Every root module has a `versions.tf`.** CI detects roots by that file and fails if a root is missing from the `terraform` job matrix in `.github/workflows/ci.yml`.
-- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`, `registry`, `app_config`, `storage`, `runtime_access`) and have no `versions.tf` of their own.
+- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`, `registry`, `app_config`, `storage`, `runtime_access`, `delivery_pipeline`) and have no `versions.tf` of their own.
 - The `project` prefix (`aula-virtual` by default) **MUST** be the same in every root. The CI role policy in `envs/prod` derives the state bucket name from it and the account ID.
 - Tags `Project`, `Environment`, and `ManagedBy = "terraform"` are applied through provider `default_tags`.
 
@@ -279,14 +279,14 @@ The database rows are part of the [estimated monthly cost](#estimated-monthly-co
 
 ## Container deployment (ECR, secrets, config, Compose)
 
-Issue #61 adds everything the host needs to run `api` and `realtime` behind Caddy: image repositories, secret containers, non-secret config, a files bucket, the host permissions, log groups, a production Compose file and a start script. Terraform creates only the AWS resources. The Compose file, the Caddyfile and the start script live in the repository and reach the host through Session Manager by hand until the pipeline (#58) automates it. **None of it has been applied to AWS.** It is covered by `terraform test` with a mocked AWS provider and by the unit tests in `scripts/ci`.
+Issue #61 adds everything the host needs to run `api` and `realtime` behind Caddy: image repositories, secret containers, non-secret config, a files bucket, the host permissions, log groups, a production Compose file and a start script. Terraform creates only the AWS resources. The Compose file, the Caddyfile and the start script live in the repository and reach the host through the [deploy pipeline](#deploy-pipeline-codepipeline-and-codebuild) or, as a fallback, by hand through Session Manager. **The resources of this section are applied; the pipeline of #58 is not yet.** It is covered by `terraform test` with a mocked AWS provider and by the unit tests in `scripts/ci`.
 
 ### Resources
 
 | Area | Resource | Notes |
 |------|----------|-------|
-| Images | ECR repositories `aula-virtual-prod-api` and `aula-virtual-prod-realtime` (module `registry`) | Tags are **immutable** (a tag cannot be pushed twice), scan on push, AES256 encryption. Outputs `ecr_repository_urls` and `ecr_repository_arns`. |
-| Images | ECR lifecycle policy | Untagged images expire after 7 days. Images tagged `release-*` keep the newest 20. Every other image expires 30 days after push. A release image is protected from the 30-day rule, so **#58 must tag deployable images `release-*`**, or they will be deleted. |
+| Images | ECR repositories `aula-virtual-prod-api`, `aula-virtual-prod-realtime` and `aula-virtual-prod-migrate` (module `registry`) | Tags are **immutable** (a tag cannot be pushed twice), scan on push, AES256 encryption. Outputs `ecr_repository_urls` and `ecr_repository_arns`. |
+| Images | ECR lifecycle policy | Untagged images expire after 7 days. Images tagged `release-*` keep the newest 20. Every other image expires 30 days after push. A release image is protected from the 30-day rule, so the pipeline tags every deployable image `release-<yyyymmdd>-<short sha>`; a manual push must use a `release-*` tag too, or the image will be deleted. |
 | Secrets | Three Secrets Manager secrets (module `app_config`): `<prefix>/jwt-secret`, `<prefix>/invitation-token-key`, `<prefix>/internal-service-secret` | Terraform creates **empty containers only**. The values are generated by AWS and loaded once by `infra/scripts/seed-app-secrets.sh`, so they never appear in Terraform code, plan, outputs or state. Recovery window 7 days. Output `app_secret_arns` (ARNs only). |
 | Config | SSM Parameter Store `String` parameters under `/<prefix>/config/api/` and `/<prefix>/config/realtime/` | Non-secret values only. For the api: `ALLOWED_ORIGINS`, `PASSWORD_RESET_URL_BASE`, `NODE_ENV`, `S3_BUCKET`, `S3_REGION`, `REALTIME_INTERNAL_URL` and the database connection `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_SECRET_ARN`. For realtime: `API_INTERNAL_URL` and `NODE_ENV`. `DB_SECRET_ARN` only points to the RDS master secret, it is not a credential. The origins and the reset URL come from the variables `allowed_origins` and `password_reset_url_base` (https only; each origin must be canonical, with a lowercase host and no default `:443` port, because the API compares it with its parsed `URL.origin`; placeholders in `example.tfvars`). |
 | Files | S3 bucket `aula-virtual-prod-files-<random suffix>` (module `storage`) | Private (all public access blocked), versioned, encrypted (AES256), owner-enforced ownership, and a bucket policy that denies any request not using TLS. Old versions expire after 30 days and abandoned multipart uploads after 7 days. `prevent_destroy` is on. The API uploads and signs download URLs itself, so there is no CORS configuration. Outputs `storage_bucket_name` and `storage_bucket_arn`. |
@@ -300,10 +300,11 @@ The host role keeps `AmazonSSMManagedInstanceCore` and gets one inline policy wi
 | Statement | Allows | Why |
 |-----------|--------|-----|
 | `EcrAuthToken` | `ecr:GetAuthorizationToken` on `*` | AWS does not support limiting this action to a repository, so `*` is the only accepted value. It only returns a login token and grants no access to images by itself. It is kept in its own statement so every other statement stays scoped. |
-| `EcrPull` | Pull actions (`BatchGetImage`, `GetDownloadUrlForLayer`, `BatchCheckLayerAvailability`) on the two repositories | The host pulls images. It cannot push or delete them. |
+| `EcrPull` | Pull actions (`BatchGetImage`, `GetDownloadUrlForLayer`, `BatchCheckLayerAvailability`) on the three repositories | The host pulls images. It cannot push or delete them. |
 | `ReadAppSecrets` | `secretsmanager:GetSecretValue` on the three app secrets and the RDS master secret | The start script reads them and injects them as container environment. |
 | `ReadAppConfig` and `ReadAppConfigByPath` | `ssm:GetParameters` on each parameter, `ssm:GetParametersByPath` on each config path | The start script reads the non-secret config. Reading by path is authorized against the path itself and the parameters under it, so both forms are listed. |
 | `FilesBucketObjects` | `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on objects of the files bucket | The API stores and reads submissions. There is no `s3:ListBucket` because the API uses known keys. |
+| `ReadHostFiles` | `s3:GetObject` on `host-files/*` of the pipeline artifact bucket | The deploy pipeline publishes the compose file, scripts and Caddyfile there; the host downloads them. Nothing else in that bucket is readable. |
 | `WriteServiceLogs` | `logs:CreateLogStream`, `logs:PutLogEvents` on the three log groups | The Docker `awslogs` driver writes the container logs. |
 
 There is no KMS statement: the secrets use the AWS managed key `aws/secretsmanager`, which any caller allowed to use Secrets Manager can use. If a customer managed key is added later, the role needs `kms:Decrypt` on it.
@@ -332,13 +333,14 @@ The host runs the stack from `/opt/aula`. Keep the relative layout, because the 
 | `/opt/aula/infra/deploy/compose.prod.yaml` and `start-app.sh` (executable) | Copied from `infra/deploy/`. |
 | `/opt/aula/infra/deploy/systemd/` | The two systemd unit files, copied from `infra/deploy/systemd/`. |
 | `/opt/aula/infra/caddy/Caddyfile` | Copied from `infra/caddy/Caddyfile`. |
+| `/opt/aula/infra.prev/` | Only after a pipeline deploy: the previous `infra` tree, kept as the one backup. The pipeline replaces `/opt/aula/infra` as a whole, so do not edit files there by hand. |
 | `/etc/aula-app/deploy.env` | Non-secret inputs for the refresh timer, see below. |
-| `/var/lib/aula-app/deployed-state` | Written by `start-app.sh` after each successful start: three lines `db_secret_version` (the version id of the RDS master secret, not its value), `api_image` and `realtime_image`. Never secrets. |
+| `/var/lib/aula-app/deployed-state` | Written by `start-app.sh` after each successful start: four lines `db_secret_version` (the version id of the RDS master secret, not its value), `api_image`, `realtime_image` and `migrate_image`. Never secrets. |
 | `/var/lib/aula-app/deploy.lock` | Lock file. Only one deployment or refresh runs at a time; another waits up to 5 minutes. It holds no data. |
 
-### Manual deploy with Session Manager (until #58)
+### Manual deploy with Session Manager (fallback)
 
-The images must already be in ECR. Until #58 exists, push them by hand (`docker login` to ECR, then `docker push`) with a `release-*` tag such as `release-2026-11-16-1`; tags are immutable, so each push needs a new tag. Then, in a [Session Manager shell](#reach-the-host-with-session-manager):
+The normal path is the [deploy pipeline](#deploy-pipeline-codepipeline-and-codebuild). Use this procedure only to prepare a new host (the pipeline needs `/opt/aula`, `/etc/aula-app/deploy.env` and the timer: steps 1, 3 and 5), or when the pipeline is unavailable. The images must already be in ECR: the pipeline pushes them, or push them by hand (`docker login` to ECR, then `docker build` and `docker push` for `api`, `realtime` and `migrate`, the last built with `--target migrate`) with a `release-*` tag such as `release-2026-11-16-1`; tags are immutable, so each push needs a new tag. Then, in a [Session Manager shell](#reach-the-host-with-session-manager):
 
 1. Become root and create the folders:
 
@@ -369,17 +371,18 @@ The images must already be in ECR. Until #58 exists, push them by hand (`docker 
 
    Do not put secrets or image values here; the refresh reuses the images recorded in the state file.
 
-4. First deploy, with the full image URIs (the repository URLs are in `terraform output ecr_repository_urls`, followed by `:<tag>`):
+4. Deploy, with the full image URIs (the repository URLs are in `terraform output ecr_repository_urls`, followed by `:<tag>`; the three images share one tag):
 
    ```sh
    /opt/aula/infra/deploy/start-app.sh \
      --name-prefix aula-virtual-prod --region us-east-2 \
      --api-image <api repository url>:<release tag> \
      --realtime-image <realtime repository url>:<release tag> \
+     --migrate-image <migrate repository url>:<release tag> \
      --site-address <output host_sslip_domain>
    ```
 
-   The script reads the config from SSM and the secrets from Secrets Manager with the instance role, logs in to ECR, and runs `docker compose up -d --wait`. If something is missing it stops with a message that names the item, never a value. `docker login` keeps the ECR token (valid about 12 hours) in root's Docker config (`~/.docker/config.json`). To update later, run it again with the new image URIs.
+   The script reads the config from SSM and the secrets from Secrets Manager with the instance role, logs in to ECR, runs the one-shot `migrate` service (database migrations) and then `docker compose up -d --wait`. If something is missing it stops with a message that names the item, never a value. `docker login` keeps the ECR token (valid about 12 hours) in root's Docker config (`~/.docker/config.json`). To update later, run it again with the new image URIs. `--migrate-image` is required: a host whose state file has no `migrate_image` (deployed before the migrate service existed) must be deployed once with it. If the Caddyfile changed, add `--recreate-caddy`, because the running Caddy container keeps the old file mounted.
 
 5. Install the rotation refresh (next section):
 
@@ -395,9 +398,9 @@ The images must already be in ECR. Until #58 exists, push them by hand (`docker 
 
 AWS rotates the RDS master password about every 7 days, and `DATABASE_URL` is built once when the stack starts. The timer `app-db-refresh.timer` runs `start-app.sh --refresh-if-rotated` two minutes after boot and every 10 minutes. It does nothing while the secret version equals the one in the state file; after a rotation it redeploys the api with the new password, using the images recorded in the state file (so it never rolls back to older images). **Until the timer fires after a rotation, new api database connections can fail, for up to about 10 minutes.** Check the timer with `systemctl list-timers app-db-refresh.timer` and the last run with `journalctl -u app-db-refresh.service`.
 
-### Roll back
+### Roll back (manual)
 
-There is no automatic rollback: if `docker compose up --wait` fails, the script exits with an error and the stack stays in whatever state Compose left it. To go back, run `start-app.sh` again with the image URIs of the previous `release-*` tag (as in step 4). That also becomes the recorded state, so later refreshes keep it. The old image must still exist in ECR; the lifecycle keeps the newest 20 release images.
+There is no automatic rollback: if `docker compose up --wait` fails, the script exits with an error and the stack stays in whatever state Compose left it. To go back by hand, run `start-app.sh` again with the three image URIs of the previous `release-*` tag (as in step 4). That also becomes the recorded state, so later refreshes keep it. The old images must still exist in ECR; the lifecycle keeps the newest 20 release images. The full procedure, including the database implications, is in [Roll back a release](#roll-back-a-release).
 
 ### Delete the files bucket
 
@@ -421,18 +424,139 @@ Back up anything that must be kept before step 2: noncurrent versions are the on
 | CloudWatch Logs | about USD 0.50 per GB ingested and USD 0.03 per GB-month stored; depends entirely on log volume | unknown, likely under USD 1 at low traffic |
 | S3 files bucket | about USD 0.023 per GB-month plus requests; depends on uploads | unknown, likely under USD 1 at low usage |
 
-Not included: data transfer out and the API request charges of each service.
+Not included: data transfer out and the API request charges of each service. The [pipeline](#estimated-monthly-cost-of-the-pipeline) has its own estimate.
 
 ### Known follow-ups
 
 Not fixed in #61:
 
 - Use `sslmode=verify-full` with the RDS certificate bundle. Today it is `require`, which encrypts but does not verify the server; this would also close the risk that someone able to write SSM parameters could redirect the database connection.
-- Roll back automatically when `docker compose up --wait` fails.
+- Roll back automatically when `docker compose up --wait` fails. The pipeline restores the previous host files when `start-app.sh` fails, and a failed migration leaves the running containers untouched, but containers already recreated are not rolled back.
 - Read the realtime config after the refresh early exit, so a no-op timer tick has one less failure mode.
 - Add script tests for a malformed `DB_SECRET_ARN` and an out-of-range `DB_PORT`, and keep the validation regexes of the script and of Terraform in sync.
 - Remove the now-redundant `compact()` in `envs/prod/main.tf`, and centralize the repeated mock overrides in the test files if Terraform supports it.
 - The `scripts/ci` tests that need PyYAML are skipped where it is not installed; decide whether CI installs it.
+
+## Deploy pipeline (CodePipeline and CodeBuild)
+
+Issue #58 (decision [D19](../docs/technical-justification.md#d19-keyless-deploy-pipeline-inside-aws)) adds a pipeline that deploys the backend from AWS itself, with no long-lived keys and no GitHub OIDC provider. It is declared in `envs/prod` through `modules/delivery_pipeline` and covered by `terraform test` with a mocked AWS provider. **It has not been applied to AWS yet**: the first apply happens from the merged `develop` (see [One-time setup](#one-time-setup-after-the-first-apply)).
+
+### What it is
+
+The pipeline `aula-virtual-prod-backend` is a CodePipeline **V2** pipeline in `QUEUED` mode. A push to `develop` of `Agustin742/integratec-final-back` starts it, through a CodeConnections GitHub connection. In `QUEUED` mode a push that arrives while a run waits for approval or deploys waits its turn, so two runs never apply or deploy at the same time. **Every run stops at the manual approval, even when the plan has no changes.**
+
+| Stage | Action | CodeBuild project, buildspec and role | What it does |
+|-------|--------|---------------------------------------|--------------|
+| Source | `Source` | none (CodeConnections) | Downloads the commit of `develop` as a zip. |
+| Plan | `Plan` | `aula-virtual-prod-terraform-plan`, `infra/pipeline/buildspecs/terraform-plan.yml`, role `aula-virtual-prod-terraform-plan-role` | Runs `terraform plan` of `infra/envs/prod`, prints it in the build log and saves it as `tfplan`. |
+| Approval | `ApprovePlan` | none (manual) | Waits for a person to approve or reject. |
+| Apply | `Apply` | `aula-virtual-prod-terraform-apply`, `terraform-apply.yml`, role `aula-virtual-prod-terraform-apply-role` | Applies exactly the saved `tfplan`; it never plans again. Terraform refuses a plan that is stale (the state changed after the plan), which fails the build on purpose. |
+| Images | `Images` | `aula-virtual-prod-images`, `images.yml`, role `aula-virtual-prod-images-role` | Builds the `api`, `realtime` and `migrate` images and pushes them to ECR as `release-<UTC yyyymmdd>-<short sha>`. An image that already exists (a retried run) is skipped, because ECR tags are immutable. |
+| Deploy | `Deploy` | `aula-virtual-prod-deploy`, `deploy.yml`, role `aula-virtual-prod-deploy-role` | Packs the host files, sends `infra/pipeline/scripts/host-deploy.sh` to the host with SSM Run Command, waits for it, then checks `https://<site>/api/health` and `/realtime/health`. |
+
+The pipeline itself uses the role `aula-virtual-prod-backend-role`. All four CodeBuild projects use the `general1.small` compute type and the managed image `aws/codebuild/amazonlinux-x86_64-standard:5.0`; only `images` runs in privileged mode, which Docker needs. Their logs go to the CloudWatch log group `/aula-virtual-prod/codebuild` (14 days). The pipeline artifacts (source zip, saved plan and the host files tarball) live in a private artifact bucket with SSE-S3 and a 30-day expiry.
+
+**Inputs that Terraform injects** (no values here; the repository is public and some of them hold the account ID). All are plain, non-secret CodeBuild environment variables:
+
+| Project | Variables |
+|---------|-----------|
+| plan | `TF_STATE_BUCKET`, `TF_VAR_region`, `TF_VAR_project`, `TF_VAR_enable_github_oidc`, `TF_VAR_allowed_origins`, `TF_VAR_password_reset_url_base` |
+| apply | `TF_STATE_BUCKET` (Terraform takes every other value from the saved plan) |
+| images | `ECR_REGISTRY`, `ECR_REPOSITORY_API`, `ECR_REPOSITORY_REALTIME`, `ECR_REPOSITORY_MIGRATE` |
+| deploy | `INSTANCE_ID`, `ARTIFACT_BUCKET`, `SITE_ADDRESS`, plus `API_IMAGE`, `REALTIME_IMAGE`, `MIGRATE_IMAGE` and `IMAGE_TAG`, which the pipeline takes from the variables exported by the `Images` action |
+
+Because the plan reads `allowed_origins` and `password_reset_url_base` from the module inputs, changing either value needs **one local `terraform apply`** to update the project; after that, the pipeline plan equals the local one.
+
+### Permissions
+
+| Role | Can do | Cannot do |
+|------|--------|-----------|
+| plan | Read every managed service (`ReadOnlyAccess`), read the state, take the state lock, write its logs and artifacts. | Change infrastructure. Reading secret values and the uploaded files is explicitly denied. |
+| apply | Change what the prod root manages (EC2 and network, RDS, IAM roles and policies named `aula-virtual-prod-*`, ECR, S3, SSM, Secrets Manager containers, log groups, Amplify, CodeConnections, CodeBuild, CodePipeline), and read and write the state. | Read secret values or the files bucket objects. |
+| images | Write its logs, read the source artifact, push to the three image repositories (`ecr:GetAuthorizationToken` is on `*`, the only value AWS accepts). | Anything else in ECR or any other service. |
+| deploy | Write its logs, read the source artifact, publish `host-files/` in the artifact bucket, run `AWS-RunShellScript` on the **one** host instance, read and cancel that command. | Run commands on any other instance. |
+| pipeline | Use the one GitHub connection, move artifacts through the artifact bucket, start and watch the four projects. | Anything the builds themselves do; they use their own roles. |
+
+**Known trade-off (D19).** The apply role has to be broad, because the Terraform code can create any kind of resource, including IAM roles, so it can modify **its own role**. Anyone who controls the Terraform code that an approved plan was built from can escalate. It is mitigated, not removed, by approving a **saved plan** (what you read is what runs) and by the branch protection of `develop`. Read every plan before approving, and treat `develop` as the trust boundary.
+
+### One-time setup after the first apply
+
+Do this only after the change is merged to `develop` (apply from the merged `develop`, never from an unmerged branch).
+
+1. **Apply locally.** From `infra/envs/prod` on the updated `develop`, run `terraform plan -out=prod.tfplan`, read it (it must only add resources), then `terraform apply prod.tfplan`. This creates the pipeline, the projects, the roles, the artifact bucket and the GitHub connection. **The connection is created in the `PENDING` state**: AWS cannot log in to GitHub for you, so a person has to authorize it once.
+2. **Check the host is ready.** The pipeline updates a host that already runs the stack, so `/opt/aula`, `/etc/aula-app/deploy.env` and the refresh timer must exist (they were set up with the [manual deploy](#manual-deploy-with-session-manager-fallback)). The host role gets read access to the artifact bucket from the same apply.
+3. **Complete the GitHub handshake in the AWS console** (region `us-east-2`; this is the one step Terraform cannot do):
+   1. Open the console and go to **Developer Tools > Settings > Connections** (search for "Developer Tools").
+   2. Select the connection created by Terraform (its ARN is `terraform output pipeline_connection_arn`) and choose **Update pending connection**.
+   3. A window opens to GitHub. Sign in with the account that owns the repository, choose **Install a new app** (or select the existing AWS Connector for GitHub app), and grant it access to `Agustin742/integratec-final-back`. Only that repository is needed.
+   4. Back in AWS, choose **Connect**. The connection now shows **Available**.
+4. **Check the status from the terminal.** Terraform reads it on the next refresh, so run `terraform apply -refresh-only` if the value is stale, or just run:
+
+   ```sh
+   terraform output pipeline_connection_status    # must print AVAILABLE
+   ```
+
+5. **Start the first run.** A push to `develop` starts a run by itself. To start one now, open **CodePipeline > Pipelines > `aula-virtual-prod-backend`** and choose **Release change** (or run `aws codepipeline start-pipeline-execution --region us-east-2 --name "$(terraform output -raw pipeline_name)"`). The run stops at the approval; follow [How to approve](#how-to-approve).
+
+Until step 3 is done, the `Source` action fails with a message about the connection, and nothing else runs.
+
+### How to approve
+
+When the run reaches the **Approval** stage, the pipeline waits for a person. Nothing is applied before that.
+
+1. Open **CodePipeline > Pipelines > `aula-virtual-prod-backend`**. The `Plan` action shows **Succeeded** and `ApprovePlan` shows **Waiting for approval**.
+2. **Read the plan.** It is in the build log of the `Plan` action: choose **Details** on that action (or **View in CodeBuild**, or follow the link on the approval, which opens the history of the plan project), then the build log. Everything after `terraform show` is the full plan.
+3. **What to look for:**
+   - A summary of `Plan: X to add, Y to change, Z to destroy`. For a code-only change it should say `No changes`.
+   - **Any destroy or replace (`must be replaced`, `-/+`) of a stateful resource must be called out and understood before approving:** the RDS instance, the EBS volume and the host instance, the files bucket, the state bucket, the secrets, the ECR repositories. The database and the files bucket have `prevent_destroy` and the plan fails for them, but the host replacement or a secret deletion do not stop on their own.
+   - Changes to IAM roles or policies, security groups or anything that opens a port.
+   - Anything you did not expect from the commit that started the run.
+4. Choose **Review** on the approval, write a short comment, and **Approve** or **Reject**.
+
+**Reject, or let it time out, and nothing changes.** The `Plan` build only wrote a saved plan into the artifact bucket; Apply, Images and Deploy never start, and the run fails at the Approval stage. The default wait is 1440 minutes (24 hours, variable `approval_timeout_minutes`, 5 minutes to 7 days). The next push to `develop` starts a new run with a fresh plan. Because the plan is saved and the apply uses that file, a change to the infrastructure after the plan (a local apply, for example) makes the apply fail with a stale plan error instead of applying something nobody read: reject, and run again.
+
+### Migrations
+
+Database migrations run on the host, not in the pipeline, because the database is private and a build inside the VPC would need a NAT gateway. `start-app.sh` logs in to ECR and runs the one-shot `migrate` service of `compose.prod.yaml` on its own (`docker compose run --rm --no-deps migrate`, which executes `prisma migrate deploy` with the same `DATABASE_URL` as the api), and only then `docker compose up -d --wait`. The api starts after the migrations succeeded, so a new migration is applied automatically before the new code runs.
+
+**A failed migration leaves the running stack untouched.** The script exits with an error before `up`, the current api and realtime containers keep running, the deployed state file is not updated and the Deploy stage fails, with the migration output in the build log. Fix the migration and push again. A migration that fails halfway can leave the database partly changed; check the migration table before retrying. The same step runs on a manual deploy, so a manual redeploy migrates too.
+
+### Roll back a release
+
+There is no automatic rollback. Choose the way that fits:
+
+1. **Revert and push (preferred).** Revert the faulty change in Git and push it to `develop`. The pipeline runs again, shows the plan, and ships a new release built from the corrected code. This is the only way that also rolls back infrastructure changes, with the usual approval.
+2. **Run the pipeline for an older commit.** Start an execution with a specific source revision, `aws codepipeline start-pipeline-execution --region us-east-2 --name aula-virtual-prod-backend --source-revisions actionName=Source,revisionType=COMMIT_ID,revisionValue=<full commit sha>`. Read the plan carefully: it plans that commit's Terraform against the current state, so it may propose to undo infrastructure changes made since.
+3. **Redeploy a previous `release-*` tag by hand** (fastest, touches no infrastructure). In a [Session Manager shell](#reach-the-host-with-session-manager), as root, run `start-app.sh` with the previous tag for all three images, `--api-image`, `--realtime-image` and `--migrate-image`, as in the [manual deploy](#manual-deploy-with-session-manager-fallback). The tags of earlier releases are in ECR (`aws ecr describe-images --repository-name aula-virtual-prod-api --query 'sort_by(imageDetails,&imagePushedAt)[].imageTags'`); the newest 20 `release-*` images are kept. That also becomes the recorded state, so the refresh timer keeps it. The host files in `/opt/aula/infra` stay those of the latest pipeline deploy; **`/opt/aula/infra.prev`** holds the tree of the deploy before it, and you can run its `deploy/start-app.sh` if the older release needs the older files. Nothing in ECR or on the host is deleted by a roll back.
+
+**Database migrations are forward-only.** The pipeline never runs a down migration, and rolling the code back does not undo a migration that was already applied. A release that went out with a destructive or data-changing migration cannot be undone by redeploying old code: restore from the [backups](#backups-and-restore) (point-in-time restore creates a new instance) or write a new forward migration. Follow [rules/data.md](../rules/data.md) for migrations that change data, so that the previous release still works with the new schema (expand first, contract in a later release). Rolling back to a release older than the applied migrations is only safe when the old code tolerates the newer schema.
+
+### Estimated monthly cost of the pipeline
+
+Prices below were read from the official AWS pages on **2026-11-18**. Region differences are noted where the page did not show `us-east-2`.
+
+| Item | Price and free tier (source) |
+|------|------------------------------|
+| CodePipeline V2 | USD 0.002 per action execution minute, rounded up; 100 free action execution minutes per month shared by all V2 pipelines, not carried over. Manual approval is not billed; every other action, CodeBuild included, is. Source: [CodePipeline pricing](https://aws.amazon.com/codepipeline/pricing/). |
+| CodeBuild `general1.small` (Linux) | About USD 0.005 per build minute (the rate of the page's own on-demand example; the page shows no per-region table); 100 free build minutes per month for `general1.small` and `arm1.small`, which the page says do not expire after the 12-month Free Tier term. Source: [CodeBuild pricing](https://aws.amazon.com/codebuild/pricing/). |
+| CloudWatch Logs (Standard) | USD 0.50 per GB ingested in the first tier (page values are for US East, N. Virginia); 5 GB per month free. The storage rate was not read. Source: [CloudWatch pricing](https://aws.amazon.com/cloudwatch/pricing/). |
+| S3 | The storage price table was not in the page text that could be read, so the figure below is an unverified recollection of about USD 0.023 per GB-month. Source: [S3 pricing](https://aws.amazon.com/s3/pricing/). |
+| CodeConnections | No price was found: the pricing page of the service does not exist at the usual address and the CodePipeline pricing page does not list a connection charge. Treated as unknown, expected to be USD 0. |
+
+**Assumed usage:** 20 pipeline runs per month, each with about 15 CodeBuild minutes (plan 3, apply 2, images 8, deploy 2) plus 1 minute for the Source action. The approval wait is not billed.
+
+| Item | Arithmetic | Monthly cost |
+|------|------------|--------------|
+| CodeBuild | 20 x 15 = 300 min; 300 - 100 free = 200 min x USD 0.005 | about USD 1.00 |
+| CodePipeline | 20 x 16 = 320 action minutes; 320 - 100 free = 220 min x USD 0.002 | about USD 0.44 |
+| CloudWatch Logs | 20 runs x about 2 MB = about 40 MB, far under the 5 GB free tier | USD 0 |
+| S3 artifacts | 20 runs x about 10 MB = about 200 MB for at most 30 days x USD 0.023 per GB | under USD 0.01 |
+| Total with the free tiers | | **about USD 1.5** |
+| Total with no free tier | 300 x 0.005 + 320 x 0.002 | about USD 2.2 |
+
+Running more often scales linearly: each extra 15-minute run adds about USD 0.1 once the free minutes are used. The new ECR repository for the `migrate` image adds a little storage (see the [deployment resources estimate](#estimated-monthly-cost-of-the-deployment-resources-unverified)).
+
+**What could be verified and what is unknown.** The unit prices and the free-tier amounts of CodePipeline and CodeBuild come from the pages above. **Not verified for this account:** this account uses the AWS "new sign-up experience" Free plan, which gives USD 100 of credits (up to USD 200 by exploring services) and closes the account after 6 months or when the credits run out, whichever comes first ([AWS Free plan](https://aws.amazon.com/free/), read 2026-11-18). That page says the Free plan covers "select services only" and does not mention CodePipeline, CodeBuild or CodeConnections, so **whether these services can be used at all on the Free plan, whether the free minutes above apply to it and whether their charges draw from the credits is unknown**. Check the account's Billing page after the first runs. The pipeline fails safely if a service is blocked: nothing is applied or deployed.
 
 ## Frontend hosting (AWS Amplify)
 
@@ -449,7 +573,7 @@ The frontend (`integratec-final-front`) is served by AWS Amplify Hosting in `us-
 
 **Why there is no token.** `access_token` and `oauth_token` are never set: Terraform would store them in the state file, and AWS does not keep them either. The existing GitHub App connection needs neither, and the AWS provider documents omitting `access_token` when importing an existing app. The tests fail if the module ever sets a token, `custom_headers`, `build_spec` or basic auth credentials.
 
-The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret origins belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output); override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss origins) when a real domain exists.
+The variables are public: every `VITE_*` value is compiled into the browser bundle, so only non-secret URLs belong there. `VITE_API_BASE_URL` and `VITE_REALTIME_URL` are derived from the host sslip.io name (`host_sslip_domain`), so they follow the Elastic IP (the same local as that output), plus the paths Caddy serves: `https://<host>.sslip.io/api` and `wss://<host>.sslip.io/realtime` (`infra/caddy/Caddyfile` strips the `/api` and `/realtime` prefixes before the services). Override them with `frontend_api_base_url` and `frontend_realtime_url` (https and wss base URLs with an optional path, no trailing slash, query or fragment) when a real domain exists, keeping the same path if it still sits behind that Caddy. After changing them, start an Amplify build by hand (see [Rebuild after changing the origins](#rebuild-after-changing-the-origins)).
 
 ### Import
 
@@ -503,9 +627,9 @@ Until step 4 finishes, the frontend is down.
 
 `envs/prod` can create the `token.actions.githubusercontent.com` OIDC provider and the role `aula-virtual-prod-github-actions` (output `github_actions_role_arn`).
 
-**Disabled by default.** The variable `enable_github_oidc` defaults to `false`, so none of these resources are planned and `github_actions_role_arn` is `null`. The reason: the current AWS account was created with the "Sign up for AWS (new)" experience, and an AWS-managed service control policy denies `iam:CreateOpenIDConnectProvider` (the policies cannot be edited unless the account's advanced features are activated, which needs a paid plan, removes the spend limit, and is irreversible). Until then, Terraform is applied locally with short-lived `aws login` credentials and there is no pipeline deployment; long-lived access keys are never an alternative (decision D6).
+**Disabled by default.** The variable `enable_github_oidc` defaults to `false`, so none of these resources are planned and `github_actions_role_arn` is `null`. The reason: the current AWS account was created with the "Sign up for AWS (new)" experience, and an AWS-managed service control policy denies `iam:CreateOpenIDConnectProvider` (the policies cannot be edited unless the account's advanced features are activated, which needs a paid plan, removes the spend limit, and is irreversible). This role **stays disabled**: [D19](../docs/technical-justification.md#d19-keyless-deploy-pipeline-inside-aws) supersedes it for delivery, because the [deploy pipeline](#deploy-pipeline-codepipeline-and-codebuild) runs inside AWS with service roles and needs no OIDC provider. GitHub Actions keeps static checks only and holds no AWS credentials. Long-lived access keys are never an alternative (decision D6).
 
-To enable it later, after the restriction is lifted: set `enable_github_oidc = true` (for example in the git-ignored `terraform.tfvars`), review the plan, apply, and copy the `github_actions_role_arn` output into the workflow below.
+It would only be enabled for a future need the pipeline does not cover, after the restriction is lifted: set `enable_github_oidc = true` (for example in the git-ignored `terraform.tfvars`), review the plan, apply, and copy the `github_actions_role_arn` output into the workflow below.
 
 | Control | Value |
 |---------|-------|
@@ -544,8 +668,10 @@ Test convention: every `*.tftest.hcl` in `envs/prod/tests` carries the same `ove
 | State locking | S3 native lockfile | Supported since Terraform 1.10; avoids a DynamoDB table. |
 | State bucket creation | Separate `bootstrap/` root with local state | The bucket cannot hold its own state; isolating it keeps `prod` fully remote. |
 | Region | `us-east-2` | Assigned to the account by AWS from the contact country and enforced by managed service control policies; it cannot be changed (D5). |
-| CI role creation | Behind `enable_github_oidc`, default `false` | The managed policies deny creating the OIDC provider in this account (D6). |
-| CI role trust | `main` branch only | Only reviewed, merged code can touch AWS. Pull request plans need a separate read-only role (see below). |
+| CI role creation | Behind `enable_github_oidc`, default `false` | The managed policies deny creating the OIDC provider in this account (D6). Delivery no longer needs it (D19). |
+| Delivery | CodePipeline V2 and CodeBuild inside AWS, trigger on `develop`, manual approval of a saved plan | No long-lived keys and no OIDC provider; what is approved is what is applied (D19). |
+| Migrations | One-shot `migrate` Compose service on the host, before the api | RDS is private; avoids a VPC-attached build and a NAT gateway (D19). |
+| CI role trust | `main` branch only (role disabled) | Only reviewed, merged code can touch AWS. Kept for reference; the pipeline uses its own roles. |
 | Environments | `prod` only | No other environment is agreed yet (open decision in the IaC rule). |
 
 ## Not managed here
@@ -555,10 +681,12 @@ Test convention: every `*.tftest.hcl` in `envs/prod/tests` carries the same `ove
 | AWS account, sign-in, and the operator role used by `aws login` | Agustin | Account-level identity is created before Terraform and is not project infrastructure. |
 | `bootstrap/` local state file | Agustin | Bootstrap exception: it cannot live in the bucket it creates. |
 | GitHub repository settings (branch protection, required checks, the role ARN as a variable) | Agustin | Configured in GitHub, not in AWS. |
+| GitHub connection of the deploy pipeline (CodeConnections) | Agustin | Terraform creates it `PENDING`; the GitHub App handshake is completed once in the console, see [One-time setup](#one-time-setup-after-the-first-apply). |
 | GitHub connection of the Amplify app (GitHub App installation) | Agustin | Authorized once in the Amplify console; Terraform manages the app and branch, not the connection. See [Frontend hosting](#frontend-hosting-aws-amplify). |
 
 ## Known gaps
 
-- **GitHub OIDC is not available in the current account**, so CI cannot deploy and there is no CI role yet; see [GitHub Actions OIDC role](#github-actions-oidc-role).
-- **`terraform plan` in CI is not implemented yet.** The IaC rule requires CI to run `plan` and the plan to be reviewed. That needs a read-only role whose trust accepts pull requests, which is deferred to the pipeline issue. Until then, changes are planned locally and the plan output is summarized in the pull request.
+- **GitHub OIDC is not available in the current account**, so GitHub Actions cannot deploy; delivery goes through the [deploy pipeline](#deploy-pipeline-codepipeline-and-codebuild) instead (D19). The pipeline is not applied yet.
+- **Pull requests have no `terraform plan`.** The pipeline plans on every push to `develop` and a person reads that plan before approving, but a pull request is only validated and tested in CI (no AWS access). Plans of a change are run locally and summarized in the pull request.
+- **The apply role is broad** (it can change every kind of resource of the prod root, including its own role); see [Permissions](#permissions).
 - Actions in the workflow are pinned by tag, not by commit SHA. SHA pinning should be applied to the whole workflow in one change.

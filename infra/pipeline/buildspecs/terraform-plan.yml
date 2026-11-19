@@ -1,0 +1,32 @@
+# CodeBuild buildspec of the `terraform-plan` project (decision D19).
+# Plans infra/envs/prod and saves the plan. The build log prints the plan: it is what the
+# person approving the pipeline reviews. The plan and the infra tree are exported so the
+# apply project applies exactly this plan.
+# TF_STATE_BUCKET and the TF_VAR_* values are injected by Terraform as project environment
+# variables (the repository is public and the bucket name holds the account ID).
+version: 0.2
+
+env:
+  variables:
+    # Keep equal to terraform_version in .github/workflows/ci.yml (scripts/ci/test_pipeline_buildspecs.py).
+    TERRAFORM_VERSION: '1.16.6'
+    TF_IN_AUTOMATION: 'true'
+
+phases:
+  install:
+    commands:
+      - bash infra/pipeline/scripts/install-terraform.sh
+  build:
+    commands:
+      - cd infra/envs/prod
+      - terraform init -input=false -lockfile=readonly -backend-config="bucket=$TF_STATE_BUCKET"
+      - terraform plan -input=false -lock-timeout=5m -out=tfplan
+      - terraform show -no-color tfplan
+
+artifacts:
+  # The whole infra tree (modules, lock file, buildspecs and the saved plan) without the
+  # provider binaries, which the apply build downloads again against the same lock file.
+  files:
+    - 'infra/**/*'
+  exclude-paths:
+    - 'infra/**/.terraform/**/*'

@@ -13,15 +13,20 @@ import {
 import { RequestConflictException } from '../http/conflict';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
-import { RequestValidationException } from '../http/validation';
+import { createValidationPipe, RequestValidationException } from '../http/validation';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { submissionWindow } from '../submissions/submission-window';
 import {
   ACTIVITY_LIMITS,
   ACTIVITY_SORT_OPTIONS,
+  ACTIVITY_WORK_STATUSES,
+  type ActivityWorkStatus,
+  type StudentActivitySummaryDto,
   type ActivitySummaryDto,
   type CreateActivityDto,
-  type ListActivitiesQueryDto,
+  ListActivitiesQueryDto,
+  StaffListActivitiesQueryDto,
   type QuestionInputDto,
   type StudentActivityResponseDto,
   type TeacherActivityResponseDto,
@@ -224,6 +229,28 @@ function assertPublishable(
   }
 }
 
+/** Same predicates drive page selection and total; dueAt equality is on time (D16). */
+function studentStatusWhere(
+  actorId: string,
+  status: ActivityWorkStatus | undefined,
+  now: Date,
+): Prisma.ActivityWhereInput {
+  switch (status) {
+    case 'graded':
+      return { submissions: { some: { studentId: actorId, grade: { isNot: null } } } };
+    case 'submitted':
+      return { submissions: { some: { studentId: actorId, grade: { is: null } } } };
+    case 'overdue':
+    case 'pending':
+      return {
+        submissions: { none: { studentId: actorId } },
+        dueAt: status === 'overdue' ? { lt: now } : { gte: now },
+      };
+    default:
+      return {};
+  }
+}
+
 @Injectable()
 export class ActivitiesService {
   constructor(
@@ -266,9 +293,37 @@ export class ActivitiesService {
   async list(
     actorId: string,
     classroomId: string,
-    query: ListActivitiesQueryDto,
-  ): Promise<Paginated<ActivitySummaryDto>> {
-    const access = await this.verifyReadAccess(actorId, classroomId);
+    rawQuery: unknown,
+  ): Promise<Paginated<ActivitySummaryDto | StudentActivitySummaryDto>> {
+    // Reuse the HTTP baseline's whitelist, transformation, defaults and exception factory.
+    // A raw query is necessary: global validation cannot choose the whitelist by role.
+    const validateQuery = (staff: boolean): Promise<ListActivitiesQueryDto> =>
+      createValidationPipe().transform(rawQuery, {
+        type: 'query',
+        metatype: staff ? StaffListActivitiesQueryDto : ListActivitiesQueryDto,
+      });
+    let access: ClassroomAccessResult;
+    try {
+      access = await this.verifyReadAccess(actorId, classroomId);
+    } catch (error) {
+      // Preserve global-pipe error precedence: invalid common parameters still produce
+      // 400 before a permission error, while valid queries retain the original 403/404.
+      await validateQuery(false);
+      throw error;
+    }
+    const staff = isStaff(access);
+    const query = await validateQuery(staff);
+    if (query.status !== undefined) {
+      if (!ACTIVITY_WORK_STATUSES.includes(query.status)) {
+        throw new RequestValidationException([
+          {
+            field: 'status',
+            messages: [`status must be one of: ${ACTIVITY_WORK_STATUSES.join(', ')}`],
+          },
+        ]);
+      }
+    }
+    const now = new Date();
     const sort = parseSort(query.sort, ACTIVITY_SORT_OPTIONS);
     const where: Prisma.ActivityWhereInput = {
       classroomId,
@@ -280,6 +335,45 @@ export class ActivitiesService {
           : {}
         : { state: ActivityState.PUBLISHED }),
     };
+    if (!staff) {
+      Object.assign(where, studentStatusWhere(actorId, query.status, now));
+      const [rows, total] = await this.prisma.$transaction(
+        async (tx) =>
+          Promise.all([
+            tx.activity.findMany({
+              where,
+              ...toSkipTake(query),
+              orderBy: [{ [sort.field]: sort.direction }, { id: 'asc' }],
+              select: {
+                ...SUMMARY_SELECT,
+                // Only existence is needed, never answers, files, scores or classmates' records.
+                submissions: {
+                  where: { studentId: actorId },
+                  select: { grade: { select: { id: true } } },
+                },
+              },
+            }),
+            tx.activity.count({ where }),
+          ]),
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+      const items: StudentActivitySummaryDto[] = rows.map((row) => {
+        const submission = row.submissions[0];
+        const overdue = now.getTime() > row.dueAt.getTime();
+        return {
+          ...toSummary(row),
+          status: submission
+            ? submission.grade
+              ? 'graded'
+              : 'submitted'
+            : overdue
+              ? 'overdue'
+              : 'pending',
+          canSubmit: !submission && submissionWindow(row, now).open,
+        };
+      });
+      return paginated(items, total, query);
+    }
     const [rows, total] = await Promise.all([
       this.prisma.activity.findMany({
         where,

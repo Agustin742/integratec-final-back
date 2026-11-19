@@ -145,24 +145,24 @@ variable "frontend_branch" {
 }
 
 variable "frontend_api_base_url" {
-  description = "HTTPS origin of the API compiled into the frontend as VITE_API_BASE_URL. Null derives it from the host sslip.io name."
+  description = "HTTPS base URL of the API compiled into the frontend as VITE_API_BASE_URL, with an optional path and no trailing slash. Null derives https://<host sslip.io name>/api, the route Caddy serves the API on."
   type        = string
   default     = null
 
   validation {
-    condition     = var.frontend_api_base_url == null || can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.frontend_api_base_url))
-    error_message = "frontend_api_base_url must be an https origin without path or trailing slash."
+    condition     = var.frontend_api_base_url == null || can(regex("^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*$", var.frontend_api_base_url)) && !can(regex("/[.]+(/|$)", var.frontend_api_base_url))
+    error_message = "frontend_api_base_url must be an https base URL with an optional path, without trailing slash, query or fragment, such as https://api.example.com/api."
   }
 }
 
 variable "frontend_realtime_url" {
-  description = "Secure WebSocket origin of the realtime service compiled into the frontend as VITE_REALTIME_URL. Null derives it from the host sslip.io name."
+  description = "Secure WebSocket base URL of the realtime service compiled into the frontend as VITE_REALTIME_URL, with an optional path and no trailing slash. Null derives wss://<host sslip.io name>/realtime, the route Caddy serves realtime on."
   type        = string
   default     = null
 
   validation {
-    condition     = var.frontend_realtime_url == null || can(regex("^wss://[A-Za-z0-9.-]+(:[0-9]{1,5})?$", var.frontend_realtime_url))
-    error_message = "frontend_realtime_url must be a wss origin without path or trailing slash."
+    condition     = var.frontend_realtime_url == null || can(regex("^wss://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~-]+)*$", var.frontend_realtime_url)) && !can(regex("/[.]+(/|$)", var.frontend_realtime_url))
+    error_message = "frontend_realtime_url must be a wss base URL with an optional path, without trailing slash, query or fragment, such as wss://api.example.com/realtime."
   }
 }
 

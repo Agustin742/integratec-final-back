@@ -60,6 +60,14 @@ locals {
       Resource = "${var.s3_bucket_arn}/*"
     },
     {
+      # The deploy pipeline (D19) publishes the tarball of the host files here; the host
+      # downloads and verifies it. Read access to that prefix only, no listing.
+      Sid      = "ReadHostFiles"
+      Effect   = "Allow"
+      Action   = "s3:GetObject"
+      Resource = "${var.host_files_bucket_arn}/host-files/*"
+    },
+    {
       # Since AWS provider v4 the log group arn has no ":*" suffix, but log stream
       # permissions apply to "<group arn>:*".
       Sid    = "WriteServiceLogs"

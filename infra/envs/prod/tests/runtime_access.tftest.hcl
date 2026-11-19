@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The delivery pipeline module builds role and project ARNs from the account ID, and
+  # CodeBuild validates them; the mock would return a random string, so it is pinned.
+  override_data {
+    target = module.delivery_pipeline.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
   # The mock returns random strings for data sources and ARNs, so the values the SSM
   # path ARNs are built from are pinned to well-formed ones.
   override_data {
@@ -160,8 +169,8 @@ run "role_policy_is_attached_to_the_host_role" {
   }
 
   assert {
-    condition     = toset(keys(module.runtime_access.policy_statements)) == toset(["EcrAuthToken", "EcrPull", "ReadAppSecrets", "ReadAppConfig", "ReadAppConfigByPath", "FilesBucketObjects", "WriteServiceLogs"])
-    error_message = "The policy must have exactly the statements EcrAuthToken, EcrPull, ReadAppSecrets, ReadAppConfig, ReadAppConfigByPath, FilesBucketObjects and WriteServiceLogs."
+    condition     = toset(keys(module.runtime_access.policy_statements)) == toset(["EcrAuthToken", "EcrPull", "ReadAppSecrets", "ReadAppConfig", "ReadAppConfigByPath", "FilesBucketObjects", "ReadHostFiles", "WriteServiceLogs"])
+    error_message = "The policy must have exactly the statements EcrAuthToken, EcrPull, ReadAppSecrets, ReadAppConfig, ReadAppConfigByPath, FilesBucketObjects, ReadHostFiles and WriteServiceLogs."
   }
 
   assert {
@@ -170,7 +179,7 @@ run "role_policy_is_attached_to_the_host_role" {
   }
 }
 
-run "ecr_pull_is_limited_to_the_two_repositories" {
+run "ecr_pull_is_limited_to_the_three_repositories" {
   command = apply
 
   assert {
@@ -179,8 +188,8 @@ run "ecr_pull_is_limited_to_the_two_repositories" {
   }
 
   assert {
-    condition     = toset(module.runtime_access.policy_statements["EcrPull"].Resource) == toset(values(module.registry.repository_arns)) && length(module.runtime_access.policy_statements["EcrPull"].Resource) == 2
-    error_message = "ECR pull must be scoped to the ARNs of the api and realtime repositories."
+    condition     = toset(module.runtime_access.policy_statements["EcrPull"].Resource) == toset(values(module.registry.repository_arns)) && length(module.runtime_access.policy_statements["EcrPull"].Resource) == 3
+    error_message = "ECR pull must be scoped to the ARNs of the api, realtime and migrate repositories."
   }
 
   assert {
@@ -269,6 +278,20 @@ run "bucket_access_is_object_level_only" {
   }
 }
 
+run "host_files_access_is_read_only_on_the_host_files_prefix" {
+  command = apply
+
+  assert {
+    condition     = module.runtime_access.policy_statements["ReadHostFiles"].Action == "s3:GetObject"
+    error_message = "The host may only read host files: s3:GetObject, no put, no delete, no listing."
+  }
+
+  assert {
+    condition     = module.runtime_access.policy_statements["ReadHostFiles"].Resource == "${module.delivery_pipeline.artifact_bucket_arn}/host-files/*"
+    error_message = "Host file reads must be scoped to the host-files/ prefix of the pipeline artifact bucket."
+  }
+}
+
 run "log_groups_are_named_by_prefix_and_kept_14_days" {
   command = apply
 
@@ -353,6 +376,7 @@ run "rejects_invalid_name_prefix" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.name_prefix]
@@ -373,6 +397,7 @@ run "rejects_empty_secret_list" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.secret_arns]
@@ -393,6 +418,7 @@ run "rejects_invalid_retention" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
     retention_in_days       = 10
   }
 
@@ -414,6 +440,7 @@ run "rejects_bucket_arn_that_is_not_an_s3_arn" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "aula-virtual-prod-files-bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -434,6 +461,7 @@ run "rejects_wildcard_secret_arn" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.secret_arns]
@@ -454,6 +482,7 @@ run "rejects_wildcard_bucket_arn" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::*"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -474,7 +503,29 @@ run "rejects_object_path_bucket_arn" {
     ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket/prefix"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
   }
 
   expect_failures = [var.s3_bucket_arn]
+}
+
+run "rejects_wildcard_or_object_path_host_files_bucket_arn" {
+  command = plan
+
+  module {
+    source = "../../modules/runtime_access"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    role_name               = "r"
+    ecr_repository_arns     = { api = "arn:aws:ecr:us-east-2:123456789012:repository/a" }
+    secret_arns             = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:a"]
+    ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
+    ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
+    s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts/host-files"
+  }
+
+  expect_failures = [var.host_files_bucket_arn]
 }

@@ -15,7 +15,7 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 | Frontend hosting | Amplify Hosting | Serves the static build over HTTPS; owned by the frontend repository |
 | Public entry | Caddy reverse proxy on the EC2 host | Terminates TLS with automatic Let's Encrypt certificates; redirects HTTP to HTTPS; routes API paths to NestJS and the reserved path or host to Colyseus with WebSocket upgrade; the only public listener (decision D13, see [Technical justification](../docs/technical-justification.md#d13-production-compute-on-a-single-ec2-host)) |
 | Compute | One EC2 host (`t3.small`, Amazon Linux 2023) running Docker Compose | Containers `caddy`, `api` (NestJS), and `realtime` (Colyseus); Lambda **MUST NOT** host Colyseus rooms |
-| Images | ECR | Versioned images per service, published by CI and pulled by the host |
+| Images | ECR | Versioned images per service, published by the CodeBuild pipeline and pulled by the host |
 | Database | RDS for PostgreSQL | Private subnets; reachable only from authorized services |
 | AI | Amazon Bedrock | Invoked from NestJS only |
 | Objects | S3 | Access controlled from the backend; bucket not public by default |
@@ -50,10 +50,10 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 ## Delivery
 
-- Each repository **MUST** own its pipeline. Backend CI builds and publishes images to ECR, and the deploy stage runs `docker compose up -d` on the host through SSM Run Command followed by a health check; release evidence follows [Deployment and operations](./deployment-and-operations.md).
+- Each repository **MUST** own its pipeline. The backend pipeline (CodePipeline and CodeBuild inside AWS, decision D19) builds and publishes images to ECR, and the deploy stage runs `docker compose up -d` on the host through SSM Run Command followed by a health check; release evidence follows [Deployment and operations](./deployment-and-operations.md).
 - Images **MUST** be reproducible from a commit and tagged with an immutable identifier, not only `latest`.
-- Pipeline credentials **MUST** use GitHub Actions OIDC federation to an IAM role; long-lived IAM user access keys **MUST NOT** be stored in GitHub Secrets (decision D6, approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d6-pipeline-authentication-to-aws)).
-- Database migrations in deployment **MUST** follow the plan required by [Data](./data.md).
+- The deploy pipeline **MUST** run in AWS CodePipeline and CodeBuild with IAM service roles, triggered through an AWS CodeConnections GitHub connection. Long-lived IAM user access keys **MUST NOT** exist in GitHub, the repository or the pipeline (decisions D6 and D19; see [Technical justification](../docs/technical-justification.md#d19-keyless-deploy-pipeline-inside-aws)).
+- Database migrations in deployment **MUST** follow the plan required by [Data](./data.md) and run through the one-shot `migrate` Compose service on the host, which **MUST** complete successfully before the api starts (D19).
 
 ## Observability and cost
 
