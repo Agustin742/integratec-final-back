@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityState, Prisma } from '@prisma/client';
+import { ActivityFormat, ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessRole,
@@ -10,10 +10,12 @@ import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { conflict } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
+import { StreakService } from '../gamification/streak.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
+import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
 import {
   type AcceptedSubmissionFile,
@@ -151,6 +153,8 @@ export class SubmissionsService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly outbox: OutboxWriter,
+    private readonly streaks: StreakService,
+    private readonly metrics: MetricRecordingService,
   ) {}
 
   /**
@@ -459,6 +463,8 @@ export class SubmissionsService {
           },
           select: SUBMISSION_SELECT,
         });
+        // Same transaction as the row: the metric exists if and only if the submission commits.
+        await this.metrics.recordSubmission(tx, { classroomId, userId: studentId, at: now });
         if (!isLate) {
           // Same transaction as the row: the event exists if and only if the submission commits.
           const payload: SubmissionOnTimePayload = {
@@ -470,6 +476,14 @@ export class SubmissionsService {
             submittedAt: row.submittedAt.toISOString(),
           };
           await this.outbox.record(tx, { type: SUBMISSION_ON_TIME_EVENT, payload });
+          // The on-time submission is the day's qualifying activity (RN-08): the
+          // streak day is unique per (student, local day), so repeated or
+          // concurrent same-day submissions count once.
+          await this.streaks.recordQualifying(tx, {
+            studentId,
+            source: StreakQualifyingSource.ON_TIME_SUBMISSION,
+            at: row.submittedAt,
+          });
         }
         return { created: true, row };
       } catch (error) {

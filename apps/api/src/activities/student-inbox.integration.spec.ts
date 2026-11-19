@@ -167,6 +167,8 @@ describe('student inbox PostgreSQL HTTP — card #29 S2-S5', () => {
                   grade: {
                     create: {
                       graderId: teacher,
+                      activityTitle: title,
+                      maxScore: 100,
                       score: 0,
                       feedback: 'Private feedback',
                       pointsAwarded: 0,

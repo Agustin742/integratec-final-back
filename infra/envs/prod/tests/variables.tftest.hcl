@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The delivery pipeline module builds role and project ARNs from the account ID, and
+  # CodeBuild validates them; the mock would return a random string, so it is pinned.
+  override_data {
+    target = module.delivery_pipeline.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -35,8 +44,9 @@ mock_provider "aws" {
 }
 
 variables {
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 run "defaults_target_prod_in_us_east_2" {

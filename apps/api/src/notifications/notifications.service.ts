@@ -50,6 +50,11 @@ export class NotificationsService {
 
   /** Reusable by future reads: check every stored context, not just classroom membership. */
   async hasCurrentAccess(request: NotificationRequest): Promise<boolean> {
+    if (request.classroomId === undefined) {
+      // Classroom-free notices are self-owned events (badge awards): the
+      // recipient is the event's own student, so no shared context is checked.
+      return request.kind === 'badge_awarded' && request.studentId === request.recipientId;
+    }
     try {
       const result = request.studentId
         ? await this.access.verifyStudentResourceAccess(
@@ -76,10 +81,17 @@ export class NotificationsService {
       by: ['classroomId', 'studentId', 'kind'],
       where: { recipientId },
     });
-    const allowed: Prisma.NotificationWhereInput[] = [];
+    // Classroom-free notices (badge awards) are self-owned and need no shared access check.
+    const allowed: Prisma.NotificationWhereInput[] = contexts.filter(
+      (context) => context.classroomId === null && context.kind === 'badge_awarded',
+    );
+    const classroomContexts = contexts.filter(
+      (context): context is typeof context & { classroomId: string } =>
+        context.classroomId !== null,
+    );
     // Cap concurrent shared-service checks. Repeated notices in a context cost one check.
-    for (let offset = 0; offset < contexts.length; offset += 4) {
-      const batch = contexts.slice(offset, offset + 4);
+    for (let offset = 0; offset < classroomContexts.length; offset += 4) {
+      const batch = classroomContexts.slice(offset, offset + 4);
       const decisions = await Promise.all(
         batch.map((context) => {
           const parsed = notificationRequestSchema.safeParse({
@@ -130,7 +142,7 @@ export class NotificationsService {
       notificationRequestSchema.safeParse({
         kind: row.kind,
         resourceId: row.resourceId,
-        classroomId: row.classroomId,
+        classroomId: row.classroomId ?? undefined,
         recipientId,
         studentId: row.studentId ?? undefined,
       });
@@ -185,7 +197,7 @@ export class NotificationsService {
     if (notification.kind !== 'announcement') return null;
     const request = notificationRequestSchema.safeParse({
       kind: notification.kind,
-      classroomId: notification.classroomId,
+      classroomId: notification.classroomId ?? undefined,
       resourceId: notification.resourceId,
       recipientId: notification.recipientId,
       studentId: notification.studentId ?? undefined,

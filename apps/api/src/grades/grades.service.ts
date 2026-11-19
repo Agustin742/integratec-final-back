@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityType, Prisma } from '@prisma/client';
+import { ActivityFormat, ActivityType, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessResult,
@@ -13,6 +13,7 @@ import { toIsoString } from '../http/iso-string';
 import { RequestValidationException } from '../http/validation';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
+import { isExamPassed, StreakService } from '../gamification/streak.service';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -211,6 +212,7 @@ export class GradesService {
     private readonly access: AccessVerificationService,
     private readonly pointsLedger: PointsLedgerService,
     private readonly notifications: NotificationRecorder,
+    private readonly streaks: StreakService,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
   ) {}
 
@@ -288,6 +290,9 @@ export class GradesService {
             graderId: actorId,
             score: dto.score,
             feedback: dto.feedback,
+            // Snapshot of the activity at grading time: later edits never rewrite the card.
+            activityTitle: activity.title,
+            maxScore: activity.maxScore,
             pointsAwarded,
             typeWeight: new Prisma.Decimal(typeWeight.toFixed(2)),
             weightMultiplier: new Prisma.Decimal(activity.weightMultiplier.toString()),
@@ -316,6 +321,22 @@ export class GradesService {
           recipientId: submission.studentId,
           studentId: submission.studentId,
         });
+
+        // A passed exam is a qualifying activity (RN-08), credited to the day
+        // the student SUBMITTED it, not the grading day: late grading never
+        // credits a day the student did nothing. The streak day is unique per
+        // (student, local day), so repeated evaluations count once. The
+        // passing threshold is an open decision disclosed in docs/gamification.md.
+        if (
+          mapActivityType(activity.type) === ActivityType.EXAM &&
+          isExamPassed(dto.score, activity.maxScore)
+        ) {
+          await this.streaks.recordQualifying(tx, {
+            studentId: submission.studentId,
+            source: StreakQualifyingSource.EXAM_PASSED,
+            at: submission.submittedAt,
+          });
+        }
 
         return toGradeResponseDto(created, activity.id, submission.studentId);
       });
@@ -491,6 +512,10 @@ export class GradesService {
           graderId: actorId,
           score: dto.score,
           feedback: dto.feedback,
+          // Refresh the activity snapshot to the regrading-time values (the score was just
+          // validated against the current maxScore, so the card stays coherent).
+          activityTitle: activity.title,
+          maxScore: activity.maxScore,
           // Net actually credited, so later regrades compute their delta against it.
           pointsAwarded: currentGrade.pointsAwarded + appliedDelta,
           pointTransactionId: nextGradePointTransactionId,
@@ -519,6 +544,21 @@ export class GradesService {
         recipientId: submission.studentId,
         studentId: submission.studentId,
       });
+
+      // A regrade that lifts an exam to a passing score qualifies exactly like
+      // the initial grade (RN-08), on the student's submission day, so
+      // regrading on another day never adds a new day; a regrade that lowers
+      // it below the threshold never revokes an already-counted day.
+      if (
+        mapActivityType(activity.type) === ActivityType.EXAM &&
+        isExamPassed(dto.score, activity.maxScore)
+      ) {
+        await this.streaks.recordQualifying(tx, {
+          studentId: submission.studentId,
+          source: StreakQualifyingSource.EXAM_PASSED,
+          at: submission.submittedAt,
+        });
+      }
 
       return {
         response: toGradeResponseDto(updated, activity.id, submission.studentId),
@@ -800,9 +840,9 @@ export class GradesService {
     tx: Prisma.TransactionClient,
     submissionId: string,
     activityId: string,
-  ): Promise<{ id: string; studentId: string }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; studentId: string }>>`
-      SELECT "id", "student_id" AS "studentId"
+  ): Promise<{ id: string; studentId: string; submittedAt: Date }> {
+    const rows = await tx.$queryRaw<Array<{ id: string; studentId: string; submittedAt: Date }>>`
+      SELECT "id", "student_id" AS "studentId", "submitted_at" AS "submittedAt"
       FROM "submissions"
       WHERE "id" = ${submissionId}::uuid AND "activity_id" = ${activityId}::uuid
       FOR UPDATE

@@ -11,6 +11,10 @@ async function main(): Promise<void> {
   // grades / grade_revisions reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
   await prisma.$executeRaw`TRUNCATE TABLE "grade_revisions", "grades", "classroom_items", "student_purchases", "point_transactions"`;
   await prisma.equippedItem.deleteMany();
+  await prisma.studentBadge.deleteMany();
+  await prisma.streakQualifyingDay.deleteMany();
+  await prisma.streak.deleteMany();
+  await prisma.badgeDefinition.deleteMany();
   await prisma.submissionFile.deleteMany();
   await prisma.submission.deleteMany();
   await prisma.option.deleteMany();
@@ -250,6 +254,38 @@ async function main(): Promise<void> {
         isActive: true,
         isImplemented: false,
         metadata: { assetId: 'pet_scarf', planned: true },
+      },
+    ],
+  });
+
+  // 7. Test badge catalog for the idempotent awarding mechanism (HU-GAM-002).
+  // The real medal catalog, its conditions, and its rewards are open (gap 18);
+  // these synthetic entries exist so the mechanism is demonstrable and testable.
+  await prisma.badgeDefinition.createMany({
+    data: [
+      {
+        code: 'streak_3',
+        name: 'Three-Day Study Streak',
+        description: 'Reach a study streak of 3 consecutive qualifying days.',
+        conditionType: 'STREAK_REACHED',
+        threshold: 3,
+        isActive: true,
+      },
+      {
+        code: 'streak_7',
+        name: 'Week of Constancy',
+        description: 'Reach a study streak of 7 consecutive qualifying days.',
+        conditionType: 'STREAK_REACHED',
+        threshold: 7,
+        isActive: true,
+      },
+      {
+        code: 'active_days_5',
+        name: 'Five Study Days',
+        description: 'Complete qualifying study activity on 5 different days.',
+        conditionType: 'QUALIFYING_DAYS_REACHED',
+        threshold: 5,
+        isActive: true,
       },
     ],
   });

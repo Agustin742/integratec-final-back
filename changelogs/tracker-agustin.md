@@ -1,5 +1,64 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Review fixes on PR #106 (streak and badges, #33)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/submissions/submissions.module.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/gamification/streak.service.ts`, `apps/api/src/gamification/gamification.integration.spec.ts`, `apps/api/prisma/migrations/20261118000000_create_streaks_and_badges/`
+- **Change:** Merged `develop` (with #105) into the PR branch, keeping both the metric and the streak dependencies in submissions. An out-of-order qualifying day (transactions committing across the local-day boundary in reverse order) now records the day without moving the chain or the last day backwards. The streak migration is renamed after the #105 migrations so the history stays ordered.
+- **Reason:** Review findings posted on PR #106: the chain could reset on a late commit, and the old timestamp sorted before migrations already in `develop`.
+- **Exam streak day:** a passed exam now credits the day the student submitted it (`submission.submittedAt`), not the grading day, so late grading or a regrade on another day never adds a day.
+- **Next step:** CI on PR #106, then merge into `develop`.
+
+## 2026-11-19 — Revert avatar wardrobe ids and new default outfit (#115)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
+- **Change:** Reverts #116. The contract and the default avatar are back to the previous ids (`afro`/`dreads`/`original`, `hoodie`/`tank`/`tshirt`).
+- **Reason:** The new avatar models were rejected and their authoring is on hold, so the merged ids and the new default had no models in the frontend. New users would get a default the frontend cannot render. Stored appearances that fail validation already fall back to the default when read, so no data migration is needed.
+- **Next step:** Review and PR to `develop`; reintroduce the ids when the models exist.
+
+## 2026-11-19 — Avatar wardrobe ids and new default outfit (#115)
+
+- **Status:** reverted (merged in #116, reverted because the models are on hold)
+- **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
+- **Change:** Added top `sweater-shirt-tie` (both bodies), male hair `short-messy`/`buzz`/`curls` and female hair `ponytail`/`bob`/`bun` to the avatar contract; the default avatar for users without a stored one is now `short-messy` hair with `sweater-shirt-tie`. Previously accepted ids stay valid, so saved avatars are unaffected; the OpenAPI enums are derived from `BASE_OPTIONS`.
+- **Reason:** The frontend avatar rebuild introduces these ids and the new default outfit; the contract must accept them first.
+- **Next step:** Review and PR to `develop`; later remove the discarded ids once their replacements land; frontend `api:sync`.
+
+## 2026-11-18 — Keyless deploy pipeline applied and verified (#58, T9)
+
+- **Status:** done (#58 closed; PRs #111, #112 merged)
+- **Area / files:** `infra/pipeline/buildspecs/images.yml`, `scripts/ci/test_pipeline_buildspecs.py`, `infra/README.md`
+- **Change:** Local `terraform apply` from `develop` created the pipeline (26 resources added, 1 changed); the GitHub connection handshake was completed in the console. The first run failed in Images because CodeBuild runs each buildspec command in its own shell, so `build_and_push` was undefined in the later commands; #112 keeps the function and its calls in one command and adds tests that run each command in a separate shell. The next run, started automatically by the merge to `develop`, succeeded end to end: clean plan, images `release-20261118-6bd8544`, migrations before the stack, `/api/health` and `/realtime/health` return 200, `migrate` runs as `node`.
+- **Reason:** Finish #58 by proving the pipeline in AWS, not only in tests.
+- **Next step:** none for #58. Spanish diagram docs still describe OIDC deploy.
+
+## 2026-11-18 — Keyless deploy pipeline inside AWS (#58), T1-T8
+
+- **Status:** merged (PR #111); applied and verified in the T9 entry above
+- **Area / files:** `docs/technical-justification.md` (D19), `rules/`, `apps/api/Dockerfile`, `infra/deploy/` (`compose.prod.yaml`, `start-app.sh`), `infra/modules/delivery_pipeline/`, `infra/pipeline/` (buildspecs and scripts), `infra/envs/prod/`, `infra/README.md`, `scripts/ci` tests
+- **Change:** CodePipeline V2 (`aula-virtual-prod-backend`, QUEUED, push to `develop`) with Source, Plan, manual Approval, Apply of the saved plan, Images and Deploy through SSM Run Command, plus a one-shot `migrate` service that runs before the api. Done so far, one line each:
+  - T1 `39129aa`: decision D19 and infrastructure rules.
+  - T2 `ee974ec`, `b82b43e`: `migrate` image target, Compose service and ECR repository; start-app.sh migrates before recreating the api.
+  - T3 `ceec064`: CodeConnections link, artifact bucket, CodeBuild log group.
+  - T4 `d718986`: Terraform plan and apply CodeBuild projects, roles and buildspecs.
+  - T5 `8b5de15`: images project that builds and pushes `release-<date>-<sha>` images.
+  - T6 `3451c7c`, `79a1108`: SSM deploy stage, host files from the artifact, Caddy recreate on Caddyfile change, host read access to the artifact bucket.
+  - T7 `dc3f844`: pipeline wiring and role; apply build timeout raised to 120 minutes.
+  - T8 (this commit): `infra/README.md` documents the flow, one-time console handshake, approval, migrations, roll back, permissions and a cost estimate; the manual deploy is now the documented fallback.
+- **Reason:** The account SCP denies the GitHub OIDC provider, and production ran with an empty schema because no deploy step ran migrations.
+- **Open points for the PR:** nothing is applied yet, so the apply-dependent checks are unverified (ReadOnlyAccess coverage of the plan role, `jq` in the CodeBuild image, `migrate` image running as non-root, the first end-to-end run). The cost estimate (about USD 1.5 per month at 20 runs) uses official prices read on 2026-11-18; whether the Free plan credits cover CodePipeline, CodeBuild and CodeConnections is unknown. Spanish diagram docs still describe OIDC (`docs/diagrams/02-system-architecture/deployment-and-network.md`, `docs/diagrams/05-reference/gaps.md`).
+- **Next step:** PR review. Then T9 after merge to `develop`: local apply, console handshake of the GitHub connection, first pipeline run verified end to end.
+
+## 2026-11-17 — Frontend API and realtime base URLs include the Caddy paths (#22)
+
+- **Status:** in review once the PR opens (branch `fix/22-frontend-base-url-paths`; not pushed yet)
+- **Area / files:** `infra/envs/prod/` (`main.tf`, `variables.tf`, `tests/frontend_hosting.tftest.hcl`), `infra/modules/frontend_hosting/variables.tf`, `infra/README.md`
+- **Change:** The derived build variables are now `VITE_API_BASE_URL=https://<host>.sslip.io/api` and `VITE_REALTIME_URL=wss://<host>.sslip.io/realtime`, the routes Caddy serves with the prefix stripped (`infra/caddy/Caddyfile`). The validations in the prod root and the Amplify module accept an https (wss) base URL with an optional path, and still reject http/ws, a trailing slash, a query, a fragment, whitespace and dot-only segments. Error messages and descriptions say "base URL" instead of "origin". Tests cover the new defaults, overrides with and without a path, and the rejections; `terraform test` has 164 passing tests in `envs/prod`.
+- **Reason:** On the live host `POST /auth/login` returns 404 and `POST /api/auth/login` returns 400, so the deployed frontend could not reach the API or realtime service.
+- **Open points for the PR:** the `VITE_*` values are compiled into the bundle, so the fix only reaches users after a new Amplify build.
+- **Next step:** merge, apply from `develop`, start an Amplify build with `aws amplify start-job --job-type RELEASE`, then smoke check login and realtime from the Amplify URL.
+
 ## 2026-11-17 — Review fixes on the grading PR (#98, issue #32)
 
 - **Status:** in review (fixes applied on Luis's branch `feat/32-grade-submissions`; not pushed yet, waiting on the decision owner's OK)

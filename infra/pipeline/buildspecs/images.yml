@@ -1,0 +1,53 @@
+# CodeBuild buildspec of the `images` project (decision D19).
+# Builds the api, migrate and realtime images from the repository root and pushes them to ECR
+# with the immutable tag release-<UTC date>-<short commit id>. The tag and the three image URIs
+# are exported as variables: the deploy stage reads them through the action namespace.
+# ECR_REGISTRY and the ECR_REPOSITORY_* names are injected by Terraform as project environment
+# variables (the registry host holds the account ID and the repository is public).
+version: 0.2
+
+env:
+  shell: bash
+  exported-variables:
+    - IMAGE_TAG
+    - API_IMAGE
+    - REALTIME_IMAGE
+    - MIGRATE_IMAGE
+
+phases:
+  pre_build:
+    commands:
+      - test -n "${CODEBUILD_RESOLVED_SOURCE_VERSION:-}" || { echo "CODEBUILD_RESOLVED_SOURCE_VERSION is empty; the image tag needs the source commit id" >&2; exit 1; }
+      - export IMAGE_TAG="release-$(date -u +%Y%m%d)-${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+      - export API_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_API}:${IMAGE_TAG}"
+      - export REALTIME_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_REALTIME}:${IMAGE_TAG}"
+      - export MIGRATE_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY_MIGRATE}:${IMAGE_TAG}"
+      # The password travels on stdin, so it never appears in the process list or the build log.
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  build:
+    commands:
+      # build_and_push <repository> <image URI> <dockerfile> [extra docker build args...]
+      # ECR tags are IMMUTABLE: an image that already exists (a retried run of the same
+      # commit) is neither rebuilt nor pushed. Only "image not found" lets the build go on;
+      # any other describe error (permissions, throttling, wrong repository) fails it.
+      # CodeBuild runs each command entry in a separate shell, so the function and its
+      # callers must share one entry.
+      - |
+        build_and_push() {
+          local repository="$1" image="$2" dockerfile="$3"
+          shift 3
+          local found
+          if found="$(aws ecr describe-images --repository-name "$repository" --image-ids "imageTag=${IMAGE_TAG}" 2>&1)"; then
+            echo "${image} already exists; skipping build and push"
+            return 0
+          fi
+          if ! grep -q "ImageNotFoundException" <<<"$found"; then
+            echo "$found" >&2
+            return 1
+          fi
+          docker build --file "$dockerfile" "$@" --tag "$image" . &&
+            docker push "$image"
+        }
+        build_and_push "$ECR_REPOSITORY_API" "$API_IMAGE" apps/api/Dockerfile &&
+          build_and_push "$ECR_REPOSITORY_MIGRATE" "$MIGRATE_IMAGE" apps/api/Dockerfile --target migrate &&
+          build_and_push "$ECR_REPOSITORY_REALTIME" "$REALTIME_IMAGE" apps/realtime/Dockerfile

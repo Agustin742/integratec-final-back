@@ -68,8 +68,8 @@ class ComposeStructureTests(unittest.TestCase):
         self.doc = load()
         self.services = self.doc["services"]
 
-    def test_exactly_the_three_services(self):
-        self.assertEqual(set(self.services), {"caddy", "api", "realtime"})
+    def test_exactly_the_four_services(self):
+        self.assertEqual(set(self.services), {"caddy", "api", "realtime", "migrate"})
 
     def test_one_private_bridge_network_shared_by_all(self):
         self.assertEqual(len(self.doc["networks"]), 1)
@@ -92,6 +92,7 @@ class ComposeStructureTests(unittest.TestCase):
     def test_app_images_come_from_required_interpolation(self):
         self.assertRegex(self.services["api"]["image"], r"^\$\{API_IMAGE:\?[^}]+\}$")
         self.assertRegex(self.services["realtime"]["image"], r"^\$\{REALTIME_IMAGE:\?[^}]+\}$")
+        self.assertRegex(self.services["migrate"]["image"], r"^\$\{MIGRATE_IMAGE:\?[^}]+\}$")
 
     def test_caddy_mounts_the_caddyfile_read_only_and_persists_certificates(self):
         volumes = self.services["caddy"]["volumes"]
@@ -102,7 +103,8 @@ class ComposeStructureTests(unittest.TestCase):
 
     def test_restart_policy(self):
         for name, service in self.services.items():
-            self.assertEqual(service["restart"], "unless-stopped", name)
+            expected = "no" if name == "migrate" else "unless-stopped"
+            self.assertEqual(service["restart"], expected, name)
 
     def test_awslogs_driver_with_the_terraform_log_groups(self):
         for name, service in self.services.items():
@@ -110,10 +112,24 @@ class ComposeStructureTests(unittest.TestCase):
             self.assertEqual(logging["driver"], "awslogs", name)
             options = logging["options"]
             self.assertRegex(options["awslogs-region"], r"^\$\{AWS_REGION:\?[^}]+\}$", name)
-            self.assertRegex(options["awslogs-group"], r"^\$\{LOG_GROUP_PREFIX:\?[^}]+\}/" + name + "$")
+            group = "api" if name == "migrate" else name  # migrate logs into the api group
+            self.assertRegex(options["awslogs-group"], r"^\$\{LOG_GROUP_PREFIX:\?[^}]+\}/" + group + "$")
             self.assertNotIn("awslogs-create-group", options, "Terraform owns the groups and their retention")
             self.assertEqual(options["mode"], "non-blocking", name)
             self.assertIn("tag", options)
+
+    def test_migrate_is_a_one_shot_without_ports_or_healthcheck_and_has_its_own_log_stream(self):
+        migrate = self.services["migrate"]
+        self.assertEqual(migrate["restart"], "no")
+        self.assertNotIn("ports", migrate)
+        self.assertNotIn("healthcheck", migrate)
+        self.assertEqual(migrate["environment"], ["DATABASE_URL"])
+        self.assertNotEqual(migrate["logging"]["options"]["tag"], self.services["api"]["logging"]["options"]["tag"])
+
+    def test_api_waits_for_the_migrations_to_complete(self):
+        self.assertEqual(
+            self.services["api"]["depends_on"], {"migrate": {"condition": "service_completed_successfully"}}
+        )
 
     def test_health_checks_use_the_real_endpoints_with_a_binary_in_the_image(self):
         for name, port in (("api", 3000), ("realtime", 2567)):
@@ -184,6 +200,7 @@ class ComposeRenderTests(unittest.TestCase):
     ENV = {
         "API_IMAGE": "111122223333.dkr.ecr.us-east-2.amazonaws.com/p/api:release-1",
         "REALTIME_IMAGE": "111122223333.dkr.ecr.us-east-2.amazonaws.com/p/realtime:release-1",
+        "MIGRATE_IMAGE": "111122223333.dkr.ecr.us-east-2.amazonaws.com/p/migrate:release-1",
         "SITE_ADDRESS": "203-0-113-10.sslip.io",
         "AWS_REGION": "us-east-2",
         "LOG_GROUP_PREFIX": "/p",
@@ -215,9 +232,10 @@ class ComposeRenderTests(unittest.TestCase):
         self.assertIn("DATABASE_URL", services["api"]["environment"])
         self.assertNotIn("DATABASE_URL", services["realtime"]["environment"])
         self.assertNotIn("JWT_SECRET", services["realtime"]["environment"])
+        self.assertEqual(set(services["migrate"]["environment"]), {"DATABASE_URL"})
 
     def test_missing_required_inputs_fail_closed(self):
-        for name in ("API_IMAGE", "REALTIME_IMAGE", "SITE_ADDRESS", "AWS_REGION", "LOG_GROUP_PREFIX"):
+        for name in ("API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE", "SITE_ADDRESS", "AWS_REGION", "LOG_GROUP_PREFIX"):
             env = {k: v for k, v in self.ENV.items() if k != name}
             full = {k: v for k, v in os.environ.items() if k != name}
             full.update(env)
