@@ -72,7 +72,7 @@ export class DailyMetricDto {
 
   @ApiProperty({
     description:
-      'Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships.',
+      'Classroom-channel participation that day: classroom chat messages sent (RF-COM-002).',
   })
   messageCount!: number;
 }

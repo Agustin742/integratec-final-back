@@ -62,7 +62,7 @@ export class StudentMetricsController {
     summary: "Read the authenticated student's own daily activity metrics",
     description:
       'Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel ' +
-      'messages. No composite level is computed (gap 17 stays open); messageCount stays 0 until chat ships.',
+      'messages. No composite level is computed (gap 17 stays open); messageCount counts classroom chat messages sent that day.',
   })
   @ApiPaginatedResponse(DailyMetricDto, 'Raw daily metric rows, latest day first.')
   myDailyMetrics(

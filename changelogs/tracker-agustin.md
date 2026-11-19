@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Review fixes on PR #110 (classroom chat, #38)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/chat/chat.service.ts`, `apps/api/src/chat/chat.module.ts`, `apps/api/src/chat/chat-send.integration.spec.ts`, `apps/api/src/metrics/`, `apps/api/openapi.json`, `docs/classroom-chat.md`, `apps/api/prisma/migrations/20261118000100_create_classroom_messages/`
+- **Change:** The merge of `develop` (d8fedd0) renamed the chat migration to `20261118000100_create_classroom_messages` because of a timestamp collision. A successful send now records the participation metric (`messageCount`) inside the send transaction, using the persisted message instant; rejected sends record nothing. The metrics wording that said `messageCount` stays 0 until chat ships was updated.
+- **Reason:** `MetricRecordingService.recordMessage` (#105) was left for chat to call, so `messageCount` never moved.
+- **Later fixes:** the seed reset now clears classroom messages (323c0e8), and `ChatService.send` takes a non-blocking advisory lock so a concurrent send for the same user and classroom returns 429 instead of queueing and pinning pooled connections; the concurrency tests assert invariants (at most five persisted, rejections persist nothing) and a new test holds the lock from another connection.
+- **Next step:** CI on PR #110 (the new integration test needs PostgreSQL and was not run locally), then merge into `develop`.
+
 ## 2026-11-19 — Review fixes on PR #107 (student inbox, #29)
 
 - **Status:** in-progress

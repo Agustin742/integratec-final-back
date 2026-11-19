@@ -1399,6 +1399,195 @@
         "tags": ["announcements"]
       }
     },
+    "/classrooms/{id}/messages": {
+      "get": {
+        "description": "Current students and staff only; parents denied. Latest first (createdAt DESC, id DESC). Students omit hidden rows and their mentions; staff retain full text and audit. Visible rows have null hiddenAt/hiddenById. Count, items and mentions share a repeatable-read snapshot. Only page/pageSize queries are accepted.",
+        "operationId": "ChatController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/ChatHistoryMessageDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or unsupported query.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read classroom chat history",
+        "tags": ["chat"]
+      },
+      "post": {
+        "description": "Current students and teaching staff only; parents denied. Muted classrooms reject students but allow staff. Message, resolved mentions and notification requests commit atomically before any future broadcast (#48). At most 5 sends per rolling 10 seconds per user/classroom, including staff and hidden messages. Only body is accepted; author and time are server-assigned.",
+        "operationId": "ChatController_send",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/SendMessageDto" } }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatMessageDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid body, excess mentions or unknown fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent role or student in muted classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Five messages already admitted in the rolling ten-second window, or another send for the same user and classroom is in flight.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Send a classroom chat message",
+        "tags": ["chat"]
+      }
+    },
+    "/classrooms/{id}/messages/{messageId}": {
+      "delete": {
+        "description": "Current classroom staff only (Owner, Admin or Teacher); students and parents denied. Logical moderation: the server sets the hiddenAt/hiddenById audit pair atomically and the row is never deleted. Repeating moderation returns 204 without overwriting the original actor/time. Independent of the send rate limit. No unhide operation exists.",
+        "operationId": "ChatController_hide",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "description": "Message UUID inside this classroom",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "Message hidden, or already hidden by a first moderation." },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Student or parent role in a visible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom, or unknown/foreign/invalid message UUID in it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Hide a classroom chat message (teacher moderation)",
+        "tags": ["chat"]
+      }
+    },
     "/activities/{activityId}/submissions": {
       "post": {
         "description": "Student only. For a published FILE activity of the student's classroom, uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes). For a published MULTIPLE_CHOICE activity, sends the `answers` field instead: a JSON-encoded array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity; the server grades them and stores the `autoScore` with the submission, and correct answers are never returned. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new and without re-scoring; a different key after a submission exists is 409. Sending files to a MULTIPLE_CHOICE activity, or answers to a FILE activity, is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
@@ -3816,7 +4005,7 @@
     },
     "/classrooms/{id}/me/activity-metrics": {
       "get": {
-        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount stays 0 until chat ships.",
+        "description": "Raw per-UTC-day signals for the caller only: connected seconds, submissions and classroom-channel messages. No composite level is computed (gap 17 stays open); messageCount counts classroom chat messages sent that day.",
         "operationId": "StudentMetricsController_myDailyMetrics",
         "parameters": [
           {
@@ -5115,6 +5304,76 @@
           }
         }
       },
+      "ChatHistoryMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed plain text, never interpreted as HTML."
+          },
+          "mentionedUserIds": {
+            "description": "Distinct resolved active classroom members.",
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server-assigned UTC creation instant."
+          },
+          "hiddenAt": { "type": "string", "format": "date-time", "nullable": true },
+          "hiddenById": { "type": "string", "format": "uuid", "nullable": true }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "authorId",
+          "body",
+          "mentionedUserIds",
+          "createdAt",
+          "hiddenAt",
+          "hiddenById"
+        ]
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "description": "Plain text; 1–2000 characters after trimming. Unsafe control characters are rejected. @Name resolves active classroom members, at most 20 distinct users.",
+            "minLength": 1
+          }
+        },
+        "required": ["body"]
+      },
+      "ChatMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed plain text, never interpreted as HTML."
+          },
+          "mentionedUserIds": {
+            "description": "Distinct resolved active classroom members.",
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server-assigned UTC creation instant."
+          }
+        },
+        "required": ["id", "classroomId", "authorId", "body", "mentionedUserIds", "createdAt"]
+      },
       "CreateSubmissionBodyDto": {
         "type": "object",
         "properties": {
@@ -6383,7 +6642,7 @@
           },
           "messageCount": {
             "type": "number",
-            "description": "Classroom-channel participation events that day. Always 0 until chat (RF-COM-002) ships."
+            "description": "Classroom-channel participation that day: classroom chat messages sent (RF-COM-002)."
           }
         },
         "required": ["day", "connectedSeconds", "submissionCount", "messageCount"]
