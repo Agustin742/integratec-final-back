@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies and compile
-FROM node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS builder
+FROM public.ecr.aws/docker/library/node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS builder
 
 RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
 
@@ -27,8 +27,20 @@ RUN pnpm --filter @aula/contracts build && \
 RUN mkdir -p /prisma-generated && \
     tar -cf - node_modules/.pnpm/@prisma+client*/node_modules/.prisma | tar -xf - -C /prisma-generated
 
-# Stage 2: Production runtime
-FROM node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runner
+# Stage 2: One-shot migration job. Derived from the builder because only it has the Prisma CLI
+# (the runtime stage installs production dependencies only). The host runs it with
+# DATABASE_URL in the environment before the api starts; it applies the committed migrations
+# and exits. It stays above `runner` so that a plain `docker build` still yields the api image.
+FROM builder AS migrate
+
+USER node
+
+WORKDIR /app/apps/api
+
+CMD ["node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+
+# Stage 3: Production runtime
+FROM public.ecr.aws/docker/library/node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runner
 
 WORKDIR /app
 

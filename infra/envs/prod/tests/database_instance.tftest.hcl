@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The delivery pipeline module builds role and project ARNs from the account ID, and
+  # CodeBuild validates them; the mock would return a random string, so it is pinned.
+  override_data {
+    target = module.delivery_pipeline.data.aws_caller_identity.current
+    values = {
+      account_id = "123456789012"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -35,9 +44,10 @@ mock_provider "aws" {
 }
 
 variables {
-  project                 = "aula-virtual"
-  allowed_origins         = ["https://app.example.com"]
-  password_reset_url_base = "https://app.example.com/reset-password"
+  import_existing_frontend = false
+  project                  = "aula-virtual"
+  allowed_origins          = ["https://app.example.com"]
+  password_reset_url_base  = "https://app.example.com/reset-password"
 }
 
 run "instance_engine_and_sizing" {
@@ -93,8 +103,8 @@ run "instance_is_private_encrypted_and_protected" {
   }
 
   assert {
-    condition     = module.database.instance_settings.backup_retention_period == 7
-    error_message = "Backups must be retained for 7 days by default."
+    condition     = module.database.instance_settings.backup_retention_period == 1
+    error_message = "Prod must retain backups for 1 day by default, the limit the AWS Free plan accepts."
   }
 
   assert {
@@ -498,5 +508,18 @@ run "accepts_backup_retention_of_35" {
   assert {
     condition     = aws_db_instance.this.backup_retention_period == 35
     error_message = "The retention of 35 days must be applied."
+  }
+}
+
+run "prod_backup_retention_can_be_raised_on_a_paid_plan" {
+  command = plan
+
+  variables {
+    database_backup_retention_period = 7
+  }
+
+  assert {
+    condition     = module.database.instance_settings.backup_retention_period == 7
+    error_message = "The prod database_backup_retention_period variable must reach the database module."
   }
 }

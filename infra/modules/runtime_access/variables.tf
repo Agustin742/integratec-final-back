@@ -68,6 +68,16 @@ variable "s3_bucket_arn" {
   }
 }
 
+variable "host_files_bucket_arn" {
+  description = "ARN of the pipeline artifact bucket; the deploy pipeline publishes the host files under host-files/ and the host may read only those objects (\"<arn>/host-files/*\")."
+  type        = string
+
+  validation {
+    condition     = length(var.host_files_bucket_arn) > 0 && !strcontains(var.host_files_bucket_arn, "*") && !strcontains(var.host_files_bucket_arn, "/")
+    error_message = "host_files_bucket_arn must be the exact ARN of a bucket, with no wildcards and no object path."
+  }
+}
+
 variable "log_services" {
   description = "Containers that get a CloudWatch log group, named /<name_prefix>/<service>."
   type        = set(string)

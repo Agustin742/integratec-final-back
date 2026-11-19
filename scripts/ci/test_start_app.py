@@ -23,6 +23,7 @@ REGION = "us-east-2"
 REGISTRY = "111122223333.dkr.ecr.us-east-2.amazonaws.com"
 API_IMAGE = f"{REGISTRY}/{PREFIX}/api:release-1"
 REALTIME_IMAGE = f"{REGISTRY}/{PREFIX}/realtime:release-1"
+MIGRATE_IMAGE = f"{REGISTRY}/{PREFIX}/migrate:release-1"
 DB_SECRET_ARN = "arn:aws:secretsmanager:us-east-2:111122223333:secret:rds!db-1234-AbCdEf"
 
 JWT = "jwt-" + "J" * 60
@@ -82,7 +83,9 @@ case "$1" in
   login) echo "login-stdin: $(cat)" >> "$STUB_LOG/docker-login.log" ;;
   compose)
     env > "$STUB_LOG/compose-env.$STUB_RUN"
-    if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi ;;
+    if [ -n "${STUB_COMPOSE_FAIL:-}" ]; then exit 1; fi
+    case " $* " in *" --force-recreate "*) if [ -n "${STUB_RECREATE_FAIL:-}" ]; then exit 1; fi ;; esac
+    case " $* " in *" run "*) if [ -n "${STUB_MIGRATE_FAIL:-}" ]; then exit 1; fi ;; esac ;;
 esac
 """
 
@@ -205,12 +208,13 @@ class BehaviorTests(unittest.TestCase):
         return [
             "--name-prefix", PREFIX, "--region", REGION,
             "--api-image", API_IMAGE, "--realtime-image", REALTIME_IMAGE,
+            "--migrate-image", MIGRATE_IMAGE,
             "--site-address", "203-0-113-10.sslip.io",
         ]
 
     def run_script(self, args=None, extra_env=None):
         self.runs += 1
-        inputs = ("NAME_PREFIX", "AWS_REGION", "API_IMAGE", "REALTIME_IMAGE", "SITE_ADDRESS", "DB_ENDPOINT",
+        inputs = ("NAME_PREFIX", "AWS_REGION", "API_IMAGE", "REALTIME_IMAGE", "MIGRATE_IMAGE", "SITE_ADDRESS", "DB_ENDPOINT",
                   "DB_NAME", "DB_SECRET_ARN", "DB_HOST", "DB_PORT")
         env = dict((k, v) for k, v in os.environ.items() if k not in inputs)
         env.update(STUB_LOG=str(self.logs), STUB_FIXTURES=str(self.fixtures),
@@ -226,6 +230,12 @@ class BehaviorTests(unittest.TestCase):
 
     def compose_calls(self):
         return [c for c in self.log("docker.log") if c.startswith("compose")]
+
+    def up_calls(self):
+        return [c for c in self.compose_calls() if " up " in c]
+
+    def migrate_calls(self):
+        return [c for c in self.compose_calls() if " run " in c]
 
     def state_values(self):
         return dict(line.split("=", 1) for line in self.state.read_text().splitlines())
@@ -243,12 +253,13 @@ class BehaviorTests(unittest.TestCase):
     def test_happy_path_starts_compose_with_the_expected_environment(self):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
-        compose_calls = self.compose_calls()
+        compose_calls = self.up_calls()
         self.assertEqual(len(compose_calls), 1)
         self.assertRegex(compose_calls[0], r"^compose -f \S+compose\.prod\.yaml up -d --remove-orphans --wait")
         env = self.compose_env()
         self.assertEqual(env["API_IMAGE"], API_IMAGE)
         self.assertEqual(env["REALTIME_IMAGE"], REALTIME_IMAGE)
+        self.assertEqual(env["MIGRATE_IMAGE"], MIGRATE_IMAGE)
         self.assertEqual(env["SITE_ADDRESS"], "203-0-113-10.sslip.io")
         self.assertEqual(env["AWS_REGION"], REGION)
         self.assertEqual(env["LOG_GROUP_PREFIX"], f"/{PREFIX}")
@@ -370,10 +381,11 @@ class BehaviorTests(unittest.TestCase):
     def test_missing_or_invalid_inputs_are_usage_errors_without_aws_calls(self):
         base = self.args()
         cases = {}
-        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image", "--site-address"):
+        for flag in ("--name-prefix", "--region", "--api-image", "--realtime-image", "--migrate-image", "--site-address"):
             i = base.index(flag)
             cases[f"missing {flag}"] = base[:i] + base[i + 2:]
         cases["non-ECR image"] = [a if a != API_IMAGE else "docker.io/library/nginx:latest" for a in base]
+        cases["non-ECR migrate image"] = [a if a != MIGRATE_IMAGE else "docker.io/library/nginx:latest" for a in base]
         cases["image without tag"] = [a if a != API_IMAGE else f"{REGISTRY}/{PREFIX}/api" for a in base]
         for old in ("--db-endpoint", "--db-name", "--db-secret-arn"):
             cases[f"removed {old}"] = base + [old, "x"]
@@ -391,7 +403,8 @@ class BehaviorTests(unittest.TestCase):
         result, out = self.run_script()
         self.assertEqual(result.returncode, 0, out)
         self.assertEqual(self.state_values(), {
-            "db_secret_version": "v1", "api_image": API_IMAGE, "realtime_image": REALTIME_IMAGE})
+            "db_secret_version": "v1", "api_image": API_IMAGE, "realtime_image": REALTIME_IMAGE,
+            "migrate_image": MIGRATE_IMAGE})
         for value in SECRET_VALUES:
             self.assertNotIn(value, self.state.read_text())
 
@@ -399,7 +412,7 @@ class BehaviorTests(unittest.TestCase):
         self.run_script()
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual((result.returncode, out), (0, ""))
-        self.assertEqual(len(self.compose_calls()), 1)
+        self.assertEqual(len(self.up_calls()), 1)
 
     def test_refresh_after_rotation_redeploys_with_the_new_password(self):
         self.run_script()
@@ -408,14 +421,14 @@ class BehaviorTests(unittest.TestCase):
             '{"username":"aula_admin","password":"rotated"}', newline="\n")
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual(result.returncode, 0, out)
-        self.assertEqual(len(self.compose_calls()), 2)
+        self.assertEqual(len(self.up_calls()), 2)
         self.assertIn(":rotated@", self.compose_env()["DATABASE_URL"])
         self.assertEqual(self.state_values()["db_secret_version"], "v2")
 
     def test_refresh_without_state_deploys(self):
         result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
         self.assertEqual(result.returncode, 0, out)
-        self.assertEqual(len(self.compose_calls()), 1)
+        self.assertEqual(len(self.up_calls()), 1)
         self.assertEqual(self.state_values()["db_secret_version"], "v1")
 
     def test_state_is_not_written_when_compose_fails(self):
@@ -442,23 +455,88 @@ class BehaviorTests(unittest.TestCase):
 
     def test_refresh_redeploys_the_images_last_deployed_not_the_environment_ones(self):
         image_b = {"--api-image": f"{REGISTRY}/{PREFIX}/api:release-2",
-                   "--realtime-image": f"{REGISTRY}/{PREFIX}/realtime:release-2"}
+                   "--realtime-image": f"{REGISTRY}/{PREFIX}/realtime:release-2",
+                   "--migrate-image": f"{REGISTRY}/{PREFIX}/migrate:release-2"}
         args = self.args()
         for flag, value in image_b.items():
             args[args.index(flag) + 1] = value
         self.assertEqual(self.run_script(args=args)[0].returncode, 0)
         self.write_version("v2")
-        stale = {"API_IMAGE": API_IMAGE, "REALTIME_IMAGE": REALTIME_IMAGE}
+        stale = {"API_IMAGE": API_IMAGE, "REALTIME_IMAGE": REALTIME_IMAGE, "MIGRATE_IMAGE": MIGRATE_IMAGE}
         result, out = self.run_script(
-            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"], extra_env=stale)
+            args=self.args_without("--api-image", "--realtime-image", "--migrate-image") + ["--refresh-if-rotated"],
+            extra_env=stale)
         self.assertEqual(result.returncode, 0, out)
         env = self.compose_env()
-        self.assertEqual((env["API_IMAGE"], env["REALTIME_IMAGE"]), tuple(image_b.values()))
+        self.assertEqual((env["API_IMAGE"], env["REALTIME_IMAGE"], env["MIGRATE_IMAGE"]), tuple(image_b.values()))
         self.assertEqual(self.state_values()["api_image"], image_b["--api-image"])
+        self.assertEqual(self.state_values()["migrate_image"], image_b["--migrate-image"])
+
+    def test_refresh_of_a_state_without_migrate_image_fails_and_asks_for_a_redeploy(self):
+        self.state.parent.mkdir(parents=True)
+        self.state.write_text(
+            f"db_secret_version=v0\napi_image={API_IMAGE}\nrealtime_image={REALTIME_IMAGE}\n", newline="\n")
+        result, out = self.run_script(
+            args=self.args_without("--migrate-image") + ["--refresh-if-rotated"],
+            extra_env={"MIGRATE_IMAGE": MIGRATE_IMAGE})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--migrate-image", out)
+        self.assertFalse(self.compose_calls())
+        self.assertNotIn("migrate_image", self.state.read_text())
+
+    def test_migrations_run_once_before_up_with_the_same_compose_file(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual(len(calls), 2, calls)
+        self.assertRegex(calls[0], r"^compose -f \S+compose\.prod\.yaml run --rm --no-deps migrate$")
+        self.assertRegex(calls[1], r" up -d --remove-orphans --wait")
+        self.assertEqual(calls[0].split()[2], calls[1].split()[2])
+
+        self.assertTrue(self.compose_env()["DATABASE_URL"].startswith("postgresql://"))
+
+    def test_recreate_caddy_runs_a_second_up_for_caddy_only_after_the_stack_is_up(self):
+        result, out = self.run_script(args=self.args() + ["--recreate-caddy"])
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual(len(calls), 3, calls)
+        self.assertRegex(calls[2], r"^compose -f \S+compose\.prod\.yaml up -d --no-deps --force-recreate --wait --wait-timeout 180 caddy$")
+        self.assertEqual(calls[1].split()[2], calls[2].split()[2])
+        self.assertEqual(self.compose_env(self.runs)["SITE_ADDRESS"], "203-0-113-10.sslip.io")
+
+    def test_without_the_flag_caddy_is_not_recreated(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertFalse(any("--force-recreate" in c for c in self.compose_calls()))
+
+    def test_a_failed_recreate_fails_the_run_and_leaves_the_state_unwritten(self):
+        result, out = self.run_script(args=self.args() + ["--recreate-caddy"], extra_env={"STUB_RECREATE_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0, out)
+        self.assertFalse(self.state.exists())
+
+    def test_refresh_after_rotation_also_migrates_before_up(self):
+        self.run_script()
+        self.write_version("v2")
+        result, out = self.run_script(args=self.args() + ["--refresh-if-rotated"])
+        self.assertEqual(result.returncode, 0, out)
+        calls = self.compose_calls()
+        self.assertEqual([" run " in c for c in calls], [True, False, True, False])
+
+    def test_a_failing_migration_aborts_before_up_and_keeps_the_previous_state(self):
+        self.run_script()
+        previous = self.state.read_text()
+        self.write_version("v2")
+        up_before = len(self.up_calls())
+        result, out = self.run_script(extra_env={"STUB_MIGRATE_FAIL": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("migration", out.lower())
+        self.assertEqual(len(self.migrate_calls()), 2)
+        self.assertEqual(len(self.up_calls()), up_before, "up must not run after a failed migration")
+        self.assertEqual(self.state.read_text(), previous)
 
     def test_refresh_without_state_or_images_fails_closed(self):
         result, out = self.run_script(
-            args=self.args_without("--api-image", "--realtime-image") + ["--refresh-if-rotated"])
+            args=self.args_without("--api-image", "--realtime-image", "--migrate-image") + ["--refresh-if-rotated"])
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.compose_calls())
 
@@ -549,6 +627,7 @@ class BehaviorTests(unittest.TestCase):
         env = {}
         for flag, var in (("--name-prefix", "NAME_PREFIX"), ("--region", "AWS_REGION"),
                           ("--api-image", "API_IMAGE"), ("--realtime-image", "REALTIME_IMAGE"),
+                          ("--migrate-image", "MIGRATE_IMAGE"),
                           ("--site-address", "SITE_ADDRESS")):
             env[var] = args[args.index(flag) + 1]
         result, out = self.run_script(args=[], extra_env=env)
