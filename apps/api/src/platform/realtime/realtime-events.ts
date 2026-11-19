@@ -4,6 +4,8 @@
  * their handler must be idempotent (closing the same connections twice is harmless).
  */
 
+import type { MemberAppearance } from '@aula/contracts';
+
 /**
  * A user's access to one classroom ended (membership deactivated or removed).
  * Payload: `{ userId, classroomId }`.
@@ -24,6 +26,15 @@ export const CLASSROOM_MEMBERSHIP_REMOVED_EVENT = 'classroom.membership.removed'
  */
 export const REALTIME_SESSIONS_REVOKED_EVENT = 'realtime.sessions-revoked';
 
+/**
+ * A member's appearance in one classroom changed (base avatar patch or equip/unequip, #114).
+ * Payload: `{ classroomId, userId, appearance }`, where `appearance` is the full per-classroom
+ * public snapshot built by `memberAppearanceFor`. The base avatar is global, so an avatar patch
+ * records one event per classroom with live access; equipment is classroom-scoped, so an equip or
+ * unequip records one event for its own classroom only.
+ */
+export const REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT = 'realtime.classroom-appearance-changed';
+
 export interface ClassroomAccessRevokedPayload {
   userId: string;
   classroomId: string;
@@ -32,4 +43,11 @@ export interface ClassroomAccessRevokedPayload {
 export interface SessionsRevokedPayload {
   userId: string;
   sessionId?: string;
+}
+
+export interface ClassroomAppearanceChangedPayload {
+  classroomId: string;
+  userId: string;
+  /** Public fields only (#114): base avatar plus equipped items, validated by `memberAppearanceSchema`. */
+  appearance: MemberAppearance;
 }

@@ -3,8 +3,10 @@ import type { Prisma } from '@prisma/client';
 import { OutboxWriter } from '../outbox/outbox.writer';
 import {
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
+  REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
   REALTIME_SESSIONS_REVOKED_EVENT,
   type ClassroomAccessRevokedPayload,
+  type ClassroomAppearanceChangedPayload,
 } from './realtime-events';
 
 /**
@@ -45,6 +47,26 @@ export class RealtimeEventsRecorder {
     await this.outbox.record(tx, {
       type: REALTIME_SESSIONS_REVOKED_EVENT,
       payload: { userId },
+    });
+  }
+
+  /**
+   * Records that a member's appearance in one classroom changed (#114). The appearance snapshot
+   * must be built with the caller's transaction client, so the event describes the change that
+   * commits with it. A base-avatar patch is global: the caller records one event per classroom
+   * with live access; equip/unequip is classroom-scoped and records one event.
+   */
+  async recordClassroomAppearanceChanged(
+    tx: Prisma.TransactionClient,
+    payload: ClassroomAppearanceChangedPayload,
+  ): Promise<void> {
+    await this.outbox.record(tx, {
+      type: REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
+      payload: {
+        classroomId: payload.classroomId,
+        userId: payload.userId,
+        appearance: payload.appearance,
+      },
     });
   }
 }

@@ -1,10 +1,11 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { plainToInstance } from 'class-transformer';
-import { validateSync } from 'class-validator';
 import type { Prisma } from '@prisma/client';
+import { AccessVerificationService } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { AvatarAccessPort, compatibilityErrors } from './avatar-access.port';
-import { AvatarDto, avatarSnapshot, DEFAULT_AVATAR } from './avatar.dto';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
+import { AvatarAccessPort } from './avatar-access.port';
+import { AvatarDto, avatarSnapshot } from './avatar.dto';
+import { equippedItemsFor, readBaseAppearance } from './member-appearance';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 
 const profileSelection = {
@@ -15,6 +16,9 @@ const profileSelection = {
 } satisfies Prisma.UserSelect;
 type ProfileRecord = Prisma.UserGetPayload<{ select: typeof profileSelection }>;
 
+/** Page size of the accessible-classroom listing that scopes a base-avatar broadcast (#114). */
+const ACCESSIBLE_CLASSROOMS_PAGE = 100;
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -22,6 +26,8 @@ export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: AvatarAccessPort,
+    private readonly classroomAccess: AccessVerificationService,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   async getMe(userId: string): Promise<OwnProfileDto> {
@@ -46,13 +52,47 @@ export class UsersService {
   async updateAvatar(userId: string, dto: AvatarDto): Promise<AvatarDto> {
     await this.access.assertCanUse(userId, dto);
     const snapshot = avatarSnapshot(dto);
-    await this.prisma.avatarConfiguration.upsert({
-      where: { userId },
-      create: { userId, appearance: { ...snapshot } },
-      update: { appearance: { ...snapshot } },
-      select: { userId: true },
+    // The base avatar is global, so the change is broadcast to every classroom where the user
+    // has live access in practice (the same derivation as join verification, parents excluded).
+    // Equipped items are classroom-scoped, so each event carries that classroom's full snapshot.
+    const classroomIds = await this.liveAccessClassroomIds(userId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.avatarConfiguration.upsert({
+        where: { userId },
+        create: { userId, appearance: { ...snapshot } },
+        update: { appearance: { ...snapshot } },
+        select: { userId: true },
+      });
+      for (const classroomId of classroomIds) {
+        const items = await equippedItemsFor(tx, userId, classroomId);
+        await this.realtimeEvents.recordClassroomAppearanceChanged(tx, {
+          classroomId,
+          userId,
+          appearance: { baseAvatar: snapshot, items },
+        });
+      }
     });
     return snapshot;
+  }
+
+  /**
+   * Classrooms where the user has live access in practice (#114): the same hierarchy as
+   * `verifyClassroomAccess` (school Owner/Admin, independent-teacher ownership, active teacher or
+   * student memberships), minus parents, who can read a classroom but never join its live room.
+   */
+  private async liveAccessClassroomIds(userId: string): Promise<string[]> {
+    const classroomIds: string[] = [];
+    for (let skip = 0; ; skip += ACCESSIBLE_CLASSROOMS_PAGE) {
+      const { total, items } = await this.classroomAccess.listAccessibleClassrooms(userId, {
+        skip,
+        take: ACCESSIBLE_CLASSROOMS_PAGE,
+        sort: { field: 'createdAt', direction: 'asc' },
+      });
+      for (const item of items) {
+        if (item.myRole !== 'PARENT') classroomIds.push(item.classroom.id);
+      }
+      if (skip + items.length >= total) return classroomIds;
+    }
   }
 
   private toProfile(user: ProfileRecord): OwnProfileDto {
@@ -65,28 +105,11 @@ export class UsersService {
   }
 
   private readAppearance(value: Prisma.JsonValue | undefined): AvatarDto {
-    if (
-      value === undefined ||
-      (value !== null &&
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        Object.keys(value).length === 0)
-    ) {
-      return { ...DEFAULT_AVATAR };
-    }
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      return this.unsupportedAppearance();
-    }
-    const appearance = plainToInstance(AvatarDto, avatarSnapshot(value as unknown as AvatarDto));
-    if (validateSync(appearance).length || compatibilityErrors(appearance).length) {
-      return this.unsupportedAppearance();
-    }
-    return avatarSnapshot(appearance);
+    return readBaseAppearance(value, { onUnsupported: () => this.unsupportedAppearance() });
   }
 
-  private unsupportedAppearance(): AvatarDto {
+  private unsupportedAppearance(): void {
     // Constant diagnostic only: stored JSON and identity must never enter this warning.
     this.logger.warn('Unsupported stored base appearance; using default avatar.');
-    return { ...DEFAULT_AVATAR };
   }
 }

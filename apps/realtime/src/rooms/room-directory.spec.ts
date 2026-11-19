@@ -1,7 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RoomDirectory } from './room-directory';
 
-const room = (result = 1) => ({ evict: vi.fn().mockReturnValue(result) });
+const room = (result = 1) => ({
+  evict: vi.fn().mockReturnValue(result),
+  applyAppearance: vi.fn().mockReturnValue(result > 0),
+});
+
+const APPEARANCE = {
+  baseAvatar: {
+    bodyId: 'female',
+    hairId: 'afro',
+    topId: 'tshirt',
+    hairColor: '#353849',
+    clothingColor: '#75B7DA',
+  },
+  items: { head: null, face: null, back: null, desk_decor: null },
+} as const;
+
+const appearanceRoom = (found = true) => ({
+  evict: vi.fn(),
+  applyAppearance: vi.fn().mockReturnValue(found),
+});
 
 describe('RoomDirectory', () => {
   it('evicts from the room of the given classroom only', () => {
@@ -61,5 +80,32 @@ describe('RoomDirectory', () => {
 
   it('matches nothing for an unknown classroom', () => {
     expect(new RoomDirectory().evict({ userId: 'u', classroomId: 'nope' })).toBe(0);
+  });
+
+  it('applies an appearance only to the rooms of the given classroom', () => {
+    const directory = new RoomDirectory();
+    const a = appearanceRoom();
+    const b = appearanceRoom();
+    directory.register('A', a);
+    directory.register('B', b);
+
+    expect(directory.applyAppearance('A', 'u', APPEARANCE)).toBe(1);
+
+    expect(a.applyAppearance).toHaveBeenCalledExactlyOnceWith('u', APPEARANCE);
+    expect(b.applyAppearance).not.toHaveBeenCalled();
+  });
+
+  it('reports how many rooms actually had that avatar', () => {
+    const directory = new RoomDirectory();
+    const withAvatar = appearanceRoom(true);
+    const withoutAvatar = appearanceRoom(false);
+    directory.register('A', withAvatar);
+    directory.register('A', withoutAvatar);
+
+    expect(directory.applyAppearance('A', 'u', APPEARANCE)).toBe(1);
+  });
+
+  it('applies nothing for an unknown classroom', () => {
+    expect(new RoomDirectory().applyAppearance('nope', 'u', APPEARANCE)).toBe(0);
   });
 });

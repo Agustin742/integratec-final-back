@@ -14,6 +14,7 @@ import { ApiConfigModule } from '../config/config.module';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT } from '../platform/realtime/realtime-events';
 import { ShopModule } from '../shop/shop.module';
 import { ShopService } from '../shop/shop.service';
 import { EquipmentRateLimiter } from './equipment-rate-limiter.service';
@@ -526,5 +527,90 @@ describe('EquipmentService (real PostgreSQL)', () => {
         where: { classroomId: ids.classroom, studentId: ids.student, slot: EquippedSlot.HEAD },
       }),
     ).toBe(1);
+  });
+
+  describe('realtime appearance events (#114)', () => {
+    interface AppearanceEventPayload {
+      classroomId: string;
+      userId: string;
+      appearance: {
+        baseAvatar: Record<string, string>;
+        items: Record<string, unknown>;
+      };
+    }
+
+    const appearanceEvents = () =>
+      prisma.outboxEvent.findMany({
+        where: {
+          type: REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
+          payload: { path: ['userId'], equals: ids.student },
+        },
+        orderBy: { occurredAt: 'asc' },
+      });
+    const appearancePayloads = async (): Promise<AppearanceEventPayload[]> =>
+      (await appearanceEvents()).map((row) => row.payload as unknown as AppearanceEventPayload);
+
+    it('records one event with the post-equip snapshot for that classroom only', async () => {
+      await fundStudent(ids.student, 500);
+      await purchaseItem(ids.student, ids.capItem);
+
+      await equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.capItem });
+
+      const payloads = await appearancePayloads();
+      expect(payloads).toHaveLength(1);
+      // Only the equipped classroom: the student is also a member of otherClassroom, but the
+      // change is classroom-scoped.
+      expect(payloads[0]).toEqual({
+        classroomId: ids.classroom,
+        userId: ids.student,
+        appearance: {
+          baseAvatar: expect.any(Object),
+          items: {
+            head: {
+              slot: 'head',
+              shopItemId: ids.capItem,
+              shopItemCode: `cap_${ids.capItem}`,
+              shopItemName: 'Blue Cap',
+              kind: ShopItemKind.AVATAR_ACCESSORY,
+            },
+            face: null,
+            back: null,
+            desk_decor: null,
+          },
+        },
+      });
+    });
+
+    it('records one event on unequip carrying the cleared slot', async () => {
+      await fundStudent(ids.student, 500);
+      await purchaseItem(ids.student, ids.capItem);
+      await equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.capItem });
+      const before = (await appearanceEvents()).length;
+
+      await equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: null });
+
+      const payloads = await appearancePayloads();
+      expect(payloads).toHaveLength(before + 1);
+      const last = payloads[payloads.length - 1];
+      expect(last.classroomId).toBe(ids.classroom);
+      expect(last.appearance.items).toEqual({
+        head: null,
+        face: null,
+        back: null,
+        desk_decor: null,
+      });
+    });
+
+    it('records nothing when the transaction fails', async () => {
+      const before = (await appearanceEvents()).length;
+
+      // Unpurchased item in its correct slot: the equip transaction rolls back with 403, so no
+      // event may exist.
+      await expect(
+        equipment.setSlot(ids.student, ids.classroom, 'back', { shopItemId: ids.backpackItem }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect((await appearanceEvents()).length).toBe(before);
+    });
   });
 });

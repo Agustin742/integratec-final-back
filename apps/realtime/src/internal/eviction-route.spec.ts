@@ -9,7 +9,10 @@ const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const SESSION = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
 
 const makeApp = () => {
-  const directory = { evict: vi.fn().mockReturnValue(2) };
+  const directory = {
+    evict: vi.fn().mockReturnValue(2),
+    applyAppearance: vi.fn().mockReturnValue(1),
+  };
   const app = configureExpress(express(), { internal: { serviceSecret: SECRET, directory } });
   return { app, directory };
 };

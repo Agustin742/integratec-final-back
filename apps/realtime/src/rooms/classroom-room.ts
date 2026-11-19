@@ -37,14 +37,14 @@ import {
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
 import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
-import type { EvictableRoom, RoomDirectory } from './room-directory';
+import type { DirectoryRoom, RoomDirectory } from './room-directory';
 
 /**
  * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
  * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
  * equipped is simply absent from the items map.
  */
-function applyAppearance(avatar: Avatar, appearance: MemberAppearance): void {
+function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
   avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
   avatar.appearance.hairId = appearance.baseAvatar.hairId;
   avatar.appearance.topId = appearance.baseAvatar.topId;
@@ -97,7 +97,7 @@ interface PendingAdmission {
 }
 
 /** Room logic that does not depend on the verifier. */
-export class ClassroomRoom extends Room<{ state: ClassroomState }> implements EvictableRoom {
+export class ClassroomRoom extends Room<{ state: ClassroomState }> implements DirectoryRoom {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
   protected verifier!: JoinVerifier;
@@ -211,7 +211,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (avatar) {
         avatar.displayName = auth.displayName;
         avatar.role = auth.role;
-        applyAppearance(avatar, auth.appearance);
+        applyAppearanceToAvatar(avatar, auth.appearance);
       }
       this.refreshStatus(auth.userId);
     }
@@ -266,7 +266,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (avatar) {
         avatar.role = current.role;
         avatar.displayName = current.displayName;
-        applyAppearance(avatar, current.appearance);
+        applyAppearanceToAvatar(avatar, current.appearance);
       }
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
@@ -285,6 +285,19 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
 
   onLeave(client: Client): void {
     this.releaseConnection(client.sessionId);
+  }
+
+  /**
+   * Applies an API-verified appearance update to the user's avatar (#114). Reached only through
+   * the room directory from the internal route, never from a client message. Last write wins, so
+   * an at-least-once replay is harmless; reports whether the user's avatar exists, so a replay
+   * for a user who is gone is a quiet no-op.
+   */
+  applyAppearance(userId: string, appearance: MemberAppearance): boolean {
+    const avatar = this.state.avatars.get(userId);
+    if (avatar === undefined) return false;
+    applyAppearanceToAvatar(avatar, appearance);
+    return true;
   }
 
   /**
@@ -456,7 +469,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;
     avatar.role = identity.role;
-    applyAppearance(avatar, identity.appearance);
+    applyAppearanceToAvatar(avatar, identity.appearance);
     avatar.x = spawn.x;
     avatar.z = spawn.z;
     this.state.avatars.set(identity.userId, avatar);

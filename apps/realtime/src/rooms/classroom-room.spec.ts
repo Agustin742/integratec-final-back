@@ -94,6 +94,27 @@ describe('createClassroomRoom', () => {
     expect(avatar?.appearance.items.has('face')).toBe(false);
   });
 
+  it('applies an API-verified appearance update to the live avatar, last write wins (#114)', async () => {
+    const room = makeJoinedRoom();
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    expect(room.state.avatars.get(IDENTITY.userId)?.appearance.hairColor).toBe('#AF6D63');
+
+    const updated = makeStubAppearance('#C77DAA');
+    expect(room.applyAppearance(IDENTITY.userId, updated)).toBe(true);
+
+    const avatar = room.state.avatars.get(IDENTITY.userId);
+    expect(avatar?.appearance.hairColor).toBe('#C77DAA');
+    expect(avatar?.appearance.items.size).toBe(1);
+    expect(avatar?.appearance.items.get('head')).toMatchObject(updated.items.head);
+  });
+
+  it('reports that there was no avatar to update, changing nothing (#114)', async () => {
+    const room = makeJoinedRoom();
+
+    expect(room.applyAppearance(IDENTITY.userId, APPEARANCE)).toBe(false);
+    expect(room.state.avatars.size).toBe(0);
+  });
+
   it('rejects a join with no verified identity', async () => {
     const room = makeJoinedRoom();
 

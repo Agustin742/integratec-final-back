@@ -1,14 +1,15 @@
-import { timingSafeEqual } from 'node:crypto';
-import type { Application, Request } from 'express';
+import type { Application } from 'express';
 import { z } from 'zod';
-import { SERVICE_SECRET_HEADER } from '../join/api-join-verifier';
-import type { EvictionFilter } from '../rooms/room-directory';
+import { mountAppearanceRoute } from './appearance-route';
+import { presentedSecret, secretsMatch } from './service-secret';
+import type { RoomDirectoryLike } from '../rooms/room-directory';
 
 export const EVICTION_PATH = '/internal/evictions';
 
 export interface EvictionRouteOptions {
   serviceSecret: string;
-  directory: { evict(filter: EvictionFilter): number };
+  /** The live rooms: evictions close connections, appearance updates write avatar state. */
+  directory: RoomDirectoryLike;
 }
 
 const evictionSchema = z.strictObject({
@@ -17,26 +18,13 @@ const evictionSchema = z.strictObject({
   sessionId: z.uuid().optional(),
 });
 
-/** Constant-time comparison; a length mismatch is rejected first (the length is not a secret). */
-function secretsMatch(presented: string, expected: string): boolean {
-  const presentedBytes = Buffer.from(presented, 'utf8');
-  const expectedBytes = Buffer.from(expected, 'utf8');
-  return (
-    presentedBytes.length === expectedBytes.length && timingSafeEqual(presentedBytes, expectedBytes)
-  );
-}
-
-const presentedSecret = (req: Request): string | undefined => {
-  const header = req.headers[SERVICE_SECRET_HEADER];
-  return typeof header === 'string' ? header : undefined;
-};
-
 /**
- * Mounts the internal route NestJS calls when a user loses access: it closes the matching
- * connections with `4001` and blocks their reconnection. It is for service-to-service use only:
- * the reverse proxy must never route `/internal/*`, and every call needs the service secret.
- * The answer is a bare 204 whether or not anything matched, so it reveals nothing and a retry is
- * harmless.
+ * Mounts the internal service-to-service routes of this process: evictions (a user lost access)
+ * and appearance updates (a member's look changed, #114). They share the service secret and the
+ * room directory, so they are mounted together by this one call, which `server.ts` makes when
+ * internal options are present. Both routes are for service-to-service use only: the reverse
+ * proxy must never route `/internal/*`, and every call needs the service secret. Each answers a
+ * bare 204 whether or not anything matched, so it reveals nothing and a retry is harmless.
  */
 export function mountEvictionRoute(app: Application, options: EvictionRouteOptions): void {
   app.post(EVICTION_PATH, (req, res) => {
@@ -53,4 +41,5 @@ export function mountEvictionRoute(app: Application, options: EvictionRouteOptio
     options.directory.evict(parsed.data);
     res.sendStatus(204);
   });
+  mountAppearanceRoute(app, options);
 }
