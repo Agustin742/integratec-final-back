@@ -342,7 +342,21 @@ describe('GET /classrooms/:id/messages public history', () => {
   });
 
   it('returns coherent counts/items/mentions while HTTP sends commit concurrently', async () => {
-    const writes = Array.from({ length: 5 }, () => send(student, { body: '@Teacher' }).expect(201));
+    // Distinct authors: same-author concurrent sends are rejected (429), not queued.
+    const authors = Array.from({ length: 5 }, () => randomUUID());
+    await prisma.user.createMany({
+      data: authors.map((id) => ({
+        id,
+        email: `chat-http-${id}@example.invalid`,
+        displayName: 'Synthetic user',
+        passwordHash: 'synthetic-unused-hash',
+        registrationPath: 'SCHOOL' as const,
+      })),
+    });
+    await prisma.classroomMembership.createMany({
+      data: authors.map((userId) => ({ classroomId: classroom, userId, role: 'STUDENT' as const })),
+    });
+    const writes = authors.map((author) => send(author, { body: '@Teacher' }).expect(201));
     const reads = Array.from({ length: 10 }, () => history(student, { pageSize: 100 }).expect(200));
     const responses = await Promise.all([...writes, ...reads]);
     for (const response of responses.slice(writes.length)) {
