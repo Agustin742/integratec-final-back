@@ -13,6 +13,7 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
   type AvatarInput,
+  type MemberAppearance,
 } from '@aula/contracts';
 import {
   ClientState,
@@ -35,8 +36,32 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState } from './classroom-state';
+import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
 import type { EvictableRoom, RoomDirectory } from './room-directory';
+
+/**
+ * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
+ * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
+ * equipped is simply absent from the items map.
+ */
+function applyAppearance(avatar: Avatar, appearance: MemberAppearance): void {
+  avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
+  avatar.appearance.hairId = appearance.baseAvatar.hairId;
+  avatar.appearance.topId = appearance.baseAvatar.topId;
+  avatar.appearance.hairColor = appearance.baseAvatar.hairColor;
+  avatar.appearance.clothingColor = appearance.baseAvatar.clothingColor;
+  avatar.appearance.items.clear();
+  for (const [slot, item] of Object.entries(appearance.items)) {
+    if (item === null) continue;
+    const view = new EquippedItemView();
+    view.slot = item.slot;
+    view.shopItemId = item.shopItemId;
+    view.shopItemCode = item.shopItemCode;
+    view.shopItemName = item.shopItemName;
+    view.kind = item.kind;
+    avatar.appearance.items.set(slot, view);
+  }
+}
 
 /** Collaborators and settings a room receives from the server bootstrap. */
 export interface ClassroomRoomOptions {
@@ -155,6 +180,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.appearance = current.appearance;
     } catch (error) {
       if (error instanceof ServerError) throw error;
       if (admission.revoked || error instanceof JoinDeniedError) {
@@ -185,6 +211,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (avatar) {
         avatar.displayName = auth.displayName;
         avatar.role = auth.role;
+        applyAppearance(avatar, auth.appearance);
       }
       this.refreshStatus(auth.userId);
     }
@@ -234,10 +261,12 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (!this.userConnections.has(client.sessionId)) return;
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.appearance = current.appearance;
       const avatar = this.state.avatars.get(userId);
       if (avatar) {
         avatar.role = current.role;
         avatar.displayName = current.displayName;
+        applyAppearance(avatar, current.appearance);
       }
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
@@ -427,6 +456,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;
     avatar.role = identity.role;
+    applyAppearance(avatar, identity.appearance);
     avatar.x = spawn.x;
     avatar.z = spawn.z;
     this.state.avatars.set(identity.userId, avatar);

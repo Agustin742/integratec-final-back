@@ -1,6 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, MembershipState, RegistrationPath } from '@prisma/client';
+import { ClassroomRole, EquippedSlot, MembershipState, RegistrationPath, ShopItemKind } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessModule } from '../../access/access.module';
@@ -10,6 +10,7 @@ import { ApiConfigModule } from '../../config/config.module';
 import { configureHttp } from '../../http/configure-http';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DEFAULT_AVATAR } from '../../users/avatar.dto';
 import { INTERNAL_SERVICE_SECRET_HEADER } from './internal-service.guard';
 import { RealtimeJoinModule } from './realtime-join.module';
 
@@ -122,7 +123,84 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       classroomId,
       role: 'TEACHER',
       displayName: 'rv-teacher',
+      appearance: {
+        baseAvatar: { ...DEFAULT_AVATAR },
+        items: { head: null, face: null, back: null, desk_decor: null },
+      },
     });
+  });
+
+  it('answers the member appearance from persisted state (#114)', async () => {
+    await prisma.avatarConfiguration.create({
+      data: {
+        userId: studentId,
+        appearance: {
+          bodyId: 'female',
+          hairId: 'afro',
+          topId: 'tshirt',
+          hairColor: '#AF6D63',
+          clothingColor: '#75B7DA',
+        },
+      },
+    });
+    const shopItem = await prisma.shopItem.create({
+      data: {
+        code: `rv-appearance-cap-${ts}`,
+        name: 'RV Appearance Cap',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 10,
+      },
+    });
+    const equipped = await prisma.equippedItem.create({
+      data: {
+        classroomId,
+        studentId,
+        slot: EquippedSlot.BACK,
+        shopItemId: shopItem.id,
+      },
+    });
+    try {
+      const res = await post({
+        userId: studentId,
+        sessionId: studentSessionId,
+        classroomId,
+      }).expect(200);
+      expect(res.body.appearance).toEqual({
+        baseAvatar: {
+          bodyId: 'female',
+          hairId: 'afro',
+          topId: 'tshirt',
+          hairColor: '#AF6D63',
+          clothingColor: '#75B7DA',
+        },
+        items: {
+          head: null,
+          face: null,
+          back: {
+            slot: 'back',
+            shopItemId: shopItem.id,
+            shopItemCode: `rv-appearance-cap-${ts}`,
+            shopItemName: 'RV Appearance Cap',
+            kind: 'AVATAR_ACCESSORY',
+          },
+          desk_decor: null,
+        },
+      });
+      // Appearance is public data only (#114 acceptance): no private field rides along.
+      expect(Object.keys(res.body).sort()).toEqual([
+        'appearance',
+        'classroomId',
+        'displayName',
+        'role',
+        'sessionId',
+        'userId',
+      ]);
+      expect(JSON.stringify(res.body)).not.toContain('@example.com');
+    } finally {
+      await prisma.equippedItem.deleteMany({ where: { id: equipped.id } });
+      await prisma.shopItem.deleteMany({ where: { id: shopItem.id } });
+      await prisma.avatarConfiguration.deleteMany({ where: { userId: studentId } });
+    }
   });
 
   it('maps an active student membership to its role', async () => {

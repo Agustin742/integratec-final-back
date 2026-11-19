@@ -13,14 +13,17 @@ import {
   JoinVerificationUnavailableError,
   type JoinVerifier,
 } from '../join/join-verifier';
+import { makeStubAppearance } from '../testing/stub-api';
 
 const CLASSROOM_ID = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const APPEARANCE = makeStubAppearance();
 const IDENTITY = {
   userId: '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01',
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   classroomId: CLASSROOM_ID,
   role: 'TEACHER' as const,
   displayName: 'Ada Lovelace',
+  appearance: APPEARANCE,
 };
 const AUTH = {
   userId: IDENTITY.userId,
@@ -28,6 +31,7 @@ const AUTH = {
   classroomId: CLASSROOM_ID,
   role: IDENTITY.role,
   displayName: IDENTITY.displayName,
+  appearance: APPEARANCE,
 };
 
 describe('createClassroomRoom', () => {
@@ -76,6 +80,18 @@ describe('createClassroomRoom', () => {
       role: 'TEACHER',
       status: 'online',
     });
+  });
+
+  it('adds the verified appearance to the avatar at the first connection (#114)', async () => {
+    const room = makeJoinedRoom();
+
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+
+    const avatar = room.state.avatars.get(IDENTITY.userId);
+    expect(avatar?.appearance).toMatchObject(APPEARANCE.baseAvatar);
+    expect(avatar?.appearance.items.size).toBe(1);
+    expect(avatar?.appearance.items.get('head')).toMatchObject(APPEARANCE.items.head);
+    expect(avatar?.appearance.items.has('face')).toBe(false);
   });
 
   it('rejects a join with no verified identity', async () => {
@@ -191,6 +207,31 @@ describe('createClassroomRoom', () => {
         displayName: 'Ada L.',
       });
       expect(room.state.avatars.size).toBe(1);
+    });
+
+    it("refreshes the appearance from the later connection's answer (#114)", async () => {
+      const reverify = vi
+        .fn()
+        .mockResolvedValueOnce(IDENTITY)
+        .mockResolvedValue({
+          ...IDENTITY,
+          appearance: makeStubAppearance('#C77DAA'),
+        });
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const first = { sessionId: 's1', auth: { ...AUTH } };
+      await room.onJoin(first as never);
+      room.onDrop(first as never);
+      expect(room.state.avatars.get(IDENTITY.userId)?.appearance.hairColor).toBe('#AF6D63');
+
+      await room.onJoin({ sessionId: 's2', auth: { ...AUTH } } as never);
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
+      expect(avatar?.appearance.items.size).toBe(1);
+      expect(avatar?.appearance.items.get('head')).toMatchObject(APPEARANCE.items.head);
     });
   });
 
@@ -462,6 +503,7 @@ describe('createClassroomRoom', () => {
           classroomId: CLASSROOM_ID,
           role: AUTH.role,
           displayName: AUTH.displayName,
+          appearance: AUTH.appearance,
         },
       ]);
       expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({

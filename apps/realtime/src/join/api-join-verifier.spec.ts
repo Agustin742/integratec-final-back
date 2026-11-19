@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiJoinVerifier } from './api-join-verifier';
 import { JoinDeniedError, JoinVerificationUnavailableError } from './join-verifier';
+import { makeStubAppearance } from '../testing/stub-api';
 
 const SECRET = 'test-only-secret-with-at-least-32-characters';
 const TOKEN = 'super-secret-access-token';
@@ -11,7 +12,15 @@ const IDENTITY = {
   classroomId: CLASSROOM_ID,
   role: 'TEACHER',
   displayName: 'Ada Lovelace',
+  appearance: makeStubAppearance(),
 };
+
+/**
+ * The identity without its appearance, to exercise a payload that omits the field entirely.
+ * The discarded binding is deliberate: the rest must simply not carry appearance.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- deliberate rest-omission
+const { appearance: _identityAppearance, ...IDENTITY_WITHOUT_APPEARANCE } = IDENTITY;
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
@@ -100,6 +109,58 @@ describe('ApiJoinVerifier', () => {
   it('denies when the API answers for a different classroom than requested', async () => {
     const other = { ...IDENTITY, classroomId: '11111111-1111-4111-8111-111111111111' };
     const fetchImpl = vi.fn().mockResolvedValue(json(200, other));
+    await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(
+      JoinDeniedError,
+    );
+  });
+
+  it('returns the identity with its appearance payload on a 200 response (#114)', async () => {
+    const identity = { ...IDENTITY, appearance: makeStubAppearance() };
+    const fetchImpl = vi.fn().mockResolvedValue(json(200, identity));
+    await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).resolves.toEqual(identity);
+  });
+
+  it.each([
+    ['a missing appearance', json(200, IDENTITY_WITHOUT_APPEARANCE)],
+    [
+      'an appearance with unknown base avatar fields',
+      json(200, {
+        ...IDENTITY,
+        appearance: {
+          ...makeStubAppearance(),
+          baseAvatar: { ...makeStubAppearance().baseAvatar, email: 'a@b.c' },
+        },
+      }),
+    ],
+    [
+      'an appearance with unknown top-level fields',
+      json(200, { ...IDENTITY, appearance: { ...makeStubAppearance(), grades: [] } }),
+    ],
+    [
+      'an appearance with an unknown slot',
+      json(200, {
+        ...IDENTITY,
+        appearance: {
+          ...makeStubAppearance(),
+          items: { ...makeStubAppearance().items, hair: makeStubAppearance().items.head },
+        },
+      }),
+    ],
+    [
+      'an appearance whose slot does not match its key',
+      json(200, {
+        ...IDENTITY,
+        appearance: {
+          ...makeStubAppearance(),
+          items: {
+            ...makeStubAppearance().items,
+            head: { ...makeStubAppearance().items.head, slot: 'face' },
+          },
+        },
+      }),
+    ],
+  ])('denies a 200 response with %s (#114)', async (_label, response) => {
+    const fetchImpl = vi.fn().mockResolvedValue(response);
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(
       JoinDeniedError,
     );

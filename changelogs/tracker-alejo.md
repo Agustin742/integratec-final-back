@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-19 — Issue #114: share member appearance (base avatar + equipped items)
+
+- **Status:** in-progress
+- **Area / files (planned):** `apps/realtime/src/rooms/classroom-state.ts`, realtime room/join handlers, `apps/api/src/classrooms/` (directory + equipment), `packages/contracts/src/index.ts`, tests per `rules/quality-and-testing.md`; dedicated worktree `odd/worktrees/issue-114`, branch `feat/114-member-appearance` from `origin/develop` `134eabc`.
+- **Change:** With AI assistance directed by Alejo: broadcast each classroom member's base avatar and equipped avatar items to other members (realtime `Avatar` schema per the issue's default transport proposal) and keep live updates on equip/unequip/avatar change without reload. Read-only appearance data only; no private fields.
+- **Reason:** #35 left "broadcast of the new look to connected members" unowned; remote avatars currently render without equipped items and appearance changes are not seen until reload.
+- **T1 snapshot evidence (RED to near-GREEN):** RED as delegated: contracts 5 failed/26 passed, realtime 15 failed/246 passed, api src/internal/realtime 6 failed/69 passed (all failures the new appearance tests). Implemented: applyAppearance wired on admission/join/reconnect in classroom-room.ts; VerifiedJoin/ClassroomAuth appearance; api realtime-join.dto nested BaseAvatarPayloadDto/EquippedItemPayloadDto/MemberAppearanceDto; RealtimeAccessService.identityFor selects avatarConfig.appearance, mirrors UsersService.readAppearance fallback semantics and maps equippedItem rows via SLOT_NAME_BY_ENUM; stub-api appearance typing narrowed so fixtures stay assignable to MemberAppearance; focused spec fixtures updated (authenticate-join, api-join-verifier missing-appearance case, classroom-room reverification request). Client types regenerated (Avatar.ts, new AvatarAppearance.ts + EquippedItemView.ts; realtime:codegen:check passes only once committed, by design). GREEN: contracts 31/31, api src/internal/realtime 75/75, realtime 259/261; contracts+api typecheck, focused eslint and prettier, git diff --check clean. Remaining: 2 e2e failures + 4 TS2345/TS2339 in apps/realtime/src/rooms/classroom-join.e2e.spec.ts (RED-authored: missing serverRoom cast helper like the reconnection spec, and client-side room.state reads before the decoded state settles) - file outside the delegated edit surfaces, escalated to the parent before the work-unit commit.
+
+
+
 ## 2026-11-18 — Issue #38: persisted classroom chat
 
 - **Status:** completed (local implementation, full-suite and independent verification complete on `feat/38-chat-persistence`; PR published into `develop`, awaiting current-head CI and teammate review)
