@@ -389,6 +389,77 @@ describe('GradesService (unit)', () => {
     });
   });
 
+  describe('exam-passed streak day', () => {
+    const submittedAt = new Date('2026-11-10T15:00:00.000Z');
+    const examActivityRow = {
+      id: activityId,
+      type: ActivityType.EXAM,
+      format: ActivityFormat.FILE,
+      title: 'Exam 1',
+      maxScore: 100,
+      weightMultiplier: new Prisma.Decimal('1.00'),
+    };
+
+    it('credits the streak day on the submission day, not the grading day, on grade', async () => {
+      txClient.$queryRaw
+        .mockResolvedValueOnce([examActivityRow])
+        .mockResolvedValueOnce([{ id: submissionId, studentId, submittedAt }]);
+      txClient.grade.findUnique.mockResolvedValue(null);
+      txClient.grade.create.mockImplementation(async ({ data }) => ({
+        ...data,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await service.gradeSubmission(actorId, submissionId, { score: 80, feedback: 'ok' });
+
+      expect(streaks.recordQualifying).toHaveBeenCalledTimes(1);
+      const event = streaks.recordQualifying.mock.calls[0][1] as { at: Date };
+      expect(event.at).toEqual(submittedAt);
+      expect(event.at).not.toEqual(now);
+    });
+
+    it('keeps the submission day when a passed exam is regraded on another day', async () => {
+      txClient.$queryRaw
+        .mockResolvedValueOnce([examActivityRow])
+        .mockResolvedValueOnce([{ id: submissionId, studentId, submittedAt }])
+        .mockResolvedValueOnce([
+          {
+            id: gradeId,
+            submissionId,
+            graderId: actorId,
+            score: 70,
+            feedback: 'Initial',
+            pointsAwarded: 105,
+            typeWeight: new Prisma.Decimal('1.50'),
+            weightMultiplier: new Prisma.Decimal('1.00'),
+            pointTransactionId: txId1,
+            version: 1,
+            gradedAt: new Date('2026-11-12T10:00:00.000Z'),
+            createdAt: now,
+            updatedAt: now,
+          },
+        ]);
+      txClient.grade.update.mockImplementation(async ({ data }) => ({
+        id: gradeId,
+        submissionId,
+        ...data,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      await service.regradeSubmission(actorId, submissionId, {
+        score: 90,
+        feedback: 'Regraded later',
+        version: 1,
+      });
+
+      expect(streaks.recordQualifying).toHaveBeenCalledTimes(1);
+      const event = streaks.recordQualifying.mock.calls[0][1] as { at: Date };
+      expect(event.at).toEqual(submittedAt);
+    });
+  });
+
   it('returns the current grade without writes on an identical regrade, but still 409s on a stale version', async () => {
     const gradeRow = {
       id: gradeId,

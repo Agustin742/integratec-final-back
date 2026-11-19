@@ -453,6 +453,10 @@ describe('Gamification streak engine and badges (real PostgreSQL & concurrency)'
       });
       expect(days).toHaveLength(1);
       expect(days[0].source).toBe(StreakQualifyingSource.EXAM_PASSED);
+      // The day is the student's submission day (2026-11-11), not the grading day.
+      expect(days[0].localDay).toBe(
+        toLocalDay(new Date('2026-11-11T10:00:00.000Z'), DEFAULT_LOCAL_DAY_TIME_ZONE),
+      );
       expect(
         await prisma.streak.findUniqueOrThrow({ where: { studentId: ids.student } }),
       ).toMatchObject({ currentChainLength: 1, bestChainLength: 1 });

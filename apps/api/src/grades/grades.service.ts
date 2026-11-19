@@ -322,10 +322,11 @@ export class GradesService {
           studentId: submission.studentId,
         });
 
-        // A passed exam is the day's qualifying activity (RN-08); the streak
-        // day is unique per (student, local day), so repeated evaluations on
-        // one day count once. The passing threshold is an open decision and is
-        // disclosed in docs/gamification.md.
+        // A passed exam is a qualifying activity (RN-08), credited to the day
+        // the student SUBMITTED it, not the grading day: late grading never
+        // credits a day the student did nothing. The streak day is unique per
+        // (student, local day), so repeated evaluations count once. The
+        // passing threshold is an open decision disclosed in docs/gamification.md.
         if (
           mapActivityType(activity.type) === ActivityType.EXAM &&
           isExamPassed(dto.score, activity.maxScore)
@@ -333,7 +334,7 @@ export class GradesService {
           await this.streaks.recordQualifying(tx, {
             studentId: submission.studentId,
             source: StreakQualifyingSource.EXAM_PASSED,
-            at: created.gradedAt,
+            at: submission.submittedAt,
           });
         }
 
@@ -544,9 +545,10 @@ export class GradesService {
         studentId: submission.studentId,
       });
 
-      // A regrade that lifts an exam to a passing score qualifies for the day's
-      // streak milestone exactly like the initial grade (RN-08); a regrade that
-      // lowers it below the threshold never revokes an already-counted day.
+      // A regrade that lifts an exam to a passing score qualifies exactly like
+      // the initial grade (RN-08), on the student's submission day, so
+      // regrading on another day never adds a new day; a regrade that lowers
+      // it below the threshold never revokes an already-counted day.
       if (
         mapActivityType(activity.type) === ActivityType.EXAM &&
         isExamPassed(dto.score, activity.maxScore)
@@ -554,7 +556,7 @@ export class GradesService {
         await this.streaks.recordQualifying(tx, {
           studentId: submission.studentId,
           source: StreakQualifyingSource.EXAM_PASSED,
-          at: updated.gradedAt,
+          at: submission.submittedAt,
         });
       }
 
@@ -838,9 +840,9 @@ export class GradesService {
     tx: Prisma.TransactionClient,
     submissionId: string,
     activityId: string,
-  ): Promise<{ id: string; studentId: string }> {
-    const rows = await tx.$queryRaw<Array<{ id: string; studentId: string }>>`
-      SELECT "id", "student_id" AS "studentId"
+  ): Promise<{ id: string; studentId: string; submittedAt: Date }> {
+    const rows = await tx.$queryRaw<Array<{ id: string; studentId: string; submittedAt: Date }>>`
+      SELECT "id", "student_id" AS "studentId", "submitted_at" AS "submittedAt"
       FROM "submissions"
       WHERE "id" = ${submissionId}::uuid AND "activity_id" = ${activityId}::uuid
       FOR UPDATE

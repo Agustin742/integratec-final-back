@@ -6,6 +6,7 @@
 - **Area / files:** `apps/api/src/submissions/submissions.module.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/gamification/streak.service.ts`, `apps/api/src/gamification/gamification.integration.spec.ts`, `apps/api/prisma/migrations/20261118000000_create_streaks_and_badges/`
 - **Change:** Merged `develop` (with #105) into the PR branch, keeping both the metric and the streak dependencies in submissions. An out-of-order qualifying day (transactions committing across the local-day boundary in reverse order) now records the day without moving the chain or the last day backwards. The streak migration is renamed after the #105 migrations so the history stays ordered.
 - **Reason:** Review findings posted on PR #106: the chain could reset on a late commit, and the old timestamp sorted before migrations already in `develop`.
+- **Exam streak day:** a passed exam now credits the day the student submitted it (`submission.submittedAt`), not the grading day, so late grading or a regrade on another day never adds a day.
 - **Next step:** CI on PR #106, then merge into `develop`.
 
 ## 2026-11-19 — Revert avatar wardrobe ids and new default outfit (#115)

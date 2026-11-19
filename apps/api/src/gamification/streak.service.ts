@@ -21,7 +21,10 @@ export function isExamPassed(score: number, maxScore: number): boolean {
 export interface QualifyingEvent {
   studentId: string;
   source: StreakQualifyingSource;
-  /** Server-owned instant of the qualifying action; decides the local day. */
+  /**
+   * Server-owned instant of the qualifying action; decides the local day. For a
+   * passed exam it is the student's submission time, not the grading time.
+   */
   at: Date;
 }
 
