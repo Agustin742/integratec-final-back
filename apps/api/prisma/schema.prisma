@@ -153,6 +153,9 @@ model User {
   gradeRevisions           GradeRevision[]       @relation("GradedGradeRevisions")
   authoredAnnouncements    Announcement[]        @relation("AnnouncementAuthor")
   mentions                 Mention[]             @relation("MentionedUsers")
+  streak                   Streak?               @relation("StudentStreak")
+  streakQualifyingDays     StreakQualifyingDay[] @relation("StudentStreakQualifyingDays")
+  badges                   StudentBadge[]        @relation("StudentBadges")
 
   @@map("users")
 }
@@ -630,7 +633,7 @@ model JoinCodeUsage {
 model Notification {
   id            String    @id @default(uuid()) @db.Uuid
   recipientId   String    @map("recipient_id") @db.Uuid
-  classroomId   String    @map("classroom_id") @db.Uuid
+  classroomId   String?   @map("classroom_id") @db.Uuid
   studentId     String?   @map("student_id") @db.Uuid
   sourceEventId String    @unique @map("source_event_id") @db.Uuid
   kind          String    @db.VarChar(32)
@@ -640,7 +643,7 @@ model Notification {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   recipient   User                   @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
-  classroom   Classroom              @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  classroom   Classroom?             @relation(fields: [classroomId], references: [id], onDelete: Restrict)
   student     User?                  @relation("NotificationStudent", fields: [studentId], references: [id], onDelete: Restrict)
   sourceEvent OutboxEvent            @relation(fields: [sourceEventId], references: [id], onDelete: Restrict)
   deliveries  NotificationDelivery[]
@@ -893,4 +896,89 @@ model EquippedItem {
   @@unique([classroomId, studentId, slot])
   @@index([shopItemId])
   @@map("equipped_items")
+}
+
+/// Real academic activity that may count as the day's streak milestone (RN-08).
+enum StreakQualifyingSource {
+  ON_TIME_SUBMISSION
+  EXAM_PASSED
+  DAILY_REVIEW_ANSWERED
+}
+
+/// Server-owned badge condition kinds. The medal catalog is open (gap 18); this
+/// catalog ships as a test catalog and its entries may change until decided.
+enum BadgeConditionType {
+  STREAK_REACHED
+  QUALIFYING_DAYS_REACHED
+}
+
+/// One row per student: current and best consecutive qualifying-day chains,
+/// computed by the server in the fixed local day zone (RN-08). Never client-writable.
+model Streak {
+  id                     String   @id @default(uuid()) @db.Uuid
+  studentId              String   @unique @map("student_id") @db.Uuid
+  currentChainLength     Int      @default(0) @map("current_chain_length")
+  bestChainLength        Int      @default(0) @map("best_chain_length")
+  lastQualifyingLocalDay String?  @map("last_qualifying_local_day") @db.VarChar(10)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Derived gamification state of the student: it follows the user row
+  // (explicit cascade, `rules/data.md` deletion policy); it never cascades
+  // into user-generated content.
+  student User @relation("StudentStreak", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("streaks")
+}
+
+/// At most one milestone record per (student, local day); the unique constraint
+/// makes concurrent qualifying actions count once (RN-08).
+model StreakQualifyingDay {
+  id        String                 @id @default(uuid()) @db.Uuid
+  studentId String                 @map("student_id") @db.Uuid
+  localDay  String                 @map("local_day") @db.VarChar(10)
+  source    StreakQualifyingSource
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Derived gamification state of the student: it follows the user row (explicit cascade).
+  student User @relation("StudentStreakQualifyingDays", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, localDay])
+  @@map("streak_qualifying_days")
+}
+
+/// Server-owned badge catalog. The real medal catalog is an open decision; the
+/// seed ships a small test catalog so the idempotent awarding mechanism is testable.
+model BadgeDefinition {
+  id            String             @id @default(uuid()) @db.Uuid
+  code          String             @unique @db.VarChar(50)
+  name          String             @db.VarChar(100)
+  description   String             @db.VarChar(280)
+  conditionType BadgeConditionType @map("condition_type")
+  threshold     Int
+  isActive      Boolean            @default(true) @map("is_active")
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  badges StudentBadge[]
+
+  @@map("badge_definitions")
+}
+
+/// Awarded once per (student, badge); repeated evaluation never duplicates the
+/// badge or its notification (HU-GAM-002).
+model StudentBadge {
+  id                String   @id @default(uuid()) @db.Uuid
+  studentId         String   @map("student_id") @db.Uuid
+  badgeDefinitionId String   @map("badge_definition_id") @db.Uuid
+  awardedAt         DateTime @default(now()) @map("awarded_at") @db.Timestamptz(6)
+
+  // Derived gamification state of the student: it follows the user row (explicit cascade).
+  // The catalog FK stays Restrict: removing a BadgeDefinition requires handling earned badges.
+  student         User            @relation("StudentBadges", fields: [studentId], references: [id], onDelete: Cascade)
+  badgeDefinition BadgeDefinition @relation(fields: [badgeDefinitionId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, badgeDefinitionId])
+  @@index([studentId, awardedAt])
+  @@map("student_badges")
 }

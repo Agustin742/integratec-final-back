@@ -2654,6 +2654,32 @@
         "tags": ["equipment"]
       }
     },
+    "/gamification/me": {
+      "get": {
+        "description": "Own recipient only; computed by the server in America/Argentina/Buenos_Aires. Badges are ordered by unlock time (awardedAt ASC, id ASC). No sort override.",
+        "operationId": "GamificationController_getMySummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Own streak summary and earned badges.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GamificationSummaryDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Own study streak and earned badges",
+        "tags": ["gamification"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -4987,7 +5013,8 @@
               "grade_posted",
               "announcement",
               "mention",
-              "activity_forum_reply"
+              "activity_forum_reply",
+              "badge_awarded"
             ]
           },
           "resourceId": {
@@ -4995,7 +5022,12 @@
             "format": "uuid",
             "description": "Navigation only; source endpoint authorizes detail access independently."
           },
-          "classroomId": { "type": "string", "format": "uuid" },
+          "classroomId": {
+            "type": "object",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Null for classroom-free notices such as badge awards."
+          },
           "studentId": { "type": "string", "format": "uuid", "nullable": true },
           "readAt": { "type": "string", "format": "date-time", "nullable": true },
           "createdAt": { "type": "string", "format": "date-time" }
@@ -5610,6 +5642,47 @@
             "example": "00000000-0000-4000-8000-000000000101"
           }
         }
+      },
+      "StreakSummaryDto": {
+        "type": "object",
+        "properties": {
+          "currentStreak": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Consecutive qualifying local days whose chain is still alive (the last one is today or yesterday). A bare login never changes it."
+          },
+          "bestStreak": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Longest qualifying-day chain ever reached."
+          },
+          "lastQualifyingDay": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "Local calendar day (YYYY-MM-DD) of the last qualifying activity in America/Argentina/Buenos_Aires; null when none was recorded yet."
+          }
+        },
+        "required": ["currentStreak", "bestStreak", "lastQualifyingDay"]
+      },
+      "EarnedBadgeDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "code": { "type": "string", "description": "Stable catalog code of the badge." },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "awardedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "code", "name", "description", "awardedAt"]
+      },
+      "GamificationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "streak": { "$ref": "#/components/schemas/StreakSummaryDto" },
+          "badges": { "type": "array", "items": { "$ref": "#/components/schemas/EarnedBadgeDto" } }
+        },
+        "required": ["streak", "badges"]
       },
       "RosterGuardianDto": {
         "type": "object",

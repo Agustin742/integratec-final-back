@@ -15,14 +15,24 @@ export const notificationRequestSchema = z
       'announcement',
       'mention',
       'activity_forum_reply',
+      'badge_awarded',
     ]),
-    classroomId: identifier,
+    // Classroom-free notices exist for student-owned events (badge awards),
+    // which are scoped to the recipient alone and need no classroom context.
+    classroomId: identifier.optional(),
     resourceId: identifier,
     recipientId: identifier,
     studentId: identifier.optional(),
   })
   .strict()
-  .refine((request) => request.kind !== 'grade_posted' || request.studentId !== undefined);
+  .refine((request) => request.kind !== 'grade_posted' || request.studentId !== undefined)
+  .refine(
+    (request) =>
+      request.kind !== 'badge_awarded' ||
+      (request.classroomId === undefined &&
+        request.studentId !== undefined &&
+        request.studentId === request.recipientId),
+  );
 
 export type NotificationRequest = z.infer<typeof notificationRequestSchema>;
 

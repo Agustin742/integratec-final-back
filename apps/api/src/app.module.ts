@@ -17,6 +17,7 @@ import { ShopModule } from './shop/shop.module';
 import { GradesModule } from './grades/grades.module';
 import { MaterialsModule } from './materials/materials.module';
 import { EquipmentModule } from './equipment/equipment.module';
+import { GamificationModule } from './gamification/gamification.module';
 
 @Module({
   controllers: [HealthController],
@@ -42,6 +43,7 @@ export class AppModule {
         GradesModule,
         MaterialsModule,
         EquipmentModule,
+        GamificationModule,
       ],
     };
   }

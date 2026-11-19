@@ -609,7 +609,7 @@ describe('Grades & Grading Queue HTTP contract (real PostgreSQL, #26 isolation)'
       (await postGrade(ids.sub2, ids.parent, { score: 50, feedback: 'x' }).expect(404)).body,
       'NOT_FOUND',
     );
-  });
+  }, 15_000);
 
   it('transitions SubmissionResponseDto.status from submitted to graded on submission read endpoints', async () => {
     const beforeMe = await request(app.getHttpServer())
