@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-19 — Issue #40: teacher bot material enablement (HU-BOT-001)
+
+- **Status:** completed (local implementation, focused suites and independent verification complete on `feat/40-teacher-bot-material`; publication into `develop` pending team review)
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261119000100_create_bot_configs_and_allowed_materials/`, `apps/api/src/bot/` (new), `apps/api/src/app.module.ts`, `apps/api/openapi.json`, `docs/bot-materials.md`, local plan `odd/tasks/40-teacher-bot-material.md` (dedicated `odd/worktrees/issue-40`, branch `feat/40-teacher-bot-material` from latest `origin/develop` 134eabc).
+- **Change:** With AI assistance directed by Alejo: implemented HU-BOT-001 within scope. `BotConfig` + `AllowedMaterial` (unique per (classroom, material), `failure_reason` CHECK iff failed) via additive migration; enable/disable/list REST endpoints under `classrooms/:id/bot/materials` behind a `MATERIAL_INDEX_PORT` (default in-process adapter; retrieval technology deliberately deferred to HU-BOT-002 per the issue); 404 concealment for every actor without teacher-level authority including enrolled students and parents; `assertResourceAuthorization` (#26 pattern) applied to all three operations; `openapi.json` regenerated deterministically (sha256 `66792f0d…`).
+- **Verification:** Test-first: RED 24 failed → GREEN 25/25, then two hardening tests (pagination self-cleanup, 503 remove-failure path) → 26/26; focused `src/bot` + `src/materials` + `src/openapi` 75/75 on an isolated database; recursive typecheck/build, `eslint .`, Prettier and `git diff --check` green. Independent adversarial verification: AC1–AC4 PASS (probe with a distinct second school, 404 envelopes byte-identical, DB-level CHECK/unique probes on a fresh database), zero functional defects. Disclosed: the full local suite cannot complete on this Windows host (documented `ERR_IPC_CHANNEL_CLOSED`, died at 35/108 files all green so far) — the PR CI proves the full Linux suite.
+- **Reason:** Deliver HU-BOT-001 fully within scope so HU-BOT-002/#41 and #42 (daily review/question) can proceed; bot answering and any Bedrock/Knowledge-Bases retrieval code stay out of scope.
+- **Next step:** Publish the PR into `develop` and watch CI.
+
 ## 2026-11-18 — Issue #38: persisted classroom chat
 
 - **Status:** completed (local implementation, full-suite and independent verification complete on `feat/38-chat-persistence`; PR published into `develop`, awaiting current-head CI and teammate review)
