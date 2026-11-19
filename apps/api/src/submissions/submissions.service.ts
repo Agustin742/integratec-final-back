@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
+import { ActivityFormat, ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessRole,
@@ -16,6 +16,7 @@ import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
 import { MetricRecordingService } from '../metrics/metric-recording.service';
+import { evaluateMcAnswers, parseMcAnswers, type McEvaluation } from './mc-evaluator';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
 import { submissionWindow, type SubmissionWindowRules } from './submission-window';
 import {
@@ -43,6 +44,11 @@ const SUBMISSION_SELECT = {
     orderBy: { position: 'asc' },
     select: { id: true, originalName: true, contentType: true, sizeBytes: true, position: true },
   },
+  autoScore: true,
+  answers: {
+    orderBy: { position: 'asc' },
+    select: { questionId: true, optionId: true, position: true },
+  },
 } satisfies Prisma.SubmissionSelect;
 
 const READ_SELECT = {
@@ -62,6 +68,11 @@ const READ_SELECT = {
       sizeBytes: true,
       position: true,
     },
+  },
+  autoScore: true,
+  answers: {
+    orderBy: { position: 'asc' },
+    select: { questionId: true, optionId: true, position: true },
   },
 } satisfies Prisma.SubmissionSelect;
 
@@ -89,6 +100,7 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
     activityId: row.activityId,
     submittedAt: row.submittedAt.toISOString(),
     isLate: row.isLate,
+    autoScore: row.autoScore,
     status: row.grade !== null ? 'graded' : 'submitted',
     files: row.files.map((file) => ({
       id: file.id,
@@ -97,18 +109,26 @@ function toResponse(row: SubmissionRow): SubmissionResponseDto {
       sizeBytes: file.sizeBytes,
       position: file.position,
     })),
+    answers: row.answers.map((answer) => ({
+      questionId: answer.questionId,
+      optionId: answer.optionId,
+      position: answer.position,
+    })),
   };
 }
 
-/** Maps the shared submission window to the 409 a rejected submit returns. */
+/**
+ * Whether the activity takes a submission at `now` and whether it would be late (data-and-time
+ * D10: the server decides on UTC instants). Rejections are 409 with a student-readable reason.
+ * The payload shape (files versus answers) is checked by the caller against the format; the
+ * window itself is format-agnostic so the submit endpoint and the student inbox agree.
+ */
 function assertAcceptsSubmission(activity: SubmissionWindowRules, now: Date): { isLate: boolean } {
   const window = submissionWindow(activity, now);
   if (window.open) {
     return { isLate: window.isLate };
   }
   switch (window.reason) {
-    case 'format':
-      throw conflict('activity', 'This activity does not accept file submissions');
     case 'not_open':
       throw conflict('activity', 'This activity is not open yet');
     case 'closed':
@@ -148,12 +168,16 @@ export class SubmissionsService {
   ) {}
 
   /**
-   * Stores a student's files for a published FILE activity, exactly once per (activity, student).
+   * Stores a student's submission for a published activity, exactly once per (activity, student):
+   * files for a FILE activity, or multiple-choice answers graded on the server for a
+   * MULTIPLE_CHOICE activity (the score is computed inside the transaction and stored with the
+   * row; correct answers never leave the server).
    *
-   * Order: access (404/403) -> header (400) -> existing submission (replay 200 or 409) -> window
-   * and format (409) -> file content (400) -> upload -> ONE short transaction. The transaction
-   * share-locks the activity row (blocking teacher edits, not other students), then re-checks
-   * everything against committed state and stamps `submittedAt` from the server clock. Uploads happen outside any
+   * Order: access (404/403) -> header (400) -> existing submission (replay 200 or 409) -> payload
+   * and format (409/400) -> window (409) -> file content (400) -> upload -> ONE short transaction.
+   * The transaction share-locks the activity row (blocking teacher edits, not other students),
+   * then re-checks everything against committed state, validates the answers against the
+   * committed questions, scores them, and stamps `submittedAt` from the server clock. Uploads happen outside any
    * transaction; cleanup requires evidence that the objects cannot belong to a committed submission.
    */
   async submit(
@@ -161,21 +185,39 @@ export class SubmissionsService {
     activityId: string,
     rawIdempotencyKey: string | undefined,
     uploads: readonly SubmissionFileInput[],
+    answersRaw: string | undefined,
   ): Promise<SubmitResult> {
     const activity = await this.loadSubmittableActivity(actorId, activityId);
     const key = parseIdempotencyKey(rawIdempotencyKey);
 
-    // Cheap short-circuit before touching storage: a retry must not re-upload anything.
+    // Cheap short-circuit before touching storage or scoring: a retry must not re-upload or
+    // re-score anything.
     const prior = await this.findExisting(activity.id, actorId);
     if (prior) return this.resolveExisting(prior, key);
 
+    // The payload must match the activity's format. Both rejections are 409 so a wrong-format
+    // attempt never distinguishes "wrong shape" from "wrong activity".
+    if (activity.format === ActivityFormat.MULTIPLE_CHOICE) {
+      if (uploads.length > 0) {
+        throw conflict('activity', 'This activity does not accept file submissions');
+      }
+    } else if (answersRaw !== undefined) {
+      throw conflict('activity', 'This activity does not accept multiple-choice answers');
+    }
+    const mcAnswers =
+      activity.format === ActivityFormat.MULTIPLE_CHOICE ? parseMcAnswers(answersRaw) : null;
+
     assertAcceptsSubmission(activity, new Date());
 
-    const validation = await validateSubmissionFiles(uploads);
-    if (!validation.ok) {
-      throw new RequestValidationException(toErrorDetails(validation.violations));
+    // Files only exist on a FILE submission: a MULTIPLE_CHOICE submission carries answers.
+    let planned: PlannedFile[] = [];
+    if (activity.format === ActivityFormat.FILE) {
+      const validation = await validateSubmissionFiles(uploads);
+      if (!validation.ok) {
+        throw new RequestValidationException(toErrorDetails(validation.violations));
+      }
+      planned = this.plan(activity.classroomId, activity.id, actorId, validation.files);
     }
-    const planned = this.plan(activity.classroomId, activity.id, actorId, validation.files);
 
     try {
       await this.uploadAll(planned);
@@ -188,7 +230,7 @@ export class SubmissionsService {
     let outcome: TransactionOutcome;
     let callbackRejected = false;
     try {
-      outcome = await this.persist(activity, actorId, key, planned, () => {
+      outcome = await this.persist(activity, actorId, key, planned, mcAnswers, () => {
         callbackRejected = true;
       });
     } catch (error) {
@@ -297,8 +339,14 @@ export class SubmissionsService {
       activityId: row.activityId,
       submittedAt: row.submittedAt.toISOString(),
       isLate: row.isLate,
+      autoScore: row.autoScore,
       status: row.grade !== null ? 'graded' : 'submitted',
       files,
+      answers: row.answers.map((answer) => ({
+        questionId: answer.questionId,
+        optionId: answer.optionId,
+        position: answer.position,
+      })),
     };
   }
 
@@ -398,6 +446,7 @@ export class SubmissionsService {
     studentId: string,
     key: string,
     planned: PlannedFile[],
+    mcAnswers: ReturnType<typeof parseMcAnswers> | null,
     onCallbackRejected: () => void,
   ): Promise<TransactionOutcome> {
     const { id: activityId, classroomId } = activity;
@@ -416,7 +465,14 @@ export class SubmissionsService {
         if (locked.length === 0) throw this.notFound();
         const current = await tx.activity.findFirst({
           where: { id: activityId, classroomId, deletedAt: null },
-          select: { state: true, format: true, opensAt: true, dueAt: true, allowLate: true },
+          select: {
+            state: true,
+            format: true,
+            opensAt: true,
+            dueAt: true,
+            allowLate: true,
+            maxScore: true,
+          },
         });
         if (!current || current.state !== ActivityState.PUBLISHED) throw this.notFound();
         if (!(await this.access.isActiveStudent(classroomId, studentId, { client: tx }))) {
@@ -433,12 +489,21 @@ export class SubmissionsService {
         // Server clock, read once after the lock: it decides lateness and stamps the row.
         const now = new Date();
         const { isLate } = assertAcceptsSubmission(current, now);
+        // Multiple-choice answers are validated and scored against the committed questions of
+        // this very activity, inside the same transaction as the row they belong to. The score
+        // is computed once, here; an idempotent replay never reaches this point, so it never
+        // re-scores.
+        const evaluation: McEvaluation | null =
+          current.format === ActivityFormat.MULTIPLE_CHOICE && mcAnswers
+            ? await evaluateMcAnswers(tx, activityId, mcAnswers, current.maxScore)
+            : null;
         const row = await tx.submission.create({
           data: {
             activityId,
             studentId,
             submittedAt: now,
             isLate,
+            ...(evaluation ? { autoScore: evaluation.autoScore } : {}),
             idempotencyKey: key,
             files: {
               create: planned.map((file) => ({
@@ -450,6 +515,7 @@ export class SubmissionsService {
                 position: file.position,
               })),
             },
+            ...(evaluation ? { answers: { create: evaluation.rows } } : {}),
           },
           select: SUBMISSION_SELECT,
         });

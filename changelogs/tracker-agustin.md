@@ -1,5 +1,13 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Review fixes on PR #118 (multiple-choice evaluator, #47)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/activities/activities.service.ts`, `apps/api/src/activities/activities.controller.ts`, `apps/api/src/activities/activities.integration.spec.ts`, `apps/api/openapi.json`, `docs/activities.md`
+- **Change:** `PATCH` on a MULTIPLE_CHOICE activity that already has a submission now rejects a different `maxScore` with 409 (field `maxScore`), checked under the same row lock as the questions freeze. Sending the same value stays allowed, and FILE activities keep an editable `maxScore` (33c2f8b).
+- **Reason:** Review finding on PR #118: `autoScore` is stored on the 0..`maxScore` scale at submit time, so changing `maxScore` afterwards left stored scores on the old scale.
+- **Next step:** CI on PR #118, then merge into `develop`.
+
 ## 2026-11-19 — Review fixes on PR #110 (classroom chat, #38)
 
 - **Status:** in-progress

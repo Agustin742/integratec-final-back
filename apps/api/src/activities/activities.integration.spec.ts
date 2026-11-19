@@ -698,6 +698,40 @@ describe('activities draft CRUD PostgreSQL HTTP — activities-and-grading, data
       });
     });
 
+    it('PATCH a different maxScore on a multiple-choice activity after a submission is 409 and keeps the stored value', async () => {
+      const created = await createAs(teacher, classroomA, mcBody({ maxScore: 100 }));
+      await seedSubmission(created.id);
+
+      const res = await api('patch', `/${created.id}`, teacher).send({ maxScore: 50 }).expect(409);
+
+      expect(res.body.error).toMatchObject({
+        code: 'CONFLICT',
+        details: [{ field: 'maxScore', messages: [expect.stringContaining('submitted')] }],
+      });
+      const row = await prisma.activity.findUniqueOrThrow({ where: { id: created.id } });
+      expect(row.maxScore).toBe(100);
+    });
+
+    it('PATCH the same maxScore on a multiple-choice activity after a submission stays allowed', async () => {
+      const created = await createAs(teacher, classroomA, mcBody({ maxScore: 100 }));
+      await seedSubmission(created.id);
+
+      const res = await api('patch', `/${created.id}`, teacher)
+        .send({ maxScore: 100, title: 'Same score' })
+        .expect(200);
+
+      expect(res.body).toMatchObject({ maxScore: 100, title: 'Same score' });
+    });
+
+    it('PATCH maxScore on a FILE activity after a submission stays allowed (graded manually)', async () => {
+      const created = await createAs(teacher, classroomA, tpBody({ maxScore: 10 }));
+      await seedSubmission(created.id);
+
+      const res = await api('patch', `/${created.id}`, teacher).send({ maxScore: 50 }).expect(200);
+
+      expect(res.body).toMatchObject({ maxScore: 50 });
+    });
+
     it('PATCH questions with no submission still replaces them (regression)', async () => {
       const created = await createAs(
         teacher,
