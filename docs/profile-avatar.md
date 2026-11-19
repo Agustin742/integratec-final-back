@@ -24,8 +24,8 @@ The user approved **free body, hairstyle and ordinary base clothing**, reserving
 
 | `bodyId` | Compatible `hairId` | Compatible `topId` |
 | --- | --- | --- |
-| `male` | `afro`, `dreads` | `hoodie`, `tank` |
-| `female` | `afro`, `original` | `hoodie`, `tank`, `tshirt` |
+| `male` | `afro`, `dreads`, `short-messy`, `buzz`, `curls` | `hoodie`, `tank`, `tshirt`, `sweater-shirt-tie` |
+| `female` | `afro`, `original`, `ponytail`, `bob`, `bun` | `hoodie`, `tank`, `tshirt`, `sweater-shirt-tie` |
 
 | Field | Allowed values |
 | --- | --- |
@@ -57,8 +57,8 @@ An absent configuration row or empty JSON object yields this base response **wit
 ```json
 {
   "bodyId": "male",
-  "hairId": "afro",
-  "topId": "hoodie",
+  "hairId": "short-messy",
+  "topId": "sweater-shirt-tie",
   "hairColor": "#6C4D48",
   "clothingColor": "#5B4F96"
 }
