@@ -101,13 +101,16 @@ persisted mute state on every call; students are denied while staff may send.
 Message, deduplicated mentions, notification outbox requests and the author's daily
 participation metric (`messageCount` of the message's UTC day) commit atomically.
 
-A PostgreSQL transaction advisory lock serializes each normalized user/classroom
-pair across service instances. After acquiring it, access is rechecked and the
-classroom row is share-locked while mute state is read. The database clock is
-sampled **after** waiting, at the millisecond precision persisted through Prisma.
+A non-blocking PostgreSQL transaction advisory lock (`pg_try_advisory_xact_lock`)
+guards each normalized user/classroom pair across service instances. A concurrent
+send for the same user and classroom is rejected with 429 instead of queued, so a
+burst never pins pooled connections waiting; nothing is persisted. After acquiring
+the lock, access is rechecked and the classroom row is share-locked while mute
+state is read. The database clock is sampled **after** taking the lock, at the
+millisecond precision persisted through Prisma.
 Admission counts all messages (including hidden ones) newer than `now - 10s`;
-the same `now` is persisted on acceptance. Five are admitted; excess sends fail
-with 429 without consuming quota. No process-local admission state exists.
+the same `now` is persisted on acceptance. At most five are admitted; excess or
+concurrent sends fail with 429 without consuming quota. No process-local admission state exists.
 Membership checks follow the existing shared service semantics; they do not
 promise instantaneous serialization against every concurrent external revocation.
 

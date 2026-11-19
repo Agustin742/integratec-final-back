@@ -185,7 +185,7 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
   });
 
   it.each(['student', 'staff'])(
-    'admits exactly five across independent clients for %s, counting hidden rows',
+    'never admits more than five across independent clients for %s, counting hidden rows',
     async (role) => {
       const actor = role === 'staff' ? teacher : student;
       await prisma.message.create({
@@ -206,17 +206,22 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
           ),
         ),
       );
-      expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(4);
+      // Concurrent sends for one pair are rejected (429) instead of queued, so how many
+      // succeed is timing-dependent; the first lock holder always does. Invariants only.
+      const admitted = outcomes.filter((result) => result.status === 'fulfilled').length;
       const failures = outcomes.filter((result) => result.status === 'rejected');
-      expect(failures).toHaveLength(3);
+      expect(admitted).toBeGreaterThanOrEqual(1);
+      expect(admitted).toBeLessThanOrEqual(4);
+      expect(failures).toHaveLength(7 - admitted);
       for (const failure of failures)
         expect((failure.reason as HttpException).getStatus()).toBe(429);
-      expect(await counts()).toEqual([5, 4, 4]);
+      // Rejections persist nothing and consume no quota: one hidden row plus admitted ones.
+      expect(await counts()).toEqual([1 + admitted, admitted, admitted]);
       await chat.send(role === 'staff' ? student : teacher, classroom, 'Other pair');
     },
   );
 
-  it('uses the clock after a real lock wait, excluding rows expired at admission', async () => {
+  it('rejects with 429 immediately, persisting nothing, while another connection holds the pair lock', async () => {
     const key = createHash('sha256')
       .update(`chat:${classroom}:${student}`)
       .digest()
@@ -235,27 +240,17 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
       await gate;
     });
     await locked;
-    const sending = chat.send(student, classroom, 'Fresh').then(
-      (value) => ({ value }),
-      (error: unknown) => ({ error }),
-    );
     try {
-      await vi.waitFor(async () => {
-        const [waiting] = await prisma.$queryRaw<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM pg_locks WHERE locktype = 'advisory'
-          AND NOT granted AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`;
-        expect(waiting!.count).toBeGreaterThan(0);
-      });
-      // Insert AFTER the waiting transaction began: CURRENT_TIMESTAMP would wrongly
-      // count these five rows, but the post-lock clock must see them as expired.
-      await prisma.$executeRaw`INSERT INTO messages (id, classroom_id, author_id, body, created_at, updated_at)
-        SELECT gen_random_uuid(), ${classroom}::uuid, ${student}::uuid, 'Expired',
-        date_trunc('milliseconds', clock_timestamp()) - interval '10 seconds', clock_timestamp() FROM generate_series(1, 5)`;
+      // The lock is still held: a queued send would never settle here, so settling at all
+      // proves the send did not wait for it.
+      await rejected(student, '@Member', 429);
+      expect(await counts()).toEqual([0, 0, 0]);
     } finally {
       release();
       await holder;
     }
-    expect(await sending).toMatchObject({ value: { body: 'Fresh' } });
-    expect(await counts()).toEqual([6, 0, 0]);
+    // Quota was not consumed by the rejection: the full five are still admitted.
+    for (let i = 0; i < 5; i++) await chat.send(student, classroom, 'Valid');
+    await rejected(student, 'Sixth', 429);
   });
 });

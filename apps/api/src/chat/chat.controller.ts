@@ -88,7 +88,8 @@ export class ChatController {
   })
   @ApiTooManyRequestsResponse({
     type: ErrorEnvelopeDto,
-    description: 'Five messages already admitted in the rolling ten-second window.',
+    description:
+      'Five messages already admitted in the rolling ten-second window, or another send for the same user and classroom is in flight.',
   })
   send(
     @CurrentUser('userId') actorId: string,

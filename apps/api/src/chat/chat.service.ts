@@ -104,15 +104,20 @@ export class ChatService {
     if (!/[^\s\u200B-\u200D\uFEFF]/u.test(body) || body.length > CHAT_MAX_BODY_LENGTH) {
       invalidBody(`body must contain 1 to ${CHAT_MAX_BODY_LENGTH} characters of text`);
     }
-    // UUID spelling must not split a pair's lock. Hash collisions only serialize extra pairs.
+    // UUID spelling must not split a pair's lock. Hash collisions only reject extra pairs (429).
     const key = createHash('sha256')
       .update(`chat:${classroomId.toLowerCase()}:${actorId.toLowerCase()}`)
       .digest()
       .readBigInt64BE(0);
     return this.prisma.$transaction(
       async (tx) => {
-        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(${key})`;
-        // Recheck after waiting. Access uses current persisted state, not session claims.
+        // Non-blocking: a concurrent send for the same user/classroom is treated as exceeding
+        // the send rate (429) instead of queueing, so bursts never pin pooled connections.
+        const [lock] = await tx.$queryRaw<
+          { locked: boolean }[]
+        >`SELECT pg_try_advisory_xact_lock(${key}) AS locked`;
+        if (!lock?.locked) throw new HttpException('Chat rate limit exceeded', 429);
+        // Access uses current persisted state, not session claims.
         const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
           requiredRole: 'ANY',
           client: tx,
@@ -129,7 +134,7 @@ export class ChatService {
         const mentionedUserIds = resolveMentionedUserIds(body, roster);
         if (mentionedUserIds.length > CHAT_MAX_MENTIONED_USERS)
           invalidBody(`body resolves to more than ${CHAT_MAX_MENTIONED_USERS} @mentions`);
-        // Sample AFTER admission lock, never transaction-start CURRENT_TIMESTAMP. Millisecond
+        // Sample AFTER taking the admission lock, never transaction-start CURRENT_TIMESTAMP. Millisecond
         // precision matches Prisma Date and the explicitly persisted creation instant.
         const [clock] = await tx.$queryRaw<
           { now: Date }[]
