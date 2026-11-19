@@ -493,8 +493,9 @@ model Question {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  activity Activity @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  activity Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
   options  Option[]
+  answers  SubmissionAnswer[]
 
   @@unique([activityId, position])
   @@map("questions")
@@ -508,7 +509,8 @@ model Option {
   label      String
   isCorrect  Boolean @default(false) @map("is_correct")
 
-  question Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  question Question           @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  answers  SubmissionAnswer[]
 
   @@unique([questionId, position])
   @@map("options")
@@ -559,20 +561,24 @@ model ActivityForumPost {
 /// A student's single submission to a FILE activity (MVP: no resubmission). `submittedAt` is
 /// always set by the server; `isLate` is true when it passed `dueAt` on an `allowLate` activity.
 /// `idempotencyKey` is the client's `Idempotency-Key`. CHECK constraints in the database: key
-/// length 1-255 (see the create_submissions migration).
+/// length 1-255 (see the create_submissions migration). `autoScore` is the server-computed
+/// score of a MULTIPLE_CHOICE submission (0..`maxScore`, decided inside the submit transaction);
+/// FILE submissions keep it null and are graded by a teacher through `Grade`.
 model Submission {
   id             String   @id @default(uuid()) @db.Uuid
   activityId     String   @map("activity_id") @db.Uuid
   studentId      String   @map("student_id") @db.Uuid
   submittedAt    DateTime @map("submitted_at") @db.Timestamptz(6)
   isLate         Boolean  @default(false) @map("is_late")
+  autoScore      Int?     @map("auto_score")
   idempotencyKey String   @map("idempotency_key")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  activity Activity         @relation(fields: [activityId], references: [id], onDelete: Restrict)
-  student  User             @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  activity Activity           @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  student  User               @relation(fields: [studentId], references: [id], onDelete: Restrict)
   files    SubmissionFile[]
+  answers  SubmissionAnswer[]
   grade    Grade?
 
   @@unique([activityId, studentId])
@@ -597,6 +603,28 @@ model SubmissionFile {
 
   @@unique([submissionId, position])
   @@map("submission_files")
+}
+
+/// One chosen option per question of a MULTIPLE_CHOICE submission. Written once inside the
+/// submit transaction together with the computed `Submission.autoScore`; never updated.
+/// CHECK constraints in the database: one answer per question and `position` 0-99 (see the
+/// add_mc_submission_answers migration).
+model SubmissionAnswer {
+  id           String   @id @default(uuid()) @db.Uuid
+  submissionId String   @map("submission_id") @db.Uuid
+  questionId   String   @map("question_id") @db.Uuid
+  optionId     String   @map("option_id") @db.Uuid
+  position     Int
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  question    Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  option      Option     @relation(fields: [optionId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, questionId])
+  @@unique([submissionId, position])
+  @@index([questionId])
+  @@map("submission_answers")
 }
 
 /// Transactional outbox: written in the same transaction as the business change and

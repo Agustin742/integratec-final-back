@@ -75,7 +75,7 @@ export class ActivitiesController {
       'Staff see drafts and published (filter with `state`); students see published only ' +
       '(their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ' +
       'ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work ' +
-      '`status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). ' +
+      '`status` (graded > submitted > overdue > pending) and `canSubmit` (either format). ' +
       '`status` filters before pagination/count for students; staff receive 400 for this query. ' +
       'Overdue means no submission and server time strictly after dueAt, regardless of allowLate.',
   })
@@ -164,7 +164,8 @@ export class ActivitiesController {
     description:
       'Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` ' +
       'replaces all questions and stays editable only until the first submission exists (409 ' +
-      'afterwards); title, description and dates remain editable.',
+      'afterwards). On a multiple-choice activity `maxScore` is frozen the same way: a different ' +
+      'value is refused (409) once a submission exists. Title, description and dates remain editable.',
   })
   @ApiParam({ name: 'activityId', description: 'Activity UUID' })
   @ApiOkResponse({ type: TeacherActivityResponseDto })
@@ -172,7 +173,8 @@ export class ActivitiesController {
   @ApiForbiddenResponse({ type: ErrorEnvelopeDto, description: 'Insufficient role.' })
   @ApiConflictResponse({
     type: ErrorEnvelopeDto,
-    description: 'Questions can no longer change because a submission exists.',
+    description:
+      'Questions, or the `maxScore` of a multiple-choice activity, can no longer change because a submission exists.',
   })
   update(
     @CurrentUser('userId') actorId: string,

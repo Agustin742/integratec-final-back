@@ -9,17 +9,16 @@ export interface SubmissionWindowRules {
 }
 
 export type SubmissionWindow =
-  { open: true; isLate: boolean } | { open: false; reason: 'format' | 'not_open' | 'closed' };
+  { open: true; isLate: boolean } | { open: false; reason: 'not_open' | 'closed' };
 
 /**
  * Single source of truth for whether an activity takes a submission at `now` (data-and-time D10:
- * the server decides on UTC instants). Checks run in order: format, opening, deadline. Shared by
- * the submit endpoint and the student inbox `canSubmit` so the two cannot drift.
+ * the server decides on UTC instants). Checks run in order: opening, deadline. The window is
+ * format-agnostic: both FILE and MULTIPLE_CHOICE activities take a submission within it, and
+ * whether the payload matches the format is the submit flow's own check. Shared by the submit
+ * endpoint and the student inbox `canSubmit` so the two cannot drift.
  */
 export function submissionWindow(rules: SubmissionWindowRules, now: Date): SubmissionWindow {
-  if (rules.format !== ActivityFormat.FILE) {
-    return { open: false, reason: 'format' };
-  }
   if (rules.opensAt !== null && now.getTime() < rules.opensAt.getTime()) {
     return { open: false, reason: 'not_open' };
   }

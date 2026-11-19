@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   await prisma.streak.deleteMany();
   await prisma.badgeDefinition.deleteMany();
   await prisma.submissionFile.deleteMany();
+  await prisma.submissionAnswer.deleteMany();
   await prisma.submission.deleteMany();
   await prisma.option.deleteMany();
   await prisma.question.deleteMany();
