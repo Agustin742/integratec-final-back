@@ -5,17 +5,9 @@ import { IsIn } from 'class-validator';
 export const HAIR_COLORS = ['#6C4D48', '#AF6D63', '#E5AD58', '#353849', '#C77DAA'];
 export const CLOTHING_COLORS = ['#5B4F96', '#75B7DA', '#F2C85C', '#EFA5AE', '#7EBA8B', '#F4E6D2'];
 export const BASE_OPTIONS: Record<string, { hairId: string[]; topId: string[] }> = {
-  male: {
-    hairId: ['afro', 'dreads', 'short-messy', 'buzz', 'curls'],
-    topId: ['hoodie', 'tank', 'tshirt', 'sweater-shirt-tie'],
-  },
-  female: {
-    hairId: ['afro', 'original', 'ponytail', 'bob', 'bun'],
-    topId: ['hoodie', 'tank', 'tshirt', 'sweater-shirt-tie'],
-  },
+  male: { hairId: ['afro', 'dreads'], topId: ['hoodie', 'tank'] },
+  female: { hairId: ['afro', 'original'], topId: ['hoodie', 'tank', 'tshirt'] },
 };
-const ALL_HAIR_IDS = [...new Set(Object.values(BASE_OPTIONS).flatMap((o) => o.hairId))];
-const ALL_TOP_IDS = [...new Set(Object.values(BASE_OPTIONS).flatMap((o) => o.topId))];
 const uppercase = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.toUpperCase() : value;
 
@@ -26,20 +18,19 @@ export class AvatarDto {
   bodyId!: string;
 
   @ApiProperty({
-    enum: ALL_HAIR_IDS,
-    example: 'short-messy',
-    description:
-      'male: afro/dreads/short-messy/buzz/curls; female: afro/original/ponytail/bob/bun.',
+    enum: ['afro', 'dreads', 'original'],
+    example: 'afro',
+    description: 'male: afro/dreads; female: afro/original.',
   })
-  @IsIn(ALL_HAIR_IDS)
+  @IsIn(['afro', 'dreads', 'original'])
   hairId!: string;
 
   @ApiProperty({
-    enum: ALL_TOP_IDS,
-    example: 'sweater-shirt-tie',
-    description: 'Both bodies: hoodie/tank/tshirt/sweater-shirt-tie. Uniforms excluded.',
+    enum: ['hoodie', 'tank', 'tshirt'],
+    example: 'hoodie',
+    description: 'male: hoodie/tank; female: hoodie/tank/tshirt. Uniforms excluded.',
   })
-  @IsIn(ALL_TOP_IDS)
+  @IsIn(['hoodie', 'tank', 'tshirt'])
   topId!: string;
 
   @ApiProperty({
@@ -63,8 +54,8 @@ export class AvatarDto {
 
 export const DEFAULT_AVATAR: Readonly<AvatarDto> = {
   bodyId: 'male',
-  hairId: 'short-messy',
-  topId: 'sweater-shirt-tie',
+  hairId: 'afro',
+  topId: 'hoodie',
   hairColor: '#6C4D48',
   clothingColor: '#5B4F96',
 };
