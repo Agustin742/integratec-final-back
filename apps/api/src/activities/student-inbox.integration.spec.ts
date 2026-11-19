@@ -38,7 +38,7 @@ describe('student inbox PostgreSQL HTTP — card #29 S2-S5', () => {
     ['before opening', 1000, false, 1, 'FILE', 'pending', false],
     ['at opening', 1000, false, 0, 'FILE', 'pending', true],
     ['after opening', 1000, false, -1, 'FILE', 'pending', true],
-    ['unsupported MC', 1000, true, null, 'MULTIPLE_CHOICE', 'pending', false],
+    ['open MC', 1000, true, null, 'MULTIPLE_CHOICE', 'pending', true],
   ] as const;
 
   beforeAll(async () => {
@@ -300,7 +300,7 @@ describe('student inbox PostgreSQL HTTP — card #29 S2-S5', () => {
       expect([ids.draft, ids.deleted, ids.foreign]).not.toContain(item.id);
     }
     expect(JSON.stringify(body)).not.toMatch(/Private|isCorrect|studentId|idempotencyKey/);
-    const detail = (await get(`/${ids['unsupported MC']}`).expect(200)).body;
+    const detail = (await get(`/${ids['open MC']}`).expect(200)).body;
     expect(detail).not.toHaveProperty('status');
     expect(detail).not.toHaveProperty('canSubmit');
     expect(detail.questions).toHaveLength(1);
@@ -366,7 +366,7 @@ describe('student inbox PostgreSQL HTTP — card #29 S2-S5', () => {
     expect(body.items[0]).toMatchObject({ id: ids.draft, state: 'DRAFT' });
     expect(body.items[0]).not.toHaveProperty('status');
     expect(body.items[0]).not.toHaveProperty('canSubmit');
-    const detail = (await get(`/${ids['unsupported MC']}`, teacher).expect(200)).body;
+    const detail = (await get(`/${ids['open MC']}`, teacher).expect(200)).body;
     expect(detail.questions[0].options[0].isCorrect).toBe(true);
     expect(detail).not.toHaveProperty('status');
     expect(detail).not.toHaveProperty('canSubmit');
