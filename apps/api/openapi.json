@@ -2869,6 +2869,186 @@
         "tags": ["gamification"]
       }
     },
+    "/classrooms/{id}/bot/materials": {
+      "post": {
+        "description": "Teacher-level staff only; every other actor receives 404. The material must belong to this classroom and not be soft-removed. It is indexed under the classroom partition; a duplicate enable re-indexes from scratch without reusing earlier chunks. Indexing failure is returned as `failed` with a visible reason and leaves the material usable for its normal purposes.",
+        "operationId": "BotMaterialsController_enable",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnableBotMaterialDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotMaterialDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid body: materialId must be the only field and a UUID.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Allow one study material for the study guide bot",
+        "tags": ["bot"]
+      },
+      "get": {
+        "description": "Teacher-level staff only; every other actor receives 404. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Soft-removed materials are excluded.",
+        "operationId": "BotMaterialsController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed materials with per-material indexing state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BotMaterialDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or sort.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List materials allowed for the bot with their indexing state",
+        "tags": ["bot"]
+      }
+    },
+    "/classrooms/{id}/bot/materials/{materialId}": {
+      "delete": {
+        "description": "Teacher-level staff only; every other actor receives 404. The material is excluded from bot retrieval immediately and its indexed chunks are removed; re-enabling indexes from scratch. Repeated disable returns 404.",
+        "operationId": "BotMaterialsController_disable",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "Material UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "" },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "503": {
+            "description": "The material is excluded but its index partition cleanup is pending.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Disallow one study material for the bot",
+        "tags": ["bot"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -5954,6 +6134,57 @@
           "badges": { "type": "array", "items": { "$ref": "#/components/schemas/EarnedBadgeDto" } }
         },
         "required": ["streak", "badges"]
+      },
+      "EnableBotMaterialDto": {
+        "type": "object",
+        "properties": {
+          "materialId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Study material that must belong to the same classroom."
+          }
+        },
+        "required": ["materialId"]
+      },
+      "BotMaterialDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Allowed-material record id."
+          },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "materialId": { "type": "string", "format": "uuid" },
+          "filename": { "type": "string", "maxLength": 120, "example": "lesson.pdf" },
+          "contentType": {
+            "type": "string",
+            "enum": ["application/pdf", "image/png", "image/jpeg"]
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "indexState": {
+            "type": "string",
+            "enum": ["PENDING", "INDEXED", "FAILED"],
+            "description": "Indexing state inside the classroom partition. `FAILED` leaves the material usable for its normal purposes and is visible to the teacher."
+          },
+          "failureReason": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 300,
+            "description": "Present only while indexState is `failed`."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "materialId",
+          "filename",
+          "contentType",
+          "sizeBytes",
+          "indexState",
+          "createdAt"
+        ]
       },
       "RosterGuardianDto": {
         "type": "object",
