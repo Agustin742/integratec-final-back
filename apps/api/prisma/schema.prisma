@@ -426,6 +426,10 @@ model ActivityMetric {
   userId           String   @map("user_id") @db.Uuid
   day              DateTime @db.Date
   connectedSeconds Int      @default(0) @map("connected_seconds")
+  /// Raw counts (gap 17 keeps the composite formula open): submissions created that day, and
+  /// classroom-channel participation. `messageCount` stays 0 until chat (RF-COM-002) ships.
+  submissionCount  Int      @default(0) @map("submission_count")
+  messageCount     Int      @default(0) @map("message_count")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -784,6 +788,11 @@ model Grade {
   graderId           String   @map("grader_id") @db.Uuid
   score              Int
   feedback           String
+  /// Activity metadata frozen at grading time (same snapshot pattern as typeWeight and
+  /// weightMultiplier): later activity edits never rewrite the values a student was graded
+  /// against. A regrade refreshes both to the regrading-time values.
+  activityTitle      String   @map("activity_title") @db.VarChar(120)
+  maxScore           Int      @map("max_score")
   pointsAwarded      Int      @map("points_awarded")
   /// Weights used at the initial grade; regrades reuse them so later activity/config edits never move points.
   typeWeight         Decimal  @map("type_weight") @db.Decimal(4, 2)

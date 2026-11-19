@@ -14,6 +14,7 @@ import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
+import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { SUBMISSION_ON_TIME_EVENT, type SubmissionOnTimePayload } from './submission-events';
 import {
   type AcceptedSubmissionFile,
@@ -151,6 +152,7 @@ export class SubmissionsService {
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly outbox: OutboxWriter,
+    private readonly metrics: MetricRecordingService,
   ) {}
 
   /**
@@ -459,6 +461,8 @@ export class SubmissionsService {
           },
           select: SUBMISSION_SELECT,
         });
+        // Same transaction as the row: the metric exists if and only if the submission commits.
+        await this.metrics.recordSubmission(tx, { classroomId, userId: studentId, at: now });
         if (!isLate) {
           // Same transaction as the row: the event exists if and only if the submission commits.
           const payload: SubmissionOnTimePayload = {
