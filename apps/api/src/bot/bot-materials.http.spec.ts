@@ -462,6 +462,57 @@ describe('teacher bot material enablement — issue #40 / HU-BOT-001', () => {
     expect(await partitionHas(classroom, m3)).toBe(false);
   });
 
+  const removeThroughMaterials = (actor: string, materialId: string) =>
+    bearer(
+      request(app.getHttpServer()).delete(`/classrooms/${classroom}/materials/${materialId}`),
+      actor,
+    );
+  const restoreMaterial = (id: string) =>
+    prisma.studyMaterial.update({ where: { id }, data: { removedAt: null, removedById: null } });
+
+  it('removing a study material also removes it from the bot: row deleted, partition emptied, list empty', async () => {
+    await enable(teacher, classroom, mRemoval).expect(201);
+    expect(await partitionHas(classroom, mRemoval)).toBe(true);
+    try {
+      await removeThroughMaterials(teacher, mRemoval).expect(204);
+      expect(
+        await prisma.allowedMaterial.count({
+          where: { classroomId: classroom, materialId: mRemoval },
+        }),
+      ).toBe(0);
+      expect(removeMock).toHaveBeenCalledWith(classroom, mRemoval);
+      expect(await partitionHas(classroom, mRemoval)).toBe(false);
+      expect(
+        (await list(teacher).expect(200)).body.items.some(
+          (item: { materialId: string }) => item.materialId === mRemoval,
+        ),
+      ).toBe(false);
+    } finally {
+      await restoreMaterial(mRemoval);
+    }
+  });
+
+  it('keeps the material removal successful when de-indexing fails; the allowed row is already gone', async () => {
+    await enable(teacher, classroom, mRemoval).expect(201);
+    try {
+      failNextRemove = true;
+      await removeThroughMaterials(teacher, mRemoval).expect(204);
+      expect(
+        await prisma.allowedMaterial.count({
+          where: { classroomId: classroom, materialId: mRemoval },
+        }),
+      ).toBe(0);
+      const removed = await prisma.studyMaterial.findUniqueOrThrow({
+        where: { id: mRemoval },
+        select: { removedAt: true },
+      });
+      expect(removed.removedAt).not.toBeNull();
+    } finally {
+      failNextRemove = false;
+      await restoreMaterial(mRemoval);
+    }
+  });
+
   it('answers a duplicate enable idempotently with a single row', async () => {
     const first = await enable(teacher, classroom, m1).expect(201);
     const second = await enable(teacher, classroom, m1).expect(201);

@@ -1,4 +1,10 @@
-import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { MaterialIndexState, Prisma } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { paginated, toSkipTake } from '../http/pagination/paginated';
@@ -35,6 +41,8 @@ const INDEX_FAILURE_REASON =
 
 @Injectable()
 export class BotMaterialsService {
+  private readonly logger = new Logger(BotMaterialsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
@@ -131,6 +139,35 @@ export class BotMaterialsService {
       // way; only the partition cleanup is pending and a re-enable re-indexes.
       throw new ServiceUnavailableException(
         'Bot material removal is temporarily unavailable; the material is already excluded',
+      );
+    }
+  }
+
+  /**
+   * Called by the materials module when a study material is soft-removed. The
+   * allowed rows are the exclusion authority, so they are deleted inside the
+   * caller's transaction: a removed material is never left with an allowed row.
+   */
+  async excludeRemovedMaterial(
+    tx: Prisma.TransactionClient,
+    classroomId: string,
+    materialId: string,
+  ): Promise<void> {
+    await tx.allowedMaterial.deleteMany({ where: { classroomId, materialId } });
+  }
+
+  /**
+   * Cleans the index partition after {@link excludeRemovedMaterial} committed.
+   * Never throws: the material is already excluded, so a cleanup failure must
+   * not fail the material removal; it is logged and a re-enable re-indexes.
+   */
+  async deindexRemovedMaterial(classroomId: string, materialId: string): Promise<void> {
+    try {
+      await this.index.remove(classroomId, materialId);
+    } catch {
+      // Fixed message only: provider errors may carry diagnostics.
+      this.logger.warn(
+        `Bot index cleanup failed for removed material ${materialId} in classroom ${classroomId}; it is already excluded`,
       );
     }
   }

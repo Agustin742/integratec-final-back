@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
+import { BotMaterialsService } from '../bot/bot-materials.service';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { paginated, toSkipTake } from '../http/pagination/paginated';
@@ -40,6 +41,7 @@ export class MaterialsService {
     private readonly access: AccessVerificationService,
     @Inject(STORAGE_PORT) private readonly storage: StoragePort,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
+    private readonly botMaterials: BotMaterialsService,
   ) {}
 
   private async authorize(actorId: string, classroomId: string, write = false) {
@@ -125,12 +127,21 @@ export class MaterialsService {
     }
   }
 
+  /**
+   * Soft-removes a material and excludes it from the classroom bot: the allowed
+   * rows are deleted in the same transaction, then the index partition is
+   * cleaned after commit. A cleanup failure never fails the removal.
+   */
   async remove(actorId: string, classroomId: string, materialId: string) {
     const material = await this.resolve(actorId, classroomId, materialId, true);
-    const result = await this.prisma.studyMaterial.updateMany({
-      where: { id: material.id, classroomId: material.classroomId, removedAt: null },
-      data: { removedAt: new Date(), removedById: actorId },
+    await this.prisma.$transaction(async (tx) => {
+      const result = await tx.studyMaterial.updateMany({
+        where: { id: material.id, classroomId: material.classroomId, removedAt: null },
+        data: { removedAt: new Date(), removedById: actorId },
+      });
+      if (result.count === 0) throw new NotFoundException('Material not found');
+      await this.botMaterials.excludeRemovedMaterial(tx, material.classroomId, material.id);
     });
-    if (result.count === 0) throw new NotFoundException('Material not found');
+    await this.botMaterials.deindexRemovedMaterial(material.classroomId, material.id);
   }
 }

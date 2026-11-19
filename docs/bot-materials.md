@@ -44,8 +44,9 @@ retry. Unknown or non-UUID body fields return `400` `VALIDATION_FAILED`.
 indexing state, filename metadata from the joined study material, standard
 offset pagination (`page`, `pageSize`, defaults 1/20, maxima 10,000/100), and
 `sort` limited to `createdAt` / `-createdAt` (default) with `id` in the same
-direction as tiebreaker. Soft-removed materials are excluded; their stale
-allowance stays removable through the disable endpoint.
+direction as tiebreaker. Soft-removed materials are excluded; a stale
+allowance of an already removed material stays removable through the disable
+endpoint.
 
 `DELETE /classrooms/:id/bot/materials/:materialId` disables a material. The
 database row is the authority for exclusion, so the material is excluded from
@@ -53,3 +54,10 @@ bot retrieval immediately; the indexed chunks are removed through the port
 afterwards. Repeated disable returns `404`. If the partition cleanup fails the
 response is `503` with a clear message — the material is already excluded and a
 re-enable re-indexes from scratch.
+
+Removing a study material (`DELETE /classrooms/:id/materials/:materialId`) also
+removes it from the bot. The allowed-material rows are deleted in the same
+transaction as the soft-removal, so a removed material is never left allowed;
+the indexed chunks are removed through the port after commit. If that cleanup
+fails the material removal still succeeds (`204`) and the failure is logged:
+the deleted row already excludes the material from retrieval.

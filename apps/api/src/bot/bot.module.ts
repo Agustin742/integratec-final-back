@@ -14,5 +14,7 @@ import { MATERIAL_INDEX_PORT } from './material-index.port';
     // Default adapter until the retrieval technology decision (HU-BOT-002).
     { provide: MATERIAL_INDEX_PORT, useClass: InProcessMaterialIndexAdapter },
   ],
+  // Consumed by MaterialsModule to exclude soft-removed materials from the bot.
+  exports: [BotMaterialsService],
 })
 export class BotModule {}
