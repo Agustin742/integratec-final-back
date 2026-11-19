@@ -293,6 +293,8 @@ model Classroom {
   messages           Message[]
   studyMaterials     StudyMaterial[]
   equippedItems      EquippedItem[]
+  botConfig          BotConfig?
+  botAllowedMaterials AllowedMaterial[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -316,6 +318,7 @@ model StudyMaterial {
   classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
   author    User      @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
   removedBy User?     @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
+  botAllowances AllowedMaterial[]
 
   @@index([classroomId, removedAt, createdAt, id])
   @@index([authorId])
@@ -1012,4 +1015,54 @@ model StudentBadge {
   @@unique([studentId, badgeDefinitionId])
   @@index([studentId, awardedAt])
   @@map("student_badges")
+}
+
+/// Lifecycle of a study material inside its classroom's bot index partition.
+enum MaterialIndexState {
+  PENDING @map("pending")
+  INDEXED @map("indexed")
+  FAILED  @map("failed")
+
+  @@map("material_index_state")
+}
+
+/// Teacher's study-guide bot configuration for exactly one classroom (HU-BOT-001).
+/// Created lazily when the first material is allowed for the bot; there is no bot
+/// toggle or schedule in this configuration (rules/ai-bot-and-daily-briefing.md).
+model BotConfig {
+  id          String   @id @default(uuid()) @db.Uuid
+  classroomId String   @unique @map("classroom_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom        Classroom         @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  allowedMaterials AllowedMaterial[]
+
+  @@map("bot_configs")
+}
+
+/// One study material the teacher allowed the classroom bot to use, unique per
+/// (classroom, material) (rules/data.md). The explicit classroomId keeps the bot
+/// index partition server-scoped, so retrieval can never cross classrooms or
+/// schools; `failureReason` is set exactly while `indexState` is FAILED (CHECK).
+model AllowedMaterial {
+  id            String             @id @default(uuid()) @db.Uuid
+  botConfigId   String             @map("bot_config_id") @db.Uuid
+  classroomId   String             @map("classroom_id") @db.Uuid
+  materialId    String             @map("material_id") @db.Uuid
+  indexState    MaterialIndexState @default(PENDING) @map("index_state")
+  /// Fixed, human-readable reason recorded when indexing fails; never the
+  /// provider diagnostic (rules/error-handling-and-feedback.md).
+  failureReason String?            @map("failure_reason") @db.VarChar(300)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  botConfig BotConfig     @relation(fields: [botConfigId], references: [id], onDelete: Cascade)
+  classroom Classroom     @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  material  StudyMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, materialId])
+  @@index([botConfigId, createdAt, id])
+  @@index([materialId])
+  @@map("allowed_materials")
 }
