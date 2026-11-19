@@ -1222,6 +1222,22 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       expect(await rowsOf(activityId)).toHaveLength(0);
     });
 
+    it('rejects non-string ids before scoring: an array questionId is 400 at parse', async () => {
+      const { activityId, questions } = await mcActivity(1);
+      // String([uuid]) coerces to a valid uuid, so a type check must reject it before
+      // the transaction: only a real string may reach the evaluator.
+      const coerced = await submitMc(activityId, [], {
+        raw: JSON.stringify([{ questionId: [questions[0].id], optionId: questions[0].correct }]),
+      }).expect(400);
+      expect(coerced.body.error.details).toEqual([
+        {
+          field: 'answers',
+          messages: ['each answer must be an object with uuid questionId and optionId'],
+        },
+      ]);
+      expect(await rowsOf(activityId)).toHaveLength(0);
+    });
+
     it('rejects answers that do not belong to the activity with 400', async () => {
       const mine = await mcActivity(1);
       const elsewhere = await mcActivity(1);

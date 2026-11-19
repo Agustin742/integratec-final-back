@@ -50,17 +50,22 @@ export function parseMcAnswers(raw: string | undefined): ParsedMcAnswer[] {
   const answers: ParsedMcAnswer[] = [];
   const seenQuestions = new Set<string>();
   for (const item of parsed) {
+    // Only real strings may pass: String([uuid]) coerces to a valid uuid, so the type is
+    // checked before the pattern, and a coerced non-string id never reaches the transaction.
+    const { questionId, optionId } = (item ?? {}) as Record<string, unknown>;
     if (
       typeof item !== 'object' ||
       item === null ||
-      !UUID_PATTERN.test(String((item as Record<string, unknown>).questionId)) ||
-      !UUID_PATTERN.test(String((item as Record<string, unknown>).optionId))
+      typeof questionId !== 'string' ||
+      typeof optionId !== 'string' ||
+      !UUID_PATTERN.test(questionId) ||
+      !UUID_PATTERN.test(optionId)
     ) {
       answersValidation([
         { messages: ['each answer must be an object with uuid questionId and optionId'] },
       ]);
     }
-    const answer = item as { questionId: string; optionId: string };
+    const answer = { questionId, optionId };
     if (seenQuestions.has(answer.questionId)) {
       answersValidation([{ messages: [`duplicated answer for question ${answer.questionId}`] }]);
     }
