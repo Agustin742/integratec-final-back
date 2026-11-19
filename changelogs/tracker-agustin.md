@@ -1,5 +1,55 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Revert avatar wardrobe ids and new default outfit (#115)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
+- **Change:** Reverts #116. The contract and the default avatar are back to the previous ids (`afro`/`dreads`/`original`, `hoodie`/`tank`/`tshirt`).
+- **Reason:** The new avatar models were rejected and their authoring is on hold, so the merged ids and the new default had no models in the frontend. New users would get a default the frontend cannot render. Stored appearances that fail validation already fall back to the default when read, so no data migration is needed.
+- **Next step:** Review and PR to `develop`; reintroduce the ids when the models exist.
+
+## 2026-11-19 — Avatar wardrobe ids and new default outfit (#115)
+
+- **Status:** reverted (merged in #116, reverted because the models are on hold)
+- **Area / files:** `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/src/users/users.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`
+- **Change:** Added top `sweater-shirt-tie` (both bodies), male hair `short-messy`/`buzz`/`curls` and female hair `ponytail`/`bob`/`bun` to the avatar contract; the default avatar for users without a stored one is now `short-messy` hair with `sweater-shirt-tie`. Previously accepted ids stay valid, so saved avatars are unaffected; the OpenAPI enums are derived from `BASE_OPTIONS`.
+- **Reason:** The frontend avatar rebuild introduces these ids and the new default outfit; the contract must accept them first.
+- **Next step:** Review and PR to `develop`; later remove the discarded ids once their replacements land; frontend `api:sync`.
+
+## 2026-11-18 — Keyless deploy pipeline applied and verified (#58, T9)
+
+- **Status:** done (#58 closed; PRs #111, #112 merged)
+- **Area / files:** `infra/pipeline/buildspecs/images.yml`, `scripts/ci/test_pipeline_buildspecs.py`, `infra/README.md`
+- **Change:** Local `terraform apply` from `develop` created the pipeline (26 resources added, 1 changed); the GitHub connection handshake was completed in the console. The first run failed in Images because CodeBuild runs each buildspec command in its own shell, so `build_and_push` was undefined in the later commands; #112 keeps the function and its calls in one command and adds tests that run each command in a separate shell. The next run, started automatically by the merge to `develop`, succeeded end to end: clean plan, images `release-20261118-6bd8544`, migrations before the stack, `/api/health` and `/realtime/health` return 200, `migrate` runs as `node`.
+- **Reason:** Finish #58 by proving the pipeline in AWS, not only in tests.
+- **Next step:** none for #58. Spanish diagram docs still describe OIDC deploy.
+
+## 2026-11-18 — Keyless deploy pipeline inside AWS (#58), T1-T8
+
+- **Status:** merged (PR #111); applied and verified in the T9 entry above
+- **Area / files:** `docs/technical-justification.md` (D19), `rules/`, `apps/api/Dockerfile`, `infra/deploy/` (`compose.prod.yaml`, `start-app.sh`), `infra/modules/delivery_pipeline/`, `infra/pipeline/` (buildspecs and scripts), `infra/envs/prod/`, `infra/README.md`, `scripts/ci` tests
+- **Change:** CodePipeline V2 (`aula-virtual-prod-backend`, QUEUED, push to `develop`) with Source, Plan, manual Approval, Apply of the saved plan, Images and Deploy through SSM Run Command, plus a one-shot `migrate` service that runs before the api. Done so far, one line each:
+  - T1 `39129aa`: decision D19 and infrastructure rules.
+  - T2 `ee974ec`, `b82b43e`: `migrate` image target, Compose service and ECR repository; start-app.sh migrates before recreating the api.
+  - T3 `ceec064`: CodeConnections link, artifact bucket, CodeBuild log group.
+  - T4 `d718986`: Terraform plan and apply CodeBuild projects, roles and buildspecs.
+  - T5 `8b5de15`: images project that builds and pushes `release-<date>-<sha>` images.
+  - T6 `3451c7c`, `79a1108`: SSM deploy stage, host files from the artifact, Caddy recreate on Caddyfile change, host read access to the artifact bucket.
+  - T7 `dc3f844`: pipeline wiring and role; apply build timeout raised to 120 minutes.
+  - T8 (this commit): `infra/README.md` documents the flow, one-time console handshake, approval, migrations, roll back, permissions and a cost estimate; the manual deploy is now the documented fallback.
+- **Reason:** The account SCP denies the GitHub OIDC provider, and production ran with an empty schema because no deploy step ran migrations.
+- **Open points for the PR:** nothing is applied yet, so the apply-dependent checks are unverified (ReadOnlyAccess coverage of the plan role, `jq` in the CodeBuild image, `migrate` image running as non-root, the first end-to-end run). The cost estimate (about USD 1.5 per month at 20 runs) uses official prices read on 2026-11-18; whether the Free plan credits cover CodePipeline, CodeBuild and CodeConnections is unknown. Spanish diagram docs still describe OIDC (`docs/diagrams/02-system-architecture/deployment-and-network.md`, `docs/diagrams/05-reference/gaps.md`).
+- **Next step:** PR review. Then T9 after merge to `develop`: local apply, console handshake of the GitHub connection, first pipeline run verified end to end.
+
+## 2026-11-17 — Frontend API and realtime base URLs include the Caddy paths (#22)
+
+- **Status:** in review once the PR opens (branch `fix/22-frontend-base-url-paths`; not pushed yet)
+- **Area / files:** `infra/envs/prod/` (`main.tf`, `variables.tf`, `tests/frontend_hosting.tftest.hcl`), `infra/modules/frontend_hosting/variables.tf`, `infra/README.md`
+- **Change:** The derived build variables are now `VITE_API_BASE_URL=https://<host>.sslip.io/api` and `VITE_REALTIME_URL=wss://<host>.sslip.io/realtime`, the routes Caddy serves with the prefix stripped (`infra/caddy/Caddyfile`). The validations in the prod root and the Amplify module accept an https (wss) base URL with an optional path, and still reject http/ws, a trailing slash, a query, a fragment, whitespace and dot-only segments. Error messages and descriptions say "base URL" instead of "origin". Tests cover the new defaults, overrides with and without a path, and the rejections; `terraform test` has 164 passing tests in `envs/prod`.
+- **Reason:** On the live host `POST /auth/login` returns 404 and `POST /api/auth/login` returns 400, so the deployed frontend could not reach the API or realtime service.
+- **Open points for the PR:** the `VITE_*` values are compiled into the bundle, so the fix only reaches users after a new Amplify build.
+- **Next step:** merge, apply from `develop`, start an Amplify build with `aws amplify start-job --job-type RELEASE`, then smoke check login and realtime from the Amplify URL.
+
 ## 2026-11-17 — Review fixes on the grading PR (#98, issue #32)
 
 - **Status:** in review (fixes applied on Luis's branch `feat/32-grade-submissions`; not pushed yet, waiting on the decision owner's OK)
@@ -12,15 +62,16 @@
 
 ## 2026-11-16 — ECR and EC2 Docker Compose deployment for api and realtime (#61)
 
-- **Status:** in review (PR #102 into `develop`, waiting for teammate review; nothing applied to AWS)
+- **Status:** completed (PR #102 and #103 merged into `develop`; deployed to AWS on 2026-11-17)
 - **Area / files:** `infra/modules/registry`, `infra/modules/app_config`, `infra/modules/storage`, `infra/modules/runtime_access`, `infra/envs/prod/` (`main.tf`, `outputs.tf`, `variables.tf`, `example.tfvars`, `tests/`), `infra/scripts/seed-app-secrets.sh`, `infra/deploy/` (`compose.prod.yaml`, `start-app.sh`, `systemd/`), `scripts/ci/` (`test_seed_app_secrets.py`, `test_compose_prod.py`, `test_start_app.py`), `infra/README.md`
 - **Change:** Added immutable ECR repositories for `api` and `realtime` with scan on push and a lifecycle policy (untagged 7 days, `release-*` keep 20, others 30 days). Added empty Secrets Manager containers for `JWT_SECRET`, `INVITATION_TOKEN_KEY` and `INTERNAL_SERVICE_SECRET` (values generated by AWS and loaded once by `seed-app-secrets.sh`, never by Terraform) and SSM String parameters with the non-secret config of each service, including the database connection settings of the api. Added a private, versioned, TLS-only S3 files bucket with `prevent_destroy`. Added an inline policy on the host role (ECR pull, secrets and config reads, files bucket objects, log writes; the ECR login token is the only `*`) and 14-day CloudWatch log groups. Added the production Compose file (Caddy, api, realtime, awslogs) and `start-app.sh`, which injects secrets and config as container environment and builds `DATABASE_URL` for the api only. Added a host-side systemd timer that redeploys the api after the RDS master password rotates, a deploy lock and a state file. Documented the resources, the host role, the one-time seeding, the host layout and manual deploy through Session Manager, rotation, rollback, deleting the bucket, an unverified cost table and the follow-ups in `infra/README.md`. `terraform test` has 141 passing tests in `envs/prod`.
 - **Decisions (2026-11-16):** Stacked on `feat/60-rds-postgres`; Terraform owns only AWS resources while the Compose file, Caddyfile and start script live in the repo and reach the host by hand until #58; S3 bucket added to this issue because the API needs `S3_BUCKET` at boot; non-secret config in SSM; log retention 14 days; empty secret containers plus a one-time seed script (mock providers reject ephemeral resources); host-side timer for the password rotation; DB connection settings published in SSM; single PR for the issue.
 - **Reason:** The network, host and database existed in code but nothing ran the backend; this makes the API and realtime reachable over HTTPS and WSS and gives the pipeline (#58) the repositories and the host layout.
 - **Open points for the PR:** nothing has been applied, so the apply-dependent criteria (images pulled on the host, HTTPS and WSS, seeding, second plan with no changes) are not verified. Cost figures are unverified. `scripts/ci` has Docker-dependent failures locally because the Docker daemon is down (environmental). Follow-ups: `sslmode=verify-full`, automatic rollback, realtime config read after the refresh early exit, script tests for malformed `DB_SECRET_ARN` and `DB_PORT`, redundant `compact()` in `envs/prod/main.tf`, wrong image URI example in the `start-app.sh` header (`<prefix>/api` instead of `<prefix>-api`). CI now installs PyYAML so the Compose structure tests run. #58 must tag deployable images `release-*`.
 - **Review fixes (2026-11-17, PR #102):** `allowed_origins` validation now rejects origins the API refuses at startup (`new URL(value).origin === value`): uppercase hosts, the default `:443` port and zero-padded ports. Regression tests cover the three rejections and a canonical origin with a non-default port published unchanged to SSM; `terraform test` has 145 passing tests in `envs/prod`.
-- **Next step:** Teammate review and merge of PR #102; then attach the reviewed `terraform plan` and do the first apply (T7).
-- **Pending after merge (T7, do not skip):** the first apply is deliberately deferred until this PR merges, because the PR still needs several review rounds and applying earlier would create billed resources from unmerged code. After #99, #101 and this PR merge, and with maintainer approval and fresh AWS credentials: `terraform plan` and `apply` in `envs/prod`; seed the secrets with `seed-app-secrets.sh`; build and push the first `release-*` images by hand; copy `infra/deploy/` and the Caddyfile to the host over Session Manager, create `/etc/aula-app/deploy.env`, run `start-app.sh` and enable the refresh timer (steps in `infra/README.md`, "Container deployment"). It must return: the plan and apply summary and outputs, the seed result per secret (never values), the pushed image URIs, `docker compose ps` with all three services healthy, the API `/health` over HTTPS and the WSS check through Caddy, logs in the three log groups, the active timer, the state file, confirmation that no secret leaked, and the status of every acceptance criterion.
+- **First apply fix (2026-11-17):** the first `apply` created 39 resources but RDS failed with `FreeTierRestrictionError` because the Free plan account rejects 7 days of backup retention. Added the prod variable `database_backup_retention_period` (default 1 day) wired to the database module, with tests; `terraform test` has 146 passing tests in `envs/prod`.
+- **First deploy (2026-11-17):** bootstrap was already applied; `envs/prod` apply created 53 resources and the second `terraform plan` reports no changes. Secrets seeded (`JWT_SECRET`, `INVITATION_TOKEN_KEY`, `INTERNAL_SERVICE_SECRET`: set, values never printed). Images `release-2026-11-17-1` built from `develop` and pushed to both ECR repositories. Deploy files sent to the host with SSM Run Command; `start-app.sh` reported caddy, api and realtime healthy, the refresh timer is active and the state file holds `db_secret_version`, `api_image` and `realtime_image`. Checked from outside: `GET https://16-59-248-180.sslip.io/api/health` returns 200 with a Let's Encrypt certificate, HTTP redirects with 308, `/api/internal` returns 404, the WebSocket upgrade through `/realtime/` returns 101, and the three log groups have streams. `allowed_origins` and `password_reset_url_base` use the `example.tfvars` placeholders. Costs not checked in Billing yet.
+- **Next step:** set the real frontend origin and reset URL once the frontend is deployed; #58 automates image builds and deploys.
 
 ## 2026-11-16 — Prod RDS PostgreSQL (#60)
 

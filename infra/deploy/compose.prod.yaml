@@ -1,4 +1,5 @@
-# Production stack of the EC2 host (issue #61): Caddy in front of the api and realtime services.
+# Production stack of the EC2 host (issue #61): Caddy in front of the api and realtime services, with a
+# one-shot migrate service that applies the database migrations before the api starts (issue #58).
 #
 # Do not run `docker compose up` on this file by hand. Use infra/deploy/start-app.sh, which reads the
 # secrets (Secrets Manager) and the config (SSM Parameter Store), logs in to ECR and starts the stack.
@@ -10,12 +11,21 @@
 # mounted from there), for example /opt/aula/infra/deploy and /opt/aula/infra/caddy.
 #
 # Inputs set by the start script:
-#   API_IMAGE, REALTIME_IMAGE  full ECR image URI with tag (the pipeline, issue #58, owns the tags)
+#   API_IMAGE, REALTIME_IMAGE, MIGRATE_IMAGE
+#                              full ECR image URI with tag (the pipeline, issue #58, owns the tags)
 #   SITE_ADDRESS               public host name Caddy serves (output host_sslip_domain)
 #   AWS_REGION                 region of the CloudWatch log groups
 #   LOG_GROUP_PREFIX           `/<name_prefix>`, so the groups are /<name_prefix>/{caddy,api,realtime}
-# plus the application variables listed per service below. Only the api gets the database URL; the
-# realtime service lists its own variables only, so nothing else in the shared environment reaches it.
+# plus the application variables listed per service below. Only the api and the migrate job get the
+# database URL; the realtime service lists its own variables only, so nothing else in the shared
+# environment reaches it.
+#
+# migrate runs `prisma migrate deploy` and exits. start-app.sh runs it first on its own
+# (`docker compose run --rm --no-deps migrate`) and aborts before `up` when it fails, so a failed
+# migration leaves the previous api running. `up` recreates containers before starting them, so the
+# api's depends_on (service_completed_successfully) is only a second guard, a no-op when nothing is
+# pending. Prisma serializes concurrent runs with a database advisory lock. Its logs go to the api log
+# group under their own stream prefix.
 #
 # Logs go to CloudWatch through the Docker awslogs driver with the host's instance role. The log
 # groups and their retention are created by Terraform (module runtime_access), so the driver never
@@ -73,6 +83,9 @@ services:
       - DATABASE_URL
     networks:
       - private
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://127.0.0.1:3000/health']
       interval: 15s
@@ -85,6 +98,22 @@ services:
         awslogs-region: ${AWS_REGION:?AWS_REGION is required}
         awslogs-group: ${LOG_GROUP_PREFIX:?LOG_GROUP_PREFIX is required}/api
         tag: '{{.Name}}'
+        mode: non-blocking
+        max-buffer-size: 4m
+
+  migrate:
+    image: ${MIGRATE_IMAGE:?MIGRATE_IMAGE is required (full ECR image URI with tag)}
+    restart: 'no'
+    environment:
+      - DATABASE_URL
+    networks:
+      - private
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: ${AWS_REGION:?AWS_REGION is required}
+        awslogs-group: ${LOG_GROUP_PREFIX:?LOG_GROUP_PREFIX is required}/api
+        tag: 'migrate/{{.Name}}'
         mode: non-blocking
         max-buffer-size: 4m
 

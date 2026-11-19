@@ -149,7 +149,7 @@ The server health check uses the bundled `mc ready local`, and `minio-init` runs
 
 ### Running services in containers
 
-Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine`, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
+Dockerfiles for `api` and `realtime` use multi-stage builds (`node:22.23.4-alpine` from the Amazon ECR Public mirror `public.ecr.aws/docker/library/node`, which avoids Docker Hub rate limits on shared CI builders, pinned to the same immutable multi-platform image digest in every stage, pnpm via Corepack, running as non-root user `node`). Both service definitions use the `app` profile so that running `docker compose up` only starts the database by default.
 
 The application services require `INTERNAL_SERVICE_SECRET` (and the API also `JWT_SECRET` and `INVITATION_TOKEN_KEY`), and the compose file deliberately provides no default for them. Create a git-ignored `.env` file in the repository root (Docker Compose reads it automatically) with generated secrets:
 

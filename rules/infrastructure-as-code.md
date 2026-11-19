@@ -13,7 +13,7 @@ AWS infrastructure is defined, reviewed, and changed through Terraform. This rul
 
 - Infrastructure code **MUST** live in the backend repository under `infra/`, next to the pipeline that publishes images to ECR and deploys them to the EC2 host.
 - Terraform **MUST** manage the resources listed in [AWS infrastructure](./aws-infrastructure.md): network, security groups, the EC2 host with its Elastic IP and instance profile, ECR, RDS, S3, secret containers, IAM roles, log groups, alarms, and budgets.
-- The AWS region is `us-east-2` (decision D5, updated 2026-11-04). The pipeline **MUST** authenticate through GitHub Actions OIDC to an IAM role once the account allows creating the OIDC provider (decision D6; the resources are gated by `enable_github_oidc`). Until then there is no pipeline deployment: Terraform is applied locally with short-lived credentials, and long-lived access keys **MUST NOT** be created or stored anywhere ([AWS infrastructure](./aws-infrastructure.md)).
+- The AWS region is `us-east-2` (decision D5, updated 2026-11-04). The deploy pipeline **MUST** run in AWS CodePipeline and CodeBuild with IAM service roles (decision D19), saving the `terraform plan` and applying only that saved plan after a manual approval. Local applies use short-lived credentials, and long-lived access keys **MUST NOT** be created or stored anywhere ([AWS infrastructure](./aws-infrastructure.md)).
 - Resources **MUST NOT** be created or changed manually in the console when Terraform manages them. An emergency manual change **MUST** be recorded and then either imported into code or reverted.
 - Resources that cannot be managed by Terraform, or are deliberately left out, **MUST** be listed with their owner and reason in `infra/README.md`.
 
@@ -45,7 +45,7 @@ AWS infrastructure is defined, reviewed, and changed through Terraform. This rul
 
 ## Change workflow
 
-- Every change **MUST** go through a pull request. CI **MUST** run `terraform fmt -check`, `terraform validate`, and `terraform plan`, and the plan **MUST** be reviewed before approval.
+- Every change **MUST** go through a pull request. CI **MUST** run `terraform fmt -check` and `terraform validate` without AWS credentials, and the deploy pipeline **MUST** produce the `terraform plan`, which **MUST** be reviewed in the manual approval before apply (D19).
 - `terraform apply` **MUST** apply a reviewed plan for the target environment and **MUST** be performed only by the pipeline or an authorized team member.
 - Changes that destroy or replace stateful resources (RDS, the state bucket, S3 buckets with data) **MUST** be called out explicitly in the pull request.
 - RDS and the state bucket **MUST** use `prevent_destroy` and, where available, deletion protection.
