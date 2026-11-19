@@ -1401,7 +1401,7 @@
     },
     "/activities/{activityId}/submissions": {
       "post": {
-        "description": "Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes) to a published FILE activity of the student's classroom. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new; a different key after a submission exists is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
+        "description": "Student only. For a published FILE activity of the student's classroom, uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes). For a published MULTIPLE_CHOICE activity, sends the `answers` field instead: a JSON-encoded array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity; the server grades them and stores the `autoScore` with the submission, and correct answers are never returned. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new and without re-scoring; a different key after a submission exists is 409. Sending files to a MULTIPLE_CHOICE activity, or answers to a FILE activity, is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
         "operationId": "SubmissionsController_create",
         "parameters": [
           {
@@ -1445,7 +1445,7 @@
             }
           },
           "400": {
-            "description": "Missing or invalid `Idempotency-Key`, no files, disallowed or empty files (`VALIDATION_FAILED` with details), or too many files / unexpected field (`BAD_REQUEST`).",
+            "description": "Missing or invalid `Idempotency-Key`; no files, disallowed or empty files; missing, empty or malformed `answers` JSON; or answers that do not belong to the activity (`VALIDATION_FAILED` with details); or too many files / unexpected field (`BAD_REQUEST`).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1469,7 +1469,7 @@
             }
           },
           "409": {
-            "description": "Already submitted with another key, window closed or not yet open, or not a file activity (`details` names the reason).",
+            "description": "Already submitted with another key, window closed or not yet open, a payload that does not match the activity format (files on a MULTIPLE_CHOICE activity, answers on a FILE activity), or a multiple-choice activity without questions (`details` names the reason).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1482,7 +1482,7 @@
           }
         },
         "security": [{ "bearer": [] }],
-        "summary": "Submit files to an activity",
+        "summary": "Submit files or multiple-choice answers to an activity",
         "tags": ["submissions"]
       }
     },
@@ -3016,7 +3016,7 @@
         "tags": ["activities"]
       },
       "get": {
-        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (either format). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
         "operationId": "ActivitiesController_list",
         "parameters": [
           {
@@ -5123,7 +5123,11 @@
             "items": { "type": "string", "format": "binary" },
             "minItems": 1,
             "maxItems": 5,
-            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX."
+            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX. Required for FILE activities; rejected for MULTIPLE_CHOICE activities."
+          },
+          "answers": {
+            "type": "string",
+            "description": "MULTIPLE_CHOICE answers: a JSON-encoded array of { questionId, optionId } pairs, at least one. Required for MULTIPLE_CHOICE activities; rejected for FILE activities. The server grades the answers and returns the score; correct answers are never sent back."
           }
         },
         "required": ["files"]
@@ -5151,6 +5155,19 @@
         },
         "required": ["id", "originalName", "contentType", "sizeBytes", "position"]
       },
+      "SubmissionAnswerResponseDto": {
+        "type": "object",
+        "properties": {
+          "questionId": { "type": "string", "format": "uuid" },
+          "optionId": { "type": "string", "format": "uuid" },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based order in which the answers were sent."
+          }
+        },
+        "required": ["questionId", "optionId", "position"]
+      },
       "SubmissionResponseDto": {
         "type": "object",
         "properties": {
@@ -5165,6 +5182,13 @@
             "type": "boolean",
             "description": "True when submitted after `dueAt` on an activity with `allowLate`."
           },
+          "autoScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true,
+            "description": "Server-computed score of a MULTIPLE_CHOICE submission (0..maxScore), never supplied by the client; null for file submissions, which a teacher grades through the grade endpoint."
+          },
           "status": {
             "type": "string",
             "enum": ["submitted", "graded"],
@@ -5173,9 +5197,23 @@
           "files": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/SubmissionFileResponseDto" }
+          },
+          "answers": {
+            "description": "Chosen options of a MULTIPLE_CHOICE submission in the order they were sent; empty for file submissions.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionAnswerResponseDto" }
           }
         },
-        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+        "required": [
+          "id",
+          "activityId",
+          "submittedAt",
+          "isLate",
+          "autoScore",
+          "status",
+          "files",
+          "answers"
+        ]
       },
       "SubmissionFileDownloadDto": {
         "type": "object",
@@ -5231,17 +5269,38 @@
             "type": "boolean",
             "description": "True when submitted after `dueAt` on an activity with `allowLate`."
           },
+          "autoScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true,
+            "description": "Server-computed score of a MULTIPLE_CHOICE submission (0..maxScore), never supplied by the client; null for file submissions, which a teacher grades through the grade endpoint."
+          },
           "status": {
             "type": "string",
             "enum": ["submitted", "graded"],
             "description": "Derived state of the work."
+          },
+          "answers": {
+            "description": "Chosen options of a MULTIPLE_CHOICE submission in the order they were sent; empty for file submissions.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionAnswerResponseDto" }
           },
           "files": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/SubmissionFileDownloadDto" }
           }
         },
-        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+        "required": [
+          "id",
+          "activityId",
+          "submittedAt",
+          "isLate",
+          "autoScore",
+          "status",
+          "answers",
+          "files"
+        ]
       },
       "PointEntryKind": { "type": "string", "enum": ["EARNING", "DEBIT", "COMPENSATION"] },
       "PointMovementDto": {
@@ -6051,7 +6110,7 @@
           },
           "canSubmit": {
             "type": "boolean",
-            "description": "Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission."
+            "description": "No prior submission, opensAt reached, and not past dueAt unless allowLate; both formats take a submission (files or multiple-choice answers), checked server-side at submit time. Server-time snapshot, rechecked on submission."
           }
         },
         "required": [

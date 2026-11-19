@@ -1,6 +1,6 @@
 # Submission grading and weighted points
 
-`GradesModule` is wired into the root API. It enables authorized classroom staff to grade and regrade submitted `FILE` activities, atomically converts scores into weighted classroom points through `PointsLedgerService`, records student-only `grade_posted` in-app notification requests, and serves a paginated grading queue. Multiple-choice auto-grading (#47), parent/email notifications, and streak scoring remain out of scope. The decisions behind these rules are recorded in [D18](technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history).
+`GradesModule` is wired into the root API. It enables authorized classroom staff to grade and regrade submitted `FILE` activities, atomically converts scores into weighted classroom points through `PointsLedgerService`, records student-only `grade_posted` in-app notification requests, and serves a paginated grading queue. Multiple-choice activities are auto-graded on the server at submit time instead ([Submissions](submissions.md#multiple-choice-answers), #47); a teacher override of that automatic grade is open. Parent/email notifications and streak scoring remain out of scope. The decisions behind these rules are recorded in [D18](technical-justification.md#d18-submission-grading-weighted-points-conversion-and-grade-revision-history).
 
 ## Data model
 

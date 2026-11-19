@@ -1,15 +1,16 @@
-# File submissions
+# Submissions: files and multiple-choice answers
 
-`SubmissionsModule` lets an enrolled student hand in files for a published `FILE` activity (see [Activities](activities.md)) and lets the student and the classroom staff read the result. Multiple-choice answers (#47), grading ([Grading](grading.md)), points (#31) and the streak engine (HU-GAM-002) are handled outside this module (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService`; the academic rules are in [Activities and grading](../rules/activities-and-grading.md) and the defaults are recorded as [D16](technical-justification.md#d16-file-submission-defaults).
+`SubmissionsModule` lets an enrolled student hand in files for a published `FILE` activity or multiple-choice answers for a published `MULTIPLE_CHOICE` activity (see [Activities](activities.md)); the server itself grades multiple-choice answers and stores the score with the submission (#47). Manual grading ([Grading](grading.md)), points (#31) and the streak engine (HU-GAM-002) are handled outside this module (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService`; the academic rules are in [Activities and grading](../rules/activities-and-grading.md) and the defaults are recorded as [D16](technical-justification.md#d16-file-submission-defaults).
 
 ## Data model
 
 | Table | Purpose |
 |---|---|
-| `submissions` | One row per (activity, student): `submittedAt` (server clock), `isLate`, `idempotencyKey` |
-| `submission_files` | Files of a submission: private `storageKey` (unique), `originalName`, `contentType`, `sizeBytes`, `position` |
+| `submissions` | One row per (activity, student): `submittedAt` (server clock), `isLate`, `autoScore` (null for FILE), `idempotencyKey` |
+| `submission_files` | Files of a FILE submission: private `storageKey` (unique), `originalName`, `contentType`, `sizeBytes`, `position` |
+| `submission_answers` | One chosen `optionId` per `questionId` of a MULTIPLE_CHOICE submission, written once in the submit transaction; never updated |
 
-`(activity_id, student_id)` is unique, so the database, not only the service, guarantees a single submission. `CHECK` constraints back the idempotency key length (1-255), file size (1 byte to 10 MB), position (0-4), name length (1-255) and the content type allow-list. Foreign keys are `RESTRICT`. The state of the student's work is derived from `Submission` and its optional `Grade` (`status: "submitted" | "graded"`), never stored separately.
+`(activity_id, student_id)` is unique, so the database, not only the service, guarantees a single submission. `CHECK` constraints back the idempotency key length (1-255), file size (1 byte to 10 MB), position (0-4), name length (1-255) and the content type allow-list; `auto_score` is `NULL` or 0-100 (the activity's `maxScore` scale) and a submission answers a question at most once with `position` 0-99. Foreign keys are `RESTRICT`. The state of the student's work is derived from `Submission` and its optional `Grade` (`status: "submitted" | "graded"`), never stored separately; a multiple-choice submission is born `submitted` with its `autoScore` already set.
 
 ## Endpoints
 
@@ -50,7 +51,8 @@ The server clock decides, on UTC instants ([D10](technical-justification.md#d10-
 
 | Situation | Result |
 |---|---|
-| Activity is multiple choice | `409` |
+| Payload does not match the format: files on a MULTIPLE_CHOICE activity, answers on a FILE activity | `409` |
+| MULTIPLE_CHOICE activity without questions | `409` |
 | Before `opensAt` (exams only) | `409` |
 | After `dueAt`, `allowLate = false` | `409` |
 | After `dueAt`, `allowLate = true` | stored with `isLate = true` |
@@ -58,11 +60,19 @@ The server clock decides, on UTC instants ([D10](technical-justification.md#d10-
 
 Every `409` carries the reason in the error `details` (`RequestConflictException`), so the envelope message stays fixed and nothing sensitive leaks.
 
+## Multiple-choice answers
+
+- The `answers` field is a JSON-encoded array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity. Shape violations (not JSON, empty array, non-uuid ids, a duplicated question) are `400 VALIDATION_FAILED`; ids that do not belong to the activity's committed questions are `400`, checked inside the submit transaction so a teacher edit cannot slip in between.
+- The server grades: `autoScore = round(correct / questions * maxScore)` on the activity's 0-100 scale, computed inside the same transaction that stores the row, with unanswered and wrong questions counting as incorrect. The client never supplies a score.
+- Correct answers **never** leave the server: `isCorrect` is read only inside the evaluator and no response schema carries it. Responses return the chosen answers (`questionId`, `optionId`, `position`) and the `autoScore`, never a correct-answer marker.
+- An idempotent replay is short-circuited before parsing or scoring, so it never re-scores, even if the retried request carries different answers.
+- No partial credit is awarded (exactly one correct option per question, [D11](technical-justification.md)); whether a teacher may override an automatic grade stays open.
+
 ## Idempotency
 
 The `Idempotency-Key` header (1-255 characters, a UUID is recommended) is required; a missing or oversized key is `400`.
 
-- Same key as the stored submission: `200` with that submission; nothing is uploaded or stored again, and the replay does not re-check the window.
+- Same key as the stored submission: `200` with that submission; nothing is uploaded, stored or scored again, and the replay does not re-check the window.
 - Different key once a submission exists: `409` ("You already submitted").
 - Two racing requests: the unique index on `(activity_id, student_id)` decides; the loser re-reads the winner and gets `200` (same key) or `409`, never `500`.
 
@@ -100,7 +110,7 @@ Once any submission exists for an activity ([Activities](activities.md)):
 ## Out of scope and follow-ups
 
 - Resubmission and submission history (MVP is one submission per student and activity).
-- Multiple-choice answers (#47) and the streak engine (HU-GAM-002); manual grading lives in [Grading](grading.md).
+- Manual grading lives in [Grading](grading.md); a teacher override of an automatic multiple-choice grade is open. The streak engine (HU-GAM-002) consumes the outbox event below.
 - Malware scanning of uploads.
 - Reconciliation/retention tooling for orphan objects left by unknown transaction outcomes or failed cleanup (potentially linked files are never deleted merely because a transaction promise rejected).
 - More than 5 files returns multer's generic `400 BAD_REQUEST` instead of `VALIDATION_FAILED`.
