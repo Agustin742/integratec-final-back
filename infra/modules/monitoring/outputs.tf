@@ -16,6 +16,62 @@ output "subscriptions" {
   } }
 }
 
+output "host_alarms" {
+  description = "Host alarms (metric, dimensions, threshold, actions), keyed by status_instance, status_system and cpu, for tests and review."
+  value = { for k, a in {
+    status_instance = aws_cloudwatch_metric_alarm.host_status_instance
+    status_system   = aws_cloudwatch_metric_alarm.host_status_system
+    cpu             = aws_cloudwatch_metric_alarm.host_cpu
+    } : k => {
+    alarm_name          = a.alarm_name
+    alarm_description   = a.alarm_description
+    namespace           = a.namespace
+    metric_name         = a.metric_name
+    dimensions          = a.dimensions
+    statistic           = a.statistic
+    period              = a.period
+    evaluation_periods  = a.evaluation_periods
+    threshold           = a.threshold
+    comparison_operator = a.comparison_operator
+    treat_missing_data  = a.treat_missing_data
+    alarm_actions       = tolist(a.alarm_actions)
+    ok_actions          = tolist(a.ok_actions)
+  } }
+}
+
+output "database_alarms" {
+  description = "Database alarms (metric, dimensions, threshold, actions), keyed by free_storage, for tests and review."
+  value = { for k, a in {
+    free_storage = aws_cloudwatch_metric_alarm.database_free_storage
+    } : k => {
+    alarm_name          = a.alarm_name
+    alarm_description   = a.alarm_description
+    namespace           = a.namespace
+    metric_name         = a.metric_name
+    dimensions          = a.dimensions
+    statistic           = a.statistic
+    period              = a.period
+    evaluation_periods  = a.evaluation_periods
+    threshold           = a.threshold
+    comparison_operator = a.comparison_operator
+    treat_missing_data  = a.treat_missing_data
+    alarm_actions       = tolist(a.alarm_actions)
+    ok_actions          = tolist(a.ok_actions)
+  } }
+}
+
+output "database_event_subscription" {
+  description = "RDS event subscription (name, topic, source and categories), for tests and review."
+  value = {
+    name             = aws_db_event_subscription.database.name
+    sns_topic        = aws_db_event_subscription.database.sns_topic
+    source_type      = aws_db_event_subscription.database.source_type
+    source_ids       = tolist(aws_db_event_subscription.database.source_ids)
+    event_categories = tolist(aws_db_event_subscription.database.event_categories)
+    enabled          = aws_db_event_subscription.database.enabled
+  }
+}
+
 output "budget_name" {
   description = "Name of the monthly cost budget."
   value       = aws_budgets_budget.monthly_cost.name

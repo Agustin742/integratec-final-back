@@ -64,6 +64,9 @@ module "monitoring" {
   name_prefix           = "${var.project}-${local.environment}"
   alert_email_addresses = var.alert_email_addresses
   monthly_budget_usd    = var.monthly_budget_usd
+
+  host_instance_id             = module.host.instance_id
+  database_instance_identifier = module.database.identifier
 }
 
 # Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once

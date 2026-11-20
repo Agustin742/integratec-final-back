@@ -149,6 +149,136 @@ run "budget_limit_is_configurable" {
   }
 }
 
+run "host_status_check_alarms" {
+  command = apply
+
+  assert {
+    condition     = alltrue([for k in ["status_instance", "status_system"] : module.monitoring.host_alarms[k].namespace == "AWS/EC2" && module.monitoring.host_alarms[k].dimensions["InstanceId"] == module.host.instance_id])
+    error_message = "Host status alarms must use AWS/EC2 and the InstanceId dimension of the host."
+  }
+
+  assert {
+    condition     = module.monitoring.host_alarms["status_instance"].alarm_name == "aula-virtual-prod-host-status-instance" && module.monitoring.host_alarms["status_instance"].metric_name == "StatusCheckFailed_Instance"
+    error_message = "The instance status alarm must watch StatusCheckFailed_Instance."
+  }
+
+  assert {
+    condition     = module.monitoring.host_alarms["status_system"].alarm_name == "aula-virtual-prod-host-status-system" && module.monitoring.host_alarms["status_system"].metric_name == "StatusCheckFailed_System"
+    error_message = "The system status alarm must watch StatusCheckFailed_System."
+  }
+
+  assert {
+    condition = alltrue([for k in ["status_instance", "status_system"] :
+      module.monitoring.host_alarms[k].comparison_operator == "GreaterThanOrEqualToThreshold" &&
+      module.monitoring.host_alarms[k].threshold == 1 &&
+      module.monitoring.host_alarms[k].statistic == "Maximum" &&
+      module.monitoring.host_alarms[k].period == 60 &&
+      module.monitoring.host_alarms[k].evaluation_periods == 2
+    ])
+    error_message = "Status alarms must fire at Maximum >= 1 over 2 periods of 60 seconds."
+  }
+
+  assert {
+    condition     = alltrue([for k in ["status_instance", "status_system"] : module.monitoring.host_alarms[k].treat_missing_data == "missing"])
+    error_message = "Status alarms must treat missing data as missing: a stopped instance publishes nothing and is not a failed status check."
+  }
+}
+
+run "host_cpu_alarm" {
+  command = apply
+
+  assert {
+    condition     = module.monitoring.host_alarms["cpu"].alarm_name == "aula-virtual-prod-host-cpu-high" && module.monitoring.host_alarms["cpu"].metric_name == "CPUUtilization" && module.monitoring.host_alarms["cpu"].namespace == "AWS/EC2"
+    error_message = "The CPU alarm must watch AWS/EC2 CPUUtilization."
+  }
+
+  assert {
+    condition     = module.monitoring.host_alarms["cpu"].dimensions["InstanceId"] == module.host.instance_id
+    error_message = "The CPU alarm must use the InstanceId dimension of the host."
+  }
+
+  assert {
+    condition = (
+      module.monitoring.host_alarms["cpu"].comparison_operator == "GreaterThanThreshold" &&
+      module.monitoring.host_alarms["cpu"].threshold == 80 &&
+      module.monitoring.host_alarms["cpu"].statistic == "Average" &&
+      module.monitoring.host_alarms["cpu"].period == 300 &&
+      module.monitoring.host_alarms["cpu"].evaluation_periods == 3
+    )
+    error_message = "The CPU alarm must fire above 80 percent on the average over 3 periods of 300 seconds (15 minutes)."
+  }
+
+  assert {
+    condition     = module.monitoring.host_alarms["cpu"].treat_missing_data == "missing"
+    error_message = "The CPU alarm must treat missing data as missing; the status alarms cover a dead host."
+  }
+}
+
+run "database_storage_alarm" {
+  command = apply
+
+  assert {
+    condition     = module.monitoring.database_alarms["free_storage"].alarm_name == "aula-virtual-prod-database-free-storage-low" && module.monitoring.database_alarms["free_storage"].metric_name == "FreeStorageSpace" && module.monitoring.database_alarms["free_storage"].namespace == "AWS/RDS"
+    error_message = "The storage alarm must watch AWS/RDS FreeStorageSpace."
+  }
+
+  assert {
+    condition     = module.monitoring.database_alarms["free_storage"].dimensions["DBInstanceIdentifier"] == module.database.identifier
+    error_message = "The storage alarm must use the DBInstanceIdentifier dimension of the database."
+  }
+
+  assert {
+    condition = (
+      module.monitoring.database_alarms["free_storage"].comparison_operator == "LessThanThreshold" &&
+      module.monitoring.database_alarms["free_storage"].threshold == 2147483648 &&
+      module.monitoring.database_alarms["free_storage"].statistic == "Minimum" &&
+      module.monitoring.database_alarms["free_storage"].period == 300 &&
+      module.monitoring.database_alarms["free_storage"].evaluation_periods == 2
+    )
+    error_message = "The storage alarm must fire below 2 GiB (2147483648 bytes) on the minimum over 2 periods of 300 seconds."
+  }
+
+  assert {
+    condition     = module.monitoring.database_alarms["free_storage"].treat_missing_data == "missing"
+    error_message = "The storage alarm must treat missing data as missing; the RDS event subscription covers an unavailable database."
+  }
+}
+
+run "every_alarm_notifies_the_topic_on_alarm_and_recovery" {
+  command = apply
+
+  assert {
+    condition = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms) :
+      toset(a.alarm_actions) == toset([module.monitoring.alarm_topic_arn]) && toset(a.ok_actions) == toset([module.monitoring.alarm_topic_arn])
+    ])
+    error_message = "Every alarm must publish to the alarm topic both when it fires and when it recovers."
+  }
+
+  assert {
+    condition     = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms) : trimspace(a.alarm_description) != ""])
+    error_message = "Every alarm must carry a description saying what to check."
+  }
+}
+
+run "database_events_notify_the_topic" {
+  command = apply
+
+  assert {
+    condition     = module.monitoring.database_event_subscription.name == "aula-virtual-prod-db-events" && module.monitoring.database_event_subscription.sns_topic == module.monitoring.alarm_topic_arn
+    error_message = "The RDS event subscription must publish to the alarm topic."
+  }
+
+  assert {
+    condition     = module.monitoring.database_event_subscription.source_type == "db-instance" && toset(module.monitoring.database_event_subscription.source_ids) == toset([module.database.identifier])
+    error_message = "The RDS event subscription must watch only the database instance."
+  }
+
+  assert {
+    condition     = toset(module.monitoring.database_event_subscription.event_categories) == toset(["availability", "failure", "low storage", "recovery"]) && module.monitoring.database_event_subscription.enabled == true
+    error_message = "The RDS event subscription must be enabled for availability, failure, low storage and recovery events."
+  }
+}
+
 run "rejects_empty_alert_list" {
   command = plan
 
@@ -220,6 +350,9 @@ run "rejects_invalid_module_name_prefix" {
     name_prefix           = "Bad_Prefix"
     alert_email_addresses = ["alerts@example.com"]
     monthly_budget_usd    = 40
+    host_instance_id      = "i-0123456789abcdef0"
+
+    database_instance_identifier = "aula-virtual-prod-db"
   }
 
   expect_failures = [var.name_prefix]

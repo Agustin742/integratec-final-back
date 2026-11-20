@@ -18,3 +18,13 @@ variable "monthly_budget_usd" {
   type        = number
   default     = 40
 }
+
+variable "host_instance_id" {
+  description = "ID of the EC2 host the status and CPU alarms watch."
+  type        = string
+}
+
+variable "database_instance_identifier" {
+  description = "Identifier of the RDS instance the storage alarm and the event subscription watch."
+  type        = string
+}

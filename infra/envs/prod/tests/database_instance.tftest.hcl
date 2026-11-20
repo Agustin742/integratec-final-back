@@ -89,6 +89,15 @@ run "instance_engine_and_sizing" {
   }
 }
 
+run "instance_identifier_is_exposed" {
+  command = apply
+
+  assert {
+    condition     = module.database.identifier == "${var.project}-prod-db" && module.database.identifier == module.database.instance_settings.identifier
+    error_message = "The database module must expose the instance identifier (<prefix>-db) for the RDS alarms and events."
+  }
+}
+
 run "instance_is_private_encrypted_and_protected" {
   command = apply
 
