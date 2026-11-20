@@ -6369,6 +6369,35 @@
         },
         "required": ["kind", "items"]
       },
+      "DailyQuestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Question id to submit with the chosen answer."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 280,
+            "example": "¿Qué organelo realiza la fotosíntesis?"
+          },
+          "options": {
+            "minItems": 2,
+            "maxItems": 6,
+            "description": "Answer options; the submission sends the chosen option text.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "materialTitle": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 120,
+            "description": "Source material title the question was built from, when known."
+          }
+        },
+        "required": ["id", "prompt", "options", "materialTitle"]
+      },
       "DailyReviewResponseDto": {
         "type": "object",
         "properties": {
@@ -6394,9 +6423,10 @@
             "items": { "$ref": "#/components/schemas/DailyReviewSectionDto" }
           },
           "dailyQuestion": {
-            "type": "object",
             "nullable": true,
-            "description": "Present for students when the server has a question for the day; null on the structured fallback."
+            "description": "Present for students when the server has a question for the day; null on the structured fallback.",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/DailyQuestionDto" }]
           }
         },
         "required": ["status"]

@@ -159,6 +159,7 @@ export class DailyReviewResponseDto {
 
   @ApiPropertyOptional({
     nullable: true,
+    type: DailyQuestionDto,
     description:
       'Present for students when the server has a question for the day; null on the structured fallback.',
   })
