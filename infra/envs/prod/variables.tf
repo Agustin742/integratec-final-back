@@ -199,9 +199,9 @@ variable "alert_email_addresses" {
 }
 
 variable "monthly_budget_usd" {
-  description = "Monthly cost limit in USD of the AWS Budget; notifications fire at 50 % and 80 % actual and 100 % forecasted."
+  description = "Monthly cost limit in USD of the AWS Budget. The default of 40 leaves room over the expected spend of about 35 a month; notifications fire at 50 % and 80 % actual and 100 % forecasted."
   type        = number
-  default     = 20
+  default     = 40
 
   validation {
     condition     = var.monthly_budget_usd > 0

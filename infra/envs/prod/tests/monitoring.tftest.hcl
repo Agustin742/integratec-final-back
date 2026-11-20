@@ -102,8 +102,8 @@ run "budget_is_a_monthly_cost_budget_of_20_usd" {
   }
 
   assert {
-    condition     = module.monitoring.budget_settings == { budget_type = "COST", time_unit = "MONTHLY", limit_unit = "USD", limit_amount = "20" }
-    error_message = "The budget must be a monthly COST budget with a 20 USD limit."
+    condition     = module.monitoring.budget_settings == { budget_type = "COST", time_unit = "MONTHLY", limit_unit = "USD", limit_amount = "40" }
+    error_message = "The budget must be a monthly COST budget with a 40 USD limit."
   }
 }
 
@@ -219,7 +219,7 @@ run "rejects_invalid_module_name_prefix" {
   variables {
     name_prefix           = "Bad_Prefix"
     alert_email_addresses = ["alerts@example.com"]
-    monthly_budget_usd    = 20
+    monthly_budget_usd    = 40
   }
 
   expect_failures = [var.name_prefix]

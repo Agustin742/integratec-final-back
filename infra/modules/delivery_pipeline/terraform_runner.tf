@@ -17,7 +17,9 @@ locals {
   plan_project_name  = "${var.name_prefix}-terraform-plan"
   apply_project_name = "${var.name_prefix}-terraform-apply"
 
-  # All plain text: none of these is a secret (the password reset value is a public page URL).
+  # All plain text: none of these is a secret (the password reset value is a public page URL,
+  # and the alert addresses are notification recipients, not credentials; the real ones live
+  # only in the git-ignored terraform.tfvars, the repository holds example.tfvars placeholders).
   # The plan reads the variables the prod root has no default for, and the ones a local
   # terraform.tfvars overrides, so the pipeline plan equals the local one.
   plan_environment_variables = {
@@ -27,6 +29,8 @@ locals {
     TF_VAR_enable_github_oidc      = tostring(var.enable_github_oidc)
     TF_VAR_allowed_origins         = jsonencode(var.allowed_origins)
     TF_VAR_password_reset_url_base = var.password_reset_url_base
+    TF_VAR_alert_email_addresses   = jsonencode(var.alert_email_addresses)
+    TF_VAR_monthly_budget_usd      = tostring(var.monthly_budget_usd)
   }
 
   # Terraform rejects variable values when applying a saved plan: it takes them from the plan.

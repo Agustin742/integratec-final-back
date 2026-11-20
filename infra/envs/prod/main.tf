@@ -82,6 +82,8 @@ module "delivery_pipeline" {
   state_key               = "${local.environment}/terraform.tfstate"
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base
+  alert_email_addresses   = var.alert_email_addresses
+  monthly_budget_usd      = var.monthly_budget_usd
   enable_github_oidc      = var.enable_github_oidc
 
   # Repositories the images project pushes to.

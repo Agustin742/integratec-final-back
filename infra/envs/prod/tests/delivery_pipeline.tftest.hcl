@@ -143,6 +143,8 @@ run "artifact_expiration_is_configurable" {
     region                   = "us-east-2"
     allowed_origins          = ["https://app.example.com"]
     password_reset_url_base  = "https://app.example.com/reset-password"
+    alert_email_addresses    = ["alerts@example.com"]
+    monthly_budget_usd       = 40
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 90
     ecr_repository_names     = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
@@ -197,6 +199,8 @@ run "rejects_unsupported_log_retention" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -232,6 +236,8 @@ run "rejects_zero_artifact_expiration_days" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -267,6 +273,8 @@ run "rejects_fractional_artifact_expiration_days" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -302,6 +310,8 @@ run "rejects_name_prefix_longer_than_17_characters" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod-x"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"

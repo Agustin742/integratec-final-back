@@ -1,6 +1,8 @@
 locals {
-  # Decided by Agustin on 2026-11-20: warn at 50 % and 80 % of the limit as spent, and
-  # at 100 % as forecast for the month, so a trend is seen before the money is spent.
+  # Decided by Agustin on 2026-11-20: a USD 40 monthly limit, because the expected spend
+  # is about USD 35 a month, warning at 50 % and
+  # 80 % of the limit as spent and at 100 % as forecast for the month, so a trend is seen
+  # before the money is spent.
   budget_notifications = [
     { notification_type = "ACTUAL", threshold = 50 },
     { notification_type = "ACTUAL", threshold = 80 },
