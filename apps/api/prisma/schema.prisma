@@ -159,6 +159,7 @@ model User {
   streak                   Streak?               @relation("StudentStreak")
   streakQualifyingDays     StreakQualifyingDay[] @relation("StudentStreakQualifyingDays")
   badges                   StudentBadge[]        @relation("StudentBadges")
+  chatReadMarkers          ChatReadMarker[]      @relation("ChatReadMarkerUser")
 
   @@map("users")
 }
@@ -292,6 +293,7 @@ model Classroom {
   activities          Activity[]
   announcements       Announcement[]
   messages            Message[]
+  chatReadMarkers     ChatReadMarker[]
   studyMaterials      StudyMaterial[]
   equippedItems       EquippedItem[]
   botConfig           BotConfig?
@@ -910,10 +912,11 @@ model Message {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom  Classroom?  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  parentLink ParentLink? @relation(fields: [parentLinkId], references: [id], onDelete: Restrict)
-  author     User        @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  hiddenBy   User?       @relation("MessageModerator", fields: [hiddenById], references: [id], onDelete: Restrict)
+  classroom   Classroom?       @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  parentLink  ParentLink?      @relation(fields: [parentLinkId], references: [id], onDelete: Restrict)
+  author      User             @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  hiddenBy    User?            @relation("MessageModerator", fields: [hiddenById], references: [id], onDelete: Restrict)
+  readMarkers ChatReadMarker[]
 
   @@index([classroomId, createdAt, id])
   @@index([classroomId, authorId, createdAt, id])
@@ -921,6 +924,26 @@ model Message {
   @@index([authorId])
   @@index([hiddenById])
   @@map("messages")
+}
+
+/// One chat read marker per (user, classroom): the newest visible message the user has seen.
+/// Only ever moves forward by (createdAt, id); `lastReadAt` copies the marked message's
+/// createdAt so unread counts compare against the marker without joining the message row.
+model ChatReadMarker {
+  userId            String   @map("user_id") @db.Uuid
+  classroomId       String   @map("classroom_id") @db.Uuid
+  lastReadMessageId String   @map("last_read_message_id") @db.Uuid
+  lastReadAt        DateTime @map("last_read_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user        User      @relation("ChatReadMarkerUser", fields: [userId], references: [id], onDelete: Restrict)
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  lastMessage Message   @relation(fields: [lastReadMessageId], references: [id], onDelete: Restrict)
+
+  @@id([userId, classroomId])
+  @@index([classroomId])
+  @@index([lastReadMessageId])
+  @@map("chat_read_markers")
 }
 
 /// Resolved @ reference in a source resource (announcement or message).
