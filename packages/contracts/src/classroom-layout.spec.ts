@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildClassroomLayout,
   CLASSROOM_DESK_ROW_SPACING,
+  MAX_CLASSROOM_DESKS,
   MIN_CLASSROOM_DESKS,
   type ClassroomLayout,
   type LayoutBox,
@@ -132,5 +133,20 @@ describe('buildClassroomLayout', () => {
         for (const obstacle of obstacles) expect(overlaps(body, obstacle)).toBe(false);
       }
     });
+  });
+});
+
+describe('MAX_CLASSROOM_DESKS (#79)', () => {
+  it('is a whole number above the minimum room', () => {
+    expect(Number.isInteger(MAX_CLASSROOM_DESKS)).toBe(true);
+    expect(MAX_CLASSROOM_DESKS).toBeGreaterThan(MIN_CLASSROOM_DESKS);
+  });
+
+  it('still yields a layout whose spawn points are inside the bounds', () => {
+    const layout = buildClassroomLayout(MAX_CLASSROOM_DESKS);
+    expect(layout.obstacles).toHaveLength(MAX_CLASSROOM_DESKS + 1);
+    for (const spawn of layout.spawnPoints) {
+      expect(spawn.z).toBeLessThan(layout.bounds.maxZ);
+    }
   });
 });

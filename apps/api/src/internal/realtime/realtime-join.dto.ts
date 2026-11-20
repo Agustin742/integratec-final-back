@@ -1,7 +1,11 @@
 import { ApiExtraModels, ApiProperty, getSchemaPath } from '@nestjs/swagger';
 import { ShopItemKind } from '@prisma/client';
 import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
-import { APPEARANCE_SLOT_NAMES, type AppearanceSlotName } from '@aula/contracts';
+import {
+  APPEARANCE_SLOT_NAMES,
+  MAX_CLASSROOM_DESKS,
+  type AppearanceSlotName,
+} from '@aula/contracts';
 
 /** Upper bound for a presented access token; real JWTs are a few hundred characters. */
 export const JOIN_ACCESS_TOKEN_MAX_LENGTH = 4096;
@@ -114,4 +118,8 @@ export class JoinVerificationResponseDto {
   /** Internal ordering token for appearance snapshots; not part of the synchronized avatar. */
   @ApiProperty({ minimum: 0 })
   appearanceRevision!: number;
+
+  /** Student desks the classroom has; the realtime room lays out its floor from it (#79). */
+  @ApiProperty({ minimum: 0, maximum: MAX_CLASSROOM_DESKS })
+  deskCount!: number;
 }

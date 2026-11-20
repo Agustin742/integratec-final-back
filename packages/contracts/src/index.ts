@@ -206,6 +206,13 @@ const desk = (
 /** Fewest student desks a classroom layout ever has: three rows of four. */
 export const MIN_CLASSROOM_DESKS = 12;
 
+/**
+ * Largest desk count a classroom layout accepts. Desks only grow one by one with student
+ * enrolments (#22), so 200 (fifty rows) is far beyond any real classroom; the cap keeps a corrupt
+ * or hostile count from building an arbitrarily large room on the realtime server.
+ */
+export const MAX_CLASSROOM_DESKS = 200;
+
 /** Distance between two consecutive student desk rows (z axis). */
 export const CLASSROOM_DESK_ROW_SPACING = 2.2;
 

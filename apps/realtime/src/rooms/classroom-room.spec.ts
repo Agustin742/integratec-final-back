@@ -27,6 +27,7 @@ const IDENTITY = {
   displayName: 'Ada Lovelace',
   appearanceRevision: 1,
   appearance: APPEARANCE,
+  deskCount: 12,
 };
 const AUTH = {
   userId: IDENTITY.userId,
@@ -36,6 +37,7 @@ const AUTH = {
   displayName: IDENTITY.displayName,
   appearanceRevision: IDENTITY.appearanceRevision,
   appearance: APPEARANCE,
+  deskCount: IDENTITY.deskCount,
 };
 
 describe('createClassroomRoom', () => {
@@ -595,6 +597,7 @@ describe('createClassroomRoom', () => {
           displayName: AUTH.displayName,
           appearanceRevision: AUTH.appearanceRevision,
           appearance: AUTH.appearance,
+          deskCount: AUTH.deskCount,
         },
       ]);
       expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({

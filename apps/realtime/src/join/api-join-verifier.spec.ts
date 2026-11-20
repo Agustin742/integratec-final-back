@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ApiJoinVerifier } from './api-join-verifier';
 import { JoinDeniedError, JoinVerificationUnavailableError } from './join-verifier';
+import { MAX_CLASSROOM_DESKS } from '@aula/contracts';
 import { makeStubAppearance } from '../testing/stub-api';
 
 const SECRET = 'test-only-secret-with-at-least-32-characters';
@@ -14,6 +15,7 @@ const IDENTITY = {
   displayName: 'Ada Lovelace',
   appearanceRevision: 1,
   appearance: makeStubAppearance(),
+  deskCount: 12,
 };
 
 /**
@@ -102,11 +104,27 @@ describe('ApiJoinVerifier', () => {
     ['an oversized displayName', json(200, { ...IDENTITY, displayName: 'x'.repeat(101) })],
     ['a missing appearance revision', json(200, { ...IDENTITY, appearanceRevision: undefined })],
     ['a negative appearance revision', json(200, { ...IDENTITY, appearanceRevision: -1 })],
+    ['a missing desk count', json(200, { ...IDENTITY, deskCount: undefined })],
+    ['a negative desk count', json(200, { ...IDENTITY, deskCount: -1 })],
+    ['a fractional desk count', json(200, { ...IDENTITY, deskCount: 12.5 })],
+    ['a string desk count', json(200, { ...IDENTITY, deskCount: '12' })],
+    [
+      'a desk count above the maximum',
+      json(200, { ...IDENTITY, deskCount: MAX_CLASSROOM_DESKS + 1 }),
+    ],
   ])('denies a 200 response with %s', async (_label, response) => {
     const fetchImpl = vi.fn().mockResolvedValue(response);
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(
       JoinDeniedError,
     );
+  });
+
+  it.each([0, 13, MAX_CLASSROOM_DESKS])('accepts a desk count of %i', async (deskCount) => {
+    const identity = { ...IDENTITY, deskCount };
+    const fetchImpl = vi.fn().mockResolvedValue(json(200, identity));
+    await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).resolves.toMatchObject({
+      deskCount,
+    });
   });
 
   it('denies when the API answers for a different classroom than requested', async () => {

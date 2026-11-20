@@ -51,12 +51,10 @@ export class RealtimeAccessService {
     if (myRole === 'PARENT') {
       throw new ForbiddenException('Live classroom access is not available for this role');
     }
-    const { displayName, appearanceRevision, appearance } = await memberAppearanceFor(
-      this.prisma,
-      userId,
-      classroom.id,
-      this.unsupportedAppearanceOptions(),
-    );
+    const [{ displayName, appearanceRevision, appearance }, deskCount] = await Promise.all([
+      memberAppearanceFor(this.prisma, userId, classroom.id, this.unsupportedAppearanceOptions()),
+      this.prisma.desk.count({ where: { classroomId: classroom.id } }),
+    ]);
     return {
       userId,
       sessionId,
@@ -65,6 +63,7 @@ export class RealtimeAccessService {
       displayName,
       appearance,
       appearanceRevision,
+      deskCount,
     };
   }
 
