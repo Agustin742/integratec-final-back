@@ -1,5 +1,7 @@
 import {
   AVATAR_INPUT_MESSAGE,
+  CHAT_MESSAGE_EVENT,
+  CHAT_MESSAGE_HIDDEN_EVENT,
   CLASSROOM_LAYOUT,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
@@ -13,6 +15,8 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
   type AvatarInput,
+  type ChatMessageHiddenPayload,
+  type ChatMessagePayload,
 } from '@aula/contracts';
 import {
   ClientState,
@@ -36,7 +40,7 @@ import {
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
 import { Avatar, ClassroomState } from './classroom-state';
-import type { EvictableRoom, RoomDirectory } from './room-directory';
+import type { ClassroomRoomHandle, RoomDirectory } from './room-directory';
 
 /** Collaborators and settings a room receives from the server bootstrap. */
 export interface ClassroomRoomOptions {
@@ -72,7 +76,7 @@ interface PendingAdmission {
 }
 
 /** Room logic that does not depend on the verifier. */
-export class ClassroomRoom extends Room<{ state: ClassroomState }> implements EvictableRoom {
+export class ClassroomRoom extends Room<{ state: ClassroomState }> implements ClassroomRoomHandle {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
   protected verifier!: JoinVerifier;
@@ -296,6 +300,14 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       evicted += 1;
     }
     return evicted;
+  }
+
+  broadcastChatMessage(payload: ChatMessagePayload): void {
+    this.broadcast(CHAT_MESSAGE_EVENT, payload);
+  }
+
+  broadcastChatMessageHidden(payload: ChatMessageHiddenPayload): void {
+    this.broadcast(CHAT_MESSAGE_HIDDEN_EVENT, payload);
   }
 
   /**

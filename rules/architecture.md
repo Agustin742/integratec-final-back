@@ -24,7 +24,7 @@ NestJS and Colyseus are separate responsibilities and, from the start, separate 
 
 ## Integration between NestJS and Colyseus
 
-Both directions are internal, server-to-server contracts. Decision D2 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d2-nestjs-and-colyseus-integration)): Colyseus `onAuth` calls an internal NestJS endpoint, authenticated with a service secret stored in AWS Secrets Manager. The transport for NestJS-to-Colyseus access changes is decided (approved by Agustin on 2026-11-10): an outbox event handled by NestJS, which calls an internal Colyseus HTTP endpoint ([Realtime and presence](./realtime-and-presence.md#live-access-eviction)). The transport for other announcements of committed changes is **open**.
+Both directions are internal, server-to-server contracts. Decision D2 (approved by Agustin on 2026-11-02; see [Technical justification](../docs/technical-justification.md#d2-nestjs-and-colyseus-integration)): Colyseus `onAuth` calls an internal NestJS endpoint, authenticated with a service secret stored in AWS Secrets Manager. The transport for NestJS-to-Colyseus access changes is decided (approved by Agustin on 2026-11-10): an outbox event handled by NestJS, which calls an internal Colyseus HTTP endpoint ([Realtime and presence](./realtime-and-presence.md#live-access-eviction)). For classroom chat (#48), the selected transport is likewise a transactional outbox and authenticated internal HTTP call to Colyseus; the transport for other announcements remains **open**.
 
 | Direction | Purpose | Requirements |
 |---|---|---|

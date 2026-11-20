@@ -1,7 +1,6 @@
 /**
- * Outbox events that tell the realtime server a user lost live access (decision D14). They are
- * recorded in the same transaction as the change that caused them and delivered at least once, so
- * their handler must be idempotent (closing the same connections twice is harmless).
+ * Realtime event types written through the transactional outbox. Delivery is at least once, so
+ * handlers must be idempotent.
  */
 
 /**
@@ -27,6 +26,21 @@ export const REALTIME_SESSIONS_REVOKED_EVENT = 'realtime.sessions-revoked';
 export interface ClassroomAccessRevokedPayload {
   userId: string;
   classroomId: string;
+}
+
+/** A committed message ID to resolve from PostgreSQL before it is sent to Colyseus. */
+export const REALTIME_CHAT_MESSAGE_CREATED_EVENT = 'realtime.chat-message-created';
+export interface RealtimeChatMessageCreatedPayload {
+  classroomId: string;
+  messageId: string;
+}
+
+/** A committed logical moderation change. */
+export const REALTIME_CHAT_MESSAGE_HIDDEN_EVENT = 'realtime.chat-message-hidden';
+export interface RealtimeChatMessageHiddenPayload {
+  classroomId: string;
+  messageId: string;
+  hiddenAt: string;
 }
 
 export interface SessionsRevokedPayload {

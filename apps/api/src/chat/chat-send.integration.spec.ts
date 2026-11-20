@@ -1,25 +1,43 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { HttpException } from '@nestjs/common';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
 import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { utcDayOf } from '../metrics/utc-day';
-import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import {
+  NOTIFICATION_REQUESTED_EVENT,
+  NotificationRecorder,
+} from '../notifications/notification-recorder.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
+import { OutboxDispatcher } from '../platform/outbox/outbox.dispatcher';
+import { OutboxHandlerRegistry } from '../platform/outbox/outbox.registry';
+import { HttpRealtimeChatBroadcastClient } from '../platform/realtime/realtime-chat.client';
+import { RealtimeChatEventHandler } from '../platform/realtime/realtime-chat.handler';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
+import {
+  REALTIME_CHAT_MESSAGE_CREATED_EVENT,
+  REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
+} from '../platform/realtime/realtime-events';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatService } from './chat.service';
 
 loadIsolatedTestDatabaseUrl();
 const prisma = new PrismaService();
 const otherClient = new PrismaService();
-const recorder = new NotificationRecorder(new OutboxWriter());
+const outbox = new OutboxWriter();
+const recorder = new NotificationRecorder(outbox);
+const realtimeEvents = new RealtimeEventsRecorder(outbox);
 const service = (client: PrismaService) =>
   new ChatService(
     client,
     new AccessVerificationService(client),
     recorder,
     new MetricRecordingService(client),
+    realtimeEvents,
+    { dispatchNow: () => undefined } as unknown as OutboxDispatcher,
   );
 const chat = service(prisma);
 const otherChat = service(otherClient);
@@ -57,7 +75,10 @@ async function counts() {
     messages.length,
     await prisma.mention.count({ where: { sourceId: { in: messages.map((row) => row.id) } } }),
     await prisma.outboxEvent.count({
-      where: { payload: { path: ['classroomId'], equals: classroom } },
+      where: {
+        type: NOTIFICATION_REQUESTED_EVENT,
+        payload: { path: ['classroomId'], equals: classroom },
+      },
     }),
   ];
 }
@@ -87,6 +108,128 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
       resourceId: row.id,
       recipientId: teacher,
     });
+  });
+
+  it('records only the committed message identity for post-commit realtime delivery', async () => {
+    const row = await chat.send(student, classroom, 'Persisted before broadcast');
+    const event = await prisma.outboxEvent.findFirstOrThrow({
+      where: {
+        type: REALTIME_CHAT_MESSAGE_CREATED_EVENT,
+        payload: { path: ['messageId'], equals: row.id },
+      },
+    });
+
+    expect(event.payload).toEqual({ classroomId: classroom, messageId: row.id });
+    expect(JSON.stringify(event.payload)).not.toContain(row.body);
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: row.id } })).body).toBe(row.body);
+  });
+
+  it('keeps the message committed and retries a failed Colyseus broadcast', async () => {
+    const received: unknown[] = [];
+    let responseStatus = 503;
+    const server = createServer((request, response) => {
+      let raw = '';
+      request.on('data', (chunk: Buffer) => (raw += chunk.toString()));
+      request.on('end', () => {
+        received.push(JSON.parse(raw) as unknown);
+        response.writeHead(responseStatus).end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const registry = new OutboxHandlerRegistry();
+      const client = new HttpRealtimeChatBroadcastClient({
+        baseUrl,
+        serviceSecret: 'synthetic-chat-broadcast-secret-0000',
+      });
+      new RealtimeChatEventHandler(registry, prisma, client).onModuleInit();
+      const dispatcher = new OutboxDispatcher(prisma, registry, undefined, {
+        handlerTimeoutMs: 1000,
+        leaseMs: 10_000,
+      });
+      const row = await chat.send(student, classroom, 'Committed despite realtime outage');
+      const outboxEvent = await prisma.outboxEvent.findFirstOrThrow({
+        where: {
+          type: REALTIME_CHAT_MESSAGE_CREATED_EVENT,
+          payload: { path: ['messageId'], equals: row.id },
+        },
+      });
+
+      expect(
+        await dispatcher.dispatchPending(
+          10,
+          new Date(),
+          [REALTIME_CHAT_MESSAGE_CREATED_EVENT],
+          [outboxEvent.id],
+        ),
+      ).toEqual({ delivered: 0, retried: 1, exhausted: 0 });
+      expect(await prisma.message.findUniqueOrThrow({ where: { id: row.id } })).toMatchObject({
+        body: row.body,
+        classroomId: classroom,
+      });
+      expect(
+        await prisma.outboxEvent.findUniqueOrThrow({ where: { id: outboxEvent.id } }),
+      ).toMatchObject({ attempts: 1, processedAt: null, failedAt: null });
+
+      responseStatus = 204;
+      expect(
+        await dispatcher.dispatchPending(
+          10,
+          new Date(Date.now() + 60 * 60 * 1000),
+          [REALTIME_CHAT_MESSAGE_CREATED_EVENT],
+          [outboxEvent.id],
+        ),
+      ).toEqual({ delivered: 1, retried: 0, exhausted: 0 });
+      expect(received).toHaveLength(2);
+      expect(received[1]).toEqual({
+        classroomId: classroom,
+        event: 'chat:message',
+        payload: expect.objectContaining({
+          id: row.id,
+          body: row.body,
+          createdAt: row.createdAt,
+        }),
+      });
+      expect(
+        await prisma.outboxEvent.findUniqueOrThrow({ where: { id: outboxEvent.id } }),
+      ).toMatchObject({ processedAt: expect.any(Date) });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it('rolls back moderation and its event together if outbox recording fails', async () => {
+    const message = await chat.send(student, classroom, 'Must remain visible on rollback');
+    const original = realtimeEvents.recordChatMessageHidden.bind(realtimeEvents);
+    const spy = vi
+      .spyOn(realtimeEvents, 'recordChatMessageHidden')
+      .mockImplementationOnce(async (tx, payload) => {
+        await original(tx, payload);
+        throw new Error('Synthetic realtime recorder failure');
+      });
+
+    try {
+      await expect(chat.hide(teacher, classroom, message.id)).rejects.toThrow(
+        'Synthetic realtime recorder failure',
+      );
+      expect(await prisma.message.findUniqueOrThrow({ where: { id: message.id } })).toMatchObject({
+        hiddenAt: null,
+        hiddenById: null,
+      });
+      expect(
+        await prisma.outboxEvent.count({
+          where: {
+            type: REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
+            payload: { path: ['messageId'], equals: message.id },
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('counts one participation message on the UTC day of the persisted message, only on success', async () => {
@@ -167,11 +310,13 @@ describe('chat send service with PostgreSQL admission and atomic mentions', () =
   });
 
   it('rolls back message, mentions and outbox on downstream failure, without consuming admission', async () => {
-    const original = recorder.record.bind(recorder);
-    const spy = vi.spyOn(recorder, 'record').mockImplementationOnce(async (tx, request) => {
-      await original(tx, request);
-      throw new Error('Synthetic recorder failure');
-    });
+    const original = realtimeEvents.recordChatMessageCreated.bind(realtimeEvents);
+    const spy = vi
+      .spyOn(realtimeEvents, 'recordChatMessageCreated')
+      .mockImplementationOnce(async (tx, request) => {
+        await original(tx, request);
+        throw new Error('Synthetic recorder failure');
+      });
     try {
       await expect(chat.send(student, classroom, '@Member')).rejects.toThrow(
         'Synthetic recorder failure',

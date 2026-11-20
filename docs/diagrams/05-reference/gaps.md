@@ -28,14 +28,14 @@ Cada fila remite a la regla que la mantiene abierta. **Abierto** significa que n
 
 | # | Tema | Estado y fuente | Vista afectada |
 |---|---|---|---|
-| 1 | Nombres, payloads, direcciones y acknowledgements de eventos realtime | Ilustrativos hasta especificarse en [API contracts](../../../rules/api-contracts.md); requieren contrato productor/consumidor | Realtime, clases |
+| 1 | Nombres, payloads, direcciones y acknowledgements de eventos realtime | Resueltos para chat en #48 (`chat:message`, `chat:message.hidden`); los demás siguen ilustrativos hasta especificarse en [API contracts](../../../rules/api-contracts.md) | Realtime, clases |
 | 2 | Catálogo de endpoints, verbos y DTOs | Propuestos; el contrato REST saldrá del `openapi.json` commiteado (D4, D8) | Casos de uso, secuencias |
 | 3 | Tick rate, reconciliación de movimiento y límites por conexión | Decididos el 2026-11-10 (D14; [Realtime and presence](../../../rules/realtime-and-presence.md#movement)) | Realtime |
 | 4 | Política de conexiones duplicadas y propagación de cambios de acceso a las `Room` vivas | Decididas el 2026-11-10 (D14; [Realtime and presence](../../../rules/realtime-and-presence.md#presence-and-duplicate-connections)) | Realtime |
 | 5 | Ventana de reconexión y backoff | Decididos el 2026-11-10 (D14; [Realtime and presence](../../../rules/realtime-and-presence.md#reconnection-and-disconnection)) | Realtime |
-| 6 | Camino de envío del chat: REST más difusión o mensaje realtime validado | Abierto ([Communication and notifications](../../../rules/communication-and-notifications.md#open-decisions)) | Secuencias, realtime |
+| 6 | Camino de envío del chat: REST más difusión o mensaje realtime validado | Resuelto en #48: REST persiste; outbox difunde después del commit ([Communication and notifications](../../../rules/communication-and-notifications.md)) | Secuencias, realtime |
 | 7 | Retención del historial de mensajes y conversaciones con padres; silencio por alumno, filtrado, lectura de conversaciones de padres por Dueño o Admin; visibilidad de avisos para el Padre; servicio de correo | Abiertos ([Communication and notifications](../../../rules/communication-and-notifications.md#open-decisions)) | Casos de uso, modelo de datos |
-| 8 | Transporte de anuncios de NestJS a Colyseus y protocolo de recuperación de notificaciones perdidas | Abiertos ([Architecture](../../../rules/architecture.md#open-decisions)) | Arquitectura, realtime |
+| 8 | Transporte de anuncios de NestJS a Colyseus y protocolo de recuperación de notificaciones perdidas | Resuelto para chat en #48: outbox + HTTP interno autenticado; los mensajes perdidos se recuperan por historial REST. Otros anuncios y protocolos siguen abiertos ([Architecture](../../../rules/architecture.md#open-decisions)) | Arquitectura, realtime |
 | 9 | Mecanismo de sincronización colaborativa (estado de Colyseus o Yjs) y persistencia de pizarrones | Abiertos ([Live classroom tools](../../../rules/live-classroom-tools.md#open-decisions)) | Realtime |
 | 10 | Servicio de medios para video y voz (LiveKit o Amazon Chime SDK) y formato de credencial; acciones del alumno durante el congelamiento; mano alzada | Abiertos ([Live classroom tools](../../../rules/live-classroom-tools.md#open-decisions)) | Arquitectura, realtime |
 | 11 | Nombres finales de tablas y columnas, valores de enum y límites de campo | Abiertos ([Data](../../../rules/data.md#open-decisions)) | Modelo de datos |
