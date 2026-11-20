@@ -504,4 +504,25 @@ describe('openapi export', () => {
     expect(await renderOpenApiJson()).toBe(committed);
     expect(committed.endsWith('\n')).toBe(true);
   });
+
+  it('publishes the daily review contract with the generated daily-question shape (issue #119)', async () => {
+    const committed = JSON.parse(readFileSync(OPENAPI_FILE_PATH, 'utf8'));
+    const schemas = committed.components.schemas;
+    expect(schemas.DailyQuestionDto).toBeDefined();
+    expect(Object.keys(schemas.DailyQuestionDto.properties).sort()).toEqual([
+      'id',
+      'materialTitle',
+      'options',
+      'prompt',
+    ]);
+    // The answer key and attempt state are server-side only: no public schema may
+    // ever name them (independent verification finding F1 pinned the payload shape,
+    // this pins the non-leakage the rules require).
+    for (const schema of Object.values<any>(schemas)) {
+      expect(Object.keys(schema.properties ?? {})).not.toContain('correctOption');
+      expect(Object.keys(schema.properties ?? {})).not.toContain('answeredAt');
+    }
+    const dailyQuestion = schemas.DailyReviewResponseDto.properties.dailyQuestion;
+    expect(dailyQuestion.allOf?.[0]?.$ref).toBe('#/components/schemas/DailyQuestionDto');
+  });
 });

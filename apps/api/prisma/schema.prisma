@@ -158,6 +158,8 @@ model User {
   streak                   Streak?               @relation("StudentStreak")
   streakQualifyingDays     StreakQualifyingDay[] @relation("StudentStreakQualifyingDays")
   badges                   StudentBadge[]        @relation("StudentBadges")
+  dailyReviewDeliveries    DailyReviewDelivery[] @relation("UserDailyReviewDeliveries")
+  dailyReviewQuestions     DailyReviewQuestion[] @relation("UserDailyReviewQuestions")
 
   @@map("users")
 }
@@ -1093,4 +1095,53 @@ model AllowedMaterial {
   @@index([botConfigId, createdAt, id])
   @@index([materialId])
   @@map("allowed_materials")
+}
+
+/// Content source of a delivered daily review (RN-13): `GENERATED` when the
+/// Bedrock summary was produced, `STRUCTURED` on the provider fallback.
+enum DailyReviewContentKind {
+  GENERATED
+  STRUCTURED
+}
+
+/// Record that a local day's review was delivered (RN-13, RN-14): exactly one row
+/// per (user, local day in America/Argentina/Buenos_Aires). The unique constraint
+/// makes concurrent first connections deliver once; the row is inserted only
+/// after the content is ready, so a failed composition never consumes the day.
+model DailyReviewDelivery {
+  id          String                @id @default(uuid()) @db.Uuid
+  userId      String                @map("user_id") @db.Uuid
+  localDay    String                @map("local_day") @db.VarChar(10)
+  contentKind DailyReviewContentKind @map("content_kind")
+  deliveredAt DateTime              @default(now()) @map("delivered_at") @db.Timestamptz(6)
+
+  // Derived per-user state: follows the user row (explicit cascade, `rules/data.md`).
+  user User @relation("UserDailyReviewDeliveries", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, localDay])
+  @@index([userId, deliveredAt])
+  @@map("daily_review_deliveries")
+}
+
+/// One server-generated review question per (user, local day), built from
+/// teacher-approved material. The answer key (`correctOption`) is server-side
+/// only and is never serialized to the client (rules/data.md). `attempts` bounds
+/// wrong-answer retries per day; `answeredAt` records the credited answer.
+model DailyReviewQuestion {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  localDay      String    @map("local_day") @db.VarChar(10)
+  prompt        String    @db.VarChar(280)
+  options       Json
+  correctOption String    @map("correct_option") @db.VarChar(120)
+  materialTitle String?   @map("material_title") @db.VarChar(120)
+  attempts      Int       @default(0)
+  answeredAt    DateTime? @map("answered_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Derived per-user state: follows the user row (explicit cascade, `rules/data.md`).
+  user User @relation("UserDailyReviewQuestions", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, localDay])
+  @@map("daily_review_questions")
 }

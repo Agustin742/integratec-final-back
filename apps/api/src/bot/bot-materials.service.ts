@@ -11,6 +11,7 @@ import { paginated, toSkipTake } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { PrismaService } from '../prisma/prisma.service';
 import type { BotMaterialDto, ListBotMaterialsQueryDto } from './bot-materials.dto';
+import type { DailyQuestionMaterial } from './daily-review-inference.port';
 import { MATERIAL_INDEX_PORT, type MaterialIndexPort } from './material-index.port';
 
 const PUBLIC_SELECT = {
@@ -194,6 +195,31 @@ export class BotMaterialsService {
       this.prisma.allowedMaterial.count({ where }),
     ]);
     return paginated(rows.map(toDto), total, query);
+  }
+
+  /**
+   * Titles of the enabled bot materials of the given classrooms, with the owning
+   * classroom name, for the daily-question prompt input (issue #42, S3). The
+   * allowed row is the enablement authority (issue #40) and soft-removed
+   * materials are excluded exactly like in {@link list}; indexing state is not
+   * a filter here because the question is built from titles the user may already
+   * see, not from indexed content. Callers pass only classroom ids whose access
+   * has already been resolved for the acting user.
+   */
+  async enabledMaterialTitles(classroomIds: string[]): Promise<DailyQuestionMaterial[]> {
+    if (classroomIds.length === 0) return [];
+    const rows = await this.prisma.allowedMaterial.findMany({
+      where: { classroomId: { in: classroomIds }, material: { removedAt: null } },
+      select: {
+        classroom: { select: { name: true } },
+        material: { select: { filename: true } },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    return rows.map((row) => ({
+      classroomName: row.classroom.name,
+      title: row.material.filename,
+    }));
   }
 
   /** Resolves an active material of this classroom; foreign and removed ids 404. */
