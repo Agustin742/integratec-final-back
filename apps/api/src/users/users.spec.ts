@@ -297,7 +297,8 @@ describe('Own profile and base avatar (#20)', () => {
     await prisma.avatarConfiguration.create({
       data: { userId: ids[0], appearance: { legacy: 'synthetic-unsupported-base' } },
     });
-    const profileBefore = await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } });
+    const { appearanceRevision: revisionBefore, ...profileBefore } =
+      await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } });
     const peerBefore = await prisma.avatarConfiguration.findUniqueOrThrow({
       where: { userId: ids[1] },
     });
@@ -307,7 +308,10 @@ describe('Own profile and base avatar (#20)', () => {
       (await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[0] } }))
         .appearance,
     ).toEqual(alternate);
-    expect(await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } })).toEqual(profileBefore);
+    const { appearanceRevision: revisionAfter, ...profileAfter } =
+      await prisma.user.findUniqueOrThrow({ where: { id: ids[0] } });
+    expect(profileAfter).toEqual(profileBefore);
+    expect(revisionAfter).toBe(revisionBefore + 1);
     expect(
       await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[1] } }),
     ).toEqual(peerBefore);
