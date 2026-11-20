@@ -2,7 +2,8 @@ import {
   AVATAR_INPUT_MESSAGE,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
-  CLASSROOM_LAYOUT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -78,6 +79,8 @@ export interface ClassroomRoomOptions {
   /** Where the room announces itself so live evictions can find it. */
   directory?: RoomDirectory;
 }
+
+const DEFAULT_LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
 
@@ -419,7 +422,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     for (const [userId, intent] of this.intents) {
       const avatar = this.state.avatars.get(userId);
       if (!avatar) continue;
-      const next = stepAvatar(CLASSROOM_LAYOUT, avatar, intent, dtSeconds);
+      const next = stepAvatar(DEFAULT_LAYOUT, avatar, intent, dtSeconds);
       // Only touched fields are patched, so a blocked avatar costs no bandwidth.
       if (next.x !== avatar.x) avatar.x = next.x;
       if (next.z !== avatar.z) avatar.z = next.z;
@@ -506,7 +509,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   }
 
   private addAvatar(identity: ClassroomAuth): void {
-    const spawn = pickSpawnPoint(CLASSROOM_LAYOUT, [...this.state.avatars.values()]);
+    const spawn = pickSpawnPoint(DEFAULT_LAYOUT, [...this.state.avatars.values()]);
     const avatar = new Avatar();
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;

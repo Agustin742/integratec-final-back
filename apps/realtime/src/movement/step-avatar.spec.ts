@@ -1,10 +1,17 @@
-import { AVATAR_SPEED_UNITS_PER_SECOND, CLASSROOM_LAYOUT, type LayoutBox } from '@aula/contracts';
+import {
+  AVATAR_SPEED_UNITS_PER_SECOND,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
+  type LayoutBox,
+} from '@aula/contracts';
 import { describe, expect, it } from 'vitest';
 import { isWalkable, stepAvatar } from './step-avatar';
 
+const LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
+
 const DT = 1 / 20;
 const STEP = AVATAR_SPEED_UNITS_PER_SECOND * DT;
-const { bounds, obstacles, avatarRadius, spawnPoints } = CLASSROOM_LAYOUT;
+const { bounds, obstacles, avatarRadius, spawnPoints } = LAYOUT;
 // A free corridor: the aisle between the second and third desk rows runs along x at z = 1.5.
 const AISLE = { x: 0, z: 1.5 };
 
@@ -21,7 +28,7 @@ const run = (start: { x: number; z: number }, input: { x: number; z: number }, t
   let position = { ...start, rotation: 0 };
   const path = [];
   for (let i = 0; i < ticks; i++) {
-    position = stepAvatar(CLASSROOM_LAYOUT, position, input, DT);
+    position = stepAvatar(LAYOUT, position, input, DT);
     path.push(position);
   }
   return { position, path };
@@ -36,37 +43,39 @@ describe('stepAvatar', () => {
     ['negative infinite', Number.NEGATIVE_INFINITY],
   ])('leaves the pose unchanged for a %s time step', (_label, dt) => {
     const pose = { ...AISLE, rotation: 0.5 };
-    expect(stepAvatar(CLASSROOM_LAYOUT, pose, { x: 1, z: 0 }, dt)).toBe(pose);
+    expect(stepAvatar(LAYOUT, pose, { x: 1, z: 0 }, dt)).toBe(pose);
   });
 
   it('moves at the fixed speed along the requested direction', () => {
-    const next = stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 0 }, DT);
+    const next = stepAvatar(LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 0 }, DT);
     expect(next.x).toBeCloseTo(AISLE.x + STEP, 6);
     expect(next.z).toBeCloseTo(AISLE.z, 6);
   });
 
   it('does not let a smaller input magnitude change the speed', () => {
-    const slow = stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 0.2, z: 0 }, DT);
+    const slow = stepAvatar(LAYOUT, { ...AISLE, rotation: 0 }, { x: 0.2, z: 0 }, DT);
     expect(slow.x).toBeCloseTo(AISLE.x + STEP, 6);
   });
 
   it('keeps the speed on a diagonal', () => {
-    const next = stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 1 }, DT);
+    const next = stepAvatar(LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 1 }, DT);
     expect(Math.hypot(next.x - AISLE.x, next.z - AISLE.z)).toBeCloseTo(STEP, 6);
   });
 
   it('stands still for a zero input and keeps facing the same way', () => {
     const start = { ...AISLE, rotation: 1.2 };
-    expect(stepAvatar(CLASSROOM_LAYOUT, start, { x: 0, z: 0 }, DT)).toEqual(start);
+    expect(stepAvatar(LAYOUT, start, { x: 0, z: 0 }, DT)).toEqual(start);
   });
 
   it('faces the direction of the input', () => {
-    expect(
-      stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 0 }, DT).rotation,
-    ).toBeCloseTo(Math.PI / 2, 6);
-    expect(
-      stepAvatar(CLASSROOM_LAYOUT, { ...AISLE, rotation: 0 }, { x: 0, z: -1 }, DT).rotation,
-    ).toBeCloseTo(Math.PI, 6);
+    expect(stepAvatar(LAYOUT, { ...AISLE, rotation: 0 }, { x: 1, z: 0 }, DT).rotation).toBeCloseTo(
+      Math.PI / 2,
+      6,
+    );
+    expect(stepAvatar(LAYOUT, { ...AISLE, rotation: 0 }, { x: 0, z: -1 }, DT).rotation).toBeCloseTo(
+      Math.PI,
+      6,
+    );
   });
 
   it('stops at the walls', () => {
@@ -100,20 +109,19 @@ describe('stepAvatar', () => {
   });
 
   it('cannot tunnel through a thin obstacle with a huge step', () => {
-    const next = stepAvatar(CLASSROOM_LAYOUT, { x: -1.5, z: 1.5, rotation: 0 }, { x: 0, z: -1 }, 5);
+    const next = stepAvatar(LAYOUT, { x: -1.5, z: 1.5, rotation: 0 }, { x: 0, z: -1 }, 5);
     expect(insideObstacle(next)).toBe(false);
     expect(next.z).toBeGreaterThan(-1.8);
   });
 
   it('keeps every spawn point walkable', () => {
-    for (const point of spawnPoints)
-      expect(isWalkable(CLASSROOM_LAYOUT, point.x, point.z)).toBe(true);
+    for (const point of spawnPoints) expect(isWalkable(LAYOUT, point.x, point.z)).toBe(true);
   });
 
   it('classifies points outside the bounds and inside obstacles as not walkable', () => {
-    expect(isWalkable(CLASSROOM_LAYOUT, 9, 0)).toBe(false);
-    expect(isWalkable(CLASSROOM_LAYOUT, bounds.maxX - avatarRadius / 2, 0)).toBe(false);
-    expect(isWalkable(CLASSROOM_LAYOUT, 0, -4.4)).toBe(false);
+    expect(isWalkable(LAYOUT, 9, 0)).toBe(false);
+    expect(isWalkable(LAYOUT, bounds.maxX - avatarRadius / 2, 0)).toBe(false);
+    expect(isWalkable(LAYOUT, 0, -4.4)).toBe(false);
   });
 
   it('stays walkable after any random walk', () => {
@@ -121,8 +129,8 @@ describe('stepAvatar', () => {
     const random = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296) * 2 - 1;
     let position = { ...spawnPoints[3], rotation: 0 };
     for (let i = 0; i < 2000; i++) {
-      position = stepAvatar(CLASSROOM_LAYOUT, position, { x: random(), z: random() }, DT);
-      expect(isWalkable(CLASSROOM_LAYOUT, position.x, position.z)).toBe(true);
+      position = stepAvatar(LAYOUT, position, { x: random(), z: random() }, DT);
+      expect(isWalkable(LAYOUT, position.x, position.z)).toBe(true);
     }
   });
 });

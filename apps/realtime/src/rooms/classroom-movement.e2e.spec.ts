@@ -6,7 +6,8 @@ import type { Room as SdkRoom } from '@colyseus/sdk';
 import {
   AVATAR_INPUT_MESSAGE,
   AVATAR_SPEED_UNITS_PER_SECOND,
-  CLASSROOM_LAYOUT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLASSROOM_ROOM_NAME,
   INPUT_RATE_LIMIT_PER_SECOND,
 } from '@aula/contracts';
@@ -21,6 +22,8 @@ import {
 } from '../testing/stub-api';
 import { sleep, waitUntil } from '../testing/wait-until';
 import type { ClassroomRoom } from './classroom-room';
+
+const LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
 
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 
@@ -73,7 +76,7 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
 
     const elapsedSeconds = (startZ - avatar.z) / AVATAR_SPEED_UNITS_PER_SECOND;
     expect(elapsedSeconds).toBeGreaterThan(0.1);
-    expect(avatar.x).toBeCloseTo(CLASSROOM_LAYOUT.spawnPoints[0].x, 5);
+    expect(avatar.x).toBeCloseTo(LAYOUT.spawnPoints[0].x, 5);
     expect(avatar.rotation).toBeCloseTo(Math.PI, 5);
   });
 
@@ -81,7 +84,7 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
     const room = await join(ada);
     const avatar = avatarOf(room, ada);
     room.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
-    await waitUntil(() => avatar.z < CLASSROOM_LAYOUT.spawnPoints[0].z - 0.3, 'moving');
+    await waitUntil(() => avatar.z < LAYOUT.spawnPoints[0].z - 0.3, 'moving');
 
     room.send(AVATAR_INPUT_MESSAGE, { x: 0, z: 0 });
     await sleep(150);
@@ -98,9 +101,7 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
     room.send(AVATAR_INPUT_MESSAGE, { x: 0, z: 1 });
     await sleep(500);
 
-    expect(avatar.z).toBeLessThanOrEqual(
-      CLASSROOM_LAYOUT.bounds.maxZ - CLASSROOM_LAYOUT.avatarRadius + 1e-6,
-    );
+    expect(avatar.z).toBeLessThanOrEqual(LAYOUT.bounds.maxZ - LAYOUT.avatarRadius + 1e-6);
   });
 
   it('lets the last input of any connection of the user win', async () => {
@@ -128,7 +129,7 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
     }
     for (let i = 0; i < 10; i++) screen1.send(AVATAR_INPUT_MESSAGE, { x: 1, z: 0 });
 
-    await waitUntil(() => avatar.z < CLASSROOM_LAYOUT.spawnPoints[0].z - 0.3, 'moving north');
+    await waitUntil(() => avatar.z < LAYOUT.spawnPoints[0].z - 0.3, 'moving north');
     expect(avatar.x).toBe(startX);
     expect(serverRoom(screen1).clients).toHaveLength(1); // not even disconnected
   });
