@@ -17,6 +17,10 @@ import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-dat
 import { toLocalDay } from '../gamification/local-day';
 import { configureHttp } from '../http/configure-http';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  DAILY_REVIEW_INFERENCE_PORT,
+  type DailyReviewInferenceInput,
+} from './daily-review-inference.port';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 
@@ -36,9 +40,25 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     parent,
     stranger,
     examStudent,
-  ] = Array.from({ length: 8 }, () => randomUUID());
-  const [classroom, reloadClassroom, concurrentClassroom, boundaryClassroom, examClassroom] =
-    Array.from({ length: 5 }, () => randomUUID());
+    composeStudent,
+    composeTeacher,
+    generatedStudent,
+    failedStudent,
+    nullStudent,
+    queueStudent,
+  ] = Array.from({ length: 14 }, () => randomUUID());
+  const [
+    classroom,
+    reloadClassroom,
+    concurrentClassroom,
+    boundaryClassroom,
+    examClassroom,
+    composeClassroom,
+    teachClassroom,
+    generatedClassroom,
+    failedClassroom,
+    nullClassroom,
+  ] = Array.from({ length: 10 }, () => randomUUID());
   const users: string[] = [
     teacher,
     student,
@@ -48,6 +68,12 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     parent,
     stranger,
     examStudent,
+    composeStudent,
+    composeTeacher,
+    generatedStudent,
+    failedStudent,
+    nullStudent,
+    queueStudent,
   ];
 
   const path = () => '/users/me/daily-review';
@@ -56,6 +82,22 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     return actor === null ? call : call.set('Authorization', `Bearer daily-review:${actor}`);
   };
   const deliveries = (userId: string) => prisma.dailyReviewDelivery.count({ where: { userId } });
+
+  // Fake provider port (rules/ai-bot-and-daily-briefing.md: provider calls in tests
+  // MUST use fakes). Default is the invalid-output path; two users exercise the
+  // generated and the throwing paths so delivery semantics stay observable.
+  const GENERATED_SUMMARY = 'Tenés dos actividades pendientes y una nota nueva.';
+  const inferenceFake = {
+    generateSummary: async (input: DailyReviewInferenceInput): Promise<string | null> => {
+      if (input.userId === generatedStudent) return GENERATED_SUMMARY;
+      if (input.userId === failedStudent) throw new Error('synthetic provider outage');
+      return null;
+    },
+  };
+
+  // Assigned in beforeAll with fixed offsets so ordering assertions are deterministic.
+  let pendingFirstDue = new Date();
+  let pendingSecondDue = new Date();
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -70,6 +112,8 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           return { userId, sessionId: randomUUID() };
         },
       })
+      .overrideProvider(DAILY_REVIEW_INFERENCE_PORT)
+      .useValue(inferenceFake)
       .compile();
     app = module.createNestApplication();
     configureHttp(app, { logSink: () => undefined });
@@ -77,6 +121,12 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     prisma = app.get(PrismaService);
 
     const now = new Date();
+    // Fixed instants so section ordering assertions are deterministic.
+    pendingFirstDue = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    pendingSecondDue = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const gradedDueAt = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const gradedAt = new Date(now.getTime() - 30_000);
+    const announcementAt = new Date(now.getTime() - 60_000);
     await prisma.$transaction(async (tx) => {
       await tx.user.createMany({
         data: users.map((id) => ({
@@ -96,6 +146,15 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           examClassroom,
         ].map((id) => ({ id, name: `Daily review ${id}`, independentTeacherId: teacher })),
       });
+      await tx.classroom.createMany({
+        data: [
+          { id: composeClassroom, name: 'Biología 3°B', independentTeacherId: teacher },
+          { id: teachClassroom, name: 'Química 5°A', independentTeacherId: composeTeacher },
+          { id: generatedClassroom, name: 'Matemática 1°C', independentTeacherId: teacher },
+          { id: failedClassroom, name: 'Historia 2°A', independentTeacherId: teacher },
+          { id: nullClassroom, name: 'Geografía 4°B', independentTeacherId: teacher },
+        ],
+      });
       await tx.classroomMembership.createMany({
         data: [
           { classroomId: classroom, userId: student, role: ClassroomRole.STUDENT },
@@ -111,6 +170,15 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
             role: ClassroomRole.STUDENT,
           },
           { classroomId: examClassroom, userId: examStudent, role: ClassroomRole.STUDENT },
+          { classroomId: composeClassroom, userId: composeStudent, role: ClassroomRole.STUDENT },
+          { classroomId: teachClassroom, userId: queueStudent, role: ClassroomRole.STUDENT },
+          {
+            classroomId: generatedClassroom,
+            userId: generatedStudent,
+            role: ClassroomRole.STUDENT,
+          },
+          { classroomId: failedClassroom, userId: failedStudent, role: ClassroomRole.STUDENT },
+          { classroomId: nullClassroom, userId: nullStudent, role: ClassroomRole.STUDENT },
         ],
       });
       await tx.parentLink.create({
@@ -128,6 +196,112 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           opensAt: new Date(now.getTime() - 30 * 60 * 1000),
           publishedAt: now,
           maxScore: 100,
+        },
+      });
+      // Composition fixtures (S2): two pending activities (nearest first), one
+      // graded submission and one newer announcement in the compose student's classroom.
+      await tx.activity.createMany({
+        data: [
+          {
+            classroomId: composeClassroom,
+            createdById: teacher,
+            type: ActivityType.TP,
+            format: ActivityFormat.FILE,
+            state: ActivityState.PUBLISHED,
+            title: 'TP Fotosíntesis',
+            dueAt: pendingFirstDue,
+            publishedAt: now,
+            maxScore: 10,
+          },
+          {
+            classroomId: composeClassroom,
+            createdById: teacher,
+            type: ActivityType.TP,
+            format: ActivityFormat.FILE,
+            state: ActivityState.PUBLISHED,
+            title: 'Lectura del capítulo 4',
+            dueAt: pendingSecondDue,
+            publishedAt: now,
+            maxScore: 10,
+          },
+        ],
+      });
+      const gradedActivity = await tx.activity.create({
+        data: {
+          classroomId: composeClassroom,
+          createdById: teacher,
+          type: ActivityType.TP,
+          format: ActivityFormat.FILE,
+          state: ActivityState.PUBLISHED,
+          title: 'Leyes de Newton',
+          dueAt: gradedDueAt,
+          publishedAt: now,
+          maxScore: 10,
+        },
+        select: { id: true },
+      });
+      const gradedSubmission = await tx.submission.create({
+        data: {
+          activityId: gradedActivity.id,
+          studentId: composeStudent,
+          submittedAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
+          idempotencyKey: randomUUID(),
+        },
+        select: { id: true },
+      });
+      await tx.grade.create({
+        data: {
+          submissionId: gradedSubmission.id,
+          graderId: teacher,
+          score: 8,
+          feedback: 'Bien resuelto.',
+          activityTitle: 'Leyes de Newton',
+          maxScore: 10,
+          pointsAwarded: 8,
+          typeWeight: 1,
+          weightMultiplier: 1,
+          gradedAt,
+        },
+      });
+      await tx.announcement.create({
+        data: {
+          classroomId: composeClassroom,
+          authorId: teacher,
+          title: 'Viaje al museo',
+          content: 'Synthetic reminder about the museum trip next week.',
+          createdAt: announcementAt,
+        },
+      });
+      // Teacher fixtures: one ungraded submission in the queue and one announcement.
+      const queueActivity = await tx.activity.create({
+        data: {
+          classroomId: teachClassroom,
+          createdById: composeTeacher,
+          type: ActivityType.TP,
+          format: ActivityFormat.FILE,
+          state: ActivityState.PUBLISHED,
+          title: 'Parcial de química',
+          dueAt: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000),
+          publishedAt: now,
+          maxScore: 10,
+        },
+        select: { id: true },
+      });
+      await tx.submission.create({
+        data: {
+          activityId: queueActivity.id,
+          studentId: queueStudent,
+          submittedAt: new Date(now.getTime() - 45 * 60 * 1000),
+          idempotencyKey: randomUUID(),
+        },
+      });
+      await tx.announcement.create({
+        data: {
+          classroomId: teachClassroom,
+          authorId: composeTeacher,
+          title: 'Recordatorio de laboratorio',
+          content: 'Synthetic lab reminder.',
+          createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000),
         },
       });
     });
@@ -213,5 +387,143 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     const response = await get(examStudent).expect(200);
     expect(response.body).toEqual({ status: 'not_due' });
     expect(await deliveries(examStudent)).toBe(0);
+  });
+
+  it('composes the student review from activities, grades and announcements', async () => {
+    const response = await get(composeStudent).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'due',
+      audience: 'STUDENT',
+      contentKind: 'structured',
+      summary: null,
+      dailyQuestion: null,
+    });
+    expect(response.body.sections).toEqual([
+      {
+        kind: 'pending',
+        items: [
+          {
+            kind: 'pending_activity',
+            title: 'TP Fotosíntesis',
+            classroomName: 'Biología 3°B',
+            dueAt: pendingFirstDue.toISOString(),
+            detail: null,
+          },
+          {
+            kind: 'pending_activity',
+            title: 'Lectura del capítulo 4',
+            classroomName: 'Biología 3°B',
+            dueAt: pendingSecondDue.toISOString(),
+            detail: null,
+          },
+        ],
+      },
+      {
+        kind: 'news',
+        items: [
+          {
+            kind: 'recent_grade',
+            title: 'Leyes de Newton',
+            classroomName: 'Biología 3°B',
+            dueAt: null,
+            detail: '8/10',
+          },
+          {
+            kind: 'announcement',
+            title: 'Viaje al museo',
+            classroomName: 'Biología 3°B',
+            dueAt: null,
+            detail: null,
+          },
+        ],
+      },
+    ]);
+    expect(await deliveries(composeStudent)).toBe(1);
+  });
+
+  it('composes the teacher review from the ungraded queue and announcements', async () => {
+    const response = await get(composeTeacher).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'due',
+      audience: 'TEACHER',
+      contentKind: 'structured',
+      summary: null,
+      dailyQuestion: null,
+    });
+    expect(response.body.sections).toEqual([
+      {
+        kind: 'pending',
+        items: [
+          {
+            kind: 'teacher_review',
+            title: 'Parcial de química',
+            classroomName: 'Química 5°A',
+            dueAt: null,
+            detail: null,
+          },
+        ],
+      },
+      {
+        kind: 'news',
+        items: [
+          {
+            kind: 'announcement',
+            title: 'Recordatorio de laboratorio',
+            classroomName: 'Química 5°A',
+            dueAt: null,
+            detail: null,
+          },
+        ],
+      },
+    ]);
+    expect(await deliveries(composeTeacher)).toBe(1);
+  });
+
+  it('returns the generated summary and records a GENERATED delivery', async () => {
+    const response = await get(generatedStudent).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'due',
+      audience: 'STUDENT',
+      contentKind: 'generated',
+      summary: GENERATED_SUMMARY,
+    });
+    expect(await deliveries(generatedStudent)).toBe(1);
+    const [delivery] = await prisma.dailyReviewDelivery.findMany({
+      where: { userId: generatedStudent },
+    });
+    expect(delivery.contentKind).toBe('GENERATED');
+    // Privacy decision L3: the generated text is never persisted anywhere else.
+    expect(delivery).not.toHaveProperty('summary');
+  });
+
+  it('falls back to the structured review when the provider call throws', async () => {
+    const response = await get(failedStudent).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'due',
+      audience: 'STUDENT',
+      contentKind: 'structured',
+      summary: null,
+      dailyQuestion: null,
+    });
+    expect(await deliveries(failedStudent)).toBe(1);
+    const [delivery] = await prisma.dailyReviewDelivery.findMany({
+      where: { userId: failedStudent },
+    });
+    expect(delivery.contentKind).toBe('STRUCTURED');
+  });
+
+  it('falls back to the structured review on invalid provider output', async () => {
+    const response = await get(nullStudent).expect(200);
+    expect(response.body).toMatchObject({
+      status: 'due',
+      audience: 'STUDENT',
+      contentKind: 'structured',
+      summary: null,
+    });
+    expect(await deliveries(nullStudent)).toBe(1);
+    const [delivery] = await prisma.dailyReviewDelivery.findMany({
+      where: { userId: nullStudent },
+    });
+    expect(delivery.contentKind).toBe('STRUCTURED');
   });
 });
