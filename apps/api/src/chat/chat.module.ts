@@ -6,6 +6,8 @@ import { OutboxModule } from '../platform/outbox/outbox.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RealtimeEventsModule } from '../platform/realtime/realtime-events.module';
 import { ChatController } from './chat.controller';
+import { ChatInboxController } from './chat-inbox.controller';
+import { ChatInboxService } from './chat-inbox.service';
 import { ChatService } from './chat.service';
 
 @Module({
@@ -17,7 +19,7 @@ import { ChatService } from './chat.service';
     RealtimeEventsModule,
     OutboxModule,
   ],
-  controllers: [ChatController],
-  providers: [ChatService],
+  controllers: [ChatController, ChatInboxController],
+  providers: [ChatService, ChatInboxService],
 })
 export class ChatModule {}

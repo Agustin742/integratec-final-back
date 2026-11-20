@@ -1588,6 +1588,81 @@
         "tags": ["chat"]
       }
     },
+    "/chats": {
+      "get": {
+        "description": "One summary per classroom where the caller is a current student or staff member (parents and removed members get none), at most 100 classrooms. Each item has the latest VISIBLE message (hidden ones are skipped for every role) with a trimmed preview, or null, and the unread count: visible messages from other users after the caller read marker (all of them when there is no marker). Ordered by latest message createdAt DESC (id DESC on ties); classrooms without messages last, by name. Not paginated.",
+        "operationId": "ChatInboxController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatInboxDto" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List the caller chat inbox",
+        "tags": ["chat"]
+      }
+    },
+    "/classrooms/{id}/messages/read-marker": {
+      "put": {
+        "description": "Same access as chat history: current students and staff; parents denied. The message must be a visible message of this classroom. The marker only moves forward by (createdAt, id); an older or equal message leaves it unchanged, so the call is idempotent. Only messageId is accepted.",
+        "operationId": "ChatInboxController_markRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/MarkChatReadDto" } }
+          }
+        },
+        "responses": {
+          "204": { "description": "Marker advanced, or already at or beyond that message." },
+          "400": {
+            "description": "Missing or malformed messageId, or unknown fields.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, nonexistent or inaccessible classroom, or unknown/foreign/hidden message in it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Advance the caller chat read marker",
+        "tags": ["chat"]
+      }
+    },
     "/activities/{activityId}/submissions": {
       "post": {
         "description": "Student only. For a published FILE activity of the student's classroom, uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes). For a published MULTIPLE_CHOICE activity, sends the `answers` field instead: a JSON-encoded array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity; the server grades them and stores the `autoScore` with the submission, and correct answers are never returned. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new and without re-scoring; a different key after a submission exists is 409. Sending files to a MULTIPLE_CHOICE activity, or answers to a FILE activity, is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
@@ -5553,6 +5628,61 @@
           }
         },
         "required": ["id", "classroomId", "authorId", "body", "mentionedUserIds", "createdAt"]
+      },
+      "ChatInboxLastMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "authorId": { "type": "string", "format": "uuid" },
+          "authorDisplayName": {
+            "type": "string",
+            "description": "Current display name of the author."
+          },
+          "bodyPreview": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Message text with whitespace collapsed, cut to 120 characters (the last one is an ellipsis when cut). Plain text, never HTML."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "authorId", "authorDisplayName", "bodyPreview", "createdAt"]
+      },
+      "ChatInboxItemDto": {
+        "type": "object",
+        "properties": {
+          "classroomId": { "type": "string", "format": "uuid" },
+          "classroomName": { "type": "string" },
+          "lastMessage": {
+            "nullable": true,
+            "description": "Latest VISIBLE message (hidden ones are skipped), or null when there is none.",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/ChatInboxLastMessageDto" }]
+          },
+          "unreadCount": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Visible messages from other users after the caller read marker; every visible message from others when no marker exists. Never counts own or hidden messages."
+          }
+        },
+        "required": ["classroomId", "classroomName", "lastMessage", "unreadCount"]
+      },
+      "ChatInboxDto": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/ChatInboxItemDto" } }
+        },
+        "required": ["items"]
+      },
+      "MarkChatReadDto": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Newest visible message of this classroom the caller has seen. The marker only moves forward; an older or equal message keeps the current marker."
+          }
+        },
+        "required": ["messageId"]
       },
       "CreateSubmissionBodyDto": {
         "type": "object",

@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-20 — Chat inbox summaries and read markers (#124)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261120010000_create_chat_read_markers/`, `apps/api/prisma/seed.ts`, `apps/api/src/chat/chat-inbox.service.ts`, `apps/api/src/chat/chat-inbox.controller.ts`, `apps/api/src/chat/chat.dto.ts`, `apps/api/src/chat/chat-policy.ts`, `apps/api/src/chat/chat.module.ts`, `apps/api/openapi.json`, `docs/classroom-chat.md`
+- **Change:** New `GET /chats` returns one summary per classroom where the caller is a current student or staff member (latest visible message with a 120-character preview, unread count, newest activity first), and `PUT /classrooms/{id}/messages/read-marker` advances a per-user, per-classroom marker (`chat_read_markers`) that only moves forward. Hidden messages never show in the preview or count; own messages never count.
+- **Reason:** Backend counterpart of the front chat inbox (front issue #51): a page and navbar badge for the chats of all the user's classrooms.
+- **Verification:** New unit and DB integration specs (RED then GREEN) on an isolated temporary database.
+- **Next step:** Review, then PR into `develop`.
+
 ## 2026-11-20 — Review fixes on PR #122 (realtime chat broadcast, #48)
 
 - **Status:** completed (pending CI and merge of PR #122)
