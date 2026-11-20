@@ -3,6 +3,7 @@ import { AccessModule } from '../access/access.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AnnouncementsModule } from '../announcements/announcements.module';
 import { GradesModule } from '../grades/grades.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BotMaterialsController } from './bot-materials.controller';
@@ -19,6 +20,7 @@ import { MATERIAL_INDEX_PORT } from './material-index.port';
     AccessModule,
     ActivitiesModule,
     AnnouncementsModule,
+    GamificationModule,
     GradesModule,
     MetricsModule,
     PrismaModule,

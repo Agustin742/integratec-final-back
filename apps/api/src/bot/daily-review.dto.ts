@@ -1,3 +1,4 @@
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /** One row inside a review section, shaped by the frontend contract (issue #119). */
@@ -60,6 +61,64 @@ export class DailyQuestionDto {
     description: 'Source material title the question was built from, when known.',
   })
   materialTitle!: string | null;
+}
+
+/**
+ * Streak snapshot returned with an answered daily question (contract #119 maps
+ * the gamification summary's `lastQualifyingDay` to `lastQualifiedDate`).
+ */
+export class DailyQuestionStreakDto {
+  @ApiProperty({ minimum: 0, example: 5, description: 'Chain alive as of today.' })
+  currentStreak!: number;
+
+  @ApiProperty({ minimum: 0, example: 9 })
+  bestStreak!: number;
+
+  @ApiProperty({
+    nullable: true,
+    example: '2026-11-19',
+    description:
+      'Local day (YYYY-MM-DD, America/Argentina/Buenos_Aires) of the last qualifying activity.',
+  })
+  lastQualifiedDate!: string | null;
+}
+
+/** Request body for answering the day's question (POST, contract #119). */
+export class AnswerDailyQuestionDto {
+  // No @IsUUID on purpose: a malformed id must answer 404 exactly like a foreign
+  // id, because both mean there is no question for this user, and neither may
+  // leak which question rows exist.
+  @ApiProperty({
+    example: '00000000-0000-4000-8000-000000000000',
+    description: 'Id of the daily question delivered to this user today.',
+  })
+  @IsString()
+  questionId!: string;
+
+  @ApiProperty({ maxLength: 120, example: 'Cloroplasto' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  answer!: string;
+}
+
+/** Answer evaluation with the live streak summary (POST, contract #119). */
+export class DailyQuestionAnswerResponseDto {
+  @ApiProperty({
+    example: true,
+    description: 'Exact trimmed-text match against the stored answer key.',
+  })
+  correct!: boolean;
+
+  @ApiProperty({
+    maxLength: 280,
+    example: '¡Muy bien! Respuesta correcta y día de racha ganado.',
+    description: 'Server-authored feedback in the product language; never model output.',
+  })
+  feedback!: string;
+
+  @ApiProperty({ type: DailyQuestionStreakDto, description: 'Live streak after this answer.' })
+  streak!: DailyQuestionStreakDto;
 }
 
 /**

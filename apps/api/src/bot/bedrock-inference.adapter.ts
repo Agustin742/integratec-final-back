@@ -7,8 +7,10 @@ import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import {
+  type DailyQuestionInferenceInput,
   type DailyReviewInferenceInput,
   type DailyReviewInferencePort,
+  type GeneratedDailyQuestion,
 } from './daily-review-inference.port';
 
 /** Config defaults (decision L3): in-Region on-demand model reachable from an AWS Free plan. */
@@ -24,6 +26,10 @@ const SUMMARY_MAX_TOKENS = 300;
 const PROMPT_MAX_SECTIONS = 2;
 const PROMPT_MAX_ITEMS = 5;
 const PROMPT_MAX_FIELD_CHARS = 120;
+/** Bounded question prompt: material list capped so a huge classroom cannot flood it. */
+const PROMPT_MAX_MATERIALS = 10;
+/** Bounded question generation: prompt + options + key fit comfortably, no more. */
+const QUESTION_MAX_TOKENS = 400;
 
 const SYSTEM_PROMPT =
   'You write the daily review summary for a school platform user (many students are minors). ' +
@@ -33,6 +39,18 @@ const SYSTEM_PROMPT =
   'dates, names or results, and never reveal or guess answer keys or solutions. Address the user ' +
   'directly with a warm, encouraging tone and propose concrete next steps: you are a study guide, ' +
   'so motivate and point, never solve.';
+
+const QUESTION_SYSTEM_PROMPT =
+  'You write one multiple-choice study question for a school platform student (many students ' +
+  'are minors), based ONLY on the enabled material titles provided. Write in Spanish, ' +
+  'rioplatense-friendly. Respond with ONE JSON object and NOTHING else: ' +
+  '{"prompt": string, "options": string[], "correctOption": string, "materialTitle": string | null}. ' +
+  'The prompt asks about a concept present in the material titles, never about the file itself, ' +
+  'and is at most 280 characters. There are 2 to 6 distinct options, each at most 120 characters; ' +
+  'exactly one is correct and `correctOption` repeats that option text verbatim. ' +
+  '`materialTitle` names the material the question came from, or null. You are a study guide: ' +
+  'the question teaches and checks understanding; it never asks for personal data, never ' +
+  'trivially repeats a title, and never includes the answer inside the prompt.';
 
 /**
  * Bedrock adapter for the daily-review summary (HU-BOT-003, S2/S6). Invoked only from
@@ -66,7 +84,7 @@ export class BedrockInferenceAdapter implements DailyReviewInferencePort, OnModu
       // structured fallback instead of letting the model invent filler.
       if (prompt === null) return null;
 
-      const response = await this.invokeWithTimeout(prompt);
+      const response = await this.invokeWithTimeout(SYSTEM_PROMPT, prompt, SUMMARY_MAX_TOKENS);
       const summary = this.parseSummary(response);
       this.logger.log({
         operation: 'dailyReview.generateSummary',
@@ -81,6 +99,41 @@ export class BedrockInferenceAdapter implements DailyReviewInferencePort, OnModu
       // to log; SDK messages may echo request fields, so they are not logged.
       this.logger.warn({
         operation: 'dailyReview.generateSummary',
+        userId: input.userId,
+        outcome: 'fallback',
+        latencyMs: Date.now() - startedAt,
+        errorName: error instanceof Error ? error.name : 'unknown',
+      });
+      return null;
+    }
+  }
+
+  async generateDailyQuestion(
+    input: DailyQuestionInferenceInput,
+  ): Promise<GeneratedDailyQuestion | null> {
+    const startedAt = Date.now();
+    try {
+      const prompt = this.buildQuestionPrompt(input);
+      // Without material titles there is nothing honest to ask about: fail closed.
+      if (prompt === null) return null;
+
+      const response = await this.invokeWithTimeout(
+        QUESTION_SYSTEM_PROMPT,
+        prompt,
+        QUESTION_MAX_TOKENS,
+      );
+      const question = this.parseQuestion(response);
+      this.logger.log({
+        operation: 'dailyReview.generateDailyQuestion',
+        userId: input.userId,
+        outcome: question === null ? 'fallback' : 'generated',
+        latencyMs: Date.now() - startedAt,
+      });
+      return question;
+    } catch (error) {
+      // Same fail-closed contract as the summary path; content never logged.
+      this.logger.warn({
+        operation: 'dailyReview.generateDailyQuestion',
         userId: input.userId,
         outcome: 'fallback',
         latencyMs: Date.now() - startedAt,
@@ -115,13 +168,33 @@ export class BedrockInferenceAdapter implements DailyReviewInferencePort, OnModu
     return lines.join('\n');
   }
 
+  /**
+   * Builds the question user turn from the enabled material list only: titles and
+   * classroom names the student may already see. Re-capped defensively so a
+   * composition bug can never flood the prompt.
+   */
+  private buildQuestionPrompt(input: DailyQuestionInferenceInput): string | null {
+    const bounded = input.materials.slice(0, PROMPT_MAX_MATERIALS);
+    if (bounded.length === 0) return null;
+    const line = (text: string): string => text.slice(0, PROMPT_MAX_FIELD_CHARS);
+    const lines: string[] = ['enabled material:'];
+    for (const material of bounded) {
+      lines.push(`- [${line(material.classroomName)}] ${line(material.title)}`);
+    }
+    return lines.join('\n');
+  }
+
   /** One bounded-time invoke: the SDK call never outlives `bedrockInferenceTimeoutSeconds`. */
-  private async invokeWithTimeout(prompt: string): Promise<InvokeModelCommandOutput> {
+  private async invokeWithTimeout(
+    systemPrompt: string,
+    prompt: string,
+    maxTokens: number,
+  ): Promise<InvokeModelCommandOutput> {
     const body = JSON.stringify({
       schemaVersion: 'messages-v1',
-      system: [{ text: SYSTEM_PROMPT }],
+      system: [{ text: systemPrompt }],
       messages: [{ role: 'user', content: [{ text: prompt }] }],
-      inferenceConfig: { maxTokens: SUMMARY_MAX_TOKENS, temperature: 0.3, topP: 0.9 },
+      inferenceConfig: { maxTokens, temperature: 0.3, topP: 0.9 },
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     let response: InvokeModelCommandOutput;
@@ -174,5 +247,79 @@ export class BedrockInferenceAdapter implements DailyReviewInferencePort, OnModu
       if (trimmed.length > 0) return trimmed.slice(0, SUMMARY_MAX_CHARS);
     }
     return null;
+  }
+
+  /**
+   * Defensive JSON extraction for the question path: the message text is pulled
+   * structurally, code fences are stripped, and every field is type-checked before
+   * it becomes a {@link GeneratedDailyQuestion}. Domain bounds (lengths, option
+   * counts, key membership) are re-validated by the caller before persisting.
+   */
+  private parseQuestion(response: { body: Uint8Array }): GeneratedDailyQuestion | null {
+    const blocks = this.textBlocks(response);
+    for (const text of blocks) {
+      // Models occasionally wrap JSON in a code fence; strip the wrapper only.
+      const stripped = text
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+        .trim();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(stripped);
+      } catch {
+        continue;
+      }
+      const candidate = parsed as {
+        prompt?: unknown;
+        options?: unknown;
+        correctOption?: unknown;
+        materialTitle?: unknown;
+      };
+      if (
+        typeof candidate.prompt !== 'string' ||
+        !Array.isArray(candidate.options) ||
+        candidate.options.some((option) => typeof option !== 'string') ||
+        typeof candidate.correctOption !== 'string'
+      ) {
+        continue;
+      }
+      if (
+        candidate.materialTitle !== null &&
+        typeof candidate.materialTitle !== 'string' &&
+        candidate.materialTitle !== undefined
+      ) {
+        continue;
+      }
+      return {
+        prompt: candidate.prompt,
+        options: candidate.options as string[],
+        correctOption: candidate.correctOption,
+        materialTitle:
+          candidate.materialTitle === undefined || candidate.materialTitle === null
+            ? null
+            : (candidate.materialTitle as string),
+      };
+    }
+    return null;
+  }
+
+  /** The text content blocks of a Bedrock messages-API response, defensively walked. */
+  private textBlocks(response: { body: Uint8Array }): string[] {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(response.body));
+    } catch {
+      return [];
+    }
+    const blocks = (parsed as { output?: { message?: { content?: unknown } } })?.output?.message
+      ?.content;
+    if (!Array.isArray(blocks)) return [];
+    const texts: string[] = [];
+    for (const block of blocks) {
+      const text = (block as { text?: unknown })?.text;
+      if (typeof text === 'string') texts.push(text);
+    }
+    return texts;
   }
 }

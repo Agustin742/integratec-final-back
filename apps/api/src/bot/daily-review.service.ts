@@ -1,14 +1,25 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import type { ClassroomAccessRole } from '../access/access-verification.service';
-import { AccessVerificationService } from '../access/access-verification.service';
+import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { ActivitiesService } from '../activities/activities.service';
 import { AnnouncementsService } from '../announcements/announcements.service';
+import { BotMaterialsService } from './bot-materials.service';
+import { DEFAULT_DAILY_QUESTION_ATTEMPTS, type ApiConfig } from '../config/api-config';
+import { API_CONFIG } from '../config/config.module';
 import { DEFAULT_LOCAL_DAY_TIME_ZONE, toLocalDay } from '../gamification/local-day';
+import { StreakService } from '../gamification/streak.service';
 import { GradesService } from '../grades/grades.service';
+import { conflict } from '../http/conflict';
 import { MetricsService } from '../metrics/metrics.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
+  AnswerDailyQuestionDto,
+  DailyQuestionAnswerResponseDto,
+  DailyQuestionDto,
+  DailyQuestionStreakDto,
   DailyReviewItemDto,
   DailyReviewResponseDto,
   DailyReviewSectionDto,
@@ -16,6 +27,8 @@ import type {
 import {
   DAILY_REVIEW_INFERENCE_PORT,
   type DailyReviewInferencePort,
+  type GeneratedDailyQuestion,
+  normalizeGeneratedQuestion,
 } from './daily-review-inference.port';
 
 /** Upper bound on pages read while resolving the user's roles; one page is 50 classrooms. */
@@ -35,6 +48,32 @@ const QUEUE_PAGE_SIZE = 25;
 const SECTION_ITEM_CAP = 5;
 
 const NOT_DUE: DailyReviewResponseDto = { status: 'not_due' };
+
+/**
+ * Question fields that may ever be serialized; `correctOption` and `attempts` are
+ * deliberately absent so the answer key can never leak into a response (S9).
+ */
+const QUESTION_PUBLIC_SELECT = {
+  id: true,
+  prompt: true,
+  options: true,
+  materialTitle: true,
+} satisfies Prisma.DailyReviewQuestionSelect;
+type QuestionPublicRow = Prisma.DailyReviewQuestionGetPayload<{
+  select: typeof QUESTION_PUBLIC_SELECT;
+}>;
+
+const toQuestionDto = (row: QuestionPublicRow): DailyQuestionDto => ({
+  id: row.id,
+  prompt: row.prompt,
+  options: row.options as string[],
+  materialTitle: row.materialTitle,
+});
+
+/** Canned feedback in the product language (user-facing strings, rules/quality-and-testing.md). */
+const CORRECT_ANSWER_FEEDBACK = '¡Muy bien! Respuesta correcta y día de racha ganado. ¡Seguí así!';
+const WRONG_ANSWER_FEEDBACK =
+  'Todavía no es la correcta. Repasá el material de la clase y probá de nuevo.';
 
 export type DailyReviewAudience = 'STUDENT' | 'TEACHER';
 
@@ -81,8 +120,11 @@ export class DailyReviewService {
     private readonly metrics: MetricsService,
     private readonly announcements: AnnouncementsService,
     private readonly grades: GradesService,
+    private readonly botMaterials: BotMaterialsService,
+    private readonly streak: StreakService,
     @Inject(DAILY_REVIEW_INFERENCE_PORT)
     private readonly inference: DailyReviewInferencePort,
+    @Inject(API_CONFIG) private readonly config: Pick<ApiConfig, 'dailyQuestionMaxAttempts'>,
   ) {}
 
   async getDailyReview(userId: string): Promise<DailyReviewResponseDto> {
@@ -118,6 +160,14 @@ export class DailyReviewService {
     }
     const contentKind = summary === null ? 'structured' : 'generated';
 
+    // The daily question is student-only and independent of the summary: it is
+    // built from enabled material, and its failure is a `null` question while the
+    // review (generated or structured) is still delivered.
+    const dailyQuestion =
+      audience === 'STUDENT'
+        ? await this.generateDailyQuestion(userId, localDay, classrooms)
+        : null;
+
     try {
       await this.prisma.dailyReviewDelivery.create({
         data: { userId, localDay, contentKind: summary === null ? 'STRUCTURED' : 'GENERATED' },
@@ -134,7 +184,164 @@ export class DailyReviewService {
       contentKind,
       summary,
       sections,
-      dailyQuestion: null,
+      dailyQuestion,
+    };
+  }
+
+  /**
+   * Daily question generation (S3), run only on the delivery-winning path for a
+   * STUDENT. The prompt input is ONLY enabled material titles (plus classroom
+   * names) the user may already see; no enabled material means no question, even
+   * when the summary was generated. The answer key lives in the persisted row and
+   * never in a response DTO; generation failure leaves no row and does not block
+   * the review.
+   */
+  private async generateDailyQuestion(
+    userId: string,
+    localDay: string,
+    classrooms: ReviewClassroom[],
+  ): Promise<DailyQuestionDto | null> {
+    const studentClassroomIds = classrooms
+      .filter((classroom) => classroom.myRole === 'STUDENT')
+      .map((classroom) => classroom.id);
+    const materials = await this.botMaterials.enabledMaterialTitles(studentClassroomIds);
+    if (materials.length === 0) return null;
+
+    // Same fail-closed contract as the summary path: a throwing adapter must
+    // never block the review, and any invalid output is discarded before persisting.
+    let generated: GeneratedDailyQuestion | null = null;
+    try {
+      generated = await this.inference.generateDailyQuestion({ userId, materials });
+    } catch {
+      generated = null;
+    }
+    const valid = generated === null ? null : normalizeGeneratedQuestion(generated);
+    if (valid === null) return null;
+
+    try {
+      const row = await this.prisma.dailyReviewQuestion.create({
+        data: {
+          userId,
+          localDay,
+          prompt: valid.prompt,
+          options: valid.options,
+          correctOption: valid.correctOption,
+          materialTitle: valid.materialTitle,
+        },
+        select: QUESTION_PUBLIC_SELECT,
+      });
+      return toQuestionDto(row);
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      // A concurrent first connection already stored today's question under the
+      // (user, local day) unique: reuse its row so both requests agree.
+      const existing = await this.prisma.dailyReviewQuestion.findUnique({
+        where: { userId_localDay: { userId, localDay } },
+        select: QUESTION_PUBLIC_SELECT,
+      });
+      return existing === null ? null : toQuestionDto(existing);
+    }
+  }
+
+  /**
+   * Validates an answer to the day's question (S7): a correct answer credits the
+   * streak exactly once per local day, atomically with the answered state.
+   * Every decision is server-side from persisted state; the answer key never
+   * leaves this method.
+   */
+  async answerDailyQuestion(
+    userId: string,
+    dto: AnswerDailyQuestionDto,
+  ): Promise<DailyQuestionAnswerResponseDto> {
+    // A malformed id answers 404 exactly like a foreign one: both mean there is
+    // no question for this user, and neither may leak which rows exist.
+    if (!UUID_PATTERN.test(dto.questionId)) {
+      throw new NotFoundException('Daily question not found');
+    }
+    const question = await this.prisma.dailyReviewQuestion.findFirst({
+      where: { id: dto.questionId, userId },
+      select: { id: true, localDay: true, attempts: true, answeredAt: true, correctOption: true },
+    });
+    if (question === null) throw new NotFoundException('Daily question not found');
+
+    const localDay = toLocalDay(new Date(), DEFAULT_LOCAL_DAY_TIME_ZONE);
+    if (question.localDay !== localDay) {
+      // Day rollover: yesterday's question is no longer answerable.
+      throw conflict('dailyQuestion', 'the daily question is no longer available');
+    }
+    if (question.answeredAt !== null) {
+      // The contract's repeat-answer case: only after a correct, credited answer.
+      throw conflict('dailyQuestion', 'the daily question was already answered today');
+    }
+
+    // One guarded UPDATE consumes the attempt atomically: the unanswered and
+    // budget conditions run inside the statement, so concurrent wrong answers
+    // each consume their own slot and can never make a later correct answer lose
+    // the race, and a concurrent correct answer turns this into a plain 409.
+    const maxAttempts = this.config.dailyQuestionMaxAttempts ?? DEFAULT_DAILY_QUESTION_ATTEMPTS;
+    const consumed = await this.prisma.dailyReviewQuestion.updateMany({
+      where: { id: question.id, answeredAt: null, attempts: { lt: maxAttempts } },
+      data: { attempts: { increment: 1 } },
+    });
+    if (consumed.count === 0) {
+      const fresh = await this.prisma.dailyReviewQuestion.findUnique({
+        where: { id: question.id },
+        select: { answeredAt: true },
+      });
+      if (fresh !== null && fresh.answeredAt !== null) {
+        throw conflict('dailyQuestion', 'the daily question was already answered today');
+      }
+      throw new HttpException(
+        'No more daily question attempts left today. Try again tomorrow.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const answer = dto.answer.trim();
+    if (answer !== question.correctOption) {
+      // Wrong but still retryable: the streak is untouched, and the live summary
+      // keeps the response contract single-shaped for the frontend.
+      return {
+        correct: false,
+        feedback: WRONG_ANSWER_FEEDBACK,
+        streak: await this.currentStreak(userId),
+      };
+    }
+
+    // Correct: ONE transaction claims the day's answer and credits the streak, so
+    // the qualifying day exists if and only if the answered state does. The losing
+    // concurrent correct answer rolls back with a 409 and credits nothing.
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.dailyReviewQuestion.updateMany({
+        where: { id: question.id, answeredAt: null },
+        data: { answeredAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        throw conflict('dailyQuestion', 'the daily question was already answered today');
+      }
+      // Idempotent per (student, local day): a student who already qualified today
+      // through a submission still gets `correct: true` and the live streak.
+      await this.streak.recordQualifying(tx, {
+        studentId: userId,
+        source: 'DAILY_REVIEW_ANSWERED',
+        at: new Date(),
+      });
+    });
+
+    return {
+      correct: true,
+      feedback: CORRECT_ANSWER_FEEDBACK,
+      streak: await this.currentStreak(userId),
+    };
+  }
+
+  /** The live streak snapshot in the delivery contract's shape (issue #119). */
+  private async currentStreak(userId: string): Promise<DailyQuestionStreakDto> {
+    const { streak } = await this.streak.getStudentSummary(userId);
+    return {
+      currentStreak: streak.currentStreak,
+      bestStreak: streak.bestStreak,
+      lastQualifiedDate: streak.lastQualifyingDay,
     };
   }
 

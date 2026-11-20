@@ -1,14 +1,22 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
-import { DailyReviewResponseDto } from './daily-review.dto';
+import {
+  AnswerDailyQuestionDto,
+  DailyQuestionAnswerResponseDto,
+  DailyReviewResponseDto,
+} from './daily-review.dto';
 import { DailyReviewService } from './daily-review.service';
 
 /**
@@ -45,5 +53,45 @@ export class DailyReviewController {
   })
   getDailyReview(@CurrentUser('userId') userId: string): Promise<DailyReviewResponseDto> {
     return this.dailyReview.getDailyReview(userId);
+  }
+
+  @Post('daily-question')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Answer the daily review question',
+    description:
+      'Validates the chosen option against the server-only answer key and credits the study ' +
+      'streak at most once per local day. The answer key never leaves the server. Wrong answers ' +
+      'are retryable inside a per-user attempt budget for the local day; a correct answer closes ' +
+      'the question and further attempts answer 409.',
+  })
+  @ApiOkResponse({
+    type: DailyQuestionAnswerResponseDto,
+    description: 'Answer evaluation with the live streak summary.',
+  })
+  @ApiBadRequestResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Invalid body: missing `questionId`/`answer`, non-string values, empty answer, or over 120 characters.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'No question for this user (foreign or malformed `questionId`, no question delivered today, teacher or parent).',
+  })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'The question belongs to another local day, was already answered today, or a concurrent correct answer won.',
+  })
+  @ApiTooManyRequestsResponse({
+    type: ErrorEnvelopeDto,
+    description: 'The per-user attempt budget for the local day is exhausted.',
+  })
+  answerDailyQuestion(
+    @CurrentUser('userId') userId: string,
+    @Body() dto: AnswerDailyQuestionDto,
+  ): Promise<DailyQuestionAnswerResponseDto> {
+    return this.dailyReview.answerDailyQuestion(userId, dto);
   }
 }

@@ -6,6 +6,7 @@ import {
   ActivityState,
   ActivityType,
   ClassroomRole,
+  MaterialIndexState,
   RegistrationPath,
 } from '@prisma/client';
 import request from 'supertest';
@@ -19,7 +20,7 @@ import { configureHttp } from '../http/configure-http';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DAILY_REVIEW_INFERENCE_PORT,
-  type DailyReviewInferenceInput,
+  type DailyReviewInferencePort,
 } from './daily-review-inference.port';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
@@ -46,7 +47,14 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     failedStudent,
     nullStudent,
     queueStudent,
-  ] = Array.from({ length: 14 }, () => randomUUID());
+    questionStudent,
+    wrongStudent,
+    capStudent,
+    raceStudent,
+    genFailStudent,
+    invalidStudent,
+    noMaterialStudent,
+  ] = Array.from({ length: 21 }, () => randomUUID());
   const [
     classroom,
     reloadClassroom,
@@ -58,7 +66,11 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     generatedClassroom,
     failedClassroom,
     nullClassroom,
-  ] = Array.from({ length: 10 }, () => randomUUID());
+    questionClassroom,
+    genFailClassroom,
+    invalidClassroom,
+    noMaterialClassroom,
+  ] = Array.from({ length: 14 }, () => randomUUID());
   const users: string[] = [
     teacher,
     student,
@@ -74,6 +86,13 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     failedStudent,
     nullStudent,
     queueStudent,
+    questionStudent,
+    wrongStudent,
+    capStudent,
+    raceStudent,
+    genFailStudent,
+    invalidStudent,
+    noMaterialStudent,
   ];
 
   const path = () => '/users/me/daily-review';
@@ -81,17 +100,39 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     const call = request(app.getHttpServer()).get(path());
     return actor === null ? call : call.set('Authorization', `Bearer daily-review:${actor}`);
   };
+  const postAnswer = (actor: string, body: { questionId: string; answer: string }) =>
+    request(app.getHttpServer())
+      .post(`${path()}/daily-question`)
+      .set('Authorization', `Bearer daily-review:${actor}`)
+      .send(body);
   const deliveries = (userId: string) => prisma.dailyReviewDelivery.count({ where: { userId } });
+  const qualifyingDays = (userId: string) =>
+    prisma.streakQualifyingDay.count({ where: { studentId: userId } });
 
   // Fake provider port (rules/ai-bot-and-daily-briefing.md: provider calls in tests
-  // MUST use fakes). Default is the invalid-output path; two users exercise the
-  // generated and the throwing paths so delivery semantics stay observable.
+  // MUST use fakes). Summary default is the invalid-output path; two users exercise
+  // the generated and the throwing paths. The question path has its own default plus
+  // null/invalid users so delivery and question semantics stay observable.
   const GENERATED_SUMMARY = 'Tenés dos actividades pendientes y una nota nueva.';
-  const inferenceFake = {
-    generateSummary: async (input: DailyReviewInferenceInput): Promise<string | null> => {
+  const QUESTION = {
+    prompt: '¿Cuál organelo realiza la fotosíntesis?',
+    options: ['Cloroplasto', 'Mitocondria'],
+    correctOption: 'Cloroplasto',
+    materialTitle: 'Guía de fotosíntesis.pdf',
+  };
+  const inferenceFake: DailyReviewInferencePort = {
+    generateSummary: async (input) => {
       if (input.userId === generatedStudent) return GENERATED_SUMMARY;
       if (input.userId === failedStudent) throw new Error('synthetic provider outage');
       return null;
+    },
+    generateDailyQuestion: async (input) => {
+      if (input.userId === genFailStudent) return null;
+      if (input.userId === invalidStudent) {
+        // Hard-validation case: correctOption not among the options.
+        return { ...QUESTION, correctOption: 'Núcleo' };
+      }
+      return { ...QUESTION };
     },
   };
 
@@ -101,7 +142,7 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
-      imports: [AppModule.forRoot(authTestConfig({ databaseUrl }))],
+      imports: [AppModule.forRoot(authTestConfig({ databaseUrl, dailyQuestionMaxAttempts: 3 }))],
     })
       .overrideProvider(SessionVerifier)
       .useValue({
@@ -304,6 +345,63 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           createdAt: new Date(now.getTime() - 2 * 60 * 60 * 1000),
         },
       });
+      // Daily-question fixtures (S3/S7): classrooms with enabled bot material, so the
+      // question students, the race student and the failure students have a source.
+      await tx.classroom.createMany({
+        data: [
+          { id: questionClassroom, name: 'Botánica 6°A', independentTeacherId: teacher },
+          { id: genFailClassroom, name: 'Física 4°C', independentTeacherId: teacher },
+          { id: invalidClassroom, name: 'Historia 5°B', independentTeacherId: teacher },
+          { id: noMaterialClassroom, name: 'Música 1°A', independentTeacherId: teacher },
+        ],
+      });
+      await tx.classroomMembership.createMany({
+        data: [
+          { classroomId: questionClassroom, userId: questionStudent, role: ClassroomRole.STUDENT },
+          { classroomId: questionClassroom, userId: wrongStudent, role: ClassroomRole.STUDENT },
+          { classroomId: questionClassroom, userId: capStudent, role: ClassroomRole.STUDENT },
+          { classroomId: questionClassroom, userId: raceStudent, role: ClassroomRole.STUDENT },
+          { classroomId: genFailClassroom, userId: genFailStudent, role: ClassroomRole.STUDENT },
+          {
+            classroomId: invalidClassroom,
+            userId: invalidStudent,
+            role: ClassroomRole.STUDENT,
+          },
+          {
+            classroomId: noMaterialClassroom,
+            userId: noMaterialStudent,
+            role: ClassroomRole.STUDENT,
+          },
+        ],
+      });
+      const enableBotMaterial = async (classroomId: string, filename: string) => {
+        const config = await tx.botConfig.create({
+          data: { classroomId },
+          select: { id: true },
+        });
+        const material = await tx.studyMaterial.create({
+          data: {
+            classroomId,
+            authorId: teacher,
+            objectKey: `synthetic/${classroomId}/${randomUUID()}`,
+            filename,
+            contentType: 'application/pdf',
+            sizeBytes: 1024,
+          },
+          select: { id: true },
+        });
+        await tx.allowedMaterial.create({
+          data: {
+            botConfigId: config.id,
+            classroomId,
+            materialId: material.id,
+            indexState: MaterialIndexState.INDEXED,
+          },
+        });
+      };
+      await enableBotMaterial(questionClassroom, 'Guía de fotosíntesis.pdf');
+      await enableBotMaterial(genFailClassroom, 'Apunte de ondas.pdf');
+      await enableBotMaterial(invalidClassroom, 'Revolución de Mayo.pdf');
     });
   }, 30_000);
   afterAll(async () => {
@@ -525,5 +623,186 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
       where: { userId: nullStudent },
     });
     expect(delivery.contentKind).toBe('STRUCTURED');
+  });
+
+  it('generates and persists the daily question on the student first GET', async () => {
+    const response = await get(questionStudent).expect(200);
+    expect(response.body).toMatchObject({ status: 'due', audience: 'STUDENT' });
+    // Exact shape: the answer key must never be serialized to the student.
+    expect(response.body.dailyQuestion).toEqual({
+      id: expect.any(String),
+      prompt: QUESTION.prompt,
+      options: QUESTION.options,
+      materialTitle: QUESTION.materialTitle,
+    });
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: questionStudent, localDay: toLocalDay(new Date()) } },
+    });
+    expect(question.id).toBe(response.body.dailyQuestion.id);
+    expect(question.correctOption).toBe(QUESTION.correctOption);
+    expect(question.answeredAt).toBeNull();
+  });
+
+  it('credits the streak once on a correct answer and marks the day answered', async () => {
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: questionStudent, localDay: toLocalDay(new Date()) } },
+      select: { id: true },
+    });
+    // Trim-tolerant comparison: whitespace never flips a correct answer.
+    const response = await postAnswer(questionStudent, {
+      questionId: question.id,
+      answer: ` ${QUESTION.correctOption} `,
+    }).expect(200);
+    expect(response.body.correct).toBe(true);
+    expect(typeof response.body.feedback).toBe('string');
+    expect(response.body.feedback.length).toBeGreaterThan(0);
+    expect(response.body.streak).toEqual({
+      currentStreak: 1,
+      bestStreak: 1,
+      lastQualifiedDate: toLocalDay(new Date()),
+    });
+    expect(await qualifyingDays(questionStudent)).toBe(1);
+    const [qualifying] = await prisma.streakQualifyingDay.findMany({
+      where: { studentId: questionStudent },
+    });
+    expect(qualifying.source).toBe('DAILY_REVIEW_ANSWERED');
+    const answered = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { id: question.id },
+      select: { answeredAt: true },
+    });
+    expect(answered.answeredAt).not.toBeNull();
+  });
+
+  it('answers 409 CONFLICT on a repeat answer the same local day and keeps one credit', async () => {
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: questionStudent, localDay: toLocalDay(new Date()) } },
+      select: { id: true },
+    });
+    const response = await postAnswer(questionStudent, {
+      questionId: question.id,
+      answer: QUESTION.correctOption,
+    }).expect(409);
+    expect(response.body.error.code).toBe('CONFLICT');
+    expect(await qualifyingDays(questionStudent)).toBe(1);
+  });
+
+  it('does not credit a wrong answer and stays retryable', async () => {
+    // First authenticated access of the day: generates and stores the question.
+    await get(wrongStudent).expect(200);
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: wrongStudent, localDay: toLocalDay(new Date()) } },
+      select: { id: true },
+    });
+    const wrong = await postAnswer(wrongStudent, {
+      questionId: question.id,
+      answer: QUESTION.options[1],
+    }).expect(200);
+    expect(wrong.body.correct).toBe(false);
+    expect(typeof wrong.body.feedback).toBe('string');
+    expect(wrong.body.streak).toEqual({
+      currentStreak: 0,
+      bestStreak: 0,
+      lastQualifiedDate: null,
+    });
+    expect(await qualifyingDays(wrongStudent)).toBe(0);
+    const afterWrong = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { id: question.id },
+      select: { attempts: true },
+    });
+    expect(afterWrong.attempts).toBe(1);
+
+    const corrected = await postAnswer(wrongStudent, {
+      questionId: question.id,
+      answer: QUESTION.correctOption,
+    }).expect(200);
+    expect(corrected.body.correct).toBe(true);
+    expect(await qualifyingDays(wrongStudent)).toBe(1);
+  });
+
+  it('answers 429 and no credit once the attempt budget is spent', async () => {
+    // First authenticated access of the day: generates and stores the question.
+    await get(capStudent).expect(200);
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: capStudent, localDay: toLocalDay(new Date()) } },
+      select: { id: true },
+    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const wrong = await postAnswer(capStudent, {
+        questionId: question.id,
+        answer: QUESTION.options[1],
+      }).expect(200);
+      expect(wrong.body.correct).toBe(false);
+    }
+    // Even the correct option is refused once the budget is spent.
+    const capped = await postAnswer(capStudent, {
+      questionId: question.id,
+      answer: QUESTION.correctOption,
+    }).expect(429);
+    expect(capped.body.error.code).toBe('TOO_MANY_REQUESTS');
+    expect(await qualifyingDays(capStudent)).toBe(0);
+  });
+
+  it('answers 404 for foreign question ids, malformed ids and parents', async () => {
+    const foreign = await postAnswer(questionStudent, {
+      questionId: randomUUID(),
+      answer: QUESTION.correctOption,
+    }).expect(404);
+    expect(foreign.body.error.code).toBe('NOT_FOUND');
+
+    const malformed = await postAnswer(questionStudent, {
+      questionId: 'not-a-uuid',
+      answer: QUESTION.correctOption,
+    }).expect(404);
+    expect(malformed.body.error.code).toBe('NOT_FOUND');
+
+    const asParent = await postAnswer(parent, {
+      questionId: randomUUID(),
+      answer: QUESTION.correctOption,
+    }).expect(404);
+    expect(asParent.body.error.code).toBe('NOT_FOUND');
+    expect(await prisma.dailyReviewQuestion.count({ where: { userId: parent } })).toBe(0);
+  });
+
+  it('answers exactly one 200 correct under concurrent correct answers', async () => {
+    // First authenticated access of the day: generates and stores the question.
+    await get(raceStudent).expect(200);
+    const question = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { userId_localDay: { userId: raceStudent, localDay: toLocalDay(new Date()) } },
+      select: { id: true },
+    });
+    const responses = await Promise.all([
+      postAnswer(raceStudent, { questionId: question.id, answer: QUESTION.correctOption }),
+      postAnswer(raceStudent, { questionId: question.id, answer: QUESTION.correctOption }),
+      postAnswer(raceStudent, { questionId: question.id, answer: QUESTION.correctOption }),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409, 409]);
+    const winner = responses.find((r) => r.status === 200);
+    expect(winner?.body.correct).toBe(true);
+    expect(await qualifyingDays(raceStudent)).toBe(1);
+  });
+
+  it('delivers without a daily question when generation fails', async () => {
+    const response = await get(genFailStudent).expect(200);
+    expect(response.body).toMatchObject({ status: 'due', audience: 'STUDENT' });
+    expect(response.body.dailyQuestion).toBeNull();
+    expect(await deliveries(genFailStudent)).toBe(1);
+    expect(await prisma.dailyReviewQuestion.count({ where: { userId: genFailStudent } })).toBe(0);
+  });
+
+  it('rejects an invalid generated question without persisting it', async () => {
+    const response = await get(invalidStudent).expect(200);
+    expect(response.body).toMatchObject({ status: 'due', audience: 'STUDENT' });
+    expect(response.body.dailyQuestion).toBeNull();
+    expect(await prisma.dailyReviewQuestion.count({ where: { userId: invalidStudent } })).toBe(0);
+  });
+
+  it('delivers no daily question without enabled material', async () => {
+    const response = await get(noMaterialStudent).expect(200);
+    expect(response.body).toMatchObject({ status: 'due', audience: 'STUDENT' });
+    expect(response.body.dailyQuestion).toBeNull();
+    // The port is never called when there is no material to build a question from.
+    expect(await prisma.dailyReviewQuestion.count({ where: { userId: noMaterialStudent } })).toBe(
+      0,
+    );
   });
 });
