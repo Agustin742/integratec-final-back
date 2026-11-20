@@ -385,17 +385,19 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   }
 
   /**
-   * Makes the classroom layout the one built for `deskCount` desks (#79). It is the only place the
-   * layout changes: called with each verified identity (admission, reconnection) and, later, from
-   * the API push after a desk expansion through the room directory. The latest value wins, and
-   * nothing happens when the effective layout is the same (counts below the minimum, or not
-   * finite, build the minimum layout). Avatars left on a point that is no longer walkable, such as
-   * the spot a new desk now occupies, move to a free spawn point; the others stay where they are.
+   * Grows the classroom layout to the one built for `deskCount` desks (#79). It is the only place
+   * the layout changes: called with each verified identity (admission, reconnection) and from the
+   * API push after a desk expansion through the room directory. It is monotonic: desks are never
+   * deleted, so a count whose effective layout is not larger than the current one (counts below the
+   * minimum or not finite build the minimum layout) can only be stale, such as a re-verification
+   * answered before an expansion that arrives after its push, and is ignored. Avatars left on a
+   * point that is no longer walkable, such as the spot a new desk now occupies, move to a free
+   * spawn point; the others stay where they are.
    */
   applyDeskCount(deskCount: number): void {
     const layout = buildClassroomLayout(deskCount);
     const effectiveCount = layout.obstacles.length - 1; // every obstacle but the teacher desk
-    if (effectiveCount === this.state.deskCount) return;
+    if (effectiveCount <= this.state.deskCount) return;
     this.layout = layout;
     this.state.deskCount = effectiveCount;
     const avatars = [...this.state.avatars.values()];

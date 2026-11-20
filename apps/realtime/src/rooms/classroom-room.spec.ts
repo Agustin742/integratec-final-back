@@ -637,13 +637,9 @@ describe('createClassroomRoom', () => {
       const stuck = addAvatarAt(room, 'a', BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z);
 
       room.applyDeskCount(13);
-      room.applyDeskCount(12.9); // floors to the 12-desk minimum: a real change back to 12
-      expect(room.state.deskCount).toBe(12);
-      room.applyDeskCount(Number.NaN);
-      room.applyDeskCount(3);
 
-      expect(room.state.deskCount).toBe(12);
-      // Back in the 12-desk room that point is walkable again, so nothing relocates it.
+      expect(room.state.deskCount).toBe(13);
+      // Nothing changed, so nothing relocates the avatar standing in the new desk.
       expect({ x: stuck.x, z: stuck.z }).toEqual(BLOCKED_BY_DESK_13);
     });
 
@@ -658,13 +654,28 @@ describe('createClassroomRoom', () => {
       expect({ x: stuck.x, z: stuck.z }).toEqual(BLOCKED_BY_DESK_13);
     });
 
-    it('tracks the latest verified count, also when it shrinks', () => {
+    it('never shrinks the layout: a smaller count can only be stale (desks are never deleted)', () => {
       const room = makeJoinedRoom();
+      room.applyDeskCount(17);
+      const avatar = addAvatarAt(room, 'a', 3, 1);
 
+      room.applyDeskCount(13); // e.g. a reverify answered before the expansion, arriving late
+      room.applyDeskCount(12.9);
+      room.applyDeskCount(Number.NaN);
+      room.applyDeskCount(3);
+
+      expect(room.state.deskCount).toBe(17);
+      expect({ x: avatar.x, z: avatar.z }).toEqual({ x: 3, z: 1 });
+    });
+
+    it('still grows after ignoring a smaller count', () => {
+      const room = makeJoinedRoom();
       room.applyDeskCount(17);
       room.applyDeskCount(13);
 
-      expect(room.state.deskCount).toBe(13);
+      room.applyDeskCount(18);
+
+      expect(room.state.deskCount).toBe(18);
     });
 
     it('takes the desk count from the access check made at admission', async () => {

@@ -23,6 +23,7 @@ import { paginated, toSkipTake, type Paginated } from '../http/pagination/pagina
 import { encryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
@@ -49,6 +50,7 @@ export class ClassroomInvitationsService {
     private readonly rateLimiter: JoinCodeRateLimiter,
     @Inject(API_CONFIG) private readonly config: ApiConfig,
     private readonly contextRecorder: ClassroomContextRecorder,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   /**
@@ -836,7 +838,8 @@ export class ClassroomInvitationsService {
    * Assigns an available desk (lowest deskIndex with membershipId: null).
    * Uses atomic conditional update (`membershipId: null`) to prevent race condition overwrites.
    * Dynamically provisions a new desk (maxDeskIndex + 1) if all desks are occupied,
-   * retrying on transient deskIndex collision.
+   * retrying on transient deskIndex collision. A provisioned desk also records the realtime layout
+   * event in the same transaction (#79).
    */
   private async assignDesk(
     tx: Prisma.TransactionClient,
@@ -884,6 +887,12 @@ export class ClassroomInvitationsService {
             deskIndex: nextIndex,
           },
           select: { id: true, deskIndex: true },
+        });
+        // Live rooms learn the new layout only if this transaction commits. The count is read
+        // inside it, so it includes the desk just created.
+        await this.realtimeEvents.recordClassroomLayoutChanged(tx, {
+          classroomId,
+          deskCount: await tx.desk.count({ where: { classroomId } }),
         });
         return createdDesk;
       } catch (err) {

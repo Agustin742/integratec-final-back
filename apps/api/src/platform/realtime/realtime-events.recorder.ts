@@ -6,9 +6,11 @@ import {
   REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
   REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
+  REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
   REALTIME_SESSIONS_REVOKED_EVENT,
   type ClassroomAccessRevokedPayload,
   type ClassroomAppearanceChangedPayload,
+  type ClassroomLayoutChangedPayload,
   type RealtimeChatMessageCreatedPayload,
   type RealtimeChatMessageHiddenPayload,
 } from './realtime-events';
@@ -71,6 +73,21 @@ export class RealtimeEventsRecorder {
         appearanceRevision: payload.appearanceRevision,
         appearance: payload.appearance,
       },
+    });
+  }
+
+  /**
+   * Records that desks were added to a classroom (#79). `deskCount` must be counted with the
+   * caller's transaction client right after the insert, so the event describes the change that
+   * commits with it.
+   */
+  async recordClassroomLayoutChanged(
+    tx: Prisma.TransactionClient,
+    payload: ClassroomLayoutChangedPayload,
+  ): Promise<void> {
+    await this.outbox.record(tx, {
+      type: REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
+      payload: { classroomId: payload.classroomId, deskCount: payload.deskCount },
     });
   }
 
