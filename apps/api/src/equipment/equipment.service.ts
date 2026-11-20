@@ -9,6 +9,8 @@ import {
 import { Prisma, ShopItemKind } from '@prisma/client';
 import { AccessVerificationService } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
+import { advanceAppearanceRevision, memberAppearanceFor } from '../users/member-appearance';
 import {
   type EquipItemDto,
   type EquipmentStateDto,
@@ -92,6 +94,7 @@ export class EquipmentService {
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
     private readonly rateLimiter: EquipmentRateLimiter,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   /** Returns the authenticated student's own classroom-scoped equipment state. */
@@ -134,61 +137,76 @@ export class EquipmentService {
         await tx.equippedItem.deleteMany({
           where: { classroomId, studentId: actorUserId, slot },
         });
-        return;
-      }
+      } else {
+        const shopItemId: string = dto.shopItemId;
+        const item = await tx.shopItem.findUnique({
+          where: { id: shopItemId },
+          select: { kind: true, metadata: true },
+        });
+        if (!item) {
+          throw new NotFoundException('Shop item is not available in this classroom');
+        }
 
-      const shopItemId: string = dto.shopItemId;
-      const item = await tx.shopItem.findUnique({
-        where: { id: shopItemId },
-        select: { kind: true, metadata: true },
-      });
-      if (!item) {
-        throw new NotFoundException('Shop item is not available in this classroom');
-      }
+        const expectedSlot = deriveSlotForItem(item.kind, item.metadata);
+        if (expectedSlot !== slotName) {
+          throw new ConflictException('Shop item does not fit this equipment slot');
+        }
 
-      const expectedSlot = deriveSlotForItem(item.kind, item.metadata);
-      if (expectedSlot !== slotName) {
-        throw new ConflictException('Shop item does not fit this equipment slot');
-      }
-
-      const purchase = await tx.studentPurchase.findUnique({
-        where: {
-          classroomId_studentId_shopItemId: {
-            classroomId,
-            studentId: actorUserId,
-            shopItemId,
+        const purchase = await tx.studentPurchase.findUnique({
+          where: {
+            classroomId_studentId_shopItemId: {
+              classroomId,
+              studentId: actorUserId,
+              shopItemId,
+            },
           },
-        },
-        select: { id: true },
-      });
-      if (!purchase) {
-        throw new ForbiddenException('Shop item has not been purchased in this classroom');
+          select: { id: true },
+        });
+        if (!purchase) {
+          throw new ForbiddenException('Shop item has not been purchased in this classroom');
+        }
+
+        await tx.$executeRaw`
+          INSERT INTO "equipped_items" (
+            "id",
+            "classroom_id",
+            "student_id",
+            "slot",
+            "shop_item_id",
+            "created_at",
+            "updated_at"
+          )
+          VALUES (
+            ${randomUUID()}::uuid,
+            ${classroomId}::uuid,
+            ${actorUserId}::uuid,
+            ${slotName}::"equipped_slot",
+            ${shopItemId}::uuid,
+            NOW(),
+            NOW()
+          )
+          ON CONFLICT ("classroom_id", "student_id", "slot")
+          DO UPDATE SET
+            "shop_item_id" = EXCLUDED."shop_item_id",
+            "updated_at" = NOW()
+        `;
       }
 
-      await tx.$executeRaw`
-        INSERT INTO "equipped_items" (
-          "id",
-          "classroom_id",
-          "student_id",
-          "slot",
-          "shop_item_id",
-          "created_at",
-          "updated_at"
-        )
-        VALUES (
-          ${randomUUID()}::uuid,
-          ${classroomId}::uuid,
-          ${actorUserId}::uuid,
-          ${slotName}::"equipped_slot",
-          ${shopItemId}::uuid,
-          NOW(),
-          NOW()
-        )
-        ON CONFLICT ("classroom_id", "student_id", "slot")
-        DO UPDATE SET
-          "shop_item_id" = EXCLUDED."shop_item_id",
-          "updated_at" = NOW()
-      `;
+      // Broadcast the new look to the live classroom (#114): one event for this classroom,
+      // carrying the full post-change snapshot, recorded in the same transaction as the write so
+      // it exists if and only if the equip or unequip commits.
+      await advanceAppearanceRevision(tx, actorUserId);
+      const { appearanceRevision, appearance } = await memberAppearanceFor(
+        tx,
+        actorUserId,
+        classroomId,
+      );
+      await this.realtimeEvents.recordClassroomAppearanceChanged(tx, {
+        classroomId,
+        userId: actorUserId,
+        appearanceRevision,
+        appearance,
+      });
     });
 
     // Non-PII structured audit log per rules/observability-and-privacy.md.

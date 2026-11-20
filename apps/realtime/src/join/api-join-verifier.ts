@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { memberAppearanceSchema } from '@aula/contracts';
 import {
   CLASSROOM_ROLES,
   JoinDeniedError,
@@ -27,6 +28,9 @@ const verifiedJoinSchema = z.object({
   classroomId: z.uuid(),
   role: z.enum(CLASSROOM_ROLES),
   displayName: z.string().min(1).max(100),
+  // Public appearance only: unknown or malformed fields deny the join (#114).
+  appearance: memberAppearanceSchema,
+  appearanceRevision: z.number().int().nonnegative(),
 });
 
 export interface ApiJoinVerifierOptions {

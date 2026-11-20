@@ -1,5 +1,14 @@
 # Tracker — Luis
 
+## 2026-11-20 — Prevent stale appearance retries from overwriting newer state (PR #121)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/`, `apps/api/src/platform/realtime/`, `apps/api/src/users/`, `apps/api/src/equipment/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`
+- **Change:** Added monotonically increasing per-user appearance revisions so realtime ignores stale outbox snapshots, including races with join and reconnection verification.
+- **Reason:** A retried older outbox snapshot can arrive after a newer update and leave the live avatar stale.
+- **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Backend CI (checks and both Terraform jobs) passed on code commit `52cc27f`; CI caught and prompted a correction to a legacy profile assertion affected by the new internal revision.
+- **Next step:** Await teammate re-review and merge of PR #121.
+
 ## 2026-11-19 — Realtime classroom chat (#48)
 
 - **Status:** PR [#122](https://github.com/Agustin742/integratec-final-back/pull/122) open from `feat/48-chat-realtime` (commit `683c844`)

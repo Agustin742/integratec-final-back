@@ -15,14 +15,18 @@ import {
   JoinVerificationUnavailableError,
   type JoinVerifier,
 } from '../join/join-verifier';
+import { makeStubAppearance } from '../testing/stub-api';
 
 const CLASSROOM_ID = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const APPEARANCE = makeStubAppearance();
 const IDENTITY = {
   userId: '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01',
   sessionId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
   classroomId: CLASSROOM_ID,
   role: 'TEACHER' as const,
   displayName: 'Ada Lovelace',
+  appearanceRevision: 1,
+  appearance: APPEARANCE,
 };
 const AUTH = {
   userId: IDENTITY.userId,
@@ -30,6 +34,8 @@ const AUTH = {
   classroomId: CLASSROOM_ID,
   role: IDENTITY.role,
   displayName: IDENTITY.displayName,
+  appearanceRevision: IDENTITY.appearanceRevision,
+  appearance: APPEARANCE,
 };
 
 describe('createClassroomRoom', () => {
@@ -78,6 +84,40 @@ describe('createClassroomRoom', () => {
       role: 'TEACHER',
       status: 'online',
     });
+  });
+
+  it('adds the verified appearance to the avatar at the first connection (#114)', async () => {
+    const room = makeJoinedRoom();
+
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+
+    const avatar = room.state.avatars.get(IDENTITY.userId);
+    expect(avatar?.appearance).toMatchObject(APPEARANCE.baseAvatar);
+    expect(avatar?.appearance.items.size).toBe(1);
+    expect(avatar?.appearance.items.get('head')).toMatchObject(APPEARANCE.items.head);
+    expect(avatar?.appearance.items.has('face')).toBe(false);
+  });
+
+  it('ignores a delayed older appearance snapshot after a newer update (#114)', async () => {
+    const room = makeJoinedRoom();
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    expect(room.state.avatars.get(IDENTITY.userId)?.appearance.hairColor).toBe('#AF6D63');
+
+    const newest = makeStubAppearance('#C77DAA');
+    expect(room.applyAppearance(IDENTITY.userId, 3, newest)).toBe(true);
+    expect(room.applyAppearance(IDENTITY.userId, 2, APPEARANCE)).toBe(true);
+
+    const avatar = room.state.avatars.get(IDENTITY.userId);
+    expect(avatar?.appearance.hairColor).toBe('#C77DAA');
+    expect(avatar?.appearance.items.size).toBe(1);
+    expect(avatar?.appearance.items.get('head')).toMatchObject(newest.items.head);
+  });
+
+  it('reports that there was no avatar to update, changing nothing (#114)', async () => {
+    const room = makeJoinedRoom();
+
+    expect(room.applyAppearance(IDENTITY.userId, 2, APPEARANCE)).toBe(false);
+    expect(room.state.avatars.size).toBe(0);
   });
 
   it('rejects a join with no verified identity', async () => {
@@ -193,6 +233,55 @@ describe('createClassroomRoom', () => {
         displayName: 'Ada L.',
       });
       expect(room.state.avatars.size).toBe(1);
+    });
+
+    it("refreshes the appearance from the later connection's answer (#114)", async () => {
+      const reverify = vi
+        .fn()
+        .mockResolvedValueOnce(IDENTITY)
+        .mockResolvedValue({
+          ...IDENTITY,
+          appearanceRevision: 2,
+          appearance: makeStubAppearance('#C77DAA'),
+        });
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const first = { sessionId: 's1', auth: { ...AUTH } };
+      await room.onJoin(first as never);
+      room.onDrop(first as never);
+      expect(room.state.avatars.get(IDENTITY.userId)?.appearance.hairColor).toBe('#AF6D63');
+
+      await room.onJoin({ sessionId: 's2', auth: { ...AUTH } } as never);
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
+      expect(avatar?.appearance.items.size).toBe(1);
+      expect(avatar?.appearance.items.get('head')).toMatchObject(APPEARANCE.items.head);
+    });
+
+    it('keeps a newer event received while the join snapshot is being verified', async () => {
+      let resolveReverify!: (identity: typeof IDENTITY) => void;
+      const reverify = vi.fn(
+        () =>
+          new Promise<typeof IDENTITY>((resolve) => {
+            resolveReverify = resolve;
+          }),
+      );
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const joining = room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+
+      const latest = makeStubAppearance('#C77DAA');
+      expect(room.applyAppearance(IDENTITY.userId, 2, latest)).toBe(true);
+      resolveReverify(IDENTITY);
+      await joining;
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearanceRevision).toBe(2);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
     });
   });
 
@@ -323,6 +412,23 @@ describe('createClassroomRoom', () => {
       await reconnecting;
       sendInput(room, client, 1, 0);
       expect(positionAfterStep(room)).toBeGreaterThan(spawnX ?? 0);
+    });
+
+    it('does not overwrite a newer appearance received during reconnection verification', async () => {
+      let confirm: (identity: typeof IDENTITY) => void = () => undefined;
+      const { room, client } = await makeReconnectingRoom(
+        () => new Promise((resolve) => (confirm = resolve)),
+      );
+      const latest = makeStubAppearance('#C77DAA');
+
+      const reconnecting = room.onReconnect(client as never);
+      expect(room.applyAppearance(IDENTITY.userId, 2, latest)).toBe(true);
+      confirm(IDENTITY);
+      await reconnecting;
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearanceRevision).toBe(2);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
     });
 
     it('releases the connection and its avatar when access is denied, without relying on the transport', async () => {
@@ -487,6 +593,8 @@ describe('createClassroomRoom', () => {
           classroomId: CLASSROOM_ID,
           role: AUTH.role,
           displayName: AUTH.displayName,
+          appearanceRevision: AUTH.appearanceRevision,
+          appearance: AUTH.appearance,
         },
       ]);
       expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MapSchema } from '@colyseus/schema';
-import { Avatar, ClassroomState } from './classroom-state';
+import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
 
 describe('ClassroomState', () => {
   it('starts with an empty avatar map', () => {
@@ -34,5 +34,53 @@ describe('ClassroomState', () => {
 
   it('defaults a new avatar to online at the origin facing forward', () => {
     expect(new Avatar()).toMatchObject({ x: 0, z: 0, rotation: 0, status: 'online' });
+  });
+
+  it('carries the member appearance: base avatar plus equipped items per slot (#114)', () => {
+    const state = new ClassroomState();
+    const avatar = new Avatar();
+    avatar.userId = 'user-1';
+    avatar.appearance.bodyId = 'female';
+    avatar.appearance.hairId = 'afro';
+    avatar.appearance.topId = 'tshirt';
+    avatar.appearance.hairColor = '#AF6D63';
+    avatar.appearance.clothingColor = '#75B7DA';
+    const head = new EquippedItemView();
+    head.slot = 'head';
+    head.shopItemId = '20000000-0000-4000-8000-000000000001';
+    head.shopItemCode = 'cap_blue';
+    head.shopItemName = 'Blue Classroom Cap';
+    head.kind = 'AVATAR_ACCESSORY';
+    avatar.appearance.items.set('head', head);
+    state.avatars.set(avatar.userId, avatar);
+
+    const stored = state.avatars.get('user-1');
+    expect(stored?.appearance).toMatchObject({
+      bodyId: 'female',
+      hairId: 'afro',
+      topId: 'tshirt',
+      hairColor: '#AF6D63',
+      clothingColor: '#75B7DA',
+    });
+    expect(stored?.appearance.items.size).toBe(1);
+    expect(stored?.appearance.items.get('head')).toMatchObject({
+      slot: 'head',
+      shopItemId: '20000000-0000-4000-8000-000000000001',
+      shopItemCode: 'cap_blue',
+      shopItemName: 'Blue Classroom Cap',
+      kind: 'AVATAR_ACCESSORY',
+    });
+  });
+
+  it('defaults a new avatar appearance to empty base fields and no items (#114)', () => {
+    const appearance = new Avatar().appearance;
+    expect(appearance).toMatchObject({
+      bodyId: '',
+      hairId: '',
+      topId: '',
+      hairColor: '',
+      clothingColor: '',
+    });
+    expect(appearance.items.size).toBe(0);
   });
 });

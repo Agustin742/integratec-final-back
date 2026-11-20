@@ -15,6 +15,7 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
   type AvatarInput,
+  type MemberAppearance,
   type ChatMessageHiddenPayload,
   type ChatMessagePayload,
 } from '@aula/contracts';
@@ -39,8 +40,32 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState } from './classroom-state';
-import type { ClassroomRoomHandle, RoomDirectory } from './room-directory';
+import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
+import type { DirectoryRoom, RoomDirectory } from './room-directory';
+
+/**
+ * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
+ * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
+ * equipped is simply absent from the items map.
+ */
+function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
+  avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
+  avatar.appearance.hairId = appearance.baseAvatar.hairId;
+  avatar.appearance.topId = appearance.baseAvatar.topId;
+  avatar.appearance.hairColor = appearance.baseAvatar.hairColor;
+  avatar.appearance.clothingColor = appearance.baseAvatar.clothingColor;
+  avatar.appearance.items.clear();
+  for (const [slot, item] of Object.entries(appearance.items)) {
+    if (item === null) continue;
+    const view = new EquippedItemView();
+    view.slot = item.slot;
+    view.shopItemId = item.shopItemId;
+    view.shopItemCode = item.shopItemCode;
+    view.shopItemName = item.shopItemName;
+    view.kind = item.kind;
+    avatar.appearance.items.set(slot, view);
+  }
+}
 
 /** Collaborators and settings a room receives from the server bootstrap. */
 export interface ClassroomRoomOptions {
@@ -73,10 +98,12 @@ interface PendingAdmission {
   userId: string;
   authSessionId: string;
   revoked: boolean;
+  appearance: MemberAppearance;
+  appearanceRevision: number;
 }
 
 /** Room logic that does not depend on the verifier. */
-export class ClassroomRoom extends Room<{ state: ClassroomState }> implements ClassroomRoomHandle {
+export class ClassroomRoom extends Room<{ state: ClassroomState }> implements DirectoryRoom {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
   protected verifier!: JoinVerifier;
@@ -143,6 +170,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
       userId: auth.userId,
       authSessionId: auth.authSessionId,
       revoked: false,
+      appearance: auth.appearance,
+      appearanceRevision: auth.appearanceRevision,
     };
     this.pendingAdmissions.set(client.sessionId, admission);
     try {
@@ -159,6 +188,12 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
+      if (current.appearanceRevision >= admission.appearanceRevision) {
+        admission.appearance = current.appearance;
+        admission.appearanceRevision = current.appearanceRevision;
+      }
+      auth.appearance = admission.appearance;
+      auth.appearanceRevision = admission.appearanceRevision;
     } catch (error) {
       if (error instanceof ServerError) throw error;
       if (admission.revoked || error instanceof JoinDeniedError) {
@@ -189,6 +224,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
       if (avatar) {
         avatar.displayName = auth.displayName;
         avatar.role = auth.role;
+        if (auth.appearanceRevision >= avatar.appearanceRevision) {
+          avatar.appearanceRevision = auth.appearanceRevision;
+          applyAppearanceToAvatar(avatar, auth.appearance);
+        }
       }
       this.refreshStatus(auth.userId);
     }
@@ -238,10 +277,14 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
       if (!this.userConnections.has(client.sessionId)) return;
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.appearance = current.appearance;
+      auth.appearanceRevision = current.appearanceRevision;
       const avatar = this.state.avatars.get(userId);
-      if (avatar) {
+      if (avatar && current.appearanceRevision >= avatar.appearanceRevision) {
+        avatar.appearanceRevision = current.appearanceRevision;
         avatar.role = current.role;
         avatar.displayName = current.displayName;
+        applyAppearanceToAvatar(avatar, current.appearance);
       }
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
@@ -260,6 +303,35 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
 
   onLeave(client: Client): void {
     this.releaseConnection(client.sessionId);
+  }
+
+  /**
+   * Applies an API-verified appearance update to the user's avatar (#114). Reached only through
+   * the room directory from the internal route, never from a client message. The monotonic
+   * revision makes at-least-once outbox replays and out-of-order deliveries harmless. Pending
+   * admissions retain the newest update so a join verification cannot overwrite it with an older
+   * snapshot.
+   */
+  applyAppearance(
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): boolean {
+    const avatar = this.state.avatars.get(userId);
+    let found = avatar !== undefined;
+    if (avatar && appearanceRevision > avatar.appearanceRevision) {
+      avatar.appearanceRevision = appearanceRevision;
+      applyAppearanceToAvatar(avatar, appearance);
+    }
+    for (const admission of this.pendingAdmissions.values()) {
+      if (admission.userId !== userId) continue;
+      found = true;
+      if (appearanceRevision > admission.appearanceRevision) {
+        admission.appearanceRevision = appearanceRevision;
+        admission.appearance = appearance;
+      }
+    }
+    return found;
   }
 
   /**
@@ -439,6 +511,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Cl
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;
     avatar.role = identity.role;
+    avatar.appearanceRevision = identity.appearanceRevision;
+    applyAppearanceToAvatar(avatar, identity.appearance);
     avatar.x = spawn.x;
     avatar.z = spawn.z;
     this.state.avatars.set(identity.userId, avatar);

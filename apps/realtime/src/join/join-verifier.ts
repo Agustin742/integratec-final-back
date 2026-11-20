@@ -1,3 +1,5 @@
+import type { MemberAppearance } from '@aula/contracts';
+
 /** Roles allowed in a live room. Parents have no live access (rules/realtime-and-presence.md). */
 export const CLASSROOM_ROLES = ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] as const;
 export type ClassroomRole = (typeof CLASSROOM_ROLES)[number];
@@ -10,6 +12,10 @@ export interface VerifiedJoin {
   role: ClassroomRole;
   /** Name shown on the avatar; it comes from the API, never from the client. */
   displayName: string;
+  /** Public appearance of the member in this classroom (#114): base avatar + equipped items. */
+  appearance: MemberAppearance;
+  /** Monotonic per-user appearance version for rejecting delayed outbox deliveries. */
+  appearanceRevision: number;
 }
 
 /**
@@ -23,6 +29,9 @@ export interface ClassroomAuth {
   classroomId: string;
   role: ClassroomRole;
   displayName: string;
+  /** Public appearance confirmed by the API; refreshed on admission and reconnection (#114). */
+  appearance: MemberAppearance;
+  appearanceRevision: number;
 }
 
 export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
@@ -31,6 +40,8 @@ export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
   classroomId: identity.classroomId,
   role: identity.role,
   displayName: identity.displayName,
+  appearance: identity.appearance,
+  appearanceRevision: identity.appearanceRevision,
 });
 
 /** A connection that was verified at join and now asks to come back. */

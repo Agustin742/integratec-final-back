@@ -11,6 +11,7 @@ const SESSION = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
 const makeApp = () => {
   const directory = {
     evict: vi.fn().mockReturnValue(2),
+    applyAppearance: vi.fn().mockReturnValue(1),
     broadcastChatEvent: vi.fn(),
   };
   const app = configureExpress(express(), { internal: { serviceSecret: SECRET, directory } });

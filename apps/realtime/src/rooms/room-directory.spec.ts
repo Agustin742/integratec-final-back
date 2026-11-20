@@ -8,9 +8,20 @@ import { RoomDirectory } from './room-directory';
 
 const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
+  applyAppearance: vi.fn().mockReturnValue(result > 0),
   broadcastChatMessage: vi.fn(),
   broadcastChatMessageHidden: vi.fn(),
 });
+const APPEARANCE = {
+  baseAvatar: {
+    bodyId: 'female',
+    hairId: 'afro',
+    topId: 'tshirt',
+    hairColor: '#353849',
+    clothingColor: '#75B7DA',
+  },
+  items: { head: null, face: null, back: null, desk_decor: null },
+} as const;
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const FOREIGN = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
 
@@ -72,6 +83,33 @@ describe('RoomDirectory', () => {
 
   it('matches nothing for an unknown classroom', () => {
     expect(new RoomDirectory().evict({ userId: 'u', classroomId: 'nope' })).toBe(0);
+  });
+
+  it('applies an appearance only to the rooms of the given classroom', () => {
+    const directory = new RoomDirectory();
+    const a = room();
+    const b = room();
+    directory.register('A', a);
+    directory.register('B', b);
+
+    expect(directory.applyAppearance('A', 'u', 3, APPEARANCE)).toBe(1);
+
+    expect(a.applyAppearance).toHaveBeenCalledExactlyOnceWith('u', 3, APPEARANCE);
+    expect(b.applyAppearance).not.toHaveBeenCalled();
+  });
+
+  it('reports how many rooms actually had that avatar', () => {
+    const directory = new RoomDirectory();
+    const withAvatar = room(1);
+    const withoutAvatar = room(0);
+    directory.register('A', withAvatar);
+    directory.register('A', withoutAvatar);
+
+    expect(directory.applyAppearance('A', 'u', 3, APPEARANCE)).toBe(1);
+  });
+
+  it('applies nothing for an unknown classroom', () => {
+    expect(new RoomDirectory().applyAppearance('nope', 'u', 3, APPEARANCE)).toBe(0);
   });
 
   it('broadcasts chat events to every room for that classroom and nowhere else', () => {

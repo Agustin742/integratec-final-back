@@ -12,6 +12,7 @@ import { createAppConfig } from '../app.config';
 import { ApiJoinVerifier } from '../join/api-join-verifier';
 import {
   STUB_SECRET,
+  makeStubAppearance,
   makeUser,
   startStubApi,
   type StubApi,
@@ -40,6 +41,7 @@ describe('ClassroomRoom reconnection (real Colyseus server + stub API)', () => {
 
   afterEach(async () => {
     ada.classrooms.add(CLASSROOM);
+    ada.appearance = makeStubAppearance();
     api.calls.length = 0;
     api.reverificationStatus = undefined;
     colyseus.sdk.auth.token = undefined as never;
@@ -97,6 +99,28 @@ describe('ClassroomRoom reconnection (real Colyseus server + stub API)', () => {
     await waitUntil(() => avatarOf(observer, ada)?.status === 'online', 'online again');
     expect(back.sessionId).toBe(room.sessionId);
     expect(serverRoom(observer).state.avatars.size).toBe(2);
+  });
+
+  it('refreshes the member appearance from the reverification answer when the client comes back (#114)', async () => {
+    const observer = await join(bob);
+    const room = await join(ada);
+    expect(avatarOf(observer, ada)?.appearance.hairColor).toBe('#AF6D63');
+    const token = room.reconnectionToken;
+    drop(room);
+    await waitUntil(() => avatarOf(observer, ada)?.status === 'reconnecting', 'reconnecting');
+
+    // The member changed their appearance while the connection was held (as if through the API).
+    ada.appearance = makeStubAppearance('#C77DAA');
+    await colyseus.sdk.reconnect(token);
+
+    await waitUntil(
+      () => avatarOf(observer, ada)?.appearance.hairColor === '#C77DAA',
+      'appearance refreshed',
+    );
+    expect(avatarOf(observer, ada)?.appearance.items.size).toBe(1);
+    expect(avatarOf(observer, ada)?.appearance.items.get('head')).toMatchObject(
+      ada.appearance.items.head,
+    );
   });
 
   it('re-verifies access with the API when the client comes back', async () => {
