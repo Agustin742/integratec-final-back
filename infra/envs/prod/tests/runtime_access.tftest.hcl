@@ -179,8 +179,8 @@ run "role_policy_is_attached_to_the_host_role" {
   }
 
   assert {
-    condition     = toset(keys(module.runtime_access.policy_statements)) == toset(["EcrAuthToken", "EcrPull", "ReadAppSecrets", "ReadAppConfig", "ReadAppConfigByPath", "FilesBucketObjects", "ReadHostFiles", "WriteServiceLogs"])
-    error_message = "The policy must have exactly the statements EcrAuthToken, EcrPull, ReadAppSecrets, ReadAppConfig, ReadAppConfigByPath, FilesBucketObjects, ReadHostFiles and WriteServiceLogs."
+    condition     = toset(keys(module.runtime_access.policy_statements)) == toset(["EcrAuthToken", "EcrPull", "ReadAppSecrets", "ReadAppConfig", "ReadAppConfigByPath", "FilesBucketObjects", "ReadHostFiles", "WriteServiceLogs", "PublishContainerHealth"])
+    error_message = "The policy must have exactly the statements EcrAuthToken, EcrPull, ReadAppSecrets, ReadAppConfig, ReadAppConfigByPath, FilesBucketObjects, ReadHostFiles, WriteServiceLogs and PublishContainerHealth."
   }
 
   assert {
@@ -335,15 +335,34 @@ run "log_writes_are_scoped_to_the_log_groups" {
   }
 }
 
+run "container_health_publish_is_scoped_by_namespace" {
+  command = apply
+
+  assert {
+    condition     = module.runtime_access.policy_statements["PublishContainerHealth"].Action == "cloudwatch:PutMetricData"
+    error_message = "The host may only publish metrics: cloudwatch:PutMetricData, nothing else."
+  }
+
+  assert {
+    condition     = module.runtime_access.policy_statements["PublishContainerHealth"].Resource == "*"
+    error_message = "PutMetricData has no resource ARN, so the statement uses Resource \"*\" and relies on the namespace condition."
+  }
+
+  assert {
+    condition     = module.runtime_access.policy_statements["PublishContainerHealth"].Condition == { StringEquals = { "cloudwatch:namespace" = "AulaVirtual/Containers" } }
+    error_message = "PutMetricData must be limited to the AulaVirtual/Containers namespace with a StringEquals condition on cloudwatch:namespace."
+  }
+}
+
 run "no_wildcard_except_the_ecr_token_and_no_service_wide_actions" {
   command = apply
 
   assert {
     condition = alltrue([
       for sid, s in module.runtime_access.policy_statements :
-      sid == "EcrAuthToken" || alltrue([for r in flatten([s.Resource]) : r != "*" && (!strcontains(r, "*") || endswith(r, "/*") || endswith(r, ":*"))])
+      sid == "EcrAuthToken" || sid == "PublishContainerHealth" || alltrue([for r in flatten([s.Resource]) : r != "*" && (!strcontains(r, "*") || endswith(r, "/*") || endswith(r, ":*"))])
     ])
-    error_message = "Only the ECR token statement may use Resource \"*\"; elsewhere a wildcard may only be a trailing /* or :* on a known ARN."
+    error_message = "Only the ECR token and the namespace-scoped PutMetricData statements may use Resource \"*\"; elsewhere a wildcard may only be a trailing /* or :* on a known ARN."
   }
 
   assert {
@@ -387,6 +406,8 @@ run "rejects_invalid_name_prefix" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.name_prefix]
@@ -408,6 +429,8 @@ run "rejects_empty_secret_list" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.secret_arns]
@@ -430,6 +453,8 @@ run "rejects_invalid_retention" {
     s3_bucket_arn           = "arn:aws:s3:::bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
     retention_in_days       = 10
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.retention_in_days]
@@ -451,6 +476,8 @@ run "rejects_bucket_arn_that_is_not_an_s3_arn" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "aula-virtual-prod-files-bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -472,6 +499,8 @@ run "rejects_wildcard_secret_arn" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.secret_arns]
@@ -493,6 +522,8 @@ run "rejects_wildcard_bucket_arn" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::*"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -514,6 +545,8 @@ run "rejects_object_path_bucket_arn" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket/prefix"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.s3_bucket_arn]
@@ -535,7 +568,32 @@ run "rejects_wildcard_or_object_path_host_files_bucket_arn" {
     ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
     s3_bucket_arn           = "arn:aws:s3:::bucket"
     host_files_bucket_arn   = "arn:aws:s3:::artifacts/host-files"
+
+    container_health_namespace = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.host_files_bucket_arn]
+}
+
+run "rejects_an_aws_reserved_container_health_namespace" {
+  command = plan
+
+  module {
+    source = "../../modules/runtime_access"
+  }
+
+  variables {
+    name_prefix             = "aula-virtual-prod"
+    role_name               = "r"
+    ecr_repository_arns     = { api = "arn:aws:ecr:us-east-2:123456789012:repository/a" }
+    secret_arns             = ["arn:aws:secretsmanager:us-east-2:123456789012:secret:a"]
+    ssm_parameter_arns      = ["arn:aws:ssm:us-east-2:123456789012:parameter/p/a"]
+    ssm_parameter_path_arns = ["arn:aws:ssm:us-east-2:123456789012:parameter/p"]
+    s3_bucket_arn           = "arn:aws:s3:::bucket"
+    host_files_bucket_arn   = "arn:aws:s3:::artifacts"
+
+    container_health_namespace = "AWS/EC2"
+  }
+
+  expect_failures = [var.container_health_namespace]
 }

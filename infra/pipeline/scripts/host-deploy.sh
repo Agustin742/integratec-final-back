@@ -10,6 +10,7 @@
 #   API_IMAGE, REALTIME_IMAGE, MIGRATE_IMAGE
 #                      ECR image URIs of the release
 #   AULA_ROOT          optional, default /opt/aula (tests point it elsewhere)
+#   SYSTEMD_DIR        optional, default /etc/systemd/system (tests point it elsewhere)
 #   DEPLOY_ENV_FILE    optional, default /etc/aula-app/deploy.env (NAME_PREFIX, AWS_REGION and
 #                      SITE_ADDRESS, the non-secret inputs start-app.sh reads)
 #
@@ -31,6 +32,8 @@
 #      and this script exits with the exit code of start-app.sh. Containers that start-app.sh
 #      already recreated are NOT rolled back: redeploy the previous release to go back (see
 #      "Roll back" in infra/README.md).
+#   6. After a successful start, install the units of the container health publisher
+#      (deploy/systemd/app-container-health.{service,timer}) and enable the timer. A failure only warns.
 #
 # Nothing here reads or prints a secret: start-app.sh reads them with the instance role and never
 # prints them, and the output of this script (shown in the build log) names files and steps only.
@@ -94,6 +97,8 @@ for required in deploy/start-app.sh deploy/compose.prod.yaml caddy/Caddyfile; do
   [ -f "${stage}/tree/${required}" ] || fail "the tarball has no ${required}; nothing was changed."
 done
 chmod +x "${stage}/tree/deploy/start-app.sh"
+# The container health publisher is optional in the tarball (hosts of older releases have none).
+[ ! -f "${stage}/tree/deploy/publish-container-health.sh" ] || chmod +x "${stage}/tree/deploy/publish-container-health.sh"
 # Leave the staging directory: it is removed on exit, and start-app.sh should not run inside it.
 cd /
 
@@ -126,4 +131,20 @@ if [ "$status" -ne 0 ]; then
   fi
   exit "$status"
 fi
+
+# Container health publisher (issue #62): install its systemd units from the new tree and make sure
+# the timer runs. Idempotent, so every deploy refreshes the units. It runs only after a successful
+# start, and a failure here is a warning: the stack is already running, and without the timer the
+# container alarms treat the missing metric as unhealthy, so the problem is reported anyway.
+systemd_dir="${SYSTEMD_DIR:-/etc/systemd/system}"
+health_unit_dir="${infra}/deploy/systemd"
+if [ -f "${health_unit_dir}/app-container-health.service" ] && [ -f "${health_unit_dir}/app-container-health.timer" ]; then
+  if cp "${health_unit_dir}/app-container-health.service" "${health_unit_dir}/app-container-health.timer" "$systemd_dir/" &&
+    systemctl daemon-reload && systemctl enable --now app-container-health.timer; then
+    echo "Container health timer installed and enabled."
+  else
+    echo "host-deploy: could not enable the container health timer; the container alarms will report the missing metric." >&2
+  fi
+fi
+
 echo "Release deployed; the previous host files are kept in ${previous}."

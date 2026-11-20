@@ -28,3 +28,13 @@ variable "database_instance_identifier" {
   description = "Identifier of the RDS instance the storage alarm and the event subscription watch."
   type        = string
 }
+
+variable "container_health_namespace" {
+  description = "CloudWatch namespace where the host publishes the Healthy metric of each container (script infra/deploy/publish-container-health.sh); the container alarms watch it."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.#:/-]{1,255}$", var.container_health_namespace)) && !startswith(var.container_health_namespace, "AWS/")
+    error_message = "container_health_namespace must be 1 to 255 characters of letters, digits and _ . # : / -, and must not start with AWS/ (reserved by AWS)."
+  }
+}

@@ -78,6 +78,20 @@ locals {
       ]
       Resource = [for g in aws_cloudwatch_log_group.this : "${g.arn}:*"]
     },
+    {
+      # The host publishes the health of its containers (infra/deploy/publish-container-health.sh).
+      # PutMetricData has no resource ARN, so "*" is the only possible resource; the
+      # cloudwatch:namespace condition limits it to the one namespace of that metric.
+      Sid      = "PublishContainerHealth"
+      Effect   = "Allow"
+      Action   = "cloudwatch:PutMetricData"
+      Resource = "*"
+      Condition = {
+        StringEquals = {
+          "cloudwatch:namespace" = var.container_health_namespace
+        }
+      }
+    },
   ]
 }
 

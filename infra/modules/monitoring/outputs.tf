@@ -60,6 +60,25 @@ output "database_alarms" {
   } }
 }
 
+output "container_alarms" {
+  description = "Container health alarms (metric, dimensions, threshold, actions), keyed by service, for tests and review."
+  value = { for k, a in aws_cloudwatch_metric_alarm.container_unhealthy : k => {
+    alarm_name          = a.alarm_name
+    alarm_description   = a.alarm_description
+    namespace           = a.namespace
+    metric_name         = a.metric_name
+    dimensions          = a.dimensions
+    statistic           = a.statistic
+    period              = a.period
+    evaluation_periods  = a.evaluation_periods
+    threshold           = a.threshold
+    comparison_operator = a.comparison_operator
+    treat_missing_data  = a.treat_missing_data
+    alarm_actions       = tolist(a.alarm_actions)
+    ok_actions          = tolist(a.ok_actions)
+  } }
+}
+
 output "database_event_subscription" {
   description = "RDS event subscription (name, topic, source and categories), for tests and review."
   value = {

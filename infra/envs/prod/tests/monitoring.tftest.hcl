@@ -244,18 +244,73 @@ run "database_storage_alarm" {
   }
 }
 
+run "container_health_alarms" {
+  command = apply
+
+  assert {
+    condition     = toset(keys(module.monitoring.container_alarms)) == toset(["api", "realtime"])
+    error_message = "There must be one container alarm per service: api and realtime."
+  }
+
+  assert {
+    condition = alltrue([for k in ["api", "realtime"] :
+      module.monitoring.container_alarms[k].alarm_name == "aula-virtual-prod-${k}-unhealthy" &&
+      module.monitoring.container_alarms[k].namespace == "AulaVirtual/Containers" &&
+      module.monitoring.container_alarms[k].metric_name == "Healthy" &&
+      length(module.monitoring.container_alarms[k].dimensions) == 1 &&
+      module.monitoring.container_alarms[k].dimensions["Service"] == k
+    ])
+    error_message = "Each container alarm must watch the Healthy metric of its Service dimension in the AulaVirtual/Containers namespace."
+  }
+
+  assert {
+    condition = alltrue([for k in ["api", "realtime"] :
+      module.monitoring.container_alarms[k].comparison_operator == "LessThanThreshold" &&
+      module.monitoring.container_alarms[k].threshold == 1 &&
+      module.monitoring.container_alarms[k].statistic == "Minimum" &&
+      module.monitoring.container_alarms[k].period == 60 &&
+      module.monitoring.container_alarms[k].evaluation_periods == 3
+    ])
+    error_message = "Container alarms must fire when the Minimum is below 1 for 3 periods of 60 seconds."
+  }
+
+  assert {
+    condition     = alltrue([for k in ["api", "realtime"] : module.monitoring.container_alarms[k].treat_missing_data == "breaching"])
+    error_message = "Container alarms must treat missing data as breaching: no data means the host, the timer or the publisher is dead."
+  }
+
+  assert {
+    condition     = alltrue([for k in ["api", "realtime"] : strcontains(module.monitoring.container_alarms[k].alarm_description, "docker compose ps") && strcontains(module.monitoring.container_alarms[k].alarm_description, "/aula-virtual-prod/${k}")])
+    error_message = "Container alarm descriptions must tell what to check: docker compose ps and the CloudWatch log group of the service."
+  }
+}
+
+run "container_namespace_comes_from_one_value_shared_with_the_host_policy_and_the_script" {
+  command = apply
+
+  assert {
+    condition     = module.monitoring.container_alarms["api"].namespace == module.runtime_access.policy_statements["PublishContainerHealth"].Condition.StringEquals["cloudwatch:namespace"]
+    error_message = "The alarms and the IAM condition must use the same namespace."
+  }
+
+  assert {
+    condition     = var.project != "" && strcontains(file("../../deploy/publish-container-health.sh"), "HEALTH_NAMESPACE:-${module.monitoring.container_alarms["api"].namespace}}")
+    error_message = "The publisher script default namespace must equal the Terraform namespace."
+  }
+}
+
 run "every_alarm_notifies_the_topic_on_alarm_and_recovery" {
   command = apply
 
   assert {
-    condition = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms) :
+    condition = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms, module.monitoring.container_alarms) :
       toset(a.alarm_actions) == toset([module.monitoring.alarm_topic_arn]) && toset(a.ok_actions) == toset([module.monitoring.alarm_topic_arn])
     ])
     error_message = "Every alarm must publish to the alarm topic both when it fires and when it recovers."
   }
 
   assert {
-    condition     = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms) : trimspace(a.alarm_description) != ""])
+    condition     = alltrue([for a in merge(module.monitoring.host_alarms, module.monitoring.database_alarms, module.monitoring.container_alarms) : trimspace(a.alarm_description) != ""])
     error_message = "Every alarm must carry a description saying what to check."
   }
 }
@@ -353,7 +408,27 @@ run "rejects_invalid_module_name_prefix" {
     host_instance_id      = "i-0123456789abcdef0"
 
     database_instance_identifier = "aula-virtual-prod-db"
+    container_health_namespace   = "AulaVirtual/Containers"
   }
 
   expect_failures = [var.name_prefix]
+}
+
+run "rejects_an_aws_reserved_container_health_namespace" {
+  command = plan
+
+  module {
+    source = "../../modules/monitoring"
+  }
+
+  variables {
+    name_prefix                  = "aula-virtual-prod"
+    alert_email_addresses        = ["alerts@example.com"]
+    monthly_budget_usd           = 40
+    host_instance_id             = "i-0123456789abcdef0"
+    database_instance_identifier = "aula-virtual-prod-db"
+    container_health_namespace   = "AWS/EC2"
+  }
+
+  expect_failures = [var.container_health_namespace]
 }
