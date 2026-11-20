@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-19 — Issue #42: daily review and daily question for the streak (HU-BOT-003)
+
+- **Status:** in-progress (implementation underway on `feat/42-daily-review-question`; issue #42 reopened after an accidental board close)
+- **Area / files:** `apps/api/prisma/schema.prisma` + new migration, `apps/api/src/bot/` (daily review service/controller/DTOs, Bedrock inference port/adapter), `apps/api/src/config/api-config.ts`, `apps/api/.env.example`, `apps/api/openapi.json`, docs, local plan `odd/tasks/hu-bot-003-daily-review.md` (dedicated worktree `../integratec-final-back-42`, branch from latest `origin/develop` 0dd45d4).
+- **Change:** With AI assistance directed by Alejo: delivering the backend scope of #42 against the frontend contract of #119 (frontend repo PR #110 already implements the client): `DailyReviewDelivery` unique per (user, local date `America/Argentina/Buenos_Aires`) with atomic insert on first authenticated access excluding Parents; review sections composed through application services with Bedrock-generated summary (in-Region on-demand model in `us-east-2`, config values) and structured fallback built only from PostgreSQL data; daily question generated from enabled material with server-side answer validation crediting the streak via #33 (`DAILY_REVIEW_ANSWERED`, max once per local day, 409 on repeat).
+- **Reason:** Card #42 was closed as completed by mistake (board drag to Done) with no backend implementation in `develop`; the team needs the full scope delivered and the issue was reopened.
+- **Verification:** pending — RED-first HTTP specs planned for delivery atomicity (parent, reload, concurrent, day boundary), Bedrock fallback and question crediting with provider fakes; focused suites plus lint/typecheck/build before PR; full-suite limitations on this Windows host disclosed in the PR as in #40.
+- **Next step:** Implement T1–T4 of `odd/tasks/hu-bot-003-daily-review.md`, then publish the PR into `develop` on authorization.
+
 ## 2026-11-19 — Issue #40: teacher bot material enablement (HU-BOT-001)
 
 - **Status:** completed (local implementation, focused suites and independent verification complete on `feat/40-teacher-bot-material`; publication into `develop` pending team review)

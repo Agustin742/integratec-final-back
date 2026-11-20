@@ -3049,6 +3049,32 @@
         "tags": ["bot"]
       }
     },
+    "/users/me/daily-review": {
+      "get": {
+        "description": "Server-decided state for the local day (America/Argentina/Buenos_Aires, server clock). `not_due` covers every non-delivery cause (already delivered today, another tab, parent, no classroom access, exam in progress); the client does not distinguish causes. The first authenticated access of the day delivers once under a unique constraint, so reloads and concurrent tabs cannot re-deliver.",
+        "operationId": "DailyReviewController_getDailyReview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "`not_due`, or the full review payload with `status: due`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DailyReviewResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Daily review state for the authenticated user",
+        "tags": ["bot"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -6244,6 +6270,78 @@
           "indexState",
           "createdAt"
         ]
+      },
+      "DailyReviewItemDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["pending_activity", "recent_grade", "announcement", "teacher_review"],
+            "description": "Row kind; the frontend renders each kind with its own layout."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "example": "Trabajo práctico de fotosíntesis"
+          },
+          "classroomName": { "type": "string", "maxLength": 120, "example": "Biología 3°B" },
+          "dueAt": {
+            "type": "object",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO 8601 UTC instant; the frontend displays it in the school time zone."
+          },
+          "detail": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 280,
+            "description": "Kind-specific detail, for example a grade rendered as \"9/10\"."
+          }
+        },
+        "required": ["kind", "title", "classroomName", "dueAt", "detail"]
+      },
+      "DailyReviewSectionDto": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["pending", "news"] },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DailyReviewItemDto" }
+          }
+        },
+        "required": ["kind", "items"]
+      },
+      "DailyReviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["not_due", "due"] },
+          "audience": {
+            "type": "string",
+            "enum": ["STUDENT", "TEACHER"],
+            "description": "Present when status is `due`: students get review + question, teachers review only."
+          },
+          "contentKind": {
+            "type": "string",
+            "enum": ["generated", "structured"],
+            "description": "Present when status is `due`. `structured` is the fallback built only from PostgreSQL data with `summary: null`; the frontend labels it non-generated."
+          },
+          "summary": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 400,
+            "description": "Model wording when contentKind is `generated`; null on the structured fallback."
+          },
+          "sections": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DailyReviewSectionDto" }
+          },
+          "dailyQuestion": {
+            "type": "object",
+            "nullable": true,
+            "description": "Present for students when the server has a question for the day; null on the structured fallback."
+          }
+        },
+        "required": ["status"]
       },
       "RosterGuardianDto": {
         "type": "object",
