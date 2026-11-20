@@ -15,6 +15,7 @@ import {
   REALTIME_CHAT_MESSAGE_CREATED_EVENT,
   REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
 } from './realtime-events';
+import { EVICTION_MAX_ATTEMPTS } from './realtime-eviction.handler';
 import {
   REALTIME_CHAT_BROADCAST_PORT,
   type RealtimeChatBroadcastPort,
@@ -26,6 +27,13 @@ const messageHidden = z.strictObject({
   messageId: z.uuid(),
   hiddenAt: z.iso.datetime(),
 });
+
+/**
+ * Outbox attempts for a hidden-message event. Students keep seeing a moderated message until the
+ * event lands, so it shares the eviction budget (same at-least-once path). A missed created event
+ * is recovered from history, so it stays on the default budget.
+ */
+export const CHAT_HIDDEN_MAX_ATTEMPTS = EVICTION_MAX_ATTEMPTS;
 
 /** Resolves committed message IDs from PostgreSQL before at-least-once realtime delivery. */
 @Injectable()
@@ -41,6 +49,9 @@ export class RealtimeChatEventHandler implements OnModuleInit {
   onModuleInit(): void {
     for (const type of [REALTIME_CHAT_MESSAGE_CREATED_EVENT, REALTIME_CHAT_MESSAGE_HIDDEN_EVENT]) {
       this.registry.setRetryPolicy(type, {
+        ...(type === REALTIME_CHAT_MESSAGE_HIDDEN_EVENT
+          ? { maxAttempts: CHAT_HIDDEN_MAX_ATTEMPTS }
+          : {}),
         onExhausted: (event) =>
           this.logger.error({
             operation: 'realtime.chat-broadcast.undelivered',

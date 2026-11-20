@@ -8,7 +8,7 @@ import {
   HttpRealtimeChatBroadcastClient,
   RealtimeChatBroadcastError,
 } from './realtime-chat.client';
-import { RealtimeChatEventHandler } from './realtime-chat.handler';
+import { CHAT_HIDDEN_MAX_ATTEMPTS, RealtimeChatEventHandler } from './realtime-chat.handler';
 import {
   REALTIME_CHAT_MESSAGE_CREATED_EVENT,
   REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
@@ -151,6 +151,14 @@ describe('RealtimeChatEventHandler', () => {
     expect(
       registry.retryPolicyFor(REALTIME_CHAT_MESSAGE_CREATED_EVENT).maxAttempts,
     ).toBeUndefined();
+  });
+
+  it('gives hidden events a larger retry budget than the default', () => {
+    const { registry } = makeHandler();
+    expect(registry.retryPolicyFor(REALTIME_CHAT_MESSAGE_HIDDEN_EVENT).maxAttempts).toBe(
+      CHAT_HIDDEN_MAX_ATTEMPTS,
+    );
+    expect(CHAT_HIDDEN_MAX_ATTEMPTS).toBeGreaterThan(5);
   });
 
   it('loads the committed message and mentions from PostgreSQL before broadcasting', async () => {

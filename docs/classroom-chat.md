@@ -105,7 +105,10 @@ handler reads the persisted message and mentions and calls Colyseus
 `POST /internal/chat-events` with the service secret. Colyseus validates the shared contract and broadcasts only to
 live rooms registered for that classroom. A Colyseus outage never undoes the
 REST write; outbox retries delivery and the paginated history endpoint is the
-recovery source.
+recovery source. `chat:message.hidden` gets the same larger retry budget as
+eviction (12 attempts, about 2.8 hours) because students keep seeing a
+moderated message until it lands; `chat:message` keeps the default budget since
+history recovers a missed live message.
 
 The server-to-client `chat:message` event carries the persisted send DTO. The
 `chat:message.hidden` event carries only `messageId` and `hiddenAt`; students
