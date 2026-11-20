@@ -59,9 +59,7 @@ describe('memberAppearanceSchema (#114)', () => {
   });
 
   it('rejects unknown top-level fields and unknown slot names', () => {
-    expect(memberAppearanceSchema.safeParse({ ...appearance, email: 'a@b.c' }).success).toBe(
-      false,
-    );
+    expect(memberAppearanceSchema.safeParse({ ...appearance, email: 'a@b.c' }).success).toBe(false);
     expect(
       memberAppearanceSchema.safeParse({
         ...appearance,
@@ -82,8 +80,6 @@ describe('memberAppearanceSchema (#114)', () => {
   it('requires every slot key, allowing null', () => {
     const { head, ...partial } = appearance.items;
     expect(head).toBeTruthy();
-    expect(memberAppearanceSchema.safeParse({ ...appearance, items: partial }).success).toBe(
-      false,
-    );
+    expect(memberAppearanceSchema.safeParse({ ...appearance, items: partial }).success).toBe(false);
   });
 });
