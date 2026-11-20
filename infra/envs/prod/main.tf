@@ -56,6 +56,16 @@ module "storage" {
   name_prefix = "${var.project}-${local.environment}"
 }
 
+# Alarm topic (email subscriptions) and the monthly cost budget. Later alarms publish to
+# module.monitoring.alarm_topic_arn.
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix           = "${var.project}-${local.environment}"
+  alert_email_addresses = var.alert_email_addresses
+  monthly_budget_usd    = var.monthly_budget_usd
+}
+
 # Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
 # by hand in the console), the artifact bucket, the CodeBuild log group and the Terraform
 # runner (CodeBuild plan and apply projects with their roles), the image build, the host

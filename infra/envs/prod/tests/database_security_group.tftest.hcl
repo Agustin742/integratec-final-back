@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The delivery pipeline module builds role and project ARNs from the account ID, and
   # CodeBuild validates them; the mock would return a random string, so it is pinned.
   override_data {
@@ -48,6 +57,7 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
 run "database_security_group_is_in_the_network_vpc" {

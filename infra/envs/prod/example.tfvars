@@ -6,3 +6,7 @@ enable_github_oidc = false
 # Placeholders: replace with the real frontend URL once it exists (https only).
 allowed_origins         = ["https://app.example.com"]
 password_reset_url_base = "https://app.example.com/reset-password"
+# Placeholders: use real addresses only in the git-ignored terraform.tfvars. Each one must
+# confirm its SNS subscription from the inbox.
+alert_email_addresses = ["alerts@example.com"]
+monthly_budget_usd    = 20
