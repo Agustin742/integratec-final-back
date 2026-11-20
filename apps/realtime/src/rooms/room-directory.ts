@@ -36,8 +36,14 @@ export interface AppearanceApplicableRoom {
   ): boolean;
 }
 
+/** What a room offers the directory when its classroom gains desks (#79). */
+export interface DeskCountApplicableRoom {
+  applyDeskCount(deskCount: number): void;
+}
+
 /** The full set of room capabilities the internal routes use through the directory. */
-export interface DirectoryRoom extends AppearanceApplicableRoom, ClassroomRoomHandle {}
+export interface DirectoryRoom
+  extends AppearanceApplicableRoom, DeskCountApplicableRoom, ClassroomRoomHandle {}
 
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
 export interface RoomDirectoryLike {
@@ -48,6 +54,7 @@ export interface RoomDirectoryLike {
     appearanceRevision: number,
     appearance: MemberAppearance,
   ): number;
+  applyDeskCount(classroomId: string, deskCount: number): void;
   broadcastChatEvent(event: ChatRealtimeBroadcast): void;
 }
 
@@ -98,6 +105,15 @@ export class RoomDirectory {
         total + (room.applyAppearance(userId, appearanceRevision, appearance) ? 1 : 0),
       0,
     );
+  }
+
+  /**
+   * Tells the live rooms of one classroom how many desks it now has (#79). An unknown classroom
+   * reaches nothing, which the internal route reports as a bare success so an at-least-once replay
+   * stays harmless.
+   */
+  applyDeskCount(classroomId: string, deskCount: number): void {
+    for (const room of this.rooms.get(classroomId) ?? []) room.applyDeskCount(deskCount);
   }
 
   /** Delivers the event only to live rooms bound to the committed message's classroom. */

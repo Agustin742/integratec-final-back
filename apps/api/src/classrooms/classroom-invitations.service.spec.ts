@@ -20,6 +20,8 @@ import type { ApiConfig } from '../config/api-config';
 import { decryptSecret } from '../platform/crypto/secret-box';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
+import { REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT } from '../platform/realtime/realtime-events';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
@@ -109,6 +111,7 @@ describe('ClassroomInvitationsService', () => {
         findFirst: vi.fn(),
         findUnique: vi.fn(),
         create: vi.fn(),
+        count: vi.fn(),
         update: vi.fn(),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -143,6 +146,7 @@ describe('ClassroomInvitationsService', () => {
       rateLimiter,
       dummyConfig,
       new ClassroomContextRecorder(mockOutbox as unknown as OutboxWriter),
+      new RealtimeEventsRecorder(mockOutbox as unknown as OutboxWriter),
     );
   });
 
@@ -558,6 +562,12 @@ describe('ClassroomInvitationsService', () => {
       expect(res.alreadyMember).toBe(false);
       expect(res.desk?.id).toBe(deskId2);
       expect(res.desk?.deskIndex).toBe(2);
+      // No desk was created, so the layout did not change.
+      expect(mockPrisma.desk.create).not.toHaveBeenCalled();
+      expect(mockOutbox.record).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT }),
+      );
     });
 
     it('dynamically provisions desk 13 when all 12 initial desks are occupied (desk auto-expansion)', async () => {
@@ -601,11 +611,26 @@ describe('ClassroomInvitationsService', () => {
         id: newDeskId,
         deskIndex: 13,
       });
+      mockPrisma.desk.count.mockResolvedValue(13);
 
       const res = await service.joinWithCode(STUDENT_ID, { code: rawCode });
 
       expect(res.alreadyMember).toBe(false);
       expect(res.desk?.deskIndex).toBe(13);
+      // The layout event is recorded in the transaction that creates the desk, after counting
+      // the desks inside it, so it is delivered only if the desk commits.
+      expect(mockPrisma.desk.count).toHaveBeenCalledWith({ where: { classroomId: CLASSROOM_ID } });
+      const layoutEvents = mockOutbox.record.mock.calls.filter(
+        ([, event]) => (event as { type: string }).type === REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
+      );
+      expect(layoutEvents).toHaveLength(1);
+      expect(layoutEvents[0]).toEqual([
+        mockPrisma,
+        {
+          type: REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
+          payload: { classroomId: CLASSROOM_ID, deskCount: 13 },
+        },
+      ]);
       expect(mockPrisma.desk.create).toHaveBeenCalledWith({
         data: {
           classroomId: CLASSROOM_ID,

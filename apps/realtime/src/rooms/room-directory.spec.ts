@@ -9,6 +9,7 @@ import { RoomDirectory } from './room-directory';
 const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
   applyAppearance: vi.fn().mockReturnValue(result > 0),
+  applyDeskCount: vi.fn(),
   broadcastChatMessage: vi.fn(),
   broadcastChatMessageHidden: vi.fn(),
 });
@@ -110,6 +111,26 @@ describe('RoomDirectory', () => {
 
   it('applies nothing for an unknown classroom', () => {
     expect(new RoomDirectory().applyAppearance('nope', 'u', 3, APPEARANCE)).toBe(0);
+  });
+
+  it('applies a desk count only to the rooms of the given classroom', () => {
+    const directory = new RoomDirectory();
+    const a = room();
+    const twin = room();
+    const other = room();
+    directory.register(CLASSROOM, a);
+    directory.register(CLASSROOM, twin);
+    directory.register(FOREIGN, other);
+
+    directory.applyDeskCount(CLASSROOM, 13);
+
+    expect(a.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
+    expect(twin.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
+    expect(other.applyDeskCount).not.toHaveBeenCalled();
+  });
+
+  it('applies a desk count to nothing for an unknown classroom', () => {
+    expect(() => new RoomDirectory().applyDeskCount(CLASSROOM, 13)).not.toThrow();
   });
 
   it('broadcasts chat events to every room for that classroom and nowhere else', () => {

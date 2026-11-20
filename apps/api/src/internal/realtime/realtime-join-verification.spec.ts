@@ -109,6 +109,7 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
   });
 
   afterAll(async () => {
+    await prisma?.desk.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroomMembership.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroom.deleteMany({ where: { id: { in: classroomIds } } });
     await prisma?.session.deleteMany({ where: { id: { in: sessionIds } } });
@@ -125,10 +126,51 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
       role: 'TEACHER',
       displayName: 'rt-member',
       appearanceRevision: 0,
+      deskCount: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
         items: { head: null, face: null, back: null, desk_decor: null },
       },
+    });
+  });
+
+  describe('desk count (#79)', () => {
+    const createDesks = (targetClassroomId: string, count: number) =>
+      prisma.desk.createMany({
+        data: Array.from({ length: count }, (_, idx) => ({
+          classroomId: targetClassroomId,
+          deskIndex: idx + 1,
+        })),
+      });
+
+    it('answers the number of desks of the classroom, including an expanded 13th desk', async () => {
+      await createDesks(classroomId, 12);
+      const initial = await post({ accessToken: memberToken, classroomId }).expect(200);
+      expect(initial.body.deskCount).toBe(12);
+
+      await prisma.desk.create({ data: { classroomId, deskIndex: 13 } });
+      const expanded = await post({ accessToken: memberToken, classroomId }).expect(200);
+      expect(expanded.body.deskCount).toBe(13);
+    });
+
+    it('counts only the desks of the requested classroom', async () => {
+      await createDesks(otherClassroomId, 3);
+      await prisma.classroomMembership.create({
+        data: {
+          classroomId: otherClassroomId,
+          userId: memberId,
+          role: ClassroomRole.STUDENT,
+          state: MembershipState.ACTIVE,
+        },
+      });
+      try {
+        const res = await post({ accessToken: memberToken, classroomId: otherClassroomId }).expect(
+          200,
+        );
+        expect(res.body.deskCount).toBe(3);
+      } finally {
+        await prisma.classroomMembership.deleteMany({ where: { classroomId: otherClassroomId } });
+      }
     });
   });
 
@@ -202,6 +244,7 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
           'appearance',
           'appearanceRevision',
           'classroomId',
+          'deskCount',
           'displayName',
           'role',
           'sessionId',

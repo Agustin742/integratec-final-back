@@ -21,6 +21,8 @@ import { InMemoryEmailAdapter } from '../platform/email/in-memory-email.adapter'
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
 import { OutboxHandlerRegistry } from '../platform/outbox/outbox.registry';
+import { REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT } from '../platform/realtime/realtime-events';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import type { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
 import { ClassroomInvitationCreatedHandler } from './classroom-invitation-created.handler';
@@ -94,6 +96,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
       rateLimiter,
       dummyConfig,
       new ClassroomContextRecorder(outboxWriter),
+      new RealtimeEventsRecorder(outboxWriter),
     );
 
     const ts = Date.now();
@@ -610,6 +613,21 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
     // Check desks count in DB
     const totalDesks = await prisma.desk.count({ where: { classroomId: cr.id } });
     expect(totalDesks).toBe(14);
+
+    // Each created desk recorded one layout event with the count after its own insert; the twelve
+    // joins that only claimed an existing desk recorded none.
+    const layoutEvents = await prisma.outboxEvent.findMany({
+      where: {
+        type: REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
+        payload: { path: ['classroomId'], equals: cr.id },
+      },
+      orderBy: { occurredAt: 'asc' },
+    });
+    expect(layoutEvents.map((event) => event.payload)).toEqual([
+      { classroomId: cr.id, deskCount: 13 },
+      { classroomId: cr.id, deskCount: 14 },
+    ]);
+    await prisma.outboxEvent.deleteMany({ where: { id: { in: layoutEvents.map((e) => e.id) } } });
   });
 
   it('MANDATORY CONCURRENCY: handles concurrent desk allocation cleanly with Promise.all without clobbering (CRIT-01)', async () => {
