@@ -6,8 +6,8 @@
 - **Area / files:** `apps/api/prisma/`, `apps/api/src/platform/realtime/`, `apps/api/src/users/`, `apps/api/src/equipment/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`
 - **Change:** Added monotonically increasing per-user appearance revisions so realtime ignores stale outbox snapshots, including races with join and reconnection verification.
 - **Reason:** A retried older outbox snapshot can arrive after a newer update and leave the live avatar stale.
-- **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Full CI remains pending after push.
-- **Next step:** Monitor CI and review on PR #121.
+- **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Backend CI (checks and both Terraform jobs) passed on code commit `52cc27f`; CI caught and prompted a correction to a legacy profile assertion affected by the new internal revision.
+- **Next step:** Await teammate re-review and merge of PR #121.
 
 ## 2026-11-19 — Realtime classroom chat (#48)
 
