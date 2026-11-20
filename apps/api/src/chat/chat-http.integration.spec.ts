@@ -8,6 +8,8 @@ import { SessionVerifier } from '../auth/session-verifier.service';
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
 import { configureHttp } from '../http/configure-http';
+import { NOTIFICATION_REQUESTED_EVENT } from '../notifications/notification-recorder.service';
+import { REALTIME_CHAT_MESSAGE_HIDDEN_EVENT } from '../platform/realtime/realtime-events';
 import { PrismaService } from '../prisma/prisma.service';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
@@ -117,7 +119,10 @@ async function counts() {
     messages.length,
     await prisma.mention.count({ where: { sourceId: { in: messages.map((row) => row.id) } } }),
     await prisma.outboxEvent.count({
-      where: { payload: { path: ['classroomId'], equals: classroom } },
+      where: {
+        type: NOTIFICATION_REQUESTED_EVENT,
+        payload: { path: ['classroomId'], equals: classroom },
+      },
     }),
   ];
 }
@@ -389,6 +394,17 @@ describe('DELETE /classrooms/:id/messages/:messageId moderation', () => {
     expect(row!.hiddenById).toBe(teacher);
     // Server clock, not any client-provided instant: within a small wall-clock window.
     expect(Math.abs(row!.hiddenAt!.getTime() - Date.now())).toBeLessThan(2_000);
+    const event = await prisma.outboxEvent.findFirstOrThrow({
+      where: {
+        type: REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
+        payload: { path: ['messageId'], equals: message.id },
+      },
+    });
+    expect(event.payload).toEqual({
+      classroomId: classroom,
+      messageId: message.id,
+      hiddenAt: row!.hiddenAt!.toISOString(),
+    });
     expect((await history(student).expect(200)).body).toEqual({
       items: [],
       total: 0,
@@ -434,6 +450,24 @@ describe('DELETE /classrooms/:id/messages/:messageId moderation', () => {
     await moderate(teacher, message.id).expect(204);
     await moderate(admin, message.id).expect(204);
     expect(await rowAudit(message.id)).toEqual(first);
+  });
+
+  it('records one moderation event when staff hide the same message concurrently', async () => {
+    const message = (await send(student).expect(201)).body;
+    const responses = await Promise.all([
+      moderate(teacher, message.id),
+      moderate(admin, message.id),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual([204, 204]);
+    const events = await prisma.outboxEvent.findMany({
+      where: {
+        type: REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
+        payload: { path: ['messageId'], equals: message.id },
+      },
+    });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.payload).toMatchObject({ classroomId: classroom, messageId: message.id });
   });
 
   it('denies students and parents without touching the row or visible history', async () => {

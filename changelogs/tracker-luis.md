@@ -1,5 +1,14 @@
 # Tracker — Luis
 
+## 2026-11-19 — Realtime classroom chat (#48)
+
+- **Status:** completed locally on `feat/48-chat-realtime`; no commit, push or PR
+- **Area / files:** `apps/api/src/chat/`, `apps/api/src/platform/realtime/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`, `packages/contracts/`, chat/realtime rules and documentation
+- **Change:** Implemented the approved REST-send, transactional-outbox, authenticated internal-HTTP broadcast flow and the `chat:message` / `chat:message.hidden` event contract. Message creation and first moderation atomically record minimal outbox events; the handler resolves persisted message content before dispatch. Colyseus validates the service request and broadcasts only to rooms for the matching classroom. Delivery retries do not roll back REST writes; clients deduplicate by ID and reconcile from REST history.
+- **Reason:** Deliver live chat without making Colyseus the persistence or authorization authority; REST history remains the recovery source.
+- **Verification:** `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `python scripts/ci/check_docs.py` (82 files), and `git diff --check origin/develop` passed. Focused API suites passed **114/114** tests (chat HTTP 39, chat send 21, OpenAPI 13, realtime chat handler/client 12, realtime eviction 29); realtime suites passed **63/63** (internal routes 22, rooms 41); shared contracts passed **2/2**. Integration tests ran against a temporary isolated PostgreSQL 17 database. API tests used Vitest's thread pool because the default pool produced a worker-specific Nest DI failure; all focused suites passed under threads. The full monorepo test suite was not run.
+- **Next step:** Review the local diff, then request review or open a PR when authorized.
+
 ## 2026-11-15 — Submission grading, weighted points conversion, and review queue (Issue #32)
 
 - **Status:** completed

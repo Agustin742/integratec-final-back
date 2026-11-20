@@ -14,8 +14,8 @@ Chat history, announcements, direct messages with parents, mentions, and notific
 - Reading and writing **MUST** require current access: enrollment or teacher-level authority (teacher, or school Owner or Admin). Parents **MUST NOT** read or write the classroom chat.
 - History **MUST** be returned only to users with current access and **MUST** be paginated with a stable ordering. Teacher-level staff see the whole history, including moderated messages and who removed them.
 - Expelling or leaving does not delete messages; they remain attributed.
-- Message bodies **MUST** be validated server-side: non-empty after trimming and bounded in length (limit **open**). Content is stored and returned as text; the backend **MUST NOT** interpret or render it as HTML.
-- Persistence precedes broadcast: a message **MUST** be stored before it is announced, and a client that missed messages **MUST** be able to recover them from history. Whether the send path is REST followed by a Colyseus broadcast or a validated Colyseus message handled by NestJS is **open**; either way NestJS performs authorization and persistence. See [Realtime and presence](./realtime-and-presence.md).
+- Message bodies **MUST** be validated server-side: non-empty after trimming and at most **2,000 characters**. Content is stored and returned as text; the backend **MUST NOT** interpret or render it as HTML.
+- Persistence precedes broadcast: a message **MUST** be stored before it is announced, and a client that missed messages **MUST** be able to recover them from history. For classroom chat (#48), the approved path is REST send followed by an outbox-backed Colyseus broadcast: NestJS commits the message and a minimal outbox event atomically, then its handler reads the persisted row and calls the authenticated internal Colyseus HTTP route. A delivery failure **MUST NOT** roll back the message; REST history remains the recovery source. Moderation changes use the same post-commit path. See [Realtime and presence](./realtime-and-presence.md) and [API contracts](./api-contracts.md#realtime-contract).
 - Message bodies **MUST NOT** be logged; see [Observability and privacy](./observability-and-privacy.md).
 - Sending **MUST** be rate limited per user and classroom to bound abuse.
 
@@ -72,7 +72,6 @@ Tests **MUST** cover: access to the classroom channel by enrollment, staff, and 
 
 ## Open decisions
 
-- Message length limit and the send path (REST plus broadcast, or validated realtime message).
 - Retention of message history and of parent conversations.
 - Per-student mute, content filtering, and whether Owner or Admin may read parent conversations.
 - Parent visibility of announcements.

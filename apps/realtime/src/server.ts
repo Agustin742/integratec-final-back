@@ -1,11 +1,12 @@
 import cors from 'cors';
 import express, { type Application } from 'express';
 import type { HealthStatus } from '@aula/contracts';
+import { mountChatEventsRoute, type ChatEventsRouteOptions } from './internal/chat-events-route';
 import { mountEvictionRoute, type EvictionRouteOptions } from './internal/eviction-route';
 
 export interface ExpressOptions {
-  /** Enables the internal eviction route; without it the route does not exist. */
-  internal?: EvictionRouteOptions;
+  /** Enables service-to-service routes; without it no internal route is mounted. */
+  internal?: EvictionRouteOptions & ChatEventsRouteOptions;
 }
 
 export function configureExpress(app: Application, options: ExpressOptions = {}): Application {
@@ -21,7 +22,10 @@ export function configureExpress(app: Application, options: ExpressOptions = {})
     res.json(response);
   });
 
-  if (options.internal) mountEvictionRoute(app, options.internal);
+  if (options.internal) {
+    mountEvictionRoute(app, options.internal);
+    mountChatEventsRoute(app, options.internal);
+  }
 
   return app;
 }

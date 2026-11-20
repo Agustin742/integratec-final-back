@@ -92,6 +92,28 @@ After moderation students stop seeing the row entirely, including its text and
 mentions; teacher-level staff keep the full history with body, author, mentions,
 moderator and time.
 
+## Realtime delivery (#48)
+
+The browser sends messages through `POST /classrooms/:id/messages`; it does not
+send chat commands through Colyseus. NestJS writes the message, mentions,
+notifications, participation metric and a minimal realtime outbox event in the
+same transaction. The outbox stores only `classroomId` and `messageId`, not a
+second copy of the message body. After commit, its handler reads the persisted
+message and mentions and calls Colyseus `POST /internal/chat-events` with the
+service secret. Colyseus validates the shared contract and broadcasts only to
+live rooms registered for that classroom. A Colyseus outage never undoes the
+REST write; outbox retries delivery and the paginated history endpoint is the
+recovery source.
+
+The server-to-client `chat:message` event carries the persisted send DTO. The
+`chat:message.hidden` event carries only `messageId` and `hiddenAt`; students
+remove that row, while staff reload history for the moderator audit fields.
+Outbox delivery is at least once and events may be duplicated or reordered.
+Clients deduplicate by message ID, retain a hidden-ID tombstone if the hide
+event arrives before creation, and do not resurrect an older `createdAt`.
+Clients treat REST history as authoritative, including after reconnect.
+Message bodies and identifiers are not written to failure logs.
+
 ## Send application service
 
 `ChatService.send` reuses shared access verification and the existing exported
@@ -145,6 +167,9 @@ pnpm --filter @aula/api exec prisma validate
 pnpm --filter @aula/api exec prisma generate
 pnpm --filter @aula/api exec prisma migrate deploy
 pnpm --filter @aula/api exec vitest run src/chat/chat-persistence.integration.spec.ts src/chat/chat-send.integration.spec.ts src/chat/chat-http.integration.spec.ts --no-file-parallelism --pool=threads --maxWorkers=2 --minWorkers=1
+pnpm --filter @aula/api exec vitest run src/platform/realtime/realtime-chat.spec.ts src/openapi/openapi.spec.ts
+pnpm --filter @aula/realtime exec vitest run src/internal/chat-events-route.spec.ts src/rooms/room-directory.spec.ts src/rooms/classroom-room.spec.ts
+pnpm --filter @aula/contracts exec vitest run src/index.spec.ts
 ```
 
 Storage-constraint tests roll back every synthetic fixture. Service/HTTP tests
@@ -155,3 +180,6 @@ Rejection checks compare public history before/after (including total, items and
 mentions), supplemented by database counts. Invalid sends are followed by five
 accepted sends to verify quota preservation. Read tests cover pagination ties,
 role-filtered audit, retained attribution, and concurrent count/items/mention consistency.
+Realtime tests cover transactional outbox metadata, post-commit message lookup,
+authenticated internal delivery, classroom isolation, moderation idempotency
+under concurrent requests, and fallback to REST history.

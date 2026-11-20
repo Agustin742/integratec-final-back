@@ -1,7 +1,6 @@
-import { timingSafeEqual } from 'node:crypto';
-import type { Application, Request } from 'express';
+import type { Application } from 'express';
 import { z } from 'zod';
-import { SERVICE_SECRET_HEADER } from '../join/api-join-verifier';
+import { hasValidServiceSecret } from './service-auth';
 import type { EvictionFilter } from '../rooms/room-directory';
 
 export const EVICTION_PATH = '/internal/evictions';
@@ -17,20 +16,6 @@ const evictionSchema = z.strictObject({
   sessionId: z.uuid().optional(),
 });
 
-/** Constant-time comparison; a length mismatch is rejected first (the length is not a secret). */
-function secretsMatch(presented: string, expected: string): boolean {
-  const presentedBytes = Buffer.from(presented, 'utf8');
-  const expectedBytes = Buffer.from(expected, 'utf8');
-  return (
-    presentedBytes.length === expectedBytes.length && timingSafeEqual(presentedBytes, expectedBytes)
-  );
-}
-
-const presentedSecret = (req: Request): string | undefined => {
-  const header = req.headers[SERVICE_SECRET_HEADER];
-  return typeof header === 'string' ? header : undefined;
-};
-
 /**
  * Mounts the internal route NestJS calls when a user loses access: it closes the matching
  * connections with `4001` and blocks their reconnection. It is for service-to-service use only:
@@ -40,8 +25,7 @@ const presentedSecret = (req: Request): string | undefined => {
  */
 export function mountEvictionRoute(app: Application, options: EvictionRouteOptions): void {
   app.post(EVICTION_PATH, (req, res) => {
-    const secret = presentedSecret(req);
-    if (secret === undefined || !secretsMatch(secret, options.serviceSecret)) {
+    if (!hasValidServiceSecret(req, options.serviceSecret)) {
       res.sendStatus(401);
       return;
     }

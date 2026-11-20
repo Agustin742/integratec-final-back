@@ -8,7 +8,7 @@ import { configureExpress } from './server';
 export interface AppOptions extends Omit<ClassroomRoomOptions, 'directory'> {
   /**
    * Shared secret for the internal routes. Without it the internal eviction route is not mounted
-   * (tests that do not exercise it).
+   * (or chat broadcast route; tests that do not exercise them).
    */
   internalServiceSecret?: string;
 }

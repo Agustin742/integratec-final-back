@@ -28,6 +28,10 @@ Approved by Agustin on 2026-11-10 ([D14](../docs/technical-justification.md#d14-
 |---|---|---|---|---|
 | Client to server | `avatar:input` | Command (no acknowledgement) | `{ x: number, z: number }`, each in `[-1, 1]`; `{ x: 0, z: 0 }` stops the avatar | A payload that fails validation closes the connection (Colyseus closes with its own code `4002`); a message over 30 per second per connection is dropped silently; a frozen avatar ignores it |
 | Server to client | state patches of `ClassroomState.avatars` | Notification | `MapSchema<Avatar>` keyed by `userId`; `Avatar { userId, displayName, role, x, z, rotation, status: 'online' \| 'reconnecting' }` | The newest state wins; there is nothing to reorder or deduplicate |
+| Server to client | `chat:message` | Notification | `ChatMessagePayload { id, classroomId, authorId, body, mentionedUserIds, createdAt }`, defined and validated in `packages/contracts` | Emitted after the message commit. Delivery is at least once; clients deduplicate by `id`. A missing event is recovered from `GET /classrooms/:id/messages` |
+| Server to client | `chat:message.hidden` | Notification | `{ messageId, hiddenAt }`, defined and validated in `packages/contracts` | Emitted after the first moderation commit. Clients hide the row by ID; staff fetch audit details from REST history. If it arrives before `chat:message`, keep a tombstone and do not resurrect that ID from an older `createdAt`. Duplicates are harmless; REST history is authoritative |
+
+For chat, the browser sends messages only through the authenticated REST endpoint. The NestJS outbox stores message identity rather than message content; its handler resolves the committed message before calling Colyseus. The authenticated `POST /internal/chat-events` route is service-to-service only and must not be exposed by the reverse proxy. Colyseus broadcasts to rooms mapped to the same classroom. The event payloads are validated on both sides; no client command can create or moderate a message.
 
 | Close code | Constant | Meaning | Client action |
 |---|---|---|---|
