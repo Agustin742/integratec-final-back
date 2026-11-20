@@ -13,7 +13,7 @@ All routes require a bearer session. The backend owner is the API materials modu
 | `POST /classrooms/:id/materials` | Teacher-level staff | `201` material metadata; multipart field `file` only |
 | `GET /classrooms/:id/materials` | Staff or current student | `200 { items, page, pageSize, total }` |
 | `GET /classrooms/:id/materials/:materialId/download` | Staff or current student | `200 { url, expiresInSeconds }`, `Cache-Control: no-store` |
-| `DELETE /classrooms/:id/materials/:materialId` | Teacher-level staff | `204`, logical removal; repeated removal is `404` |
+| `DELETE /classrooms/:id/materials/:materialId` | Teacher-level staff | `204`, logical removal that also removes the material from the classroom bot ([details](bot-materials.md)); repeated removal is `404` |
 
 Teacher-level staff includes school Owner/Admin for every classroom of their school, classroom teachers, and the independent teacher of their classroom. School Teachers do not gain access to other teachers' classrooms. Access is checked from current persisted membership per request. A parent linked to a child receives `403`; in adult mode parent-only access is disabled and receives `404`. Students retain their own classroom access in adult mode. No client-supplied student ID or shelf/object context grants permission.
 

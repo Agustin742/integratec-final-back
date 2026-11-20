@@ -1,6 +1,6 @@
 # Activities (TP and exams)
 
-`ActivitiesModule` lets classroom staff create, edit, publish and deactivate activities (practical work, "TP", and exams) in a classroom. Enrolled students see published activities and are notified when one is published. File submissions live in their own module ([File submissions](submissions.md)); grading, points and study material are **not** part of this module yet (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService` (see [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md)); the academic rules are in [Activities and grading](../rules/activities-and-grading.md).
+`ActivitiesModule` lets classroom staff create, edit, publish and deactivate activities (practical work, "TP", and exams) in a classroom. Enrolled students see published activities and are notified when one is published. Submissions — files and auto-graded multiple-choice answers — live in their own module ([Submissions](submissions.md)); grading, points and study material are **not** part of this module yet (see [Out of scope](#out-of-scope-and-follow-ups)). Authorization comes from the shared `AccessVerificationService` (see [Classrooms, roles, and permissions](../rules/classrooms-and-roles.md)); the academic rules are in [Activities and grading](../rules/activities-and-grading.md).
 
 An activity is an academic assignment. It is **unrelated** to `ActivityMetric` (the per-user, per-classroom, per-day aggregate of connected time described in [D14](technical-justification.md#d14-realtime-presence-and-movement-policy)); the two share only a word.
 
@@ -44,7 +44,7 @@ All routes live under `/classrooms/:id/activities`, require a Bearer session and
 | `401` | Missing or invalid session |
 | `403` | The classroom is visible to the caller but the role is not allowed: a student on a mutation, or a linked parent on any activity route |
 | `404` | Malformed UUID, unknown or foreign classroom or activity, a deactivated activity, a draft requested by a student, or a stranger |
-| `409` | Publishing an activity that is already published; `PATCH` with `questions` and `DELETE` once a submission exists (reason in `details`, see [Concurrency](#concurrency)) |
+| `409` | Publishing an activity that is already published; `PATCH` with `questions` (or a changed `maxScore` on a multiple-choice activity) and `DELETE` once a submission exists (reason in `details`, see [Concurrency](#concurrency)) |
 
 Linked parents are not part of the activity row of the permission matrix (they only see the grades of their linked child), so they receive `403`; the matrix is not extended here.
 
@@ -70,7 +70,7 @@ Work status uses only the actor's Submission and Grade, in priority order:
 
 Optional `?status=pending|submitted|graded|overdue` is lower-case and student-only. The database applies it before both pagination and total counting. Staff supplying `status` still receive `400 VALIDATION_FAILED` with `{ field: 'status', messages: ['property status should not exist'] }`, even for invalid/empty values. Staff validation also aggregates that whitelist error with any other invalid query fields in the original order (for example, `status=pending&page=0` reports both `status` and `page`). The list route reuses the shared HTTP validation pipe with a role-specific DTO; common parameter-validation errors still precede permission errors. Staff requests without `status` retain their previous payload and `state` filtering. Students' valid `state` filter remains ignored; drafts, deactivated and foreign activities stay hidden. Ordering remains `dueAt` ascending by default, with ascending `id` for ties (also for descending sorts).
 
-`canSubmit` requires supported `FILE` format, no existing submission, `opensAt` absent or reached, and server time at/before `dueAt` or `allowLate=true`. Thus an overdue activity allowing late work remains submittable. Both derived fields and filtering use one captured server instant; page and count share a repeatable-read snapshot. This is eligibility at listing time, not a reservation: submission rechecks current policy. `MULTIPLE_CHOICE` activities remain listed with derived status but `canSubmit=false`: the existing submission endpoint accepts files only; multiple-choice answers and automatic evaluation remain #47, out of scope.
+`canSubmit` requires no existing submission, `opensAt` absent or reached, and server time at/before `dueAt` or `allowLate=true`; the window is format-agnostic (shared `submissionWindow`), so both `FILE` and `MULTIPLE_CHOICE` activities are submittable within it. Thus an overdue activity allowing late work remains submittable. Both derived fields and filtering use one captured server instant; page and count share a repeatable-read snapshot. This is eligibility at listing time, not a reservation: submission rechecks current policy and matches the payload against the activity format. Multiple-choice answers are submitted through the same endpoint and auto-graded server-side ([Submissions](submissions.md#multiple-choice-answers), #47).
 
 Only submission/grade existence is selected for the current actor. No questions, options, answers, submission records, grade contents or classmates' records are included in inbox items. Existing due-date, weight, school time zone and summary fields remain available.
 
@@ -114,7 +114,7 @@ Publishing is one way: there is no unpublish.
 
 `PATCH` and publish take the same row lock before reading the state they overwrite, so concurrent writers are serialized rather than racing. A `PATCH` queued behind a `DELETE` returns `404` and never writes to the deactivated row; two `PATCH` requests that are each valid alone but not together produce one `200` and one `400`, never a `500` from a database `CHECK`; concurrent question replacements never interleave. `DELETE` waits for a pending lock and then deactivates.
 
-**Submission lock.** `PATCH`, publish and `DELETE` all take `FOR UPDATE` on the row (`DELETE` used to be a bare update and now does too); a submission takes `FOR SHARE` on it ([File submissions](submissions.md#concurrency)). After the lock, `PATCH` with `questions` returns `409` (field `questions`) and `DELETE` returns `409` (field `state`) if any submission exists, so a submit cannot commit between the check and the write. Title, description, dates, `allowLate`, `maxScore` and `weightMultiplier` stay editable. A `FILE` activity carries no questions, so the questions lock is reachable once multiple choice answers exist (#47); the deletion lock applies to every format.
+**Submission lock.** `PATCH`, publish and `DELETE` all take `FOR UPDATE` on the row (`DELETE` used to be a bare update and now does too); a submission takes `FOR SHARE` on it ([Submissions: Concurrency](submissions.md#concurrency)). After the lock, `PATCH` with `questions` returns `409` (field `questions`), `PATCH` with a `maxScore` that differs from the stored one on a `MULTIPLE_CHOICE` activity returns `409` (field `maxScore`, because `autoScore` is stored on that scale at submit time; resending the same value is allowed) and `DELETE` returns `409` (field `state`) if any submission exists, so a submit cannot commit between the check and the write. Title, description, dates, `allowLate` and `weightMultiplier` stay editable, as does `maxScore` on a `FILE` activity (graded manually). A `FILE` activity carries no questions, so the questions lock is reachable once multiple choice answers exist (#47); the deletion lock applies to every format.
 
 ## Time zone
 
@@ -133,7 +133,7 @@ Recorded as [D15](technical-justification.md#d15-activity-publishing-defaults) a
 - Study material upload (#46).
 - The realtime `activity:published` event; its transport is still open. Only the persisted notification exists.
 - Unpublishing a published activity.
-- Multiple-choice answers and auto-grading (#47), grades (#32) and the points wallet (#31). File submissions are documented in [File submissions](submissions.md).
+- Grades (#32) and the points wallet (#31). Submissions, including auto-graded multiple-choice answers (#47), are documented in [Submissions](submissions.md).
 
 ## Verification
 

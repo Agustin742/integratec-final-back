@@ -450,7 +450,7 @@ export class StudentActivitySummaryDto extends ActivitySummaryDto {
 
   @ApiProperty({
     description:
-      'Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission.',
+      'No prior submission, opensAt reached, and not past dueAt unless allowLate; both formats take a submission (files or multiple-choice answers), checked server-side at submit time. Server-time snapshot, rechecked on submission.',
   })
   canSubmit!: boolean;
 }

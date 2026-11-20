@@ -1,5 +1,21 @@
 # Tracker — Agustin
 
+## 2026-11-19 — Review fixes on PR #120 (bot materials, #40)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/migrations/20261119130100_create_bot_configs_and_allowed_materials/`, `apps/api/prisma/seed.ts`, `apps/api/src/materials/materials.service.ts`, `apps/api/src/materials/materials.module.ts`, `apps/api/src/bot/bot-materials.service.ts`, `apps/api/src/bot/bot.module.ts`, `apps/api/src/bot/bot-materials.http.spec.ts`, `docs/bot-materials.md`, `docs/study-material.md`
+- **Change:** The merge of `develop` (5d51ce3) renamed the bot migration to `20261119130100_create_bot_configs_and_allowed_materials` so it sorts after `20261119130000_add_mc_submission_answers` (#118). The seed reset now clears allowed bot materials and bot configs before their parents (6ee7211). Removing a study material now deletes its allowed bot rows in the same transaction and de-indexes it after commit; a de-index failure is logged and does not fail the removal (967e8dd).
+- **Reason:** Review findings on PR #120: the new RESTRICT foreign keys broke `prisma:seed` once bot data existed, and the #40 criterion "disabled or removed is excluded from retrieval" was only met for disabled materials.
+- **Next step:** CI on PR #120, then merge into `develop`.
+
+## 2026-11-19 — Review fixes on PR #118 (multiple-choice evaluator, #47)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/activities/activities.service.ts`, `apps/api/src/activities/activities.controller.ts`, `apps/api/src/activities/activities.integration.spec.ts`, `apps/api/openapi.json`, `docs/activities.md`
+- **Change:** `PATCH` on a MULTIPLE_CHOICE activity that already has a submission now rejects a different `maxScore` with 409 (field `maxScore`), checked under the same row lock as the questions freeze. Sending the same value stays allowed, and FILE activities keep an editable `maxScore` (33c2f8b).
+- **Reason:** Review finding on PR #118: `autoScore` is stored on the 0..`maxScore` scale at submit time, so changing `maxScore` afterwards left stored scores on the old scale.
+- **Next step:** CI on PR #118, then merge into `develop`.
+
 ## 2026-11-19 — Review fixes on PR #110 (classroom chat, #38)
 
 - **Status:** in-progress

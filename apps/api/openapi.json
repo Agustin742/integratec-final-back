@@ -1590,7 +1590,7 @@
     },
     "/activities/{activityId}/submissions": {
       "post": {
-        "description": "Student only. Uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes) to a published FILE activity of the student's classroom. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new; a different key after a submission exists is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
+        "description": "Student only. For a published FILE activity of the student's classroom, uploads 1-5 files (PDF, PNG, JPEG or DOCX, up to 10 MB each, type detected from the bytes). For a published MULTIPLE_CHOICE activity, sends the `answers` field instead: a JSON-encoded array of `{ questionId, optionId }` pairs, at least one, each belonging to the activity; the server grades them and stores the `autoScore` with the submission, and correct answers are never returned. One submission per student and activity. The server clock decides the window: before `opensAt` or after `dueAt` with `allowLate = false` is rejected (409); after `dueAt` with `allowLate = true` is stored with `isLate = true`. Retrying with the same `Idempotency-Key` returns the stored submission (200) without storing anything new and without re-scoring; a different key after a submission exists is 409. Sending files to a MULTIPLE_CHOICE activity, or answers to a FILE activity, is 409. Unknown, malformed, draft or deactivated activities and non-members answer 404, so an unpublished activity never leaks its existence; staff and linked parents answer 403 on published activities only.",
         "operationId": "SubmissionsController_create",
         "parameters": [
           {
@@ -1634,7 +1634,7 @@
             }
           },
           "400": {
-            "description": "Missing or invalid `Idempotency-Key`, no files, disallowed or empty files (`VALIDATION_FAILED` with details), or too many files / unexpected field (`BAD_REQUEST`).",
+            "description": "Missing or invalid `Idempotency-Key`; no files, disallowed or empty files; missing, empty or malformed `answers` JSON; or answers that do not belong to the activity (`VALIDATION_FAILED` with details); or too many files / unexpected field (`BAD_REQUEST`).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1658,7 +1658,7 @@
             }
           },
           "409": {
-            "description": "Already submitted with another key, window closed or not yet open, or not a file activity (`details` names the reason).",
+            "description": "Already submitted with another key, window closed or not yet open, a payload that does not match the activity format (files on a MULTIPLE_CHOICE activity, answers on a FILE activity), or a multiple-choice activity without questions (`details` names the reason).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1671,7 +1671,7 @@
           }
         },
         "security": [{ "bearer": [] }],
-        "summary": "Submit files to an activity",
+        "summary": "Submit files or multiple-choice answers to an activity",
         "tags": ["submissions"]
       }
     },
@@ -2869,6 +2869,186 @@
         "tags": ["gamification"]
       }
     },
+    "/classrooms/{id}/bot/materials": {
+      "post": {
+        "description": "Teacher-level staff only; every other actor receives 404. The material must belong to this classroom and not be soft-removed. It is indexed under the classroom partition; a duplicate enable re-indexes from scratch without reusing earlier chunks. Indexing failure is returned as `failed` with a visible reason and leaves the material usable for its normal purposes.",
+        "operationId": "BotMaterialsController_enable",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnableBotMaterialDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotMaterialDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid body: materialId must be the only field and a UUID.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Allow one study material for the study guide bot",
+        "tags": ["bot"]
+      },
+      "get": {
+        "description": "Teacher-level staff only; every other actor receives 404. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Soft-removed materials are excluded.",
+        "operationId": "BotMaterialsController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
+            "schema": { "example": "-createdAt", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Allowed materials with per-material indexing state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items", "page", "pageSize", "total"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BotMaterialDto" }
+                    },
+                    "page": { "type": "integer", "minimum": 1, "example": 1 },
+                    "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "example": 20 },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 42,
+                      "description": "Item count across all pages."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination or sort.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List materials allowed for the bot with their indexing state",
+        "tags": ["bot"]
+      }
+    },
+    "/classrooms/{id}/bot/materials/{materialId}": {
+      "delete": {
+        "description": "Teacher-level staff only; every other actor receives 404. The material is excluded from bot retrieval immediately and its indexed chunks are removed; re-enabling indexes from scratch. Repeated disable returns 404.",
+        "operationId": "BotMaterialsController_disable",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "Material UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "" },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, out-of-scope classroom, or a material outside it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "503": {
+            "description": "The material is excluded but its index partition cleanup is pending.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Disallow one study material for the bot",
+        "tags": ["bot"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -3205,7 +3385,7 @@
         "tags": ["activities"]
       },
       "get": {
-        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (FILE only). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
+        "description": "Staff see drafts and published (filter with `state`); students see published only (their `state` filter is ignored). Linked parents are not part of the activity matrix (403). Deactivated activities are never listed. Sortable by `dueAt` (default, ascending) or `createdAt`; `id` is the tiebreaker. Student list items add own work `status` (graded > submitted > overdue > pending) and `canSubmit` (either format). `status` filters before pagination/count for students; staff receive 400 for this query. Overdue means no submission and server time strictly after dueAt, regardless of allowLate.",
         "operationId": "ActivitiesController_list",
         "parameters": [
           {
@@ -3375,7 +3555,7 @@
         "tags": ["activities"]
       },
       "patch": {
-        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists (409 afterwards); title, description and dates remain editable.",
+        "description": "Teacher-level staff only. Partial update; `type` and `format` are immutable. `questions` replaces all questions and stays editable only until the first submission exists (409 afterwards). On a multiple-choice activity `maxScore` is frozen the same way: a different value is refused (409) once a submission exists. Title, description and dates remain editable.",
         "operationId": "ActivitiesController_update",
         "parameters": [
           {
@@ -3433,7 +3613,7 @@
             }
           },
           "409": {
-            "description": "Questions can no longer change because a submission exists.",
+            "description": "Questions, or the `maxScore` of a multiple-choice activity, can no longer change because a submission exists.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -5382,7 +5562,11 @@
             "items": { "type": "string", "format": "binary" },
             "minItems": 1,
             "maxItems": 5,
-            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX."
+            "description": "1-5 files of at most 10 MB each. Allowed content (detected from the bytes): PDF, PNG, JPEG, DOCX. Required for FILE activities; rejected for MULTIPLE_CHOICE activities."
+          },
+          "answers": {
+            "type": "string",
+            "description": "MULTIPLE_CHOICE answers: a JSON-encoded array of { questionId, optionId } pairs, at least one. Required for MULTIPLE_CHOICE activities; rejected for FILE activities. The server grades the answers and returns the score; correct answers are never sent back."
           }
         },
         "required": ["files"]
@@ -5410,6 +5594,19 @@
         },
         "required": ["id", "originalName", "contentType", "sizeBytes", "position"]
       },
+      "SubmissionAnswerResponseDto": {
+        "type": "object",
+        "properties": {
+          "questionId": { "type": "string", "format": "uuid" },
+          "optionId": { "type": "string", "format": "uuid" },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based order in which the answers were sent."
+          }
+        },
+        "required": ["questionId", "optionId", "position"]
+      },
       "SubmissionResponseDto": {
         "type": "object",
         "properties": {
@@ -5424,6 +5621,13 @@
             "type": "boolean",
             "description": "True when submitted after `dueAt` on an activity with `allowLate`."
           },
+          "autoScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true,
+            "description": "Server-computed score of a MULTIPLE_CHOICE submission (0..maxScore), never supplied by the client; null for file submissions, which a teacher grades through the grade endpoint."
+          },
           "status": {
             "type": "string",
             "enum": ["submitted", "graded"],
@@ -5432,9 +5636,23 @@
           "files": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/SubmissionFileResponseDto" }
+          },
+          "answers": {
+            "description": "Chosen options of a MULTIPLE_CHOICE submission in the order they were sent; empty for file submissions.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionAnswerResponseDto" }
           }
         },
-        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+        "required": [
+          "id",
+          "activityId",
+          "submittedAt",
+          "isLate",
+          "autoScore",
+          "status",
+          "files",
+          "answers"
+        ]
       },
       "SubmissionFileDownloadDto": {
         "type": "object",
@@ -5490,17 +5708,38 @@
             "type": "boolean",
             "description": "True when submitted after `dueAt` on an activity with `allowLate`."
           },
+          "autoScore": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": true,
+            "description": "Server-computed score of a MULTIPLE_CHOICE submission (0..maxScore), never supplied by the client; null for file submissions, which a teacher grades through the grade endpoint."
+          },
           "status": {
             "type": "string",
             "enum": ["submitted", "graded"],
             "description": "Derived state of the work."
+          },
+          "answers": {
+            "description": "Chosen options of a MULTIPLE_CHOICE submission in the order they were sent; empty for file submissions.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SubmissionAnswerResponseDto" }
           },
           "files": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/SubmissionFileDownloadDto" }
           }
         },
-        "required": ["id", "activityId", "submittedAt", "isLate", "status", "files"]
+        "required": [
+          "id",
+          "activityId",
+          "submittedAt",
+          "isLate",
+          "autoScore",
+          "status",
+          "answers",
+          "files"
+        ]
       },
       "PointEntryKind": { "type": "string", "enum": ["EARNING", "DEBIT", "COMPENSATION"] },
       "PointMovementDto": {
@@ -5955,6 +6194,57 @@
         },
         "required": ["streak", "badges"]
       },
+      "EnableBotMaterialDto": {
+        "type": "object",
+        "properties": {
+          "materialId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Study material that must belong to the same classroom."
+          }
+        },
+        "required": ["materialId"]
+      },
+      "BotMaterialDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Allowed-material record id."
+          },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "materialId": { "type": "string", "format": "uuid" },
+          "filename": { "type": "string", "maxLength": 120, "example": "lesson.pdf" },
+          "contentType": {
+            "type": "string",
+            "enum": ["application/pdf", "image/png", "image/jpeg"]
+          },
+          "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "indexState": {
+            "type": "string",
+            "enum": ["PENDING", "INDEXED", "FAILED"],
+            "description": "Indexing state inside the classroom partition. `FAILED` leaves the material usable for its normal purposes and is visible to the teacher."
+          },
+          "failureReason": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 300,
+            "description": "Present only while indexState is `failed`."
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "materialId",
+          "filename",
+          "contentType",
+          "sizeBytes",
+          "indexState",
+          "createdAt"
+        ]
+      },
       "RosterGuardianDto": {
         "type": "object",
         "properties": {
@@ -6310,7 +6600,7 @@
           },
           "canSubmit": {
             "type": "boolean",
-            "description": "Supported FILE submission, no prior submission, opensAt reached, and not past dueAt unless allowLate. Server-time snapshot, rechecked on submission."
+            "description": "No prior submission, opensAt reached, and not past dueAt unless allowLate; both formats take a submission (files or multiple-choice answers), checked server-side at submit time. Server-time snapshot, rechecked on submission."
           }
         },
         "required": [

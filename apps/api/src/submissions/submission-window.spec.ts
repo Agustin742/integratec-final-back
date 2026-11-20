@@ -16,12 +16,13 @@ function rules(overrides: Partial<SubmissionWindowRules> = {}): SubmissionWindow
 }
 
 describe('submissionWindow', () => {
-  it('rejects activities that are not FILE format, before checking dates', () => {
-    const result = submissionWindow(
-      rules({ format: ActivityFormat.MULTIPLE_CHOICE, opensAt: new Date('2027-01-01T00:00:00Z') }),
-      new Date('2026-03-05T00:00:00Z'),
-    );
-    expect(result).toEqual({ open: false, reason: 'format' });
+  it('is open for a MULTIPLE_CHOICE activity within the window: the window is format-agnostic', () => {
+    expect(
+      submissionWindow(
+        rules({ format: ActivityFormat.MULTIPLE_CHOICE }),
+        new Date('2026-03-05T00:00:00Z'),
+      ),
+    ).toEqual({ open: true, isLate: false });
   });
 
   it('is not open before opensAt', () => {

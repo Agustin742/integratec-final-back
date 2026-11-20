@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   await prisma.streak.deleteMany();
   await prisma.badgeDefinition.deleteMany();
   await prisma.submissionFile.deleteMany();
+  await prisma.submissionAnswer.deleteMany();
   await prisma.submission.deleteMany();
   await prisma.option.deleteMany();
   await prisma.question.deleteMany();
@@ -24,6 +25,8 @@ async function main(): Promise<void> {
   await prisma.mention.deleteMany();
   await prisma.message.deleteMany();
   await prisma.announcement.deleteMany();
+  await prisma.allowedMaterial.deleteMany();
+  await prisma.botConfig.deleteMany();
   await prisma.studyMaterial.deleteMany();
   await prisma.activity.deleteMany();
   await prisma.classroomShopItem.deleteMany();
