@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-20 — Review fixes on PR #122 (realtime chat broadcast, #48)
+
+- **Status:** completed (pending CI and merge of PR #122)
+- **Area / files:** `apps/api/src/platform/outbox/outbox.dispatcher.ts`, `apps/api/src/platform/outbox/outbox.module.ts`, `apps/api/src/platform/realtime/realtime-events.recorder.ts`, `apps/api/src/platform/realtime/realtime-chat.handler.ts`, `apps/api/src/chat/chat.service.ts`, `apps/api/src/chat/chat.module.ts`, `docs/classroom-chat.md`
+- **Change:** Chat events are now dispatched right after the send and hide transactions commit (`OutboxDispatcher.dispatchNow`, best-effort, filtered by event id and type, tracked until settled on shutdown); the interval poll stays as the retry path. `chat:message.hidden` gets a longer retry budget (`CHAT_HIDDEN_MAX_ATTEMPTS`, same as eviction) so a moderated message does not stay visible to connected students during a long realtime outage; `chat:message` keeps the default.
+- **Reason:** Review findings on PR #122: delivery waited for the 5 s outbox poll although #48 resolved to call the internal route after commit, and hidden events gave up after about 75 s.
+- **Verification:** New unit specs (RED then GREEN); chat, realtime and outbox specs including DB integration on an isolated temporary database with `--pool=threads` (153 passed); lint, typecheck, build, `check_docs.py`; touched files Prettier-clean. Native review approved on each task commit.
+- **Next step:** CI green and merge.
+
 ## 2026-11-19 — Review fixes on PR #120 (bot materials, #40)
 
 - **Status:** in-progress

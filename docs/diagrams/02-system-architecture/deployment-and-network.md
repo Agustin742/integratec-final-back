@@ -98,7 +98,7 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 > | Modelo de Bedrock con inferencia on-demand dentro de `us-east-2` (el plan Free no admite inferencia entre regiones; D5) | abierto, por verificar en la consola |
 > | Escalado de Colyseus más allá de una instancia (presencia, matchmaking, ruteo, reconexión) | abierto |
 > | Uso de S3 (las cargas de archivos no están definidas) | abierto |
-> | Transporte de anuncios de NestJS a Colyseus | abierto ([Architecture](../../../rules/architecture.md#open-decisions)) |
+> | Transporte de chat NestJS→Colyseus | resuelto en #48 con outbox + HTTP interno autenticado; otros anuncios abiertos ([Architecture](../../../rules/architecture.md#open-decisions)) |
 > | Si Terraform gestiona Amplify, entornos además de producción, propiedad del Compose y las etiquetas de imagen en el host | abierto ([Infrastructure as code](../../../rules/infrastructure-as-code.md#open-decisions)) |
 > | Almacenamiento de tokens en el cliente (D1) | decidido: `sessionStorage` (FD1 del frontend) |
 
@@ -115,10 +115,10 @@ Esta vista muestra tráfico de aplicación, no un plan de aprovisionamiento ni i
 | Estado persistente de ítems del aula | Cliente | NestJS y luego Colyseus | HTTPS / REST + difusión WSS | Acceso verificado en NestJS; difusión solo a destinatarios autorizados | RDS PostgreSQL + difusión efímera |
 | Notificación de cambio en aula activa | Colyseus, tras confirmar NestJS | Clientes conectados al aula | WSS | Canal ya autorizado al ingresar | Efímero |
 | Consultas y repaso del bot | Cliente | NestJS y Bedrock | HTTPS | Solo lectura, con permisos del usuario (RN-14); bloqueo en exámenes (RN-13) | `DailyReviewDelivery` y registro de auditoría del bot |
-| Mensajería en vivo | Cliente | NestJS y Colyseus | REST para envío y WSS para difusión (propuesto); mensaje realtime validado (abierto) | Acceso vigente al aula; mensaje persistido antes de difundir | RDS PostgreSQL (`Message`) |
+| Mensajería en vivo | Cliente | NestJS y Colyseus | REST para envío; outbox y HTTP interno para difusión WSS (#48) | Acceso vigente al aula; mensaje persistido antes de difundir | RDS PostgreSQL (`Message`) |
 | Video y voz | Cliente | Servicio de medios (abierto) | WebRTC | NestJS emite credenciales de acceso | No |
 
-> **Huecos declarados.** No hay catálogo de endpoints, verbos ni DTOs; los eventos (`avatar:input`, `avatar:state`, `presence:changed`, `classroom:joined`, `classroom:frozen`, `chat:message`, `chat:muted`, `activity:published`, `grade:published`, `bot:summary-ready`) son ilustrativos y no definitivos ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Los contratos REST salen de un documento OpenAPI generado por NestJS y servido con Scalar, que se commitea y del que el frontend genera sus tipos (D4, D8); los tipos realtime se generan con `@colyseus/schema` codegen y `packages/contracts` y también se commitean (D8). Tampoco están especificados el orden ni la deduplicación de mensajes, los payloads, los acknowledgements ni los namespaces.
+> **Huecos declarados.** El catálogo restante de endpoints, verbos y DTOs sigue propuesto; para chat #48 se definen en `openapi.json` y `packages/contracts` los contratos REST y realtime. Los demás eventos (`avatar:input`, `avatar:state`, `presence:changed`, `classroom:joined`, `classroom:frozen`, `chat:muted`, `activity:published`, `grade:published`, `bot:summary-ready`) siguen ilustrativos ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Los contratos REST salen de un documento OpenAPI generado por NestJS y servido con Scalar, que se commitea y del que el frontend genera sus tipos (D4, D8); los tipos realtime se generan con `@colyseus/schema` codegen y `packages/contracts` y también se commitean (D8). Para chat, la entrega puede duplicarse o reordenarse y el cliente deduplica por ID; otros acknowledgements y namespaces siguen sin especificarse.
 
 ### 1.3 Flujo de usuarios y aulas
 

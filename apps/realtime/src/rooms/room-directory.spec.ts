@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+  CHAT_MESSAGE_EVENT,
+  CHAT_MESSAGE_HIDDEN_EVENT,
+  type ChatRealtimeBroadcast,
+} from '@aula/contracts';
 import { RoomDirectory } from './room-directory';
 
 const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
   applyAppearance: vi.fn().mockReturnValue(result > 0),
+  broadcastChatMessage: vi.fn(),
+  broadcastChatMessageHidden: vi.fn(),
 });
-
 const APPEARANCE = {
   baseAvatar: {
     bodyId: 'female',
@@ -16,11 +22,8 @@ const APPEARANCE = {
   },
   items: { head: null, face: null, back: null, desk_decor: null },
 } as const;
-
-const appearanceRoom = (found = true) => ({
-  evict: vi.fn(),
-  applyAppearance: vi.fn().mockReturnValue(found),
-});
+const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const FOREIGN = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
 
 describe('RoomDirectory', () => {
   it('evicts from the room of the given classroom only', () => {
@@ -84,8 +87,8 @@ describe('RoomDirectory', () => {
 
   it('applies an appearance only to the rooms of the given classroom', () => {
     const directory = new RoomDirectory();
-    const a = appearanceRoom();
-    const b = appearanceRoom();
+    const a = room();
+    const b = room();
     directory.register('A', a);
     directory.register('B', b);
 
@@ -97,8 +100,8 @@ describe('RoomDirectory', () => {
 
   it('reports how many rooms actually had that avatar', () => {
     const directory = new RoomDirectory();
-    const withAvatar = appearanceRoom(true);
-    const withoutAvatar = appearanceRoom(false);
+    const withAvatar = room(1);
+    const withoutAvatar = room(0);
     directory.register('A', withAvatar);
     directory.register('A', withoutAvatar);
 
@@ -107,5 +110,47 @@ describe('RoomDirectory', () => {
 
   it('applies nothing for an unknown classroom', () => {
     expect(new RoomDirectory().applyAppearance('nope', 'u', 3, APPEARANCE)).toBe(0);
+  });
+
+  it('broadcasts chat events to every room for that classroom and nowhere else', () => {
+    const directory = new RoomDirectory();
+    const first = room();
+    const second = room();
+    const foreign = room();
+    directory.register(CLASSROOM, first);
+    directory.register(CLASSROOM, second);
+    directory.register(FOREIGN, foreign);
+    const message = {
+      id: '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01',
+      classroomId: CLASSROOM,
+      authorId: '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02',
+      body: 'Hello',
+      mentionedUserIds: [],
+      createdAt: '2026-11-19T12:00:00.000Z',
+    };
+    const event: ChatRealtimeBroadcast = {
+      classroomId: CLASSROOM,
+      event: CHAT_MESSAGE_EVENT,
+      payload: message,
+    };
+
+    directory.broadcastChatEvent(event);
+
+    expect(first.broadcastChatMessage).toHaveBeenCalledExactlyOnceWith(message);
+    expect(second.broadcastChatMessage).toHaveBeenCalledExactlyOnceWith(message);
+    expect(foreign.broadcastChatMessage).not.toHaveBeenCalled();
+
+    const hidden: ChatRealtimeBroadcast = {
+      classroomId: CLASSROOM,
+      event: CHAT_MESSAGE_HIDDEN_EVENT,
+      payload: {
+        messageId: message.id,
+        hiddenAt: '2026-11-19T12:01:00.000Z',
+      },
+    };
+    directory.broadcastChatEvent(hidden);
+    expect(first.broadcastChatMessageHidden).toHaveBeenCalledExactlyOnceWith(hidden.payload);
+    expect(second.broadcastChatMessageHidden).toHaveBeenCalledExactlyOnceWith(hidden.payload);
+    expect(foreign.broadcastChatMessageHidden).not.toHaveBeenCalled();
   });
 });

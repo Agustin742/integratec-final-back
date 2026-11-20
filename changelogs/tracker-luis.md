@@ -7,7 +7,16 @@
 - **Change:** Added monotonically increasing per-user appearance revisions so realtime ignores stale outbox snapshots, including races with join and reconnection verification.
 - **Reason:** A retried older outbox snapshot can arrive after a newer update and leave the live avatar stale.
 - **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Full CI remains pending after push.
-- **Next step:** Push the fix commit to PR #121 and monitor CI.
+- **Next step:** Monitor CI and review on PR #121.
+
+## 2026-11-19 — Realtime classroom chat (#48)
+
+- **Status:** PR [#122](https://github.com/Agustin742/integratec-final-back/pull/122) open from `feat/48-chat-realtime` (commit `683c844`)
+- **Area / files:** `apps/api/src/chat/`, `apps/api/src/platform/realtime/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`, `packages/contracts/`, chat/realtime rules and documentation
+- **Change:** Implemented the approved REST-send, transactional-outbox, authenticated internal-HTTP broadcast flow and the `chat:message` / `chat:message.hidden` event contract. Message creation and first moderation atomically record minimal outbox events; the handler resolves persisted message content before dispatch. Colyseus validates the service request and broadcasts only to rooms for the matching classroom. Delivery retries do not roll back REST writes; clients deduplicate by ID and reconcile from REST history.
+- **Reason:** Deliver live chat without making Colyseus the persistence or authorization authority; REST history remains the recovery source.
+- **Verification:** `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `python scripts/ci/check_docs.py` (82 files), and `git diff --check origin/develop` passed. Focused API suites passed **114/114** tests (chat HTTP 39, chat send 21, OpenAPI 13, realtime chat handler/client 12, realtime eviction 29); realtime suites passed **63/63** (internal routes 22, rooms 41); shared contracts passed **2/2**. Integration tests ran against a temporary isolated PostgreSQL 17 database. API tests used Vitest's thread pool because the default pool produced a worker-specific Nest DI failure; all focused suites passed under threads. The full monorepo test suite was not run.
+- **Next step:** Await CI and review. The frontend integration remains tracked separately in frontend #51.
 
 ## 2026-11-15 — Submission grading, weighted points conversion, and review queue (Issue #32)
 

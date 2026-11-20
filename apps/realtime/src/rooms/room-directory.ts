@@ -1,4 +1,10 @@
-import type { MemberAppearance } from '@aula/contracts';
+import {
+  CHAT_MESSAGE_EVENT,
+  type ChatMessageHiddenPayload,
+  type MemberAppearance,
+  type ChatMessagePayload,
+  type ChatRealtimeBroadcast,
+} from '@aula/contracts';
 
 export interface EvictionFilter {
   userId: string;
@@ -11,6 +17,11 @@ export interface EvictionFilter {
 /** What a room offers to the directory: close the matching connections, report how many. */
 export interface EvictableRoom {
   evict(filter: { userId: string; sessionId?: string }): number;
+}
+
+export interface ClassroomRoomHandle extends EvictableRoom {
+  broadcastChatMessage(payload: ChatMessagePayload): void;
+  broadcastChatMessageHidden(payload: ChatMessageHiddenPayload): void;
 }
 
 /**
@@ -26,7 +37,7 @@ export interface AppearanceApplicableRoom {
 }
 
 /** The full set of room capabilities the internal routes use through the directory. */
-export interface DirectoryRoom extends EvictableRoom, AppearanceApplicableRoom {}
+export interface DirectoryRoom extends AppearanceApplicableRoom, ClassroomRoomHandle {}
 
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
 export interface RoomDirectoryLike {
@@ -37,6 +48,7 @@ export interface RoomDirectoryLike {
     appearanceRevision: number,
     appearance: MemberAppearance,
   ): number;
+  broadcastChatEvent(event: ChatRealtimeBroadcast): void;
 }
 
 /**
@@ -86,5 +98,16 @@ export class RoomDirectory {
         total + (room.applyAppearance(userId, appearanceRevision, appearance) ? 1 : 0),
       0,
     );
+  }
+
+  /** Delivers the event only to live rooms bound to the committed message's classroom. */
+  broadcastChatEvent(event: ChatRealtimeBroadcast): void {
+    for (const room of this.rooms.get(event.classroomId) ?? []) {
+      if (event.event === CHAT_MESSAGE_EVENT) {
+        room.broadcastChatMessage(event.payload);
+      } else {
+        room.broadcastChatMessageHidden(event.payload);
+      }
+    }
   }
 }

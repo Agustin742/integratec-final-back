@@ -1,7 +1,7 @@
 import type { Application } from 'express';
 import { z } from 'zod';
 import { mountAppearanceRoute } from './appearance-route';
-import { presentedSecret, secretsMatch } from './service-secret';
+import { hasValidServiceSecret } from './service-auth';
 import type { RoomDirectoryLike } from '../rooms/room-directory';
 
 export const EVICTION_PATH = '/internal/evictions';
@@ -28,8 +28,7 @@ const evictionSchema = z.strictObject({
  */
 export function mountEvictionRoute(app: Application, options: EvictionRouteOptions): void {
   app.post(EVICTION_PATH, (req, res) => {
-    const secret = presentedSecret(req);
-    if (secret === undefined || !secretsMatch(secret, options.serviceSecret)) {
+    if (!hasValidServiceSecret(req, options.serviceSecret)) {
       res.sendStatus(401);
       return;
     }

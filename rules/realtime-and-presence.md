@@ -58,7 +58,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 ## Notifications of persistent changes
 
 - Colyseus announces message, announcement, grade, notification, and similar changes only after NestJS has committed them; see [Architecture](./architecture.md). Announcements **MUST** be delivered only to clients currently authorized for the affected classroom (or, for notifications, the specific user).
-- Chat may be delivered live, but its history and authorization are owned by NestJS; see [Communication and notifications](./communication-and-notifications.md).
+- Chat may be delivered live, but its history and authorization are owned by NestJS; see [Communication and notifications](./communication-and-notifications.md). For #48, `POST /internal/chat-events` accepts only authenticated NestJS broadcasts, and `chat:message` / `chat:message.hidden` are emitted only to rooms for the affected classroom. Delivery is at least once and may be reordered; clients deduplicate by message ID and reconcile from REST history.
 - Event names and payloads are illustrative until agreed ([master §6.2](../master-document.md#62-canales-y-propiedad-de-los-datos)) and **MUST** be specified under [API contracts](./api-contracts.md).
 
 ## Reconnection and disconnection
@@ -124,5 +124,4 @@ Message and close-code definitions are in [API contracts](./api-contracts.md#rea
 ## Open decisions
 
 - **Temporary layout (approved by Agustin on 2026-11-10):** the walkable surface is one fixed layout for every classroom, a classroom of 16 by 12 units with a front teacher desk and 12 student desks, defined as shared data in `packages/contracts` so the frontend scene and the server agree. It **MUST** be replaced by a per-classroom layout; how layouts are generated is open and tracked in issue #79.
-- Whether chat is sent through REST or realtime messages ([Communication and notifications](./communication-and-notifications.md)).
 - Collaboration sync mechanism (Colyseus state or Yjs).

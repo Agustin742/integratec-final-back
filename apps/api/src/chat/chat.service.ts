@@ -8,6 +8,12 @@ import { resolveMentionedUserIds } from '../announcements/announcements.service'
 import { RequestValidationException } from '../http/validation';
 import { MetricRecordingService } from '../metrics/metric-recording.service';
 import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import { OutboxDispatcher } from '../platform/outbox/outbox.dispatcher';
+import {
+  REALTIME_CHAT_MESSAGE_CREATED_EVENT,
+  REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
+} from '../platform/realtime/realtime-events';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CHAT_MAX_BODY_LENGTH,
@@ -28,6 +34,8 @@ export class ChatService {
     private readonly access: AccessVerificationService,
     private readonly notifications: NotificationRecorder,
     private readonly metrics: MetricRecordingService,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
+    private readonly outboxDispatcher: OutboxDispatcher,
   ) {}
 
   async list(
@@ -109,7 +117,8 @@ export class ChatService {
       .update(`chat:${classroomId.toLowerCase()}:${actorId.toLowerCase()}`)
       .digest()
       .readBigInt64BE(0);
-    return this.prisma.$transaction(
+    let eventId: string | undefined;
+    const message = await this.prisma.$transaction(
       async (tx) => {
         // Non-blocking: a concurrent send for the same user/classroom is treated as exceeding
         // the send rate (429) instead of queueing, so bursts never pin pooled connections.
@@ -174,6 +183,10 @@ export class ChatService {
             recipientId,
           });
         }
+        eventId = await this.realtimeEvents.recordChatMessageCreated(tx, {
+          classroomId,
+          messageId: row.id,
+        });
         // Explicit application view, never a persistence entity exposed to consumers.
         return {
           id: row.id,
@@ -186,6 +199,9 @@ export class ChatService {
       },
       { maxWait: 10_000, timeout: 15_000 },
     );
+    // After commit, never inside the transaction: live rooms get the message right away.
+    if (eventId) this.outboxDispatcher.dispatchNow(REALTIME_CHAT_MESSAGE_CREATED_EVENT, eventId);
+    return message;
   }
 
   /**
@@ -198,20 +214,35 @@ export class ChatService {
    */
   async hide(actorId: string, classroomId: string, messageId: string): Promise<void> {
     if (!UUID_PATTERN.test(messageId)) throw new NotFoundException('Message not found');
-    const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
-      requiredRole: 'STAFF',
-    });
-    const row = await this.prisma.message.findFirst({
-      where: { id: messageId, classroomId: access.classroom.id },
-      select: { id: true, hiddenAt: true },
-    });
-    if (!row) throw new NotFoundException('Message not found');
-    if (row.hiddenAt !== null) return; // First moderation wins; the audit pair is immutable.
-    const [clock] = await this.prisma.$queryRaw<{ now: Date }[]>`
-      SELECT date_trunc('milliseconds', clock_timestamp()) AS now`;
-    await this.prisma.message.updateMany({
-      where: { id: row.id, classroomId: access.classroom.id, hiddenAt: null },
-      data: { hiddenAt: clock!.now, hiddenById: actorId },
-    });
+    let eventId: string | undefined;
+    await this.prisma.$transaction(
+      async (tx) => {
+        const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
+          requiredRole: 'STAFF',
+          client: tx,
+        });
+        const row = await tx.message.findFirst({
+          where: { id: messageId, classroomId: access.classroom.id },
+          select: { id: true, hiddenAt: true },
+        });
+        if (!row) throw new NotFoundException('Message not found');
+        if (row.hiddenAt !== null) return; // First moderation wins; the audit pair is immutable.
+        const [clock] = await tx.$queryRaw<{ now: Date }[]>`
+          SELECT date_trunc('milliseconds', clock_timestamp()) AS now`;
+        const updated = await tx.message.updateMany({
+          where: { id: row.id, classroomId: access.classroom.id, hiddenAt: null },
+          data: { hiddenAt: clock!.now, hiddenById: actorId },
+        });
+        if (updated.count === 1) {
+          eventId = await this.realtimeEvents.recordChatMessageHidden(tx, {
+            classroomId: access.classroom.id,
+            messageId: row.id,
+            hiddenAt: clock!.now.toISOString(),
+          });
+        }
+      },
+      { maxWait: 10_000, timeout: 15_000 },
+    );
+    if (eventId) this.outboxDispatcher.dispatchNow(REALTIME_CHAT_MESSAGE_HIDDEN_EVENT, eventId);
   }
 }

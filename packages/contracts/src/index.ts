@@ -78,6 +78,50 @@ export const avatarInputSchema = z.strictObject({
 
 export type AvatarInput = z.infer<typeof avatarInputSchema>;
 
+/** Server to client: a persisted classroom chat message, announced after its database commit. */
+export const CHAT_MESSAGE_EVENT = 'chat:message';
+export const CHAT_MESSAGE_MAX_BODY_LENGTH = 2000;
+export const CHAT_MESSAGE_MAX_MENTIONED_USERS = 20;
+export const chatMessagePayloadSchema = z.strictObject({
+  id: z.uuid(),
+  classroomId: z.uuid(),
+  authorId: z.uuid(),
+  body: z.string().min(1).max(CHAT_MESSAGE_MAX_BODY_LENGTH),
+  mentionedUserIds: z.array(z.uuid()).max(CHAT_MESSAGE_MAX_MENTIONED_USERS),
+  createdAt: z.iso.datetime(),
+});
+export type ChatMessagePayload = z.infer<typeof chatMessagePayloadSchema>;
+
+/** Server to client: a persisted moderation change; REST history supplies staff audit details. */
+export const CHAT_MESSAGE_HIDDEN_EVENT = 'chat:message.hidden';
+export const chatMessageHiddenPayloadSchema = z.strictObject({
+  messageId: z.uuid(),
+  hiddenAt: z.iso.datetime(),
+});
+export type ChatMessageHiddenPayload = z.infer<typeof chatMessageHiddenPayloadSchema>;
+
+/** Authenticated NestJS-to-Colyseus service request; the public event payload stays nested. */
+export const chatRealtimeBroadcastSchema = z
+  .discriminatedUnion('event', [
+    z.strictObject({
+      classroomId: z.uuid(),
+      event: z.literal(CHAT_MESSAGE_EVENT),
+      payload: chatMessagePayloadSchema,
+    }),
+    z.strictObject({
+      classroomId: z.uuid(),
+      event: z.literal(CHAT_MESSAGE_HIDDEN_EVENT),
+      payload: chatMessageHiddenPayloadSchema,
+    }),
+  ])
+  .refine(
+    (broadcast) =>
+      broadcast.event !== CHAT_MESSAGE_EVENT ||
+      broadcast.payload.classroomId === broadcast.classroomId,
+    { message: 'Message classroomId must match the broadcast classroomId' },
+  );
+export type ChatRealtimeBroadcast = z.infer<typeof chatRealtimeBroadcastSchema>;
+
 export const AVATAR_STATUSES = ['online', 'reconnecting'] as const;
 export type AvatarStatus = (typeof AVATAR_STATUSES)[number];
 

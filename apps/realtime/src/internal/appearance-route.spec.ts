@@ -35,6 +35,7 @@ const makeApp = (applied = 1) => {
   const directory = {
     evict: vi.fn(),
     applyAppearance: vi.fn().mockReturnValue(applied),
+    broadcastChatEvent: vi.fn(),
   };
   const app = configureExpress(express(), { internal: { serviceSecret: SECRET, directory } });
   return { app, directory };

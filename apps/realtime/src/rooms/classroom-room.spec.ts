@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ClientState, CloseCode, ServerError } from '@colyseus/core';
 import {
+  CHAT_MESSAGE_EVENT,
+  CHAT_MESSAGE_HIDDEN_EVENT,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -330,6 +332,29 @@ describe('createClassroomRoom', () => {
 
       expect(room.classroomId).toBe(CLASSROOM_ID);
       expect(room.state.classroomId).toBe(CLASSROOM_ID);
+    });
+
+    it('broadcasts only the two server-owned chat notification events', () => {
+      const { room } = makeCreatedRoom();
+      const broadcast = vi.spyOn(room, 'broadcast');
+      const message = {
+        id: '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01',
+        classroomId: CLASSROOM_ID,
+        authorId: IDENTITY.userId,
+        body: 'Persisted message',
+        mentionedUserIds: [],
+        createdAt: '2026-11-19T12:00:00.000Z',
+      };
+      const hidden = {
+        messageId: message.id,
+        hiddenAt: '2026-11-19T12:01:00.000Z',
+      };
+
+      room.broadcastChatMessage(message);
+      room.broadcastChatMessageHidden(hidden);
+
+      expect(broadcast).toHaveBeenNthCalledWith(1, CHAT_MESSAGE_EVENT, message);
+      expect(broadcast).toHaveBeenNthCalledWith(2, CHAT_MESSAGE_HIDDEN_EVENT, hidden);
     });
 
     it('runs a fixed 20 Hz simulation and patches state at 20 Hz', () => {

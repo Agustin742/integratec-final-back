@@ -70,7 +70,7 @@ export class ChatController {
   @ApiOperation({
     summary: 'Send a classroom chat message',
     description:
-      'Current students and teaching staff only; parents denied. Muted classrooms reject students but allow staff. Message, resolved mentions and notification requests commit atomically before any future broadcast (#48). At most 5 sends per rolling 10 seconds per user/classroom, including staff and hidden messages. Only body is accepted; author and time are server-assigned.',
+      'Current students and teaching staff only; parents denied. Muted classrooms reject students but allow staff. Message, resolved mentions, notification requests and the realtime outbox event commit atomically; Colyseus broadcasts asynchronously after commit. At most 5 sends per rolling 10 seconds per user/classroom, including staff and hidden messages. Only body is accepted; author and time are server-assigned.',
   })
   @ApiCreatedResponse({ type: ChatMessageDto })
   @ApiBadRequestResponse({
@@ -106,7 +106,7 @@ export class ChatController {
   @ApiOperation({
     summary: 'Hide a classroom chat message (teacher moderation)',
     description:
-      'Current classroom staff only (Owner, Admin or Teacher); students and parents denied. Logical moderation: the server sets the hiddenAt/hiddenById audit pair atomically and the row is never deleted. Repeating moderation returns 204 without overwriting the original actor/time. Independent of the send rate limit. No unhide operation exists.',
+      'Current classroom staff only (Owner, Admin or Teacher); students and parents denied. Logical moderation: the server sets the hiddenAt/hiddenById audit pair and a minimal realtime outbox event in one transaction; Colyseus broadcasts after commit and the row is never deleted. Repeating moderation returns 204 without overwriting the original actor/time or recording another event. Independent of the send rate limit. No unhide operation exists.',
   })
   @ApiNoContentResponse({ description: 'Message hidden, or already hidden by a first moderation.' })
   @ApiUnauthorizedResponse({ type: ErrorEnvelopeDto, description: 'Authentication required.' })

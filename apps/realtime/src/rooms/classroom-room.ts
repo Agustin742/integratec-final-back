@@ -1,5 +1,7 @@
 import {
   AVATAR_INPUT_MESSAGE,
+  CHAT_MESSAGE_EVENT,
+  CHAT_MESSAGE_HIDDEN_EVENT,
   CLASSROOM_LAYOUT,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
@@ -14,6 +16,8 @@ import {
   avatarInputSchema,
   type AvatarInput,
   type MemberAppearance,
+  type ChatMessageHiddenPayload,
+  type ChatMessagePayload,
 } from '@aula/contracts';
 import {
   ClientState,
@@ -368,6 +372,14 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       evicted += 1;
     }
     return evicted;
+  }
+
+  broadcastChatMessage(payload: ChatMessagePayload): void {
+    this.broadcast(CHAT_MESSAGE_EVENT, payload);
+  }
+
+  broadcastChatMessageHidden(payload: ChatMessageHiddenPayload): void {
+    this.broadcast(CHAT_MESSAGE_HIDDEN_EVENT, payload);
   }
 
   /**
