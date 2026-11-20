@@ -54,6 +54,10 @@ backend/
 
 - [Classroom shop and purchases](docs/shop.md): student-only `GET /classrooms/:id/shop/items`, `GET /classrooms/:id/shop/purchases`, and idempotent `POST /classrooms/:id/shop/purchase` with per-classroom overrides, `isImplemented` enforcement, atomic `PointsLedgerService.debit` integration, unique ownership (`409 Conflict`), and per-user rate limiting (`429 TOO_MANY_REQUESTS`).
 
+## Daily review and daily question
+
+- [Daily review and daily question](docs/daily-review.md): authenticated `GET /users/me/daily-review` and `POST /users/me/daily-review/daily-question`, delivered once per local day (server clock, `America/Argentina/Buenos_Aires`) under a `(user, local day)` unique constraint, composed through the same services REST uses, with a Bedrock-generated summary that fails closed to a structured PostgreSQL-only fallback, and one generated question from enabled bot material whose correct answer credits the streak (`DAILY_REVIEW_ANSWERED`, at most once per local day, answer key never serialized).
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.
