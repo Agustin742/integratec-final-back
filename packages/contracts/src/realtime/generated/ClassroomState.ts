@@ -10,5 +10,6 @@ import { Avatar } from './Avatar';
 
 export class ClassroomState extends Schema {
   @type('string') public classroomId!: string;
+  @type('uint16') public deskCount!: number;
   @type({ map: Avatar }) public avatars: MapSchema<Avatar> = new MapSchema<Avatar>();
 }

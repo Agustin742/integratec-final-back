@@ -24,8 +24,10 @@ import { sleep, waitUntil } from '../testing/wait-until';
 import type { ClassroomRoom } from './classroom-room';
 
 const LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
+const LAYOUT_13 = buildClassroomLayout(13);
 
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const CLASSROOM_13_DESKS = '3d9e1a47-5b2c-4c8e-9f16-0a7b4d2e8c31';
 
 describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
   let colyseus: ColyseusTestServer;
@@ -33,9 +35,10 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
   let nowMs = 0;
   const ada = makeUser('Ada', 1, [CLASSROOM]);
   const bob = makeUser('Bob', 2, [CLASSROOM]);
+  const carl = { ...makeUser('Carl', 3, [CLASSROOM_13_DESKS]), deskCount: 13 };
 
   beforeAll(async () => {
-    api = await startStubApi([ada, bob]);
+    api = await startStubApi([ada, bob, carl]);
     const verifier = new ApiJoinVerifier({ baseUrl: api.url, serviceSecret: STUB_SECRET });
     colyseus = await boot(createAppConfig(verifier, { now: () => nowMs }), 2572);
   });
@@ -54,9 +57,9 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
     await api.close();
   });
 
-  const join = (user: StubUser): Promise<SdkRoom> => {
+  const join = (user: StubUser, classroomId = CLASSROOM): Promise<SdkRoom> => {
     colyseus.sdk.auth.token = user.token;
-    return colyseus.sdk.joinOrCreate(CLASSROOM_ROOM_NAME, { classroomId: CLASSROOM });
+    return colyseus.sdk.joinOrCreate(CLASSROOM_ROOM_NAME, { classroomId });
   };
   const serverRoom = (room: SdkRoom): ClassroomRoom =>
     colyseus.getRoomById(room.roomId) as unknown as ClassroomRoom;
@@ -102,6 +105,42 @@ describe('ClassroomRoom movement (real Colyseus server + stub API)', () => {
     await sleep(500);
 
     expect(avatar.z).toBeLessThanOrEqual(LAYOUT.bounds.maxZ - LAYOUT.avatarRadius + 1e-6);
+  });
+
+  it('validates movement against the layout of its own classroom (#79)', async () => {
+    const room12 = await join(ada);
+    const room13 = await join(carl, CLASSROOM_13_DESKS);
+    expect(serverRoom(room12).state.deskCount).toBe(12);
+    expect(serverRoom(room13).state.deskCount).toBe(13);
+    const walkingIn12 = avatarOf(room12, ada);
+    const walkingIn13 = avatarOf(room13, carl);
+
+    room12.send(AVATAR_INPUT_MESSAGE, { x: 0, z: 1 });
+    room13.send(AVATAR_INPUT_MESSAGE, { x: 0, z: 1 });
+    await waitUntil(
+      () => walkingIn13.z > LAYOUT.bounds.maxZ - LAYOUT.avatarRadius + 0.2,
+      'avatar of the 13-desk room walked past the 12-desk back wall',
+    );
+    await sleep(100);
+
+    expect(walkingIn12.z).toBeLessThanOrEqual(LAYOUT.bounds.maxZ - LAYOUT.avatarRadius + 1e-6);
+    expect(walkingIn13.z).toBeLessThanOrEqual(
+      LAYOUT_13.bounds.maxZ - LAYOUT_13.avatarRadius + 1e-6,
+    );
+  });
+
+  it('stops an avatar of a 13-desk room at the thirteenth desk (#79)', async () => {
+    const room = await join(carl, CLASSROOM_13_DESKS);
+    const avatar = avatarOf(room, carl);
+    const desk13 = LAYOUT_13.obstacles[LAYOUT_13.obstacles.length - 1];
+    avatar.x = (desk13.minX + desk13.maxX) / 2;
+    avatar.z = desk13.maxZ + LAYOUT_13.avatarRadius + 0.5;
+
+    room.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
+    await sleep(600);
+
+    expect(avatar.z).toBeGreaterThanOrEqual(desk13.maxZ + LAYOUT_13.avatarRadius - 1e-6);
+    expect(avatar.z).toBeLessThan(desk13.maxZ + LAYOUT_13.avatarRadius + 0.1);
   });
 
   it('lets the last input of any connection of the user win', async () => {

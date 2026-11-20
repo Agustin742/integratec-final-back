@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ClientState, CloseCode, ServerError } from '@colyseus/core';
 import {
+  buildClassroomLayout,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
   CLOSE_CODE_ACCESS_REVOKED,
@@ -15,6 +16,8 @@ import {
   JoinVerificationUnavailableError,
   type JoinVerifier,
 } from '../join/join-verifier';
+import { Avatar } from './classroom-state';
+import { isWalkable } from '../movement/step-avatar';
 import { makeStubAppearance } from '../testing/stub-api';
 
 const CLASSROOM_ID = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
@@ -554,6 +557,153 @@ describe('createClassroomRoom', () => {
       );
     });
   });
+  describe('per-room layout from the desk count (#79)', () => {
+    const LAYOUT_12 = buildClassroomLayout(12);
+    const LAYOUT_13 = buildClassroomLayout(13);
+    // Walkable in the 12-desk room, inside desk 13 of the 13-desk room.
+    const BLOCKED_BY_DESK_13 = { x: -4.5, z: 5 };
+
+    const makeRoomWith = (identity: typeof IDENTITY) => {
+      const room = new (createClassroomRoom({
+        verify: vi.fn(),
+        reverify: vi.fn().mockResolvedValue(identity),
+      }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      return room;
+    };
+    const addAvatarAt = (room: ClassroomRoom, userId: string, x: number, z: number) => {
+      const avatar = new Avatar();
+      avatar.userId = userId;
+      avatar.x = x;
+      avatar.z = z;
+      room.state.avatars.set(userId, avatar);
+      return avatar;
+    };
+
+    it('syncs the desk count of the verified classroom', async () => {
+      const room12 = makeRoomWith(IDENTITY);
+      const room13 = makeRoomWith({ ...IDENTITY, deskCount: 13 });
+
+      await room12.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+      await room13.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+
+      expect(room12.state.deskCount).toBe(12);
+      expect(room13.state.deskCount).toBe(13);
+    });
+
+    it('spawns a newcomer of a 13-desk room on a walkable point of that layout', async () => {
+      const room = makeRoomWith({ ...IDENTITY, deskCount: 13 });
+
+      await room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(isWalkable(LAYOUT_13, avatar?.x ?? Number.NaN, avatar?.z ?? Number.NaN)).toBe(true);
+      expect(avatar?.z).toBeGreaterThan(LAYOUT_12.bounds.maxZ);
+    });
+
+    it('relocates avatars left inside the new desk to free walkable spawn points', () => {
+      const room = makeJoinedRoom();
+      expect(isWalkable(LAYOUT_12, BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z)).toBe(true);
+      expect(isWalkable(LAYOUT_13, BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z)).toBe(false);
+      const stuckA = addAvatarAt(room, 'a', BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z);
+      const stuckB = addAvatarAt(room, 'b', BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z);
+      const fine = addAvatarAt(room, 'c', 0, 0);
+
+      room.applyDeskCount(13);
+
+      expect(room.state.deskCount).toBe(13);
+      for (const moved of [stuckA, stuckB]) {
+        expect(isWalkable(LAYOUT_13, moved.x, moved.z)).toBe(true);
+      }
+      expect(Math.hypot(stuckA.x - stuckB.x, stuckA.z - stuckB.z)).toBeGreaterThanOrEqual(
+        LAYOUT_13.avatarRadius * 2,
+      );
+      expect({ x: fine.x, z: fine.z }).toEqual({ x: 0, z: 0 });
+    });
+
+    it('does not move an avatar that stays on a walkable point', () => {
+      const room = makeJoinedRoom();
+      const avatar = addAvatarAt(room, 'a', 3, 1);
+
+      room.applyDeskCount(13);
+
+      expect({ x: avatar.x, z: avatar.z }).toEqual({ x: 3, z: 1 });
+    });
+
+    it('is a no-op when the effective desk count is unchanged', () => {
+      const room = makeJoinedRoom();
+      room.applyDeskCount(13);
+      const stuck = addAvatarAt(room, 'a', BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z);
+
+      room.applyDeskCount(13);
+      room.applyDeskCount(12.9); // floors to the 12-desk minimum: a real change back to 12
+      expect(room.state.deskCount).toBe(12);
+      room.applyDeskCount(Number.NaN);
+      room.applyDeskCount(3);
+
+      expect(room.state.deskCount).toBe(12);
+      // Back in the 12-desk room that point is walkable again, so nothing relocates it.
+      expect({ x: stuck.x, z: stuck.z }).toEqual(BLOCKED_BY_DESK_13);
+    });
+
+    it('leaves avatars alone when the raw input differs but the layout does not', () => {
+      const room = makeJoinedRoom();
+      const stuck = addAvatarAt(room, 'a', BLOCKED_BY_DESK_13.x, BLOCKED_BY_DESK_13.z);
+
+      room.applyDeskCount(5); // clamps to 12: same layout
+      room.applyDeskCount(Number.NaN);
+
+      expect(room.state.deskCount).toBe(12);
+      expect({ x: stuck.x, z: stuck.z }).toEqual(BLOCKED_BY_DESK_13);
+    });
+
+    it('tracks the latest verified count, also when it shrinks', () => {
+      const room = makeJoinedRoom();
+
+      room.applyDeskCount(17);
+      room.applyDeskCount(13);
+
+      expect(room.state.deskCount).toBe(13);
+    });
+
+    it('takes the desk count from the access check made at admission', async () => {
+      // The seat was reserved when the classroom had 12 desks; the check at admission sees 13.
+      const room = makeRoomWith({ ...IDENTITY, deskCount: 13 });
+      const auth = { ...AUTH, deskCount: 12 };
+
+      await room.onJoin({ sessionId: 's1', auth } as never);
+
+      expect(room.state.deskCount).toBe(13);
+      expect(auth.deskCount).toBe(13);
+    });
+
+    it('rebuilds the layout when a reconnection is verified with another desk count', async () => {
+      const joinThenReconnect = vi
+        .fn()
+        .mockResolvedValueOnce(IDENTITY)
+        .mockResolvedValue({ ...IDENTITY, deskCount: 13 });
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify: joinThenReconnect }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const client = { sessionId: 's1', auth: { ...AUTH }, leave: vi.fn() };
+      await room.onJoin(client as never);
+      expect(room.state.deskCount).toBe(12);
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      if (!avatar) throw new Error('avatar missing');
+      avatar.x = BLOCKED_BY_DESK_13.x;
+      avatar.z = BLOCKED_BY_DESK_13.z;
+      room.onDrop(client as never);
+
+      await room.onReconnect(client as never);
+
+      expect(room.state.deskCount).toBe(13);
+      expect(client.auth.deskCount).toBe(13);
+      expect(isWalkable(LAYOUT_13, avatar.x, avatar.z)).toBe(true);
+    });
+  });
+
   describe('admission re-verification (a seat reservation outlives access)', () => {
     const makeAdmissionRoom = (reverify: JoinVerifier['reverify']) => {
       const clock = { value: 1_000_000 };
