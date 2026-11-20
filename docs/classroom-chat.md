@@ -98,9 +98,11 @@ The browser sends messages through `POST /classrooms/:id/messages`; it does not
 send chat commands through Colyseus. NestJS writes the message, mentions,
 notifications, participation metric and a minimal realtime outbox event in the
 same transaction. The outbox stores only `classroomId` and `messageId`, not a
-second copy of the message body. After commit, its handler reads the persisted
-message and mentions and calls Colyseus `POST /internal/chat-events` with the
-service secret. Colyseus validates the shared contract and broadcasts only to
+second copy of the message body. Right after the transaction commits, NestJS
+asks the outbox dispatcher to deliver exactly that event (best effort, never
+awaited by the REST response); the regular poll stays as the retry path. Its
+handler reads the persisted message and mentions and calls Colyseus
+`POST /internal/chat-events` with the service secret. Colyseus validates the shared contract and broadcasts only to
 live rooms registered for that classroom. A Colyseus outage never undoes the
 REST write; outbox retries delivery and the paginated history endpoint is the
 recovery source.

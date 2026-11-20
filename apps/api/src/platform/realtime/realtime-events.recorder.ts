@@ -50,21 +50,23 @@ export class RealtimeEventsRecorder {
     });
   }
 
+  /** Returns the outbox event id so the caller can dispatch it right after commit. */
   async recordChatMessageCreated(
     tx: Prisma.TransactionClient,
     payload: RealtimeChatMessageCreatedPayload,
-  ): Promise<void> {
-    await this.outbox.record(tx, {
+  ): Promise<string> {
+    return this.outbox.record(tx, {
       type: REALTIME_CHAT_MESSAGE_CREATED_EVENT,
       payload: { classroomId: payload.classroomId, messageId: payload.messageId },
     });
   }
 
+  /** Returns the outbox event id so the caller can dispatch it right after commit. */
   async recordChatMessageHidden(
     tx: Prisma.TransactionClient,
     payload: RealtimeChatMessageHiddenPayload,
-  ): Promise<void> {
-    await this.outbox.record(tx, {
+  ): Promise<string> {
+    return this.outbox.record(tx, {
       type: REALTIME_CHAT_MESSAGE_HIDDEN_EVENT,
       payload: {
         classroomId: payload.classroomId,

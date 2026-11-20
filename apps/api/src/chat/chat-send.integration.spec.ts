@@ -37,6 +37,7 @@ const service = (client: PrismaService) =>
     recorder,
     new MetricRecordingService(client),
     realtimeEvents,
+    { dispatchNow: () => undefined } as unknown as OutboxDispatcher,
   );
 const chat = service(prisma);
 const otherChat = service(otherClient);

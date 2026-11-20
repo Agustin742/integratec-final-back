@@ -11,6 +11,6 @@ import { OutboxWriter } from './outbox.writer';
  */
 @Module({
   providers: [OutboxWriter, OutboxHandlerRegistry, OutboxDispatcher],
-  exports: [OutboxWriter, OutboxHandlerRegistry],
+  exports: [OutboxWriter, OutboxHandlerRegistry, OutboxDispatcher],
 })
 export class OutboxModule {}

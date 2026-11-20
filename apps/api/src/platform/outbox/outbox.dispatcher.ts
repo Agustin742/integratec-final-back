@@ -74,6 +74,7 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
   private readonly leaseMs: number;
   private timer?: NodeJS.Timeout;
   private inFlight?: Promise<unknown>;
+  private readonly kicks = new Set<Promise<unknown>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -98,11 +99,32 @@ export class OutboxDispatcher implements OnModuleInit, OnModuleDestroy {
     this.timer.unref();
   }
 
-  /** Waits for the running batch; bounded because every handler has a timeout. */
+  /** Waits for the running batch and pending kicks; bounded because every handler has a timeout. */
   async onModuleDestroy(): Promise<void> {
     clearInterval(this.timer);
     this.timer = undefined;
     await this.inFlight;
+    await Promise.allSettled([...this.kicks]);
+  }
+
+  /**
+   * Best-effort immediate delivery of one just-committed event, so live consumers do not wait
+   * for the next poll. Call it only after the recording transaction commits. Fire-and-forget:
+   * it never throws or rejects and logs only the operation, type and error name. Racing the
+   * interval tick is safe because claiming leases rows; a failed or skipped kick leaves the
+   * event due, so the tick remains the retry path.
+   */
+  dispatchNow(type: string, eventId: string): void {
+    const kick: Promise<unknown> = this.dispatchPending(1, new Date(), [type], [eventId])
+      .catch((error: unknown) =>
+        this.logger.error({
+          operation: 'outbox.dispatch.now',
+          type,
+          errorName: error instanceof Error ? error.name : 'unknown',
+        }),
+      )
+      .finally(() => this.kicks.delete(kick));
+    this.kicks.add(kick);
   }
 
   /**
