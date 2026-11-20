@@ -18,7 +18,11 @@ export interface EvictableRoom {
  * appearance to the user's avatar, reporting whether that avatar exists.
  */
 export interface AppearanceApplicableRoom {
-  applyAppearance(userId: string, appearance: MemberAppearance): boolean;
+  applyAppearance(
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): boolean;
 }
 
 /** The full set of room capabilities the internal routes use through the directory. */
@@ -27,7 +31,12 @@ export interface DirectoryRoom extends EvictableRoom, AppearanceApplicableRoom {
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
 export interface RoomDirectoryLike {
   evict(filter: EvictionFilter): number;
-  applyAppearance(classroomId: string, userId: string, appearance: MemberAppearance): number;
+  applyAppearance(
+    classroomId: string,
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): number;
 }
 
 /**
@@ -65,10 +74,16 @@ export class RoomDirectory {
    * reached (#114). An unknown classroom or a user with no avatar reaches nothing, which the
    * internal route reports as a bare success so an at-least-once replay stays harmless.
    */
-  applyAppearance(classroomId: string, userId: string, appearance: MemberAppearance): number {
+  applyAppearance(
+    classroomId: string,
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): number {
     const targets = [...(this.rooms.get(classroomId) ?? [])];
     return targets.reduce(
-      (total, room) => total + (room.applyAppearance(userId, appearance) ? 1 : 0),
+      (total, room) =>
+        total + (room.applyAppearance(userId, appearanceRevision, appearance) ? 1 : 0),
       0,
     );
   }

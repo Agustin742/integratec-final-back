@@ -533,6 +533,7 @@ describe('EquipmentService (real PostgreSQL)', () => {
     interface AppearanceEventPayload {
       classroomId: string;
       userId: string;
+      appearanceRevision: number;
       appearance: {
         baseAvatar: Record<string, string>;
         items: Record<string, unknown>;
@@ -563,6 +564,7 @@ describe('EquipmentService (real PostgreSQL)', () => {
       expect(payloads[0]).toEqual({
         classroomId: ids.classroom,
         userId: ids.student,
+        appearanceRevision: 1,
         appearance: {
           baseAvatar: expect.any(Object),
           items: {
@@ -579,6 +581,25 @@ describe('EquipmentService (real PostgreSQL)', () => {
           },
         },
       });
+    });
+
+    it('assigns increasing revisions to concurrent equipment changes', async () => {
+      await fundStudent(ids.student, 500);
+      await purchaseItem(ids.student, ids.capItem);
+      await purchaseItem(ids.student, ids.headphonesItem);
+
+      await Promise.all([
+        equipment.setSlot(ids.student, ids.classroom, 'head', { shopItemId: ids.capItem }),
+        equipment.setSlot(ids.student, ids.classroom, 'head', {
+          shopItemId: ids.headphonesItem,
+        }),
+      ]);
+
+      const payloads = await appearancePayloads();
+      expect(payloads).toHaveLength(2);
+      expect(payloads.map((payload) => payload.appearanceRevision).sort((a, b) => a - b)).toEqual([
+        1, 2,
+      ]);
     });
 
     it('records one event on unequip carrying the cleared slot', async () => {

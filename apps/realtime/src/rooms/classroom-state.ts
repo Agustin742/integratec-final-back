@@ -32,6 +32,8 @@ export class Avatar extends Schema {
   @type('string') displayName = '';
   @type('string') role = '';
   @type(AvatarAppearance) appearance = new AvatarAppearance();
+  /** Internal ordering token; deliberately excluded from synchronized client state. */
+  appearanceRevision = 0;
   @type('float32') x = 0;
   @type('float32') z = 0;
   /** Facing angle in radians around the vertical axis: `atan2(dirX, dirZ)` of the last movement. */

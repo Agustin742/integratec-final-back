@@ -94,6 +94,8 @@ interface PendingAdmission {
   userId: string;
   authSessionId: string;
   revoked: boolean;
+  appearance: MemberAppearance;
+  appearanceRevision: number;
 }
 
 /** Room logic that does not depend on the verifier. */
@@ -164,6 +166,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       userId: auth.userId,
       authSessionId: auth.authSessionId,
       revoked: false,
+      appearance: auth.appearance,
+      appearanceRevision: auth.appearanceRevision,
     };
     this.pendingAdmissions.set(client.sessionId, admission);
     try {
@@ -180,7 +184,12 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
-      auth.appearance = current.appearance;
+      if (current.appearanceRevision >= admission.appearanceRevision) {
+        admission.appearance = current.appearance;
+        admission.appearanceRevision = current.appearanceRevision;
+      }
+      auth.appearance = admission.appearance;
+      auth.appearanceRevision = admission.appearanceRevision;
     } catch (error) {
       if (error instanceof ServerError) throw error;
       if (admission.revoked || error instanceof JoinDeniedError) {
@@ -211,7 +220,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       if (avatar) {
         avatar.displayName = auth.displayName;
         avatar.role = auth.role;
-        applyAppearanceToAvatar(avatar, auth.appearance);
+        if (auth.appearanceRevision >= avatar.appearanceRevision) {
+          avatar.appearanceRevision = auth.appearanceRevision;
+          applyAppearanceToAvatar(avatar, auth.appearance);
+        }
       }
       this.refreshStatus(auth.userId);
     }
@@ -262,8 +274,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       auth.role = current.role;
       auth.displayName = current.displayName;
       auth.appearance = current.appearance;
+      auth.appearanceRevision = current.appearanceRevision;
       const avatar = this.state.avatars.get(userId);
-      if (avatar) {
+      if (avatar && current.appearanceRevision >= avatar.appearanceRevision) {
+        avatar.appearanceRevision = current.appearanceRevision;
         avatar.role = current.role;
         avatar.displayName = current.displayName;
         applyAppearanceToAvatar(avatar, current.appearance);
@@ -289,15 +303,31 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
 
   /**
    * Applies an API-verified appearance update to the user's avatar (#114). Reached only through
-   * the room directory from the internal route, never from a client message. Last write wins, so
-   * an at-least-once replay is harmless; reports whether the user's avatar exists, so a replay
-   * for a user who is gone is a quiet no-op.
+   * the room directory from the internal route, never from a client message. The monotonic
+   * revision makes at-least-once outbox replays and out-of-order deliveries harmless. Pending
+   * admissions retain the newest update so a join verification cannot overwrite it with an older
+   * snapshot.
    */
-  applyAppearance(userId: string, appearance: MemberAppearance): boolean {
+  applyAppearance(
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): boolean {
     const avatar = this.state.avatars.get(userId);
-    if (avatar === undefined) return false;
-    applyAppearanceToAvatar(avatar, appearance);
-    return true;
+    let found = avatar !== undefined;
+    if (avatar && appearanceRevision > avatar.appearanceRevision) {
+      avatar.appearanceRevision = appearanceRevision;
+      applyAppearanceToAvatar(avatar, appearance);
+    }
+    for (const admission of this.pendingAdmissions.values()) {
+      if (admission.userId !== userId) continue;
+      found = true;
+      if (appearanceRevision > admission.appearanceRevision) {
+        admission.appearanceRevision = appearanceRevision;
+        admission.appearance = appearance;
+      }
+    }
+    return found;
   }
 
   /**
@@ -469,6 +499,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;
     avatar.role = identity.role;
+    avatar.appearanceRevision = identity.appearanceRevision;
     applyAppearanceToAvatar(avatar, identity.appearance);
     avatar.x = spawn.x;
     avatar.z = spawn.z;

@@ -23,6 +23,7 @@ import { REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT } from './realtime-events';
 const SECRET = 'synthetic-internal-secret-for-auth-specs-0000';
 const USER = '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01';
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const APPEARANCE_REVISION = 1;
 
 /** Public appearance payload, shaped exactly as `memberAppearanceSchema` allows. */
 const APPEARANCE: MemberAppearance = {
@@ -68,6 +69,7 @@ describe('HttpRealtimeAppearanceClient', () => {
     await make(fetchImpl).applyAppearance({
       classroomId: CLASSROOM,
       userId: USER,
+      appearanceRevision: APPEARANCE_REVISION,
       appearance: APPEARANCE,
     });
 
@@ -79,6 +81,7 @@ describe('HttpRealtimeAppearanceClient', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       classroomId: CLASSROOM,
       userId: USER,
+      appearanceRevision: APPEARANCE_REVISION,
       appearance: APPEARANCE,
     });
   });
@@ -88,7 +91,12 @@ describe('HttpRealtimeAppearanceClient', () => {
     async (status) => {
       const fetchImpl = vi.fn().mockResolvedValue(new Response('{}', { status }));
       const error = (await make(fetchImpl)
-        .applyAppearance({ classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE })
+        .applyAppearance({
+          classroomId: CLASSROOM,
+          userId: USER,
+          appearanceRevision: APPEARANCE_REVISION,
+          appearance: APPEARANCE,
+        })
         .catch((e: unknown) => e)) as RealtimeAppearanceError;
 
       expect(error).toBeInstanceOf(RealtimeAppearanceError);
@@ -100,7 +108,12 @@ describe('HttpRealtimeAppearanceClient', () => {
   it('fails as unreachable, without echoing the cause, when the realtime server refuses', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new TypeError(`ECONNREFUSED ${SECRET}`));
     const error = (await make(fetchImpl)
-      .applyAppearance({ classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE })
+      .applyAppearance({
+        classroomId: CLASSROOM,
+        userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
+        appearance: APPEARANCE,
+      })
       .catch((e: unknown) => e)) as RealtimeAppearanceError;
 
     expect(error).toBeInstanceOf(RealtimeAppearanceError);
@@ -122,6 +135,7 @@ describe('HttpRealtimeAppearanceClient', () => {
       make(fetchImpl, 20).applyAppearance({
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
         appearance: APPEARANCE,
       }),
     ).rejects.toMatchObject({ name: 'RealtimeAppearanceError', kind: 'timeout' });
@@ -146,7 +160,12 @@ describe('HttpRealtimeAppearanceClient', () => {
         const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
 
         await make(vi.fn(impl) as unknown as typeof fetch)
-          .applyAppearance({ classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE })
+          .applyAppearance({
+            classroomId: CLASSROOM,
+            userId: USER,
+            appearanceRevision: APPEARANCE_REVISION,
+            appearance: APPEARANCE,
+          })
           .catch(() => undefined);
 
         expect(warn).toHaveBeenCalledExactlyOnceWith({
@@ -166,6 +185,7 @@ describe('HttpRealtimeAppearanceClient', () => {
       await make(vi.fn().mockResolvedValue(new Response(null, { status: 204 }))).applyAppearance({
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
         appearance: APPEARANCE,
       });
       expect(warn).not.toHaveBeenCalled();
@@ -195,25 +215,62 @@ describe('RealtimeAppearanceHandler', () => {
 
   it('applies the appearance snapshot to the classroom it names', async () => {
     const { client, registry } = makeHandler();
-    await run(registry, { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE });
+    await run(registry, {
+      classroomId: CLASSROOM,
+      userId: USER,
+      appearanceRevision: APPEARANCE_REVISION,
+      appearance: APPEARANCE,
+    });
     expect(client.applyAppearance).toHaveBeenCalledExactlyOnceWith({
       classroomId: CLASSROOM,
       userId: USER,
+      appearanceRevision: APPEARANCE_REVISION,
       appearance: APPEARANCE,
     });
   });
 
   it.each([
-    ['a missing userId', { classroomId: CLASSROOM, appearance: APPEARANCE }],
-    ['a malformed userId', { classroomId: CLASSROOM, userId: 'x', appearance: APPEARANCE }],
-    ['a missing classroomId', { userId: USER, appearance: APPEARANCE }],
-    ['a malformed classroomId', { classroomId: 'x', userId: USER, appearance: APPEARANCE }],
-    ['a missing appearance', { classroomId: CLASSROOM, userId: USER }],
+    [
+      'a missing userId',
+      { classroomId: CLASSROOM, appearanceRevision: APPEARANCE_REVISION, appearance: APPEARANCE },
+    ],
+    [
+      'a malformed userId',
+      {
+        classroomId: CLASSROOM,
+        userId: 'x',
+        appearanceRevision: APPEARANCE_REVISION,
+        appearance: APPEARANCE,
+      },
+    ],
+    [
+      'a missing classroomId',
+      { userId: USER, appearanceRevision: APPEARANCE_REVISION, appearance: APPEARANCE },
+    ],
+    [
+      'a malformed classroomId',
+      {
+        classroomId: 'x',
+        userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
+        appearance: APPEARANCE,
+      },
+    ],
+    ['a missing revision', { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE }],
+    [
+      'a negative revision',
+      { classroomId: CLASSROOM, userId: USER, appearanceRevision: -1, appearance: APPEARANCE },
+    ],
+    [
+      'a missing appearance',
+      { classroomId: CLASSROOM, userId: USER, appearanceRevision: APPEARANCE_REVISION },
+    ],
     [
       'an appearance with a private extra field',
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
         appearance: { ...APPEARANCE, email: 'leak@example.test' },
       },
     ],
@@ -222,6 +279,7 @@ describe('RealtimeAppearanceHandler', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
         appearance: {
           ...APPEARANCE,
           items: { ...APPEARANCE.items, face: { ...APPEARANCE.items.head!, slot: 'head' } },
@@ -246,7 +304,12 @@ describe('RealtimeAppearanceHandler', () => {
   it('logs loudly, without identifiers, when an appearance change is given up on', () => {
     const error = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const { registry } = makeHandler();
-    const event = envelope({ classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE });
+    const event = envelope({
+      classroomId: CLASSROOM,
+      userId: USER,
+      appearanceRevision: APPEARANCE_REVISION,
+      appearance: APPEARANCE,
+    });
 
     registry.retryPolicyFor(event.type).onExhausted?.(event);
 
@@ -263,7 +326,12 @@ describe('RealtimeAppearanceHandler', () => {
     const { client, registry } = makeHandler();
     client.applyAppearance.mockRejectedValue(new RealtimeAppearanceError('http', 503));
     await expect(
-      run(registry, { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE }),
+      run(registry, {
+        classroomId: CLASSROOM,
+        userId: USER,
+        appearanceRevision: APPEARANCE_REVISION,
+        appearance: APPEARANCE,
+      }),
     ).rejects.toBeInstanceOf(RealtimeAppearanceError);
   });
 });
@@ -344,7 +412,12 @@ describe('Outbox to realtime appearance (integration)', () => {
     dispatcher.dispatchPending(50, now, [REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT], eventIds);
 
   it('delivers a recorded event to the realtime server with the service secret', async () => {
-    await record({ classroomId: CLASSROOM, userId: user, appearance: APPEARANCE });
+    await record({
+      classroomId: CLASSROOM,
+      userId: user,
+      appearanceRevision: APPEARANCE_REVISION,
+      appearance: APPEARANCE,
+    });
 
     await dispatch();
 
@@ -352,7 +425,12 @@ describe('Outbox to realtime appearance (integration)', () => {
       {
         path: '/internal/appearance',
         secret: SECRET,
-        body: { classroomId: CLASSROOM, userId: user, appearance: APPEARANCE },
+        body: {
+          classroomId: CLASSROOM,
+          userId: user,
+          appearanceRevision: APPEARANCE_REVISION,
+          appearance: APPEARANCE,
+        },
       },
     ]);
     expect((await ownRow()).processedAt).not.toBeNull();
@@ -360,7 +438,12 @@ describe('Outbox to realtime appearance (integration)', () => {
 
   it('retries the event when the realtime server is unavailable and delivers it later', async () => {
     realtimeStatus = 503;
-    await record({ classroomId: CLASSROOM, userId: user, appearance: APPEARANCE });
+    await record({
+      classroomId: CLASSROOM,
+      userId: user,
+      appearanceRevision: APPEARANCE_REVISION,
+      appearance: APPEARANCE,
+    });
 
     await dispatch();
     expect(received).toHaveLength(1);
@@ -380,7 +463,12 @@ describe('Outbox to realtime appearance (integration)', () => {
       prisma.$transaction(async (tx) => {
         await outbox.record(tx, {
           type: REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
-          payload: { classroomId: CLASSROOM, userId: user, appearance: APPEARANCE },
+          payload: {
+            classroomId: CLASSROOM,
+            userId: user,
+            appearanceRevision: APPEARANCE_REVISION,
+            appearance: APPEARANCE,
+          },
         });
         throw new Error('rollback');
       }),

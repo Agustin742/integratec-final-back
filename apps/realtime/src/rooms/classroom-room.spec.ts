@@ -23,6 +23,7 @@ const IDENTITY = {
   classroomId: CLASSROOM_ID,
   role: 'TEACHER' as const,
   displayName: 'Ada Lovelace',
+  appearanceRevision: 1,
   appearance: APPEARANCE,
 };
 const AUTH = {
@@ -31,6 +32,7 @@ const AUTH = {
   classroomId: CLASSROOM_ID,
   role: IDENTITY.role,
   displayName: IDENTITY.displayName,
+  appearanceRevision: IDENTITY.appearanceRevision,
   appearance: APPEARANCE,
 };
 
@@ -94,24 +96,25 @@ describe('createClassroomRoom', () => {
     expect(avatar?.appearance.items.has('face')).toBe(false);
   });
 
-  it('applies an API-verified appearance update to the live avatar, last write wins (#114)', async () => {
+  it('ignores a delayed older appearance snapshot after a newer update (#114)', async () => {
     const room = makeJoinedRoom();
     await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
     expect(room.state.avatars.get(IDENTITY.userId)?.appearance.hairColor).toBe('#AF6D63');
 
-    const updated = makeStubAppearance('#C77DAA');
-    expect(room.applyAppearance(IDENTITY.userId, updated)).toBe(true);
+    const newest = makeStubAppearance('#C77DAA');
+    expect(room.applyAppearance(IDENTITY.userId, 3, newest)).toBe(true);
+    expect(room.applyAppearance(IDENTITY.userId, 2, APPEARANCE)).toBe(true);
 
     const avatar = room.state.avatars.get(IDENTITY.userId);
     expect(avatar?.appearance.hairColor).toBe('#C77DAA');
     expect(avatar?.appearance.items.size).toBe(1);
-    expect(avatar?.appearance.items.get('head')).toMatchObject(updated.items.head);
+    expect(avatar?.appearance.items.get('head')).toMatchObject(newest.items.head);
   });
 
   it('reports that there was no avatar to update, changing nothing (#114)', async () => {
     const room = makeJoinedRoom();
 
-    expect(room.applyAppearance(IDENTITY.userId, APPEARANCE)).toBe(false);
+    expect(room.applyAppearance(IDENTITY.userId, 2, APPEARANCE)).toBe(false);
     expect(room.state.avatars.size).toBe(0);
   });
 
@@ -236,6 +239,7 @@ describe('createClassroomRoom', () => {
         .mockResolvedValueOnce(IDENTITY)
         .mockResolvedValue({
           ...IDENTITY,
+          appearanceRevision: 2,
           appearance: makeStubAppearance('#C77DAA'),
         });
       const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
@@ -253,6 +257,29 @@ describe('createClassroomRoom', () => {
       expect(avatar?.appearance.hairColor).toBe('#C77DAA');
       expect(avatar?.appearance.items.size).toBe(1);
       expect(avatar?.appearance.items.get('head')).toMatchObject(APPEARANCE.items.head);
+    });
+
+    it('keeps a newer event received while the join snapshot is being verified', async () => {
+      let resolveReverify!: (identity: typeof IDENTITY) => void;
+      const reverify = vi.fn(
+        () =>
+          new Promise<typeof IDENTITY>((resolve) => {
+            resolveReverify = resolve;
+          }),
+      );
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      const joining = room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+
+      const latest = makeStubAppearance('#C77DAA');
+      expect(room.applyAppearance(IDENTITY.userId, 2, latest)).toBe(true);
+      resolveReverify(IDENTITY);
+      await joining;
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearanceRevision).toBe(2);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
     });
   });
 
@@ -360,6 +387,23 @@ describe('createClassroomRoom', () => {
       await reconnecting;
       sendInput(room, client, 1, 0);
       expect(positionAfterStep(room)).toBeGreaterThan(spawnX ?? 0);
+    });
+
+    it('does not overwrite a newer appearance received during reconnection verification', async () => {
+      let confirm: (identity: typeof IDENTITY) => void = () => undefined;
+      const { room, client } = await makeReconnectingRoom(
+        () => new Promise((resolve) => (confirm = resolve)),
+      );
+      const latest = makeStubAppearance('#C77DAA');
+
+      const reconnecting = room.onReconnect(client as never);
+      expect(room.applyAppearance(IDENTITY.userId, 2, latest)).toBe(true);
+      confirm(IDENTITY);
+      await reconnecting;
+
+      const avatar = room.state.avatars.get(IDENTITY.userId);
+      expect(avatar?.appearanceRevision).toBe(2);
+      expect(avatar?.appearance.hairColor).toBe('#C77DAA');
     });
 
     it('releases the connection and its avatar when access is denied, without relying on the transport', async () => {
@@ -524,6 +568,7 @@ describe('createClassroomRoom', () => {
           classroomId: CLASSROOM_ID,
           role: AUTH.role,
           displayName: AUTH.displayName,
+          appearanceRevision: AUTH.appearanceRevision,
           appearance: AUTH.appearance,
         },
       ]);

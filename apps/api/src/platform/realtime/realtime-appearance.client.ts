@@ -7,6 +7,7 @@ export const REALTIME_APPEARANCE_PORT = Symbol('REALTIME_APPEARANCE_PORT');
 export interface AppearanceUpdateRequest {
   classroomId: string;
   userId: string;
+  appearanceRevision: number;
   appearance: MemberAppearance;
 }
 

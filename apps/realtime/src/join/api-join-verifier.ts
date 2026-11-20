@@ -30,6 +30,7 @@ const verifiedJoinSchema = z.object({
   displayName: z.string().min(1).max(100),
   // Public appearance only: unknown or malformed fields deny the join (#114).
   appearance: memberAppearanceSchema,
+  appearanceRevision: z.number().int().nonnegative(),
 });
 
 export interface ApiJoinVerifierOptions {

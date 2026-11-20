@@ -129,6 +129,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       classroomId,
       role: 'TEACHER',
       displayName: 'rv-teacher',
+      appearanceRevision: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
         items: { head: null, face: null, back: null, desk_decor: null },
@@ -192,9 +193,10 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
           desk_decor: null,
         },
       });
-      // Appearance is public data only (#114 acceptance): no private field rides along.
+      // The only non-appearance field is an internal ordering token; no private data rides along.
       expect(Object.keys(res.body).sort()).toEqual([
         'appearance',
+        'appearanceRevision',
         'classroomId',
         'displayName',
         'role',

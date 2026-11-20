@@ -110,4 +110,8 @@ export class JoinVerificationResponseDto {
   /** Public appearance data only (#114): base avatar and equipped items, no private fields. */
   @ApiProperty({ type: MemberAppearanceDto })
   appearance!: MemberAppearanceDto;
+
+  /** Internal ordering token for appearance snapshots; not part of the synchronized avatar. */
+  @ApiProperty({ minimum: 0 })
+  appearanceRevision!: number;
 }

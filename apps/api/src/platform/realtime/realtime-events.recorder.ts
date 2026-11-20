@@ -52,9 +52,10 @@ export class RealtimeEventsRecorder {
 
   /**
    * Records that a member's appearance in one classroom changed (#114). The appearance snapshot
-   * must be built with the caller's transaction client, so the event describes the change that
-   * commits with it. A base-avatar patch is global: the caller records one event per classroom
-   * with live access; equip/unequip is classroom-scoped and records one event.
+   * and per-user revision must be built with the caller's transaction client, so the event
+   * describes the change that commits with it. A base-avatar patch is global: the caller records
+   * one event per classroom with live access; equip/unequip is classroom-scoped and records one
+   * event.
    */
   async recordClassroomAppearanceChanged(
     tx: Prisma.TransactionClient,
@@ -65,6 +66,7 @@ export class RealtimeEventsRecorder {
       payload: {
         classroomId: payload.classroomId,
         userId: payload.userId,
+        appearanceRevision: payload.appearanceRevision,
         appearance: payload.appearance,
       },
     });

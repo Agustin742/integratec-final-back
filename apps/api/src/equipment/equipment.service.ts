@@ -10,7 +10,7 @@ import { Prisma, ShopItemKind } from '@prisma/client';
 import { AccessVerificationService } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
-import { memberAppearanceFor } from '../users/member-appearance';
+import { advanceAppearanceRevision, memberAppearanceFor } from '../users/member-appearance';
 import {
   type EquipItemDto,
   type EquipmentStateDto,
@@ -195,10 +195,16 @@ export class EquipmentService {
       // Broadcast the new look to the live classroom (#114): one event for this classroom,
       // carrying the full post-change snapshot, recorded in the same transaction as the write so
       // it exists if and only if the equip or unequip commits.
-      const { appearance } = await memberAppearanceFor(tx, actorUserId, classroomId);
+      await advanceAppearanceRevision(tx, actorUserId);
+      const { appearanceRevision, appearance } = await memberAppearanceFor(
+        tx,
+        actorUserId,
+        classroomId,
+      );
       await this.realtimeEvents.recordClassroomAppearanceChanged(tx, {
         classroomId,
         userId: actorUserId,
+        appearanceRevision,
         appearance,
       });
     });

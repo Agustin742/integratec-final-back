@@ -54,6 +54,7 @@ function makeIds() {
 interface AppearanceEventPayload {
   classroomId: string;
   userId: string;
+  appearanceRevision: number;
   appearance: {
     baseAvatar: Record<string, string>;
     items: Record<string, unknown>;
@@ -250,6 +251,15 @@ describe('PATCH /users/me/avatar realtime appearance events (#114)', () => {
       [ids.classroomA, ids.classroomB, ids.classroomC].sort(),
     );
     expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((row) => row.appearanceRevision)).size).toBe(1);
+    expect(rows[0].appearanceRevision).toBe(
+      (
+        await prisma.user.findUniqueOrThrow({
+          where: { id: ids.main },
+          select: { appearanceRevision: true },
+        })
+      ).appearanceRevision,
+    );
   });
 
   it('carries the patched base avatar and the classroom-scoped equipped items', async () => {
@@ -319,14 +329,50 @@ describe('PATCH /users/me/avatar realtime appearance events (#114)', () => {
   });
 
   it('records a fresh snapshot for every classroom on each accepted patch', async () => {
-    const before = (await events(ids.main)).length;
+    const previousRevision = (
+      await prisma.user.findUniqueOrThrow({
+        where: { id: ids.main },
+        select: { appearanceRevision: true },
+      })
+    ).appearanceRevision;
 
     await patchAvatar({ ...PATCHED, hairColor: '#E5AD58' }).expect(200);
 
     const rows = await payloads(ids.main);
-    expect(rows).toHaveLength(before + 3);
-    expect(rows.slice(-3).every((row) => row.appearance.baseAvatar.hairColor === '#E5AD58')).toBe(
-      true,
+    const updateRows = rows.filter((row) => row.appearance.baseAvatar.hairColor === '#E5AD58');
+    expect(updateRows).toHaveLength(3);
+    expect(new Set(updateRows.map((row) => row.appearanceRevision))).toEqual(
+      new Set([previousRevision + 1]),
     );
+  });
+
+  it('assigns ordered revisions to concurrent base-avatar updates', async () => {
+    await prisma.avatarConfiguration.upsert({
+      where: { userId: ids.main },
+      create: { userId: ids.main, appearance: {} },
+      update: {},
+    });
+    const previousRevision = (
+      await prisma.user.findUniqueOrThrow({
+        where: { id: ids.main },
+        select: { appearanceRevision: true },
+      })
+    ).appearanceRevision;
+
+    await Promise.all([
+      patchAvatar({ ...PATCHED, hairColor: '#353849' }).expect(200),
+      patchAvatar({ ...PATCHED, hairColor: '#C77DAA' }).expect(200),
+    ]);
+
+    const rows = (await payloads(ids.main)).filter((row) =>
+      ['#353849', '#C77DAA'].includes(row.appearance.baseAvatar.hairColor),
+    );
+    expect(rows).toHaveLength(6);
+    expect([...new Set(rows.map((row) => row.appearanceRevision))].sort((a, b) => a - b)).toEqual([
+      previousRevision + 1,
+      previousRevision + 2,
+    ]);
+    expect(rows.filter((row) => row.appearanceRevision === previousRevision + 1)).toHaveLength(3);
+    expect(rows.filter((row) => row.appearanceRevision === previousRevision + 2)).toHaveLength(3);
   });
 });

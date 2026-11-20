@@ -11,6 +11,7 @@ const IDENTITY = {
   classroomId: CLASSROOM_ID,
   role: 'STUDENT' as const,
   displayName: 'Ada Lovelace',
+  appearanceRevision: 1,
   appearance: makeStubAppearance(),
 };
 
@@ -39,6 +40,7 @@ describe('authenticateJoin', () => {
       classroomId: CLASSROOM_ID,
       role: 'STUDENT',
       displayName: 'Ada Lovelace',
+      appearanceRevision: IDENTITY.appearanceRevision,
       appearance: IDENTITY.appearance,
     });
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);

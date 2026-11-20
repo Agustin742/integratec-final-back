@@ -5,7 +5,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { AvatarAccessPort } from './avatar-access.port';
 import { AvatarDto, avatarSnapshot } from './avatar.dto';
-import { equippedItemsFor, readBaseAppearance } from './member-appearance';
+import {
+  advanceAppearanceRevision,
+  memberAppearanceFor,
+  readBaseAppearance,
+} from './member-appearance';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 
 const profileSelection = {
@@ -63,12 +67,18 @@ export class UsersService {
         update: { appearance: { ...snapshot } },
         select: { userId: true },
       });
+      await advanceAppearanceRevision(tx, userId);
       for (const classroomId of classroomIds) {
-        const items = await equippedItemsFor(tx, userId, classroomId);
+        const { appearanceRevision, appearance } = await memberAppearanceFor(
+          tx,
+          userId,
+          classroomId,
+        );
         await this.realtimeEvents.recordClassroomAppearanceChanged(tx, {
           classroomId,
           userId,
-          appearance: { baseAvatar: snapshot, items },
+          appearanceRevision,
+          appearance,
         });
       }
     });

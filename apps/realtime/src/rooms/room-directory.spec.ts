@@ -89,9 +89,9 @@ describe('RoomDirectory', () => {
     directory.register('A', a);
     directory.register('B', b);
 
-    expect(directory.applyAppearance('A', 'u', APPEARANCE)).toBe(1);
+    expect(directory.applyAppearance('A', 'u', 3, APPEARANCE)).toBe(1);
 
-    expect(a.applyAppearance).toHaveBeenCalledExactlyOnceWith('u', APPEARANCE);
+    expect(a.applyAppearance).toHaveBeenCalledExactlyOnceWith('u', 3, APPEARANCE);
     expect(b.applyAppearance).not.toHaveBeenCalled();
   });
 
@@ -102,10 +102,10 @@ describe('RoomDirectory', () => {
     directory.register('A', withAvatar);
     directory.register('A', withoutAvatar);
 
-    expect(directory.applyAppearance('A', 'u', APPEARANCE)).toBe(1);
+    expect(directory.applyAppearance('A', 'u', 3, APPEARANCE)).toBe(1);
   });
 
   it('applies nothing for an unknown classroom', () => {
-    expect(new RoomDirectory().applyAppearance('nope', 'u', APPEARANCE)).toBe(0);
+    expect(new RoomDirectory().applyAppearance('nope', 'u', 3, APPEARANCE)).toBe(0);
   });
 });

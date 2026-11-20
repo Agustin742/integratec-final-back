@@ -12,6 +12,7 @@ const IDENTITY = {
   classroomId: CLASSROOM_ID,
   role: 'TEACHER',
   displayName: 'Ada Lovelace',
+  appearanceRevision: 1,
   appearance: makeStubAppearance(),
 };
 
@@ -99,6 +100,8 @@ describe('ApiJoinVerifier', () => {
     ['a missing displayName', json(200, { ...IDENTITY, displayName: undefined })],
     ['an empty displayName', json(200, { ...IDENTITY, displayName: '' })],
     ['an oversized displayName', json(200, { ...IDENTITY, displayName: 'x'.repeat(101) })],
+    ['a missing appearance revision', json(200, { ...IDENTITY, appearanceRevision: undefined })],
+    ['a negative appearance revision', json(200, { ...IDENTITY, appearanceRevision: -1 })],
   ])('denies a 200 response with %s', async (_label, response) => {
     const fetchImpl = vi.fn().mockResolvedValue(response);
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(

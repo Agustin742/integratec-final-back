@@ -99,6 +99,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
     const res = await applyAppearance({
       classroomId: CLASSROOM_A,
       userId: ada.userId,
+      appearanceRevision: 1,
       appearance: makeStubAppearance('#353849'),
     });
 
@@ -123,10 +124,24 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
     const appearance = makeStubAppearance('#C77DAA');
 
     expect(
-      (await applyAppearance({ classroomId: CLASSROOM_A, userId: ada.userId, appearance })).status,
+      (
+        await applyAppearance({
+          classroomId: CLASSROOM_A,
+          userId: ada.userId,
+          appearanceRevision: 1,
+          appearance,
+        })
+      ).status,
     ).toBe(204);
     expect(
-      (await applyAppearance({ classroomId: CLASSROOM_A, userId: ada.userId, appearance })).status,
+      (
+        await applyAppearance({
+          classroomId: CLASSROOM_A,
+          userId: ada.userId,
+          appearanceRevision: 1,
+          appearance,
+        })
+      ).status,
     ).toBe(204);
 
     expect(serverRoom(observerRoom).state.avatars.get(ada.userId)?.appearance.hairColor).toBe(
@@ -134,6 +149,37 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
     );
     expect(serverRoom(observerRoom).state.avatars.get(bob.userId)?.appearance.hairColor).toBe(
       '#AF6D63',
+    );
+  });
+
+  it('does not let a delayed older snapshot overwrite a newer appearance', async () => {
+    const observerRoom = await join(bob);
+    await join(ada);
+    const latest = makeStubAppearance('#C77DAA');
+
+    expect(
+      (
+        await applyAppearance({
+          classroomId: CLASSROOM_A,
+          userId: ada.userId,
+          appearanceRevision: 2,
+          appearance: latest,
+        })
+      ).status,
+    ).toBe(204);
+    expect(
+      (
+        await applyAppearance({
+          classroomId: CLASSROOM_A,
+          userId: ada.userId,
+          appearanceRevision: 1,
+          appearance: makeStubAppearance('#353849'),
+        })
+      ).status,
+    ).toBe(204);
+
+    expect(serverRoom(observerRoom).state.avatars.get(ada.userId)?.appearance.hairColor).toBe(
+      '#C77DAA',
     );
   });
 
@@ -145,6 +191,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
         await applyAppearance({
           classroomId: '99999999-9999-4999-8999-999999999999',
           userId: bob.userId,
+          appearanceRevision: 1,
           appearance: makeStubAppearance('#353849'),
         })
       ).status,
@@ -154,6 +201,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
         await applyAppearance({
           classroomId: CLASSROOM_A,
           userId: '99999999-9999-4999-8999-999999999999',
+          appearanceRevision: 1,
           appearance: makeStubAppearance('#353849'),
         })
       ).status,
@@ -173,6 +221,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
           {
             classroomId: CLASSROOM_A,
             userId: bob.userId,
+            appearanceRevision: 1,
             appearance: makeStubAppearance('#353849'),
           },
           null,
@@ -185,6 +234,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
           {
             classroomId: CLASSROOM_A,
             userId: bob.userId,
+            appearanceRevision: 1,
             appearance: makeStubAppearance('#353849'),
           },
           'x'.repeat(STUB_SECRET.length),
@@ -203,6 +253,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
     const res = await applyAppearance({
       classroomId: CLASSROOM_A,
       userId: bob.userId,
+      appearanceRevision: 1,
       appearance: { junk: true },
     });
 

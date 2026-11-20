@@ -1,5 +1,14 @@
 # Tracker — Luis
 
+## 2026-11-20 — Prevent stale appearance retries from overwriting newer state (PR #121)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/`, `apps/api/src/platform/realtime/`, `apps/api/src/users/`, `apps/api/src/equipment/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`
+- **Change:** Added monotonically increasing per-user appearance revisions so realtime ignores stale outbox snapshots, including races with join and reconnection verification.
+- **Reason:** A retried older outbox snapshot can arrive after a newer update and leave the live avatar stale.
+- **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Full CI remains pending after push.
+- **Next step:** Push the fix commit to PR #121 and monitor CI.
+
 ## 2026-11-15 — Submission grading, weighted points conversion, and review queue (Issue #32)
 
 - **Status:** completed

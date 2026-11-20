@@ -21,14 +21,15 @@ export const APPEARANCE_MAX_ATTEMPTS = 12;
 const appearanceChanged = z.object({
   classroomId: z.uuid(),
   userId: z.uuid(),
+  appearanceRevision: z.number().int().nonnegative(),
   appearance: memberAppearanceSchema,
 });
 
 /**
  * Turns an appearance outbox event into a call to the realtime server, which updates the user's
- * avatar in the live room. Delivery is at least once and the route's update is idempotent
- * (last write wins, a missing room or avatar is a no-op), so redeliveries are safe. A failed call
- * throws so the outbox retries it with backoff; there is no periodic polling.
+ * avatar in the live room. Delivery is at least once; the per-user revision lets the room reject
+ * duplicate or out-of-order snapshots. A failed call throws so the outbox retries it with
+ * backoff; there is no periodic polling.
  */
 @Injectable()
 export class RealtimeAppearanceHandler implements OnModuleInit {

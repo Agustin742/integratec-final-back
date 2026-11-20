@@ -28,10 +28,11 @@ export const REALTIME_SESSIONS_REVOKED_EVENT = 'realtime.sessions-revoked';
 
 /**
  * A member's appearance in one classroom changed (base avatar patch or equip/unequip, #114).
- * Payload: `{ classroomId, userId, appearance }`, where `appearance` is the full per-classroom
- * public snapshot built by `memberAppearanceFor`. The base avatar is global, so an avatar patch
- * records one event per classroom with live access; equipment is classroom-scoped, so an equip or
- * unequip records one event for its own classroom only.
+ * Payload: `{ classroomId, userId, appearanceRevision, appearance }`, where `appearance` is the
+ * full per-classroom public snapshot built by `memberAppearanceFor`. The revision is monotonic per
+ * user. The base avatar is global, so an avatar patch records one event per classroom with live
+ * access; equipment is classroom-scoped, so an equip or unequip records one event for its own
+ * classroom.
  */
 export const REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT = 'realtime.classroom-appearance-changed';
 
@@ -48,6 +49,8 @@ export interface SessionsRevokedPayload {
 export interface ClassroomAppearanceChangedPayload {
   classroomId: string;
   userId: string;
+  /** Monotonically increasing per user, so realtime can discard stale at-least-once deliveries. */
+  appearanceRevision: number;
   /** Public fields only (#114): base avatar plus equipped items, validated by `memberAppearanceSchema`. */
   appearance: MemberAppearance;
 }

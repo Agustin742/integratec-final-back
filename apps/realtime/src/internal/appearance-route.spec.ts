@@ -6,6 +6,7 @@ import { configureExpress } from '../server';
 const SECRET = 'test-only-secret-with-at-least-32-characters';
 const USER = '0b0f7c1e-1b7e-4b53-b0c4-5a1f2f6d3e01';
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
+const REVISION = 1;
 
 /** A full, valid `MemberAppearance` payload; vary the hair color to tell snapshots apart. */
 const APPEARANCE = {
@@ -54,13 +55,19 @@ describe('POST /internal/appearance', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: APPEARANCE,
       },
       SECRET,
     ).expect(204);
 
     expect(res.text).toBe('');
-    expect(directory.applyAppearance).toHaveBeenCalledExactlyOnceWith(CLASSROOM, USER, APPEARANCE);
+    expect(directory.applyAppearance).toHaveBeenCalledExactlyOnceWith(
+      CLASSROOM,
+      USER,
+      REVISION,
+      APPEARANCE,
+    );
   });
 
   it('answers 204 when no room or avatar matched, so replays are harmless', async () => {
@@ -71,6 +78,7 @@ describe('POST /internal/appearance', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: APPEARANCE,
       },
       SECRET,
@@ -87,7 +95,12 @@ describe('POST /internal/appearance', () => {
 
     await post(
       app,
-      { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE },
+      {
+        classroomId: CLASSROOM,
+        userId: USER,
+        appearanceRevision: REVISION,
+        appearance: APPEARANCE,
+      },
       secret,
     ).expect(401);
 
@@ -96,15 +109,33 @@ describe('POST /internal/appearance', () => {
 
   it.each([
     ['an empty body', {}],
-    ['a malformed classroomId', { classroomId: 'x', userId: USER, appearance: APPEARANCE }],
-    ['a missing userId', { classroomId: CLASSROOM, appearance: APPEARANCE }],
-    ['a malformed userId', { classroomId: CLASSROOM, userId: 'x', appearance: APPEARANCE }],
-    ['a missing appearance', { classroomId: CLASSROOM, userId: USER }],
+    [
+      'a malformed classroomId',
+      { classroomId: 'x', userId: USER, appearanceRevision: REVISION, appearance: APPEARANCE },
+    ],
+    [
+      'a missing userId',
+      { classroomId: CLASSROOM, appearanceRevision: REVISION, appearance: APPEARANCE },
+    ],
+    [
+      'a malformed userId',
+      { classroomId: CLASSROOM, userId: 'x', appearanceRevision: REVISION, appearance: APPEARANCE },
+    ],
+    ['a missing revision', { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE }],
+    [
+      'a malformed revision',
+      { classroomId: CLASSROOM, userId: USER, appearanceRevision: -1, appearance: APPEARANCE },
+    ],
+    [
+      'a missing appearance',
+      { classroomId: CLASSROOM, userId: USER, appearanceRevision: REVISION },
+    ],
     [
       'a base avatar with a missing field',
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: {
           ...APPEARANCE,
           baseAvatar: { ...APPEARANCE.baseAvatar, hairColor: undefined },
@@ -116,6 +147,7 @@ describe('POST /internal/appearance', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: {
           ...APPEARANCE,
           items: { ...APPEARANCE.items, face: { ...APPEARANCE.items.head, slot: 'head' } },
@@ -127,6 +159,7 @@ describe('POST /internal/appearance', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: { ...APPEARANCE, email: 'leak@example.test' },
       },
     ],
@@ -135,6 +168,7 @@ describe('POST /internal/appearance', () => {
       {
         classroomId: CLASSROOM,
         userId: USER,
+        appearanceRevision: REVISION,
         appearance: APPEARANCE,
         everyone: true,
       },
@@ -149,6 +183,11 @@ describe('POST /internal/appearance', () => {
 
   it('is not mounted when no internal secret is configured', async () => {
     const app = configureExpress(express());
-    await post(app, { classroomId: CLASSROOM, userId: USER, appearance: APPEARANCE }).expect(404);
+    await post(app, {
+      classroomId: CLASSROOM,
+      userId: USER,
+      appearanceRevision: REVISION,
+      appearance: APPEARANCE,
+    }).expect(404);
   });
 });

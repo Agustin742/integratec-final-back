@@ -24,6 +24,19 @@ export interface ReadBaseAppearanceOptions {
   onUnsupported?: () => void;
 }
 
+/** Serializes all appearance writers for a user without changing the profile's `updatedAt`. */
+export async function advanceAppearanceRevision(
+  tx: Prisma.TransactionClient,
+  userId: string,
+): Promise<void> {
+  const updatedRows = await tx.$executeRaw`
+    UPDATE "users"
+    SET "appearance_revision" = "appearance_revision" + 1
+    WHERE "id" = ${userId}::uuid
+  `;
+  if (updatedRows !== 1) throw new Error('Appearance revision owner was not found');
+}
+
 /**
  * Reads the stored base-avatar JSON with the exact `UsersService.readAppearance` semantics: absent
  * or empty storage yields the default avatar, unsupported values fall back to the default avatar
@@ -89,6 +102,7 @@ export async function equippedItemsFor(
 /** A member's public appearance in one classroom, plus the display name read on the way. */
 export interface MemberAppearanceSnapshot {
   displayName: string;
+  appearanceRevision: number;
   appearance: {
     baseAvatar: AvatarDto;
     items: Record<AppearanceSlotName, EquippedItemPayloadDto | null>;
@@ -108,11 +122,16 @@ export async function memberAppearanceFor(
 ): Promise<MemberAppearanceSnapshot> {
   const user = await client.user.findUnique({
     where: { id: userId },
-    select: { displayName: true, avatarConfig: { select: { appearance: true } } },
+    select: {
+      displayName: true,
+      appearanceRevision: true,
+      avatarConfig: { select: { appearance: true } },
+    },
   });
   if (user === null) throw new UnauthorizedException();
   return {
     displayName: user.displayName,
+    appearanceRevision: user.appearanceRevision,
     appearance: {
       baseAvatar: readBaseAppearance(user.avatarConfig?.appearance, options),
       items: await equippedItemsFor(client, userId, classroomId),
