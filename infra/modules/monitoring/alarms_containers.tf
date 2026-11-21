@@ -12,8 +12,8 @@ locals {
 # treat_missing_data = "breaching": no data at all means the host is down, the timer stopped
 # or the publisher cannot reach CloudWatch, and in every case nobody is watching the
 # containers. That must alarm, not stay quiet, so a gap counts as a failing minute. This is
-# the opposite of the host alarms on purpose: they get their data from AWS itself, and a
-# stopped instance is already reported by them.
+# the opposite of the host alarms on purpose: host alarms get their data from AWS itself
+# and treat missing data as "missing" so a deliberately stopped instance stays quiet.
 resource "aws_cloudwatch_metric_alarm" "container_unhealthy" {
   for_each = local.container_services
 

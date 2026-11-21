@@ -93,7 +93,7 @@ run "each_address_gets_one_email_subscription" {
   }
 }
 
-run "budget_is_a_monthly_cost_budget_of_20_usd" {
+run "budget_is_a_monthly_cost_budget_of_40_usd" {
   command = apply
 
   assert {

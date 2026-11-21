@@ -322,7 +322,7 @@ run "apply_role_manages_prefixed_resources_and_documents_the_unscopable_ones" {
   command = apply
 
   assert {
-    condition     = alltrue([for sid in ["ManageEcrRepositories", "ManageCodeBuildProjects", "ManageCodePipelines", "ManageProjectSecrets", "ManageProjectParameters", "ManageProjectLogGroups", "ManageProjectBuckets"] : alltrue([for r in one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == sid]).Resource : strcontains(r, "aula-virtual-prod")])])
+    condition     = alltrue([for sid in ["ManageEcrRepositories", "ManageCodeBuildProjects", "ManageCodePipelines", "ManageProjectSecrets", "ManageProjectParameters", "ManageProjectLogGroups", "ManageProjectBuckets", "ManageProjectAlarmTopics", "ManageProjectAlarms", "TagProjectBudgets"] : alltrue([for r in one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == sid]).Resource : strcontains(r, "aula-virtual-prod")])])
     error_message = "Services with named resources must be scoped to the prefix."
   }
 
@@ -334,5 +334,29 @@ run "apply_role_manages_prefixed_resources_and_documents_the_unscopable_ones" {
   assert {
     condition     = one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageNetworkAndHost"]).Condition == { StringEquals = { "aws:RequestedRegion" = "us-east-2" } }
     error_message = "EC2 actions must be limited to the project region."
+  }
+}
+
+run "apply_role_manages_monitoring_resources_with_least_privilege" {
+  command = apply
+
+  assert {
+    condition     = one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageProjectAlarmTopics"]).Action == ["sns:*"] && one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageProjectAlarmTopics"]).Resource == ["arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-*"]
+    error_message = "SNS topic and subscription management must be scoped to <name_prefix>-*."
+  }
+
+  assert {
+    condition     = toset(one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageProjectAlarms"]).Action) == toset(["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DescribeAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:ListTagsForResource"]) && one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageProjectAlarms"]).Resource == ["arn:aws:cloudwatch:us-east-2:123456789012:alarm:aula-virtual-prod-*"]
+    error_message = "CloudWatch alarm management must be scoped to alarm:<name_prefix>-*."
+  }
+
+  assert {
+    condition     = toset(one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageBudgets"]).Action) == toset(["budgets:ViewBudget", "budgets:ModifyBudget"]) && one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "ManageBudgets"]).Resource == ["*"]
+    error_message = "Budget creation/updates require budgets:ViewBudget and budgets:ModifyBudget on *."
+  }
+
+  assert {
+    condition     = toset(one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "TagProjectBudgets"]).Action) == toset(["budgets:TagResource", "budgets:UntagResource", "budgets:ListTagsForResource"]) && one([for x in module.delivery_pipeline.terraform_role_policy_statements.apply : x if x.Sid == "TagProjectBudgets"]).Resource == ["arn:aws:budgets::123456789012:budget/aula-virtual-prod-*"]
+    error_message = "Budget tagging must be scoped to budget/<name_prefix>-*."
   }
 }
