@@ -29,3 +29,17 @@ ALTER TABLE "material_chunks" ADD CONSTRAINT "material_chunks_classroom_id_fkey"
     FOREIGN KEY ("classroom_id") REFERENCES "classrooms"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "material_chunks" ADD CONSTRAINT "material_chunks_material_id_fkey"
     FOREIGN KEY ("material_id") REFERENCES "study_materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Reset any materials previously marked indexed by the removed in-process adapter
+-- (which have no rows in material_chunks) so teachers visibly re-index them into pgvector.
+UPDATE "allowed_materials"
+SET "index_state" = 'failed'::"material_index_state",
+    "failure_reason" = 'This material needs to be re-enabled so it can be indexed for the Study Guide Bot.',
+    "updated_at" = CURRENT_TIMESTAMP
+WHERE "index_state" = 'indexed'::"material_index_state"
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "material_chunks" mc
+    WHERE mc."classroom_id" = "allowed_materials"."classroom_id"
+      AND mc."material_id" = "allowed_materials"."material_id"
+  );

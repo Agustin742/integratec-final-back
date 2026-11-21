@@ -351,4 +351,39 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
     await botMaterials.enable(teacherA, classroomA, pdfMat);
     expect(await indexPort.isIndexed(classroomA, pdfMat)).toBe(true);
   });
+
+  it('resets legacy indexed allowed_materials rows that have zero material_chunks rows', async () => {
+    // Simulate a legacy row left as INDEXED by the removed in-process adapter with no pgvector chunks.
+    await indexPort.remove(classroomA, pdfMat);
+    const updatedCount = await prisma.$executeRaw`
+      UPDATE "allowed_materials"
+      SET "index_state" = 'failed'::"material_index_state",
+          "failure_reason" = 'This material needs to be re-enabled so it can be indexed for the Study Guide Bot.',
+          "updated_at" = CURRENT_TIMESTAMP
+      WHERE "index_state" = 'indexed'::"material_index_state"
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "material_chunks" mc
+          WHERE mc."classroom_id" = "allowed_materials"."classroom_id"
+            AND mc."material_id" = "allowed_materials"."material_id"
+        )`;
+    expect(updatedCount).toBeGreaterThanOrEqual(1);
+
+    const legacyRow = await prisma.allowedMaterial.findUniqueOrThrow({
+      where: { classroomId_materialId: { classroomId: classroomA, materialId: pdfMat } },
+      select: { indexState: true, failureReason: true },
+    });
+    expect(legacyRow.indexState).toBe('FAILED');
+    expect(legacyRow.failureReason).toContain('re-enabled');
+
+    // A genuinely chunked material in classroom B remains untouched as INDEXED.
+    const healthyRow = await prisma.allowedMaterial.findUniqueOrThrow({
+      where: { classroomId_materialId: { classroomId: classroomB, materialId: foreignPdfMat } },
+      select: { indexState: true },
+    });
+    expect(healthyRow.indexState).toBe('INDEXED');
+
+    // Re-enable to restore fixture.
+    await botMaterials.enable(teacherA, classroomA, pdfMat);
+  });
 });
