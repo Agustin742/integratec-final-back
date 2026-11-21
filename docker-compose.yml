@@ -75,7 +75,8 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
-      NODE_ENV: production
+      # This Compose file is for local development, including the HTTP Vite reset URL.
+      NODE_ENV: development
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-aula_virtual}?schema=public
       INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}

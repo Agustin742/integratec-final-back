@@ -1,57 +1,43 @@
-import { PrismaClient, RegistrationPath, ShopItemKind } from '@prisma/client';
+import {
+  ActivityFormat,
+  ActivityState,
+  ActivityType,
+  ClassroomRole,
+  MembershipState,
+  Prisma,
+  PrismaClient,
+  RegistrationPath,
+  SchoolRole,
+  ShopItemKind,
+} from '@prisma/client';
+import { hashPassword } from '../src/auth/password-hash';
 import { assertSafeToSeed } from './seed-guard';
 
 const prisma = new PrismaClient();
+const DEMO_PASSWORD = 'AulaLocal2026!';
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 async function main(): Promise<void> {
   assertSafeToSeed(process.env);
 
-  // Clean existing seed data
-  // point_transactions is append-only against UPDATE/DELETE, and student_purchases / classroom_items /
-  // grades / grade_revisions reference point_transactions; TRUNCATE together is allowed for dev/test seed resets.
-  await prisma.$executeRaw`TRUNCATE TABLE "grade_revisions", "grades", "classroom_items", "student_purchases", "point_transactions"`;
-  await prisma.equippedItem.deleteMany();
-  await prisma.studentBadge.deleteMany();
-  await prisma.streakQualifyingDay.deleteMany();
-  await prisma.streak.deleteMany();
-  await prisma.badgeDefinition.deleteMany();
-  await prisma.submissionFile.deleteMany();
-  await prisma.submissionAnswer.deleteMany();
-  await prisma.submission.deleteMany();
-  await prisma.option.deleteMany();
-  await prisma.question.deleteMany();
-  await prisma.activityForumPost.deleteMany();
-  await prisma.activityForumThread.deleteMany();
-  await prisma.mention.deleteMany();
-  await prisma.chatReadMarker.deleteMany();
-  await prisma.message.deleteMany();
-  await prisma.announcement.deleteMany();
-  await prisma.allowedMaterial.deleteMany();
-  await prisma.botConfig.deleteMany();
-  await prisma.studyMaterial.deleteMany();
-  await prisma.activity.deleteMany();
-  await prisma.classroomShopItem.deleteMany();
-  await prisma.shopItem.deleteMany();
-  await prisma.joinCodeUsage.deleteMany();
-  await prisma.invitation.deleteMany();
-  await prisma.desk.deleteMany();
-  await prisma.classroomPet.deleteMany();
-  await prisma.classroomMembership.deleteMany();
-  await prisma.parentLink.deleteMany();
-  await prisma.classroom.deleteMany();
-  await prisma.schoolMember.deleteMany();
-  await prisma.school.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.avatarConfiguration.deleteMany();
-  await prisma.user.deleteMany();
+  // Reset local application data while preserving Prisma's migration history.
+  await prisma.$executeRaw`
+    TRUNCATE TABLE
+      "outbox_events",
+      "point_transactions",
+      "shop_items",
+      "badge_definitions",
+      "schools",
+      "classrooms",
+      "users"
+    RESTART IDENTITY CASCADE
+  `;
 
-  // 1. Synthetic users with hashed passwords (never plain text)
-  const syntheticHash = '$2b$10$EpRnTzVlqHNP0.fUbXUwSOyuiXe/QLSUG6xNekd58amL3pqjK4Wqa';
-
+  // 1. Synthetic accounts share a documented local-only password, stored as salted hashes.
   const owner = await prisma.user.create({
     data: {
       email: 'directora@escuela-modelo.edu.ar',
-      passwordHash: syntheticHash,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
       displayName: 'Directora Marta',
       registrationPath: RegistrationPath.SCHOOL,
       avatarConfig: {
@@ -65,8 +51,8 @@ async function main(): Promise<void> {
   const teacher = await prisma.user.create({
     data: {
       email: 'profe.carlos@escuela-modelo.edu.ar',
-      passwordHash: syntheticHash,
-      displayName: 'Prof. Carlos Perez',
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      displayName: 'Prof. Carlos Pérez',
       registrationPath: RegistrationPath.SCHOOL,
     },
   });
@@ -74,18 +60,18 @@ async function main(): Promise<void> {
   const student = await prisma.user.create({
     data: {
       email: 'alumno.lucas@escuela-modelo.edu.ar',
-      passwordHash: syntheticHash,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
       displayName: 'Lucas Alumno',
-      registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+      registrationPath: RegistrationPath.SCHOOL,
     },
   });
 
   const parent = await prisma.user.create({
     data: {
       email: 'padre.roberto@example.com',
-      passwordHash: syntheticHash,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
       displayName: 'Roberto Padre',
-      registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+      registrationPath: RegistrationPath.SCHOOL,
     },
   });
 
@@ -98,8 +84,8 @@ async function main(): Promise<void> {
       members: {
         createMany: {
           data: [
-            { userId: owner.id, role: 'OWNER', state: 'ACTIVE' },
-            { userId: teacher.id, role: 'TEACHER', state: 'ACTIVE' },
+            { userId: owner.id, role: SchoolRole.OWNER, state: MembershipState.ACTIVE },
+            { userId: teacher.id, role: SchoolRole.TEACHER, state: MembershipState.ACTIVE },
           ],
         },
       },
@@ -119,12 +105,20 @@ async function main(): Promise<void> {
       },
       memberships: {
         create: [
-          { userId: teacher.id, role: 'TEACHER', state: 'ACTIVE' },
-          { userId: student.id, role: 'STUDENT', state: 'ACTIVE' },
+          {
+            userId: teacher.id,
+            role: ClassroomRole.TEACHER,
+            state: MembershipState.ACTIVE,
+          },
+          {
+            userId: student.id,
+            role: ClassroomRole.STUDENT,
+            state: MembershipState.ACTIVE,
+          },
         ],
       },
       desks: {
-        create: [{ deskIndex: 1 }],
+        create: Array.from({ length: 12 }, (_, index) => ({ deskIndex: index + 1 })),
       },
     },
     include: {
@@ -133,16 +127,17 @@ async function main(): Promise<void> {
     },
   });
 
-  // Assign student to desk 1
   const studentMembership = classroom.memberships.find((m) => m.userId === student.id);
-  if (studentMembership && classroom.desks[0]) {
-    await prisma.desk.update({
-      where: { id: classroom.desks[0].id },
-      data: { membershipId: studentMembership.id },
-    });
+  const firstDesk = classroom.desks.find((desk) => desk.deskIndex === 1);
+  if (!studentMembership || !firstDesk) {
+    throw new Error('Seed failed to create the student membership or first desk');
   }
+  await prisma.desk.update({
+    where: { id: firstDesk.id },
+    data: { membershipId: studentMembership.id },
+  });
 
-  // 4. Parent link for student in classroom context
+  // 4. Parent link enables the limited linked-child grade view.
   await prisma.parentLink.create({
     data: {
       parentId: parent.id,
@@ -152,38 +147,70 @@ async function main(): Promise<void> {
     },
   });
 
-  // 5. Synthetic invitations: one email invitation and one join code
-  await prisma.invitation.createMany({
-    data: [
-      {
-        kind: 'EMAIL',
-        secretHash: 'hash-invitacion-correo-sintetico-001',
-        targetEmail: 'nuevo.profe@escuela-modelo.edu.ar',
-        schoolId: school.id,
-        role: 'TEACHER',
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        createdById: owner.id,
+  // 5. Draft activities let the teacher publish them through the app before student testing.
+  const dueAt = new Date(Date.now() + 14 * DAY_IN_MS);
+  const activityDefaults = {
+    classroomId: classroom.id,
+    createdById: teacher.id,
+    type: ActivityType.TP,
+    state: ActivityState.DRAFT,
+    dueAt,
+    allowLate: false,
+    maxScore: 100,
+    weightMultiplier: new Prisma.Decimal('1.00'),
+  };
+
+  await prisma.activity.create({
+    data: {
+      ...activityDefaults,
+      format: ActivityFormat.MULTIPLE_CHOICE,
+      title: 'Práctica de fracciones',
+      description: 'Respondé las preguntas para practicar equivalencias.',
+      questions: {
+        create: [
+          {
+            position: 1,
+            prompt: '¿Qué fracción es equivalente a 1/2?',
+            options: {
+              create: [
+                { position: 1, label: '2/4', isCorrect: true },
+                { position: 2, label: '2/3', isCorrect: false },
+                { position: 3, label: '3/5', isCorrect: false },
+              ],
+            },
+          },
+          {
+            position: 2,
+            prompt: '¿Qué fracción es equivalente a 3/4?',
+            options: {
+              create: [
+                { position: 1, label: '6/8', isCorrect: true },
+                { position: 2, label: '4/6', isCorrect: false },
+                { position: 3, label: '5/8', isCorrect: false },
+              ],
+            },
+          },
+        ],
       },
-      {
-        kind: 'JOIN_CODE',
-        secretHash: 'hash-codigo-union-aula-sintetico-001',
-        classroomId: classroom.id,
-        role: 'STUDENT',
-        maxUses: 35,
-        useCount: 0,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        createdById: teacher.id,
-      },
-    ],
+    },
   });
 
-  // 6. Synthetic classroom shop catalog (never seeded in production or SQL migrations)
+  await prisma.activity.create({
+    data: {
+      ...activityDefaults,
+      format: ActivityFormat.FILE,
+      title: 'Entrega: problemas de fracciones',
+      description: 'Resolvé los ejercicios y entregá un PDF o una imagen.',
+    },
+  });
+
+  // 6. Synthetic classroom shop catalog (never seeded in production or SQL migrations).
   await prisma.shopItem.createMany({
     data: [
       {
         code: 'cap_blue',
-        name: 'Blue Classroom Cap',
-        description: 'Classic blue cap accessory for your 3D avatar.',
+        name: 'Gorra azul del aula',
+        description: 'Una gorra azul clásica para tu avatar.',
         kind: ShopItemKind.AVATAR_ACCESSORY,
         defaultPrice: 50,
         isActive: true,
@@ -192,8 +219,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'headphones_studio',
-        name: 'Studio Headphones',
-        description: 'Over-ear headphones accessory for your 3D avatar.',
+        name: 'Auriculares de estudio',
+        description: 'Auriculares para personalizar tu avatar.',
         kind: ShopItemKind.AVATAR_ACCESSORY,
         defaultPrice: 80,
         isActive: true,
@@ -202,8 +229,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'glasses_round',
-        name: 'Round Reading Glasses',
-        description: 'Lightweight round glasses for your 3D avatar.',
+        name: 'Anteojos redondos',
+        description: 'Anteojos livianos para personalizar tu avatar.',
         kind: ShopItemKind.AVATAR_ACCESSORY,
         defaultPrice: 40,
         isActive: true,
@@ -212,8 +239,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'backpack_explorer',
-        name: 'Explorer Backpack',
-        description: 'Campus backpack accessory for your 3D avatar.',
+        name: 'Mochila exploradora',
+        description: 'Una mochila para personalizar tu avatar.',
         kind: ShopItemKind.AVATAR_ACCESSORY,
         defaultPrice: 100,
         isActive: true,
@@ -222,8 +249,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'desk_plant',
-        name: 'Desk Succulent Plant',
-        description: 'Small potted succulent upgrade for your classroom desk.',
+        name: 'Planta para el pupitre',
+        description: 'Una pequeña planta decorativa para el aula.',
         kind: ShopItemKind.DESK_UPGRADE,
         defaultPrice: 60,
         isActive: true,
@@ -232,8 +259,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'classroom_theme_warm',
-        name: 'Warm Classroom Theme',
-        description: 'Unlocks a warm lighting and accent theme for the whole classroom.',
+        name: 'Tema cálido para el aula',
+        description: 'Desbloquea una ambientación cálida para toda el aula.',
         kind: ShopItemKind.CLASSROOM_ITEM,
         defaultPrice: 150,
         isActive: true,
@@ -242,8 +269,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'minigame_pong',
-        name: 'Classroom Pong Mini-Game',
-        description: 'Planned classroom mini-game (not yet implemented and unpurchasable).',
+        name: 'Minijuego de ping-pong',
+        description: 'Previsto para una versión futura; todavía no se puede comprar.',
         kind: ShopItemKind.CLASSROOM_ITEM,
         defaultPrice: 200,
         isActive: true,
@@ -252,8 +279,8 @@ async function main(): Promise<void> {
       },
       {
         code: 'pet_scarf',
-        name: 'Classroom Pet Scarf',
-        description: 'Planned pet accessory (not yet implemented and unpurchasable).',
+        name: 'Bufanda para Michi',
+        description: 'Accesorio previsto para una versión futura; todavía no se puede comprar.',
         kind: ShopItemKind.PET_ACCESSORY,
         defaultPrice: 45,
         isActive: true,
@@ -270,24 +297,24 @@ async function main(): Promise<void> {
     data: [
       {
         code: 'streak_3',
-        name: 'Three-Day Study Streak',
-        description: 'Reach a study streak of 3 consecutive qualifying days.',
+        name: 'Racha de tres días',
+        description: 'Alcanzá tres días consecutivos de actividad válida.',
         conditionType: 'STREAK_REACHED',
         threshold: 3,
         isActive: true,
       },
       {
         code: 'streak_7',
-        name: 'Week of Constancy',
-        description: 'Reach a study streak of 7 consecutive qualifying days.',
+        name: 'Una semana de constancia',
+        description: 'Alcanzá siete días consecutivos de actividad válida.',
         conditionType: 'STREAK_REACHED',
         threshold: 7,
         isActive: true,
       },
       {
         code: 'active_days_5',
-        name: 'Five Study Days',
-        description: 'Complete qualifying study activity on 5 different days.',
+        name: 'Cinco días de estudio',
+        description: 'Completá actividad de estudio válida en cinco días distintos.',
         conditionType: 'QUALIFYING_DAYS_REACHED',
         threshold: 5,
         isActive: true,

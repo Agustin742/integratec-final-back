@@ -1,5 +1,23 @@
 # Tracker — Luis
 
+## 2026-11-21 — Align local API environment validation
+
+- **Status:** completed
+- **Area / files:** `docker-compose.yml`, `README.md`
+- **Change:** Set the local API container to `NODE_ENV=development`, matching the HTTP Vite reset URL while leaving production-only HTTPS validation intact in production deployments.
+- **Reason:** The local Compose stack hard-codes `NODE_ENV=production` while its documented frontend URL is HTTP on localhost, preventing API startup.
+- **Validation:** Compose config passed and a one-off API container confirmed `NODE_ENV=development`; API config tests passed (137/137); formatting, documentation checks, and `git diff --check` passed.
+- **Next step:** Replace the local `JWT_SECRET` with a generated value of at least 32 characters and restart the API.
+
+## 2026-11-21 — Preparing local demo seed
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/seed.ts`, `README.md`
+- **Change:** Added known-password synthetic accounts, corrected learner registration paths, created a school/classroom with an assigned desk, and added draft multiple-choice and file activities. The seed now resets application data with one guarded `TRUNCATE ... CASCADE`, retains the shop and badge catalogs in Spanish, and documents the accounts and local reset behavior.
+- **Reason:** The current seed has no documented login password or academic test data, and its learner registration paths do not match their classroom roles.
+- **Validation:** Applied all 27 migrations and ran the seed twice against a disposable PostgreSQL database; verified four users, one classroom, two draft activities, six purchasable catalog items, the parent link, valid password hashes, and the student's school registration path. Seed safety tests (12/12), API and seed typechecks, ESLint, Prettier, documentation checks, and `git diff --check` passed. The user's local database was not changed.
+- **Next step:** Run `pnpm prisma:seed` against the disposable local database, then start the app containers and frontend for manual testing.
+
 ## 2026-11-20 — Prevent stale appearance retries from overwriting newer state (PR #121)
 
 - **Status:** completed

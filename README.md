@@ -87,15 +87,28 @@ With local PostgreSQL running (`docker compose up -d postgres`), run database mi
 # Apply pending database migrations
 pnpm prisma:migrate:deploy
 
+# Regenerate Prisma Client after schema or migration changes
+pnpm prisma:generate
+
 # In development: create and apply a migration from schema changes
 pnpm prisma:migrate:dev
 
-# Seed database with realistic synthetic school data
+# Reset local application data and create synthetic demo data
 pnpm prisma:seed
-
-# Regenerate Prisma Client
-pnpm prisma:generate
 ```
+
+`pnpm prisma:seed` is destructive: it truncates application data and recreates the local demo scenario. It preserves Prisma migration history and does not remove objects from MinIO. The seed guard refuses production/staging `NODE_ENV` values and non-local database hosts; still verify `DATABASE_URL` before running it. Do not run it against data you want to keep.
+
+The demo accounts all use the local-only password `AulaLocal2026!`:
+
+| Role | Email |
+| --- | --- |
+| School owner | `directora@escuela-modelo.edu.ar` |
+| Teacher | `profe.carlos@escuela-modelo.edu.ar` |
+| Student | `alumno.lucas@escuela-modelo.edu.ar` |
+| Linked parent | `padre.roberto@example.com` |
+
+The seed creates one school and classroom, active role memberships, a student desk assignment, a linked parent, a draft multiple-choice activity, a draft file activity, and the synthetic shop and badge catalogs. Sign in as the teacher and publish an activity before testing it as the student. Submit a file through the app and grade it to earn points for a shop purchase. The seed does not create stored files or MinIO objects; upload them through the app.
 
 To run individual services locally:
 
@@ -162,6 +175,8 @@ echo "INVITATION_TOKEN_KEY=$(node -e "console.log(require('crypto').randomBytes(
 If the secret is missing or shorter than 32 characters, the services exit at startup with the configuration diagnostic described in [Configuration](#configuration). `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `ALLOWED_ORIGINS` can be overridden in the same file; the password is embedded in `DATABASE_URL`, so avoid URL-reserved characters such as `@`, `:`, `/` or `#`.
 
 To start the database and all application services:
+
+The local Compose API uses `NODE_ENV=development`, allowing its reset URL to target the HTTP Vite server at `http://localhost:5173`. The container still runs the compiled API image; production-only HTTPS validation remains enabled in production deployments.
 
 ```bash
 # Start postgres, api, and realtime containers
