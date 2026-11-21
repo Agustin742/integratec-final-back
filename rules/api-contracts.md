@@ -41,7 +41,7 @@ For chat, the browser sends messages only through the authenticated REST endpoin
 
 Colyseus itself uses `4001` for a server shutdown and `4002` for protocol errors (an invalid message or a failed join). The close **reason** disambiguates: only the values above mean revoked access or too many connections. `4100` is outside every code Colyseus uses (`4000` to `4003` and `4010`). The frontend **MUST** read the reason, not only the code.
 
-The classroom layout (bounds and obstacle boxes) that the server uses for collisions is exported from `packages/contracts` (`CLASSROOM_LAYOUT`) so the frontend scene and the server agree. It is temporary and shared by every classroom until per-classroom layouts replace it (issue #79).
+The classroom layout (bounds and obstacle boxes) that the server uses for collisions is built by `buildClassroomLayout(deskCount)` in `packages/contracts` so the frontend scene and the server agree. Student desks go in rows of four (minimum `MIN_CLASSROOM_DESKS` = 12); each extra row extends the room towards the back (issues #79 and #22).
 
 ## Compatibility and verification
 

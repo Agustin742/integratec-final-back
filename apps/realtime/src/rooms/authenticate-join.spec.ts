@@ -13,6 +13,7 @@ const IDENTITY = {
   displayName: 'Ada Lovelace',
   appearanceRevision: 1,
   appearance: makeStubAppearance(),
+  deskCount: 13,
 };
 
 const verifierReturning = (impl: JoinVerifier['verify']) => ({
@@ -42,6 +43,7 @@ describe('authenticateJoin', () => {
       displayName: 'Ada Lovelace',
       appearanceRevision: IDENTITY.appearanceRevision,
       appearance: IDENTITY.appearance,
+      deskCount: 13,
     });
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);
   });

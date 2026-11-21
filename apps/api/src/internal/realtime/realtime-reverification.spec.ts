@@ -109,6 +109,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
   });
 
   afterAll(async () => {
+    await prisma?.desk.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroomMembership.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.parentLink.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroom.deleteMany({ where: { id: { in: classroomIds } } });
@@ -130,6 +131,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       role: 'TEACHER',
       displayName: 'rv-teacher',
       appearanceRevision: 0,
+      deskCount: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
         items: { head: null, face: null, back: null, desk_decor: null },
@@ -198,6 +200,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
         'appearance',
         'appearanceRevision',
         'classroomId',
+        'deskCount',
         'displayName',
         'role',
         'sessionId',
@@ -208,6 +211,21 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       await prisma.equippedItem.deleteMany({ where: { id: equipped.id } });
       await prisma.shopItem.deleteMany({ where: { id: shopItem.id } });
       await prisma.avatarConfiguration.deleteMany({ where: { userId: studentId } });
+    }
+  });
+
+  it('answers the current desk count, including an expanded 13th desk (#79)', async () => {
+    await prisma.desk.createMany({
+      data: Array.from({ length: 12 }, (_, idx) => ({ classroomId, deskIndex: idx + 1 })),
+    });
+    try {
+      const body = { userId: studentId, sessionId: studentSessionId, classroomId };
+      expect((await post(body).expect(200)).body.deskCount).toBe(12);
+
+      await prisma.desk.create({ data: { classroomId, deskIndex: 13 } });
+      expect((await post(body).expect(200)).body.deskCount).toBe(13);
+    } finally {
+      await prisma.desk.deleteMany({ where: { classroomId } });
     }
   });
 

@@ -62,6 +62,8 @@ export interface StubUser {
   role: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT';
   displayName: string;
   appearanceRevision: number;
+  /** Desks of the classroom served on join and reverification (#79). */
+  deskCount: number;
   /** Appearance served on join and reverification; mutate it to simulate a change. */
   appearance: StubAppearance;
   /** Classrooms the user can currently access; mutate it to simulate access loss. */
@@ -127,6 +129,7 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
     displayName: user.displayName,
     appearanceRevision: user.appearanceRevision,
     appearance: user.appearance,
+    deskCount: user.deskCount,
   });
 
   stub.server = createServer((req, res) => {
@@ -171,6 +174,7 @@ export const makeUser = (name: string, index: number, classrooms: string[]): Stu
   role: 'STUDENT',
   displayName: name,
   appearanceRevision: 0,
+  deskCount: 12,
   appearance: makeStubAppearance(),
   classrooms: new Set(classrooms),
 });

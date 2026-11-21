@@ -15,6 +15,19 @@
   - PR into `develop`.
   - After the merge, run a local apply before the pipeline runs, then confirm the email subscriptions and check the timer (`infra/README.md`, Monitoring).
 
+## 2026-11-20 — Per-classroom layout from the desk count (#79)
+
+- **Status:** completed (pending PR into `develop`)
+- **Area / files:** `packages/contracts/src/index.ts`, `packages/contracts/src/classroom-layout.spec.ts`, `packages/contracts/src/realtime/generated/`, `apps/realtime/src/rooms/`, `apps/realtime/src/join/`, `apps/realtime/src/internal/classroom-layout-route.ts`, `apps/api/src/internal/realtime/`, `apps/api/src/platform/realtime/`, `apps/api/src/classrooms/classroom-invitations.service.ts`, `rules/api-contracts.md`, `rules/realtime-and-presence.md`, `docs/technical-justification.md`
+- **Change:**
+  - `buildClassroomLayout(deskCount)` replaces the fixed `CLASSROOM_LAYOUT`: rows of four desks, and a new row with the first desk that does not fit.
+  - The join verification carries `deskCount`, capped by `MAX_CLASSROOM_DESKS`.
+  - Each room builds its own layout and syncs `deskCount` in its state.
+  - After a desk auto-expansion commits, the API pushes the new count through the outbox to `/internal/classroom-layout`. Rooms only grow, and avatars left on a blocked spot move to a free spawn point.
+- **Reason:** Desks added by auto-expansion (#22) had no place in the 3D classroom or in server collisions.
+- **Verification:** Unit, e2e and DB integration specs (RED then GREEN) on an isolated temporary database; per-task reviews approved.
+- **Next step:** PR into `develop`. The front builds its scene from `state.deskCount` with the shared builder (front counterpart).
+
 ## 2026-11-20 — Chat inbox summaries and read markers (#124)
 
 - **Status:** in-progress
