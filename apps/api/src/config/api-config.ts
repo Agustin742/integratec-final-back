@@ -72,16 +72,6 @@ export interface ApiConfig {
   equipRateLimitWindowSeconds?: number;
   /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
   equipRateLimitMaxAttempts?: number;
-  /**
-   * Bedrock model invoked for the daily review (rules/ai-bot-and-daily-briefing.md:
-   * model, region and limits are configuration values). Defaults to an in-Region
-   * on-demand model available to AWS Free plan accounts in us-east-2.
-   */
-  bedrockModelId?: string;
-  /** Bedrock region for the daily review inference (defaults to us-east-2). */
-  bedrockRegion?: string;
-  /** Bounded timeout for one daily-review Bedrock call (defaults to 15s). */
-  bedrockInferenceTimeoutSeconds?: number;
   /** Maximum daily-question answer attempts per user per local day (defaults to 5). */
   dailyQuestionMaxAttempts?: number;
   /** Server-only API key for the OpenAI-compatible external LLM provider. Optional so boot succeeds before provisioning. */
@@ -159,12 +149,6 @@ export const MAX_EQUIP_RATE_LIMIT_ATTEMPTS = 1000;
 export const DEFAULT_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 60;
 export const DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS = 20;
 
-/** Bedrock inference bounds and defaults (HU-BOT-003). */
-export const DEFAULT_BEDROCK_MODEL_ID = 'amazon.nova-micro-v1:0';
-export const DEFAULT_BEDROCK_REGION = 'us-east-2';
-/** Upper bound for one inference call: the review MUST fall back instead of hanging. */
-export const MAX_BEDROCK_INFERENCE_TIMEOUT_SECONDS = 60;
-export const DEFAULT_BEDROCK_INFERENCE_TIMEOUT_SECONDS = 15;
 /** Per-user daily answer attempts: wrong answers allow retry, bounded per day. */
 export const MAX_DAILY_QUESTION_ATTEMPTS = 20;
 export const DEFAULT_DAILY_QUESTION_ATTEMPTS = 5;
@@ -254,10 +238,6 @@ const GRADE_WEIGHT_MESSAGE =
   'must be a finite decimal between 0.1 and 10 with at most 2 decimal places';
 const EQUIP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
 const EQUIP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_EQUIP_RATE_LIMIT_ATTEMPTS}`;
-const BEDROCK_MODEL_MESSAGE =
-  'must be a Bedrock model id such as amazon.nova-micro-v1:0 (in-Region on-demand inference in us-east-2)';
-const BEDROCK_REGION_MESSAGE = 'must be an AWS region name such as us-east-2';
-const BEDROCK_TIMEOUT_MESSAGE = 'must be a duration between 1s and 1m, such as 15s';
 const DAILY_QUESTION_ATTEMPTS_MESSAGE = `must be an integer between 1 and ${MAX_DAILY_QUESTION_ATTEMPTS}`;
 const AI_BASE_URL_MESSAGE =
   'must be an absolute http(s) URL without credentials, query string or fragment';
@@ -540,19 +520,6 @@ const envSchema = z
               .max(MAX_EQUIP_RATE_LIMIT_ATTEMPTS, EQUIP_RATE_LIMIT_MAX_MESSAGE),
           ),
       ),
-    BEDROCK_MODEL_ID: z
-      .string()
-      .default(DEFAULT_BEDROCK_MODEL_ID)
-      .pipe(z.string().regex(/^[a-z0-9][a-z0-9._:-]{0,255}$/, BEDROCK_MODEL_MESSAGE)),
-    BEDROCK_REGION: z
-      .string()
-      .default(DEFAULT_BEDROCK_REGION)
-      .pipe(z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d+$/, BEDROCK_REGION_MESSAGE)),
-    BEDROCK_INFERENCE_TIMEOUT: duration(
-      `${DEFAULT_BEDROCK_INFERENCE_TIMEOUT_SECONDS}s`,
-      MAX_BEDROCK_INFERENCE_TIMEOUT_SECONDS,
-      BEDROCK_TIMEOUT_MESSAGE,
-    ),
     DAILY_QUESTION_MAX_ATTEMPTS: boundedInt(
       DEFAULT_DAILY_QUESTION_ATTEMPTS,
       1,
@@ -803,9 +770,6 @@ export function loadApiConfig(env: Env): ApiConfig {
     gradeWeightExam: values.GRADE_WEIGHT_EXAM,
     equipRateLimitWindowSeconds: values.EQUIP_RATE_LIMIT_WINDOW,
     equipRateLimitMaxAttempts: values.EQUIP_RATE_LIMIT_MAX,
-    bedrockModelId: values.BEDROCK_MODEL_ID,
-    bedrockRegion: values.BEDROCK_REGION,
-    bedrockInferenceTimeoutSeconds: values.BEDROCK_INFERENCE_TIMEOUT,
     dailyQuestionMaxAttempts: values.DAILY_QUESTION_MAX_ATTEMPTS,
     aiProviderApiKey: values.AI_PROVIDER_API_KEY,
     aiProviderBaseUrl: values.AI_PROVIDER_BASE_URL,

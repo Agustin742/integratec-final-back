@@ -43,16 +43,15 @@ enablement (#40) is documented in [Bot materials](bot-materials.md).
   payload is built purely from PostgreSQL data, `generated` when the model summary
   succeeded; both count as delivered.
 
-## Bedrock inference
+## External AI provider inference (D20)
 
-- Calls run from NestJS only (`rules/ai-bot-and-daily-briefing.md`), through the
-  `DAILY_REVIEW_INFERENCE_PORT`; the default adapter invokes
-  `@aws-sdk/client-bedrock-runtime` with the SDK default provider chain (the EC2
-  instance role in production, like S3), so no provider keys exist in the API.
-- Model, region, timeout and the question attempt budget are configuration values:
-  `BEDROCK_MODEL_ID` (default `amazon.nova-micro-v1:0`, an in-Region on-demand model
-  available to AWS Free plan accounts), `BEDROCK_REGION` (default `us-east-2`),
-  `BEDROCK_INFERENCE_TIMEOUT` (default `15s`, max `1m`) and
+- Calls run from NestJS only (`rules/ai-bot-and-daily-briefing.md`, D20), through the
+  `DAILY_REVIEW_INFERENCE_PORT`; the default adapter (`AiDailyReviewInferenceAdapter`)
+  delegates completions to `CHAT_MODEL_PORT` (`OpenAiCompatibleAiAdapter`), sharing the
+  same configured external OpenAI-compatible provider as the Study Guide Bot.
+- Model, provider base URL, timeout and the question attempt budget are configuration
+  values: `AI_PROVIDER_API_KEY`, `AI_PROVIDER_BASE_URL`, `AI_CHAT_MODEL` (default
+  `gemini-2.5-flash`), `AI_REQUEST_TIMEOUT` (default `20s`, max `120s`) and
   `DAILY_QUESTION_MAX_ATTEMPTS` (default 5, max 20). See
   [Configuration](../README.md#configuration) and `apps/api/.env.example`.
 - **Fail closed:** any provider error, timeout, throttle or invalid output returns the
@@ -98,7 +97,7 @@ enablement (#40) is documented in [Bot materials](bot-materials.md).
 `deliveredAt`) and `DailyReviewQuestion` (unique per user + local day, prompt, JSON
 options, server-only `correctOption`, `materialTitle`, `attempts`, `answeredAt`) are
 additive only — migration
-`20261119230000_create_daily_review_deliveries_and_questions`. Both follow the user
+`20261121010000_create_daily_review_deliveries_and_questions`. Both follow the user
 row with an explicit cascade (`rules/data.md` deletion policy).
 
 ## Out of scope and open decisions

@@ -3,7 +3,7 @@ import type { DailyReviewSectionDto } from './daily-review.dto';
 /**
  * Daily-review summary generation boundary (HU-BOT-003, rules/ai-bot-and-daily-briefing.md).
  * The feature depends on this port, never on a concrete provider: the default
- * Bedrock adapter can be replaced or faked in tests without touching delivery.
+ * external AI provider adapter can be replaced or faked in tests without touching delivery.
  *
  * The input carries ONLY composed section data the user may already see (titles,
  * classroom names, due dates) through the same application services REST uses,

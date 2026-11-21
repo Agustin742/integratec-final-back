@@ -13,7 +13,7 @@ import { BotAskController } from './bot-ask.controller';
 import { BotAskService } from './bot-ask.service';
 import { BotMaterialsController } from './bot-materials.controller';
 import { BotMaterialsService } from './bot-materials.service';
-import { BedrockInferenceAdapter } from './bedrock-inference.adapter';
+import { AiDailyReviewInferenceAdapter } from './ai-daily-review-inference.adapter';
 import { BotRateLimiterService } from './bot-rate-limiter.service';
 import { DailyReviewController } from './daily-review.controller';
 import { DailyReviewService } from './daily-review.service';
@@ -43,13 +43,14 @@ import { TextExtractorService } from './text-extractor.service';
     AnswerKeyGuardService,
     TextExtractorService,
     DailyReviewService,
+    AiDailyReviewInferenceAdapter,
     OpenAiCompatibleAiAdapter,
     PgVectorMaterialIndexAdapter,
     { provide: CHAT_MODEL_PORT, useExisting: OpenAiCompatibleAiAdapter },
     { provide: EMBEDDING_MODEL_PORT, useExisting: OpenAiCompatibleAiAdapter },
     { provide: MATERIAL_INDEX_PORT, useExisting: PgVectorMaterialIndexAdapter },
     { provide: MATERIAL_RETRIEVAL_PORT, useExisting: PgVectorMaterialIndexAdapter },
-    { provide: DAILY_REVIEW_INFERENCE_PORT, useClass: BedrockInferenceAdapter },
+    { provide: DAILY_REVIEW_INFERENCE_PORT, useExisting: AiDailyReviewInferenceAdapter },
   ],
   // Consumed by MaterialsModule to exclude soft-removed materials from the bot.
   exports: [BotMaterialsService],

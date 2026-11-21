@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@aula/contracts": "workspace:*",
-    "@aws-sdk/client-bedrock-runtime": "3.1163.0",
     "@aws-sdk/client-s3": "3.1163.0",
     "@aws-sdk/s3-request-presigner": "3.1163.0",
     "@nestjs/common": "^11.0.10",

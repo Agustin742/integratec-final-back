@@ -65,9 +65,6 @@ describe('loadApiConfig', () => {
       gradeWeightExam: 1.5,
       equipRateLimitWindowSeconds: 60,
       equipRateLimitMaxAttempts: 20,
-      bedrockModelId: 'amazon.nova-micro-v1:0',
-      bedrockRegion: 'us-east-2',
-      bedrockInferenceTimeoutSeconds: 15,
       dailyQuestionMaxAttempts: 5,
       aiProviderApiKey: undefined,
       aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
@@ -96,33 +93,15 @@ describe('loadApiConfig', () => {
     });
   });
 
-  it('parses explicit Bedrock and daily-question values and rejects malformed ones', () => {
+  it('parses explicit daily-question attempt limits and rejects malformed ones', () => {
     expect(
       loadApiConfig({
         ...validEnv(),
-        BEDROCK_MODEL_ID: 'amazon.nova-lite-v1:0',
-        BEDROCK_REGION: 'us-east-1',
-        BEDROCK_INFERENCE_TIMEOUT: '30s',
         DAILY_QUESTION_MAX_ATTEMPTS: '10',
       }),
     ).toMatchObject({
-      bedrockModelId: 'amazon.nova-lite-v1:0',
-      bedrockRegion: 'us-east-1',
-      bedrockInferenceTimeoutSeconds: 30,
       dailyQuestionMaxAttempts: 10,
     });
-    expect(messageOf({ ...validEnv(), BEDROCK_MODEL_ID: 'Not A Model!' })).toContain(
-      'BEDROCK_MODEL_ID',
-    );
-    expect(messageOf({ ...validEnv(), BEDROCK_REGION: 'not-a-region' })).toContain(
-      'BEDROCK_REGION',
-    );
-    expect(messageOf({ ...validEnv(), BEDROCK_INFERENCE_TIMEOUT: '90s' })).toContain(
-      'BEDROCK_INFERENCE_TIMEOUT',
-    );
-    expect(messageOf({ ...validEnv(), BEDROCK_INFERENCE_TIMEOUT: '0s' })).toContain(
-      'BEDROCK_INFERENCE_TIMEOUT',
-    );
     for (const value of ['0', '21', 'x']) {
       expect(messageOf({ ...validEnv(), DAILY_QUESTION_MAX_ATTEMPTS: value })).toContain(
         'DAILY_QUESTION_MAX_ATTEMPTS',
