@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   DEFAULT_AI_CHUNK_MAX_CHARS,
@@ -23,6 +23,14 @@ import { EmptyExtractedTextError, TextExtractorService } from './text-extractor.
 export const DB_EMBEDDING_DIMENSION = 768;
 
 const EMBEDDING_BATCH_SIZE = 32;
+const CHUNK_TX_MAX_WAIT_MS = 10_000;
+
+function materialChunkLockKey(classroomId: string, materialId: string): bigint {
+  return createHash('sha256')
+    .update(`material-chunks:${classroomId.toLowerCase()}:${materialId.toLowerCase()}`)
+    .digest()
+    .readBigInt64BE(0);
+}
 
 /** Formats a validated vector into a safe pgvector literal (`[n1,n2,...]`). */
 export function formatVectorLiteral(vector: readonly number[], expectedDimension: number): string {
@@ -82,43 +90,57 @@ export class PgVectorMaterialIndexAdapter implements MaterialIndexPort, Material
 
     const literals = vectors.map((vector) => formatVectorLiteral(vector, DB_EMBEDDING_DIMENSION));
 
-    // Full replacement inside one transaction: a re-enable never reuses earlier chunks.
-    await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        DELETE FROM "material_chunks"
-        WHERE "classroom_id" = ${entry.classroomId}::uuid
-          AND "material_id" = ${entry.materialId}::uuid`;
+    // Full replacement inside one serialized transaction: concurrent index/remove
+    // calls for the same (classroom, material) cannot collide on chunk_index.
+    const lockKey = materialChunkLockKey(entry.classroomId, entry.materialId);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(${lockKey})`;
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]!;
-        const vectorLiteral = literals[i]!;
         await tx.$executeRaw`
-          INSERT INTO "material_chunks" (
-            "id",
-            "classroom_id",
-            "material_id",
-            "chunk_index",
-            "content",
-            "position",
-            "embedding"
-          ) VALUES (
-            ${randomUUID()}::uuid,
-            ${entry.classroomId}::uuid,
-            ${entry.materialId}::uuid,
-            ${chunk.chunkIndex},
-            ${chunk.content},
-            ${chunk.position},
-            ${vectorLiteral}::vector
-          )`;
-      }
-    });
+          DELETE FROM "material_chunks"
+          WHERE "classroom_id" = ${entry.classroomId}::uuid
+            AND "material_id" = ${entry.materialId}::uuid`;
+
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i]!;
+          const vectorLiteral = literals[i]!;
+          await tx.$executeRaw`
+            INSERT INTO "material_chunks" (
+              "id",
+              "classroom_id",
+              "material_id",
+              "chunk_index",
+              "content",
+              "position",
+              "embedding"
+            ) VALUES (
+              ${randomUUID()}::uuid,
+              ${entry.classroomId}::uuid,
+              ${entry.materialId}::uuid,
+              ${chunk.chunkIndex},
+              ${chunk.content},
+              ${chunk.position},
+              ${vectorLiteral}::vector
+            )`;
+        }
+      },
+      { maxWait: CHUNK_TX_MAX_WAIT_MS },
+    );
   }
 
   async remove(classroomId: string, materialId: string): Promise<void> {
-    await this.prisma.$executeRaw`
-      DELETE FROM "material_chunks"
-      WHERE "classroom_id" = ${classroomId}::uuid
-        AND "material_id" = ${materialId}::uuid`;
+    const lockKey = materialChunkLockKey(classroomId, materialId);
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(${lockKey})`;
+        await tx.$executeRaw`
+          DELETE FROM "material_chunks"
+          WHERE "classroom_id" = ${classroomId}::uuid
+            AND "material_id" = ${materialId}::uuid`;
+      },
+      { maxWait: CHUNK_TX_MAX_WAIT_MS },
+    );
   }
 
   async isIndexed(classroomId: string, materialId: string): Promise<boolean> {

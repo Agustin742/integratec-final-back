@@ -63,8 +63,8 @@ describe('PgVectorMaterialIndexAdapter (unit)', () => {
     return (first as { strings: readonly string[] }).strings.join('?');
   }
 
-  it('replaces all prior classroom/material chunks transactionally during index()', async () => {
-    const { adapter, executeRaw, embeddings } = buildAdapter();
+  it('acquires a per-material advisory lock and replaces prior chunks transactionally during index() and remove()', async () => {
+    const { adapter, executeRaw, queryRaw, embeddings } = buildAdapter();
 
     await adapter.index({
       classroomId,
@@ -75,6 +75,8 @@ describe('PgVectorMaterialIndexAdapter (unit)', () => {
     });
 
     expect(embeddings.embed).toHaveBeenCalledTimes(1);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(rawSqlText(queryRaw.mock.calls[0]!)).toContain('pg_advisory_xact_lock');
     // 1 delete + 2 chunk inserts inside the transaction.
     expect(executeRaw).toHaveBeenCalledTimes(3);
     const deleteSql = rawSqlText(executeRaw.mock.calls[0]!);
@@ -82,6 +84,12 @@ describe('PgVectorMaterialIndexAdapter (unit)', () => {
     const insertSql = rawSqlText(executeRaw.mock.calls[1]!);
     expect(insertSql).toContain('INSERT INTO "material_chunks"');
     expect(insertSql).toContain('::vector');
+
+    await adapter.remove(classroomId, materialId);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    expect(rawSqlText(queryRaw.mock.calls[1]!)).toContain('pg_advisory_xact_lock');
+    expect(executeRaw).toHaveBeenCalledTimes(4);
+    expect(rawSqlText(executeRaw.mock.calls[3]!)).toContain('DELETE FROM "material_chunks"');
   });
 
   it('fails closed when aiEmbeddingDimension mismatches the schema vector(768) column', async () => {

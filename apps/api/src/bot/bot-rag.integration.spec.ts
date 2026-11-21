@@ -318,4 +318,37 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
     expect(row).toEqual({ removedAt: null });
     expect(await indexPort.isIndexed(classroomA, pngMat)).toBe(false);
   });
+
+  it('serializes concurrent index() and remove() calls for the same material without unique constraint errors', async () => {
+    const entry = {
+      classroomId: classroomA,
+      materialId: pdfMat,
+      objectKey: `materials/${classroomA}/${pdfMat}`,
+      filename: 'bio-photosynthesis.pdf',
+      contentType: 'application/pdf',
+    };
+
+    // Start from empty chunks so concurrent transactions would both DELETE 0 rows and race on chunk_index=0 without advisory locking.
+    await indexPort.remove(classroomA, pdfMat);
+    const results = await Promise.all([
+      indexPort.index(entry),
+      indexPort.index(entry),
+      indexPort.index(entry),
+    ]);
+    expect(results).toHaveLength(3);
+
+    const rows = await prisma.$queryRaw<{ count: number }[]>`
+      SELECT COUNT(*)::int AS "count"
+      FROM "material_chunks"
+      WHERE "classroom_id" = ${classroomA}::uuid
+        AND "material_id" = ${pdfMat}::uuid`;
+    expect(rows[0]?.count).toBe(1);
+
+    // Concurrent enable + disable via BotMaterialsService must also settle cleanly without 23505 failures.
+    const mixed = await Promise.all([indexPort.index(entry), indexPort.remove(classroomA, pdfMat)]);
+    expect(mixed).toHaveLength(2);
+    // Re-index to leave fixture in a clean indexed state.
+    await botMaterials.enable(teacherA, classroomA, pdfMat);
+    expect(await indexPort.isIndexed(classroomA, pdfMat)).toBe(true);
+  });
 });
