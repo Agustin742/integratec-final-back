@@ -606,10 +606,8 @@ export class ActivitiesService {
   /**
    * True while a PUBLISHED, non-deleted exam is open right now (server time) in a
    * non-deleted classroom where `studentId` is an ACTIVE student. Single source of
-   * exam-in-progress state for the bot's daily review block
-   * (rules/activities-and-grading.md: the bot check MUST read the same state as
-   * this rule; the window matches `submissionWindow`: `opensAt <= now <= dueAt`,
-   * and a missing `opensAt` means open from publication).
+   * exam-in-progress state for the Study Guide Bot lockout and daily review rules
+   * (`opensAt <= now <= dueAt`; a missing `opensAt` means open from publication).
    */
   async hasExamInProgress(studentId: string): Promise<boolean> {
     const now = new Date();
@@ -618,7 +616,7 @@ export class ActivitiesService {
         type: ActivityType.EXAM,
         state: ActivityState.PUBLISHED,
         deletedAt: null,
-        dueAt: { gt: now },
+        dueAt: { gte: now },
         OR: [{ opensAt: { lte: now } }, { opensAt: null }],
         classroom: {
           deletedAt: null,

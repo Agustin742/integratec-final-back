@@ -16,8 +16,8 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 | Public entry | Caddy reverse proxy on the EC2 host | Terminates TLS with automatic Let's Encrypt certificates; redirects HTTP to HTTPS; routes API paths to NestJS and the reserved path or host to Colyseus with WebSocket upgrade; the only public listener (decision D13, see [Technical justification](../docs/technical-justification.md#d13-production-compute-on-a-single-ec2-host)) |
 | Compute | One EC2 host (`t3.small`, Amazon Linux 2023) running Docker Compose | Containers `caddy`, `api` (NestJS), and `realtime` (Colyseus); Lambda **MUST NOT** host Colyseus rooms |
 | Images | ECR | Versioned images per service, published by the CodeBuild pipeline and pulled by the host |
-| Database | RDS for PostgreSQL | Private subnets; reachable only from authorized services |
-| AI | Amazon Bedrock | Invoked from NestJS only |
+| Database | RDS for PostgreSQL | Private subnets; reachable only from authorized services (`pgvector` enabled for bot RAG chunks) |
+| AI | External OpenAI-compatible LLM provider (default Google Gemini API) | Invoked from NestJS only over HTTPS with server-only secret (`AI_PROVIDER_API_KEY`; see `D20`); no Bedrock IAM role required |
 | Objects | S3 | Access controlled from the backend; bucket not public by default |
 | Secrets | Secrets Manager | Read by the host at deploy or start and injected into containers as environment variables |
 | Observability | CloudWatch | Logs, metrics, and alarms |
@@ -42,8 +42,8 @@ AWS hosts the chosen technologies; it does not replace them. This rule fixes the
 
 ## Identity and secrets
 
-- The EC2 instance profile **MUST** grant least privilege: pulling from ECR, reading the specific Secrets Manager secrets, writing CloudWatch Logs, SSM, and later invoking the selected Bedrock models. Wildcard actions and resources **MUST NOT** be used where the actions and resources are known.
-- Containers share the instance role, so the separation between NestJS and Colyseus is by credentials, not by IAM: the database credentials and Bedrock calls belong to NestJS only, and Colyseus receives only its own service secret. Per-service IAM roles would need separate hosts or a return to a container orchestrator.
+- The EC2 instance profile **MUST** grant least privilege: pulling from ECR, reading the specific Secrets Manager secrets, writing CloudWatch Logs, and SSM. Wildcard actions and resources **MUST NOT** be used where the actions and resources are known.
+- Containers share the instance role, so the separation between NestJS and Colyseus is by credentials, not by IAM: the database credentials and external AI API key belong to NestJS only, and Colyseus receives only its own service secret. Per-service IAM roles would need separate hosts or a return to a container orchestrator.
 - Secrets and connection strings **MUST** come from Secrets Manager or equivalent secure injection, never from images, Git, or logs. Long-lived access keys **MUST NOT** be used by services.
 - Terraform and pipeline roles **MUST** stay separate from the instance profile.
 - Humans **SHOULD** use individual identities with limited permissions; shared root credentials **MUST NOT** be used.
@@ -71,5 +71,4 @@ Evidence **MUST** identify the environment and deployed revision and confirm: ex
 - RDS instance sizing.
 - S3 usage (uploads are not defined yet).
 - A real domain to replace the interim `sslip.io` name, if the team obtains one.
-- Amazon Bedrock model: the Free plan does not support global or geographic cross-Region inference, so the bot **MUST** use a model with in-Region on-demand inference in `us-east-2` (to be checked in the console; see [D5](../docs/technical-justification.md#d5-aws-region)).
 - Scaling strategy for Colyseus beyond one instance.

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ServerError } from '@colyseus/core';
 import { authenticateJoin } from './authenticate-join';
 import { JoinDeniedError, type JoinVerifier } from '../join/join-verifier';
+import { makeStubAppearance } from '../testing/stub-api';
 
 const CLASSROOM_ID = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const IDENTITY = {
@@ -10,6 +11,9 @@ const IDENTITY = {
   classroomId: CLASSROOM_ID,
   role: 'STUDENT' as const,
   displayName: 'Ada Lovelace',
+  appearanceRevision: 1,
+  appearance: makeStubAppearance(),
+  deskCount: 13,
 };
 
 const verifierReturning = (impl: JoinVerifier['verify']) => ({
@@ -37,6 +41,9 @@ describe('authenticateJoin', () => {
       classroomId: CLASSROOM_ID,
       role: 'STUDENT',
       displayName: 'Ada Lovelace',
+      appearanceRevision: IDENTITY.appearanceRevision,
+      appearance: IDENTITY.appearance,
+      deskCount: 13,
     });
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);
   });

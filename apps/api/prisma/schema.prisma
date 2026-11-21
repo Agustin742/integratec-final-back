@@ -118,13 +118,14 @@ enum EquippedSlot {
 }
 
 model User {
-  id               String           @id @default(uuid()) @db.Uuid
-  email            String           @unique @db.VarChar(255)
-  passwordHash     String           @map("password_hash") @db.VarChar(255)
-  displayName      String           @map("display_name") @db.VarChar(100)
-  registrationPath RegistrationPath @map("registration_path")
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String           @id @default(uuid()) @db.Uuid
+  email              String           @unique @db.VarChar(255)
+  passwordHash       String           @map("password_hash") @db.VarChar(255)
+  displayName        String           @map("display_name") @db.VarChar(100)
+  registrationPath   RegistrationPath @map("registration_path")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  appearanceRevision Int              @default(0) @map("appearance_revision")
 
   avatarConfig             AvatarConfiguration?
   sessions                 Session[]
@@ -158,6 +159,7 @@ model User {
   streak                   Streak?               @relation("StudentStreak")
   streakQualifyingDays     StreakQualifyingDay[] @relation("StudentStreakQualifyingDays")
   badges                   StudentBadge[]        @relation("StudentBadges")
+  chatReadMarkers          ChatReadMarker[]      @relation("ChatReadMarkerUser")
   dailyReviewDeliveries    DailyReviewDelivery[] @relation("UserDailyReviewDeliveries")
   dailyReviewQuestions     DailyReviewQuestion[] @relation("UserDailyReviewQuestions")
 
@@ -277,26 +279,28 @@ model Classroom {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  school             School?               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
-  independentTeacher User?                 @relation("IndependentTeacherClassrooms", fields: [independentTeacherId], references: [id], onDelete: Restrict)
-  memberships        ClassroomMembership[]
-  desks              Desk[]
-  pet                ClassroomPet?
-  invitations        Invitation[]
-  parentLinks        ParentLink[]
-  notifications      Notification[]
-  activityMetrics    ActivityMetric[]
-  pointTransactions  PointTransaction[]
-  shopItemOverrides  ClassroomShopItem[]
-  classroomItems     ClassroomItem[]
-  studentPurchases   StudentPurchase[]
-  activities         Activity[]
-  announcements      Announcement[]
-  messages           Message[]
-  studyMaterials     StudyMaterial[]
-  equippedItems      EquippedItem[]
-  botConfig          BotConfig?
+  school              School?               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  independentTeacher  User?                 @relation("IndependentTeacherClassrooms", fields: [independentTeacherId], references: [id], onDelete: Restrict)
+  memberships         ClassroomMembership[]
+  desks               Desk[]
+  pet                 ClassroomPet?
+  invitations         Invitation[]
+  parentLinks         ParentLink[]
+  notifications       Notification[]
+  activityMetrics     ActivityMetric[]
+  pointTransactions   PointTransaction[]
+  shopItemOverrides   ClassroomShopItem[]
+  classroomItems      ClassroomItem[]
+  studentPurchases    StudentPurchase[]
+  activities          Activity[]
+  announcements       Announcement[]
+  messages            Message[]
+  chatReadMarkers     ChatReadMarker[]
+  studyMaterials      StudyMaterial[]
+  equippedItems       EquippedItem[]
+  botConfig           BotConfig?
   botAllowedMaterials AllowedMaterial[]
+  materialChunks      MaterialChunk[]
 
   @@index([schoolId])
   @@index([independentTeacherId])
@@ -317,10 +321,11 @@ model StudyMaterial {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  author    User      @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  removedBy User?     @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
-  botAllowances AllowedMaterial[]
+  classroom     Classroom         @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  author        User              @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  removedBy      User?             @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
+  botAllowances  AllowedMaterial[]
+  materialChunks MaterialChunk[]
 
   @@index([classroomId, removedAt, createdAt, id])
   @@index([authorId])
@@ -623,8 +628,8 @@ model SubmissionAnswer {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
-  question    Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
-  option      Option     @relation(fields: [optionId], references: [id], onDelete: Restrict)
+  question   Question   @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  option     Option     @relation(fields: [optionId], references: [id], onDelete: Restrict)
 
   @@unique([submissionId, questionId])
   @@unique([submissionId, position])
@@ -911,10 +916,11 @@ model Message {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  classroom  Classroom?  @relation(fields: [classroomId], references: [id], onDelete: Restrict)
-  parentLink ParentLink? @relation(fields: [parentLinkId], references: [id], onDelete: Restrict)
-  author     User        @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  hiddenBy   User?       @relation("MessageModerator", fields: [hiddenById], references: [id], onDelete: Restrict)
+  classroom   Classroom?       @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  parentLink  ParentLink?      @relation(fields: [parentLinkId], references: [id], onDelete: Restrict)
+  author      User             @relation("MessageAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  hiddenBy    User?            @relation("MessageModerator", fields: [hiddenById], references: [id], onDelete: Restrict)
+  readMarkers ChatReadMarker[]
 
   @@index([classroomId, createdAt, id])
   @@index([classroomId, authorId, createdAt, id])
@@ -922,6 +928,26 @@ model Message {
   @@index([authorId])
   @@index([hiddenById])
   @@map("messages")
+}
+
+/// One chat read marker per (user, classroom): the newest visible message the user has seen.
+/// Only ever moves forward by (createdAt, id); `lastReadAt` copies the marked message's
+/// createdAt so unread counts compare against the marker without joining the message row.
+model ChatReadMarker {
+  userId            String   @map("user_id") @db.Uuid
+  classroomId       String   @map("classroom_id") @db.Uuid
+  lastReadMessageId String   @map("last_read_message_id") @db.Uuid
+  lastReadAt        DateTime @map("last_read_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user        User      @relation("ChatReadMarkerUser", fields: [userId], references: [id], onDelete: Restrict)
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  lastMessage Message   @relation(fields: [lastReadMessageId], references: [id], onDelete: Restrict)
+
+  @@id([userId, classroomId])
+  @@index([classroomId])
+  @@index([lastReadMessageId])
+  @@map("chat_read_markers")
 }
 
 /// Resolved @ reference in a source resource (announcement or message).
@@ -1097,8 +1123,30 @@ model AllowedMaterial {
   @@map("allowed_materials")
 }
 
+/// Chunked plain text and 768-dimensional vector embedding extracted from a study material
+/// and partitioned by classroom for Study Guide Bot RAG (HU-BOT-002).
+model MaterialChunk {
+  id          String                       @id @default(uuid()) @db.Uuid
+  classroomId String                       @map("classroom_id") @db.Uuid
+  materialId  String                       @map("material_id") @db.Uuid
+  chunkIndex  Int                          @map("chunk_index")
+  content     String                       @db.Text
+  position    String                       @db.VarChar(80)
+  embedding   Unsupported("vector(768)")
+  createdAt   DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  classroom Classroom     @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  material  StudyMaterial @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  @@unique([classroomId, materialId, chunkIndex])
+  @@index([classroomId, materialId])
+  // `material_chunks_embedding_hnsw_idx` (USING hnsw vector_cosine_ops) lives in SQL migration
+  // `20261121000000_create_material_chunks` because Prisma 6 PSL cannot express `USING hnsw`.
+  @@map("material_chunks")
+}
+
 /// Content source of a delivered daily review (RN-13): `GENERATED` when the
-/// Bedrock summary was produced, `STRUCTURED` on the provider fallback.
+/// AI summary was produced, `STRUCTURED` on the provider fallback.
 enum DailyReviewContentKind {
   GENERATED
   STRUCTURED
@@ -1109,11 +1157,11 @@ enum DailyReviewContentKind {
 /// makes concurrent first connections deliver once; the row is inserted only
 /// after the content is ready, so a failed composition never consumes the day.
 model DailyReviewDelivery {
-  id          String                @id @default(uuid()) @db.Uuid
-  userId      String                @map("user_id") @db.Uuid
-  localDay    String                @map("local_day") @db.VarChar(10)
+  id          String                 @id @default(uuid()) @db.Uuid
+  userId      String                 @map("user_id") @db.Uuid
+  localDay    String                 @map("local_day") @db.VarChar(10)
   contentKind DailyReviewContentKind @map("content_kind")
-  deliveredAt DateTime              @default(now()) @map("delivered_at") @db.Timestamptz(6)
+  deliveredAt DateTime               @default(now()) @map("delivered_at") @db.Timestamptz(6)
 
   // Derived per-user state: follows the user row (explicit cascade, `rules/data.md`).
   user User @relation("UserDailyReviewDeliveries", fields: [userId], references: [id], onDelete: Cascade)

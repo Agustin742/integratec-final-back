@@ -41,8 +41,8 @@
 #   1. Reads the non-secret config of each service from SSM Parameter Store, by path
 #      /<name-prefix>/config/<service> (ssm:GetParametersByPath), including DB_HOST, DB_PORT,
 #      DB_NAME and DB_SECRET_ARN of the api.
-#   2. Reads the generated secrets (<name-prefix>/jwt-secret, invitation-token-key,
-#      internal-service-secret) and the RDS master secret from Secrets Manager.
+#   2. Reads the application secrets (<name-prefix>/jwt-secret, invitation-token-key,
+#      internal-service-secret, ai-provider-api-key) and the RDS master secret from Secrets Manager.
 #   3. Builds DATABASE_URL as postgresql://user:password@DB_HOST:DB_PORT/DB_NAME (user and
 #      password URL-encoded, sslmode=require because RDS for
 #      PostgreSQL 16 enforces TLS) and exports it for the api and the migrate job only:
@@ -108,7 +108,7 @@ done
 
 # Everything the caller may have exported under the names used below is discarded: the values
 # must come from AWS, not from the caller's shell.
-unset JWT_SECRET INVITATION_TOKEN_KEY INTERNAL_SERVICE_SECRET DATABASE_URL \
+unset JWT_SECRET INVITATION_TOKEN_KEY INTERNAL_SERVICE_SECRET AI_PROVIDER_API_KEY DATABASE_URL \
   ALLOWED_ORIGINS PASSWORD_RESET_URL_BASE S3_REGION S3_BUCKET REALTIME_INTERNAL_URL API_INTERNAL_URL \
   LOG_GROUP_PREFIX DB_HOST DB_PORT DB_NAME DB_SECRET_ARN DB_ENDPOINT
 
@@ -252,6 +252,7 @@ fi
 internal_service_secret="$(read_secret INTERNAL_SERVICE_SECRET "${name_prefix}/internal-service-secret")"
 jwt_secret="$(read_secret JWT_SECRET "${name_prefix}/jwt-secret")"
 invitation_token_key="$(read_secret INVITATION_TOKEN_KEY "${name_prefix}/invitation-token-key")"
+ai_provider_api_key="$(read_secret AI_PROVIDER_API_KEY "${name_prefix}/ai-provider-api-key")"
 
 master_json="$(read_secret "RDS master secret" "$db_secret_arn")"
 db_user="$(json_member "$master_json" username)" || fail "RDS master secret: no readable username; nothing was started."
@@ -278,7 +279,8 @@ done <<<"$registries"
   export API_IMAGE="$api_image" REALTIME_IMAGE="$realtime_image" MIGRATE_IMAGE="$migrate_image" SITE_ADDRESS="$site_address"
   export AWS_REGION="$region" LOG_GROUP_PREFIX="/${name_prefix}"
   export JWT_SECRET="$jwt_secret" INVITATION_TOKEN_KEY="$invitation_token_key"
-  export INTERNAL_SERVICE_SECRET="$internal_service_secret" DATABASE_URL="$database_url"
+  export INTERNAL_SERVICE_SECRET="$internal_service_secret" AI_PROVIDER_API_KEY="$ai_provider_api_key"
+  export DATABASE_URL="$database_url"
   export ALLOWED_ORIGINS="${api_config[ALLOWED_ORIGINS]}" PASSWORD_RESET_URL_BASE="${api_config[PASSWORD_RESET_URL_BASE]}"
   export S3_REGION="${api_config[S3_REGION]}" S3_BUCKET="${api_config[S3_BUCKET]}"
   export REALTIME_INTERNAL_URL="${api_config[REALTIME_INTERNAL_URL]}" API_INTERNAL_URL="${realtime_config[API_INTERNAL_URL]}"

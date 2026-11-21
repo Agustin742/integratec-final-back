@@ -92,6 +92,33 @@ After moderation students stop seeing the row entirely, including its text and
 mentions; teacher-level staff keep the full history with body, author, mentions,
 moderator and time.
 
+## Realtime delivery (#48)
+
+The browser sends messages through `POST /classrooms/:id/messages`; it does not
+send chat commands through Colyseus. NestJS writes the message, mentions,
+notifications, participation metric and a minimal realtime outbox event in the
+same transaction. The outbox stores only `classroomId` and `messageId`, not a
+second copy of the message body. Right after the transaction commits, NestJS
+asks the outbox dispatcher to deliver exactly that event (best effort, never
+awaited by the REST response); the regular poll stays as the retry path. Its
+handler reads the persisted message and mentions and calls Colyseus
+`POST /internal/chat-events` with the service secret. Colyseus validates the shared contract and broadcasts only to
+live rooms registered for that classroom. A Colyseus outage never undoes the
+REST write; outbox retries delivery and the paginated history endpoint is the
+recovery source. `chat:message.hidden` gets the same larger retry budget as
+eviction (12 attempts, about 2.8 hours) because students keep seeing a
+moderated message until it lands; `chat:message` keeps the default budget since
+history recovers a missed live message.
+
+The server-to-client `chat:message` event carries the persisted send DTO. The
+`chat:message.hidden` event carries only `messageId` and `hiddenAt`; students
+remove that row, while staff reload history for the moderator audit fields.
+Outbox delivery is at least once and events may be duplicated or reordered.
+Clients deduplicate by message ID, retain a hidden-ID tombstone if the hide
+event arrives before creation, and do not resurrect an older `createdAt`.
+Clients treat REST history as authoritative, including after reconnect.
+Message bodies and identifiers are not written to failure logs.
+
 ## Send application service
 
 `ChatService.send` reuses shared access verification and the existing exported
@@ -120,6 +147,60 @@ tests exercise the registered application, validation, error envelope and real
 persisted authorization; only session verification is mocked. They do not prove
 JWT cryptography, session expiry or revocation behavior.
 
+## Inbox and unread markers (#124)
+
+`GET /chats` is the caller's inbox: one summary per classroom where they are a current
+student or staff member. Classroom visibility reuses the access derivation of chat
+history (`AccessVerificationService.listAccessibleClassrooms`), so parents (who resolve
+to `PARENT`), removed members and strangers get no entry. At most 100 classrooms are
+considered (ordered by name before the cap); the response is `{ items }` and is not
+paginated.
+
+```json
+{
+  "items": [
+    {
+      "classroomId": "uuid",
+      "classroomName": "Alpha",
+      "lastMessage": {
+        "id": "uuid",
+        "authorId": "uuid",
+        "authorDisplayName": "Ana",
+        "bodyPreview": "Whitespace-collapsed text, at most 120 characters",
+        "createdAt": "2026-11-20T12:00:01.000Z"
+      },
+      "unreadCount": 2
+    }
+  ]
+}
+```
+
+- `lastMessage` is the latest **visible** message, or `null`. Hidden messages never
+  appear in the preview and never count as unread, for any role (staff included).
+  A preview longer than 120 characters ends with an ellipsis (still 120 in total).
+- Order: latest message `createdAt` DESC (id DESC on ties); classrooms without
+  messages last, by name.
+- Unread = visible messages by **other** users strictly after the caller's marker by
+  `(createdAt, id)`; with no marker, every visible message from others. Own messages
+  never count.
+- All message data comes from one SQL statement (lateral latest-message and count
+  per classroom), so there is no per-classroom query and the numbers share one snapshot.
+
+`PUT /classrooms/{id}/messages/read-marker` with `{ "messageId": "uuid" }` returns 204.
+Access is the same as history (parents 403, strangers and removed members 404). The
+message must be a visible message of that classroom (unknown, foreign or hidden: 404;
+malformed or extra fields: 400). The marker only moves forward by `(createdAt, id)`:
+one `INSERT ... ON CONFLICT DO UPDATE ... WHERE old < new` statement makes it atomic
+and idempotent, so an older or repeated request, or a race with a newer one, never
+moves it back. No rate limit applies; existing read endpoints have none.
+
+Storage: `chat_read_markers` (migration `20261120010000_create_chat_read_markers`),
+primary key `(user_id, classroom_id)`, `last_read_message_id`, `last_read_at` (copied in
+SQL from the message `created_at`, keeping its precision) and `updated_at`. All three
+foreign keys are `RESTRICT`, like `messages`: chat rows are never deleted, so a marker
+cannot dangle and `last_read_message_id` is `NOT NULL`. The seed reset clears markers
+before messages.
+
 ## Approved policy and remaining endpoint work
 
 Alejo approved REST send, non-empty trimmed text up to 2,000 characters, at most
@@ -144,7 +225,10 @@ explicitly; no environment file is loaded. Never point these checks at shared da
 pnpm --filter @aula/api exec prisma validate
 pnpm --filter @aula/api exec prisma generate
 pnpm --filter @aula/api exec prisma migrate deploy
-pnpm --filter @aula/api exec vitest run src/chat/chat-persistence.integration.spec.ts src/chat/chat-send.integration.spec.ts src/chat/chat-http.integration.spec.ts --no-file-parallelism --pool=threads --maxWorkers=2 --minWorkers=1
+pnpm --filter @aula/api exec vitest run src/chat/chat-persistence.integration.spec.ts src/chat/chat-send.integration.spec.ts src/chat/chat-http.integration.spec.ts src/chat/chat-inbox.service.spec.ts src/chat/chat-inbox.integration.spec.ts --no-file-parallelism --pool=threads --maxWorkers=2 --minWorkers=1
+pnpm --filter @aula/api exec vitest run src/platform/realtime/realtime-chat.spec.ts src/openapi/openapi.spec.ts
+pnpm --filter @aula/realtime exec vitest run src/internal/chat-events-route.spec.ts src/rooms/room-directory.spec.ts src/rooms/classroom-room.spec.ts
+pnpm --filter @aula/contracts exec vitest run src/index.spec.ts
 ```
 
 Storage-constraint tests roll back every synthetic fixture. Service/HTTP tests
@@ -155,3 +239,6 @@ Rejection checks compare public history before/after (including total, items and
 mentions), supplemented by database counts. Invalid sends are followed by five
 accepted sends to verify quota preservation. Read tests cover pagination ties,
 role-filtered audit, retained attribution, and concurrent count/items/mention consistency.
+Realtime tests cover transactional outbox metadata, post-commit message lookup,
+authenticated internal delivery, classroom isolation, moderation idempotency
+under concurrent requests, and fallback to REST history.

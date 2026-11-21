@@ -17,7 +17,7 @@
 
 ## 1. WebSockets y Colyseus
 
-Todo lo descrito es **diseño propuesto**, no implementado. El sistema tiene dos planos de comunicación con responsabilidades disjuntas. Todo lo que debe sobrevivir a la sesión —usuarios, sesiones, escuelas, aulas, membresías, actividades, calificaciones, mensajes, configuración de avatar— viaja por REST/HTTPS hacia NestJS y termina en Amazon RDS for PostgreSQL ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Lo efímero —posición de avatares, presencia, congelamiento, entrada y salida, notificaciones al aula activa— viaja por WSS sobre Colyseus. La regla que une ambos planos es una sola: toda acción persistente se envía a NestJS, se valida y se guarda en RDS, y **recién entonces** se notifica a los clientes conectados al aula mediante Colyseus ([Architecture](../../../rules/architecture.md)). Colyseus nunca es la autoridad de un dato persistente y no accede a la base. Socket.IO está excluido del MVP y no sustituye a Colyseus; el MVP corre una única instancia de Colyseus, y escalarla exige estrategia de presencia, matchmaking, ruteo y reconexión ([Realtime and presence](../../../rules/realtime-and-presence.md#scaling-and-deployment)).
+El flujo de chat de #48 está implementado; los demás eventos de esta vista siguen siendo **diseño propuesto**. El sistema tiene dos planos de comunicación con responsabilidades disjuntas. Todo lo que debe sobrevivir a la sesión —usuarios, sesiones, escuelas, aulas, membresías, actividades, calificaciones, mensajes, configuración de avatar— viaja por REST/HTTPS hacia NestJS y termina en Amazon RDS for PostgreSQL ([documento maestro](../../../master-document.md#62-canales-y-propiedad-de-los-datos)). Lo efímero —posición de avatares, presencia, congelamiento, entrada y salida, notificaciones al aula activa— viaja por WSS sobre Colyseus. La regla que une ambos planos es una sola: toda acción persistente se envía a NestJS, se valida y se guarda en RDS, y **recién entonces** se notifica a los clientes conectados al aula mediante Colyseus ([Architecture](../../../rules/architecture.md)). Colyseus nunca es la autoridad de un dato persistente y no accede a la base. Socket.IO está excluido del MVP y no sustituye a Colyseus; el MVP corre una única instancia de Colyseus, y escalarla exige estrategia de presencia, matchmaking, ruteo y reconexión ([Realtime and presence](../../../rules/realtime-and-presence.md#scaling-and-deployment)).
 
 Conviene separar dos conceptos: un aula (`Classroom`) almacenada en PostgreSQL no es una `Room` de Colyseus. La `Room` es una sesión en memoria, descartable, que se puede crear, destruir y recrear sin perder datos del producto. El servidor controla la correspondencia: una `Room` pertenece a exactamente un aula persistente, y ningún identificador enviado por el cliente la establece. Usuarios de aulas o escuelas distintas nunca comparten una `Room`.
 
@@ -64,7 +64,8 @@ Los nombres parten de los eventos ilustrativos del [documento maestro](../../../
 | `avatar:state` | servidor → cliente | simulación con la posición autoritativa del avatar | `{ userId, position, yaw, ts }` | No |
 | `presence:changed` | servidor → cliente | un miembro entra, sale o cambia de estado dentro del aula | `{ classroomId, userId, status }` | No |
 | `classroom:joined` | servidor → cliente | el aula aceptó al cliente y la presencia quedó sincronizada | `{ classroomId, userId }` | No |
-| `chat:message` | servidor → cliente | NestJS confirmó el `INSERT` del mensaje y Colyseus lo difunde a destinatarios autorizados | `{ classroomId, messageId, body, sentAt }` | Indirecto (vía NestJS) |
+| `chat:message` | servidor → cliente | Outbox tras el commit REST; Colyseus lo difunde a la room del aula | `ChatMessagePayload { id, classroomId, authorId, body, mentionedUserIds, createdAt }` | Indirecto (vía NestJS) |
+| `chat:message.hidden` | servidor → cliente | Outbox tras la primera moderación confirmada | `{ messageId, hiddenAt }`; el staff obtiene el detalle de auditoría por REST | Indirecto (vía NestJS) |
 | `chat:muted` | servidor → cliente | el profesor silenció o reactivó el chat; NestJS persistió el estado | `{ classroomId, muted }` | Indirecto (vía NestJS) |
 | `activity:published` | servidor → cliente | NestJS confirmó la publicación de una actividad | `{ classroomId, activityId }` | Indirecto (vía NestJS) |
 | `grade:published` | servidor → cliente | NestJS confirmó una calificación; solo al alumno afectado | `{ userId, submissionId }` | Indirecto (vía NestJS) |
@@ -109,8 +110,8 @@ Reglas operativas:
 
 1. **Autoridad única de escritura:** NestJS, con Prisma como único acceso a RDS. Colyseus no persiste nada y no puede promover un estado efímero a persistente por su cuenta.
 2. **Nunca se persiste lo efímero:** posición, orientación, estado de presencia, asignación de pupitre, bloqueo de congelamiento y conexiones no son filas de la base. El tiempo conectado se informa a NestJS como agregado, no por tick ([Activities and grading](../../../rules/activities-and-grading.md)).
-3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual, solo se pierde la difusión. La recuperación de notificaciones perdidas es obligatoria según [Architecture](../../../rules/architecture.md#integration-between-nestjs-and-colyseus): REST es la fuente de verdad y los clientes se reconcilian por ahí; el protocolo concreto sigue **abierto**.
-4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada y el fallo es del plano efímero. No hay garantía de entrega exacta ni de deduplicación definida.
+3. **Si Colyseus está caído, REST sigue siendo correcto:** la acción se valida y se guarda igual. Para chat, el outbox reintenta y el historial REST permite recuperar mensajes perdidos; otros protocolos de reconciliación siguen abiertos.
+4. **Si la difusión falla después de escribir, la escritura no se revierte:** ya está confirmada y el fallo es del plano efímero. La entrega de chat es al menos una vez y puede duplicarse o reordenarse; los clientes deduplican por `id` y REST es la fuente de verdad.
 5. **La autorización se verifica siempre en el servidor:** NestJS confirma sesión y acceso vigente antes de unir o reconectar al cliente; ni el cliente ni Colyseus deciden permisos por su cuenta. Cuando el acceso cambia con el cliente conectado, el servidor lo retira de la `Room` y rechaza la reconexión; el mecanismo de propagación es **abierto**.
 6. **Estado persistente que afecta al aula viva:** silencio de chat, bloqueo de colaboración y juegos deshabilitados los guarda NestJS, y Colyseus los recarga desde NestJS al crear la `Room` y en cada ingreso.
 
@@ -137,9 +138,9 @@ Según [Realtime and presence](../../../rules/realtime-and-presence.md#open-deci
 | Tick rate, reconciliación de movimiento y valores de límite por conexión | abierto |
 | Política de conexiones duplicadas y propagación de cambios de acceso a las `Room` vivas | abierto |
 | Ventana de reconexión y backoff | abierto |
-| Envío del chat por REST o por mensaje realtime | abierto |
+| Envío del chat por REST o por mensaje realtime | resuelto en #48: REST persiste; outbox difunde después del commit |
 | Mecanismo de sincronización colaborativa (estado de Colyseus o Yjs) | abierto |
-| Transporte de anuncios de NestJS a Colyseus | abierto |
+| Transporte de chat NestJS→Colyseus | resuelto en #48: outbox + HTTP interno autenticado; otros anuncios siguen abiertos |
 | Distribución de tipos de mensajes y estado realtime | resuelto en D8 (generados con `@colyseus/schema` codegen y `packages/contracts`, commiteados); rutas exactas por fijar en el bootstrap |
 | Escalado de Colyseus más allá de una instancia | abierto |
 

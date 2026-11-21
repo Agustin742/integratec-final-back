@@ -1,7 +1,8 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { AccessVerificationService } from '../../access/access-verification.service';
 import { SessionVerifier } from '../../auth/session-verifier.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { memberAppearanceFor, type ReadBaseAppearanceOptions } from '../../users/member-appearance';
 import type { JoinVerificationResponseDto } from './realtime-join.dto';
 
 /**
@@ -10,6 +11,8 @@ import type { JoinVerificationResponseDto } from './realtime-join.dto';
  */
 @Injectable()
 export class RealtimeAccessService {
+  private readonly logger = new Logger(RealtimeAccessService.name);
+
   constructor(
     private readonly sessions: SessionVerifier,
     private readonly access: AccessVerificationService,
@@ -48,17 +51,30 @@ export class RealtimeAccessService {
     if (myRole === 'PARENT') {
       throw new ForbiddenException('Live classroom access is not available for this role');
     }
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { displayName: true },
-    });
-    if (user === null) throw new UnauthorizedException();
+    const [{ displayName, appearanceRevision, appearance }, deskCount] = await Promise.all([
+      memberAppearanceFor(this.prisma, userId, classroom.id, this.unsupportedAppearanceOptions()),
+      this.prisma.desk.count({ where: { classroomId: classroom.id } }),
+    ]);
     return {
       userId,
       sessionId,
       classroomId: classroom.id,
       role: myRole,
-      displayName: user.displayName,
+      displayName,
+      appearance,
+      appearanceRevision,
+      deskCount,
+    };
+  }
+
+  /**
+   * Same semantics as `UsersService.readAppearance`: unsupported stored JSON falls back to the
+   * default avatar with a constant-only warning.
+   */
+  private unsupportedAppearanceOptions(): ReadBaseAppearanceOptions {
+    return {
+      onUnsupported: () =>
+        this.logger.warn('Unsupported stored base appearance; using default avatar.'),
     };
   }
 }

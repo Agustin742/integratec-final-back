@@ -23,8 +23,10 @@ async function main(): Promise<void> {
   await prisma.activityForumPost.deleteMany();
   await prisma.activityForumThread.deleteMany();
   await prisma.mention.deleteMany();
+  await prisma.chatReadMarker.deleteMany();
   await prisma.message.deleteMany();
   await prisma.announcement.deleteMany();
+  await prisma.$executeRaw`DELETE FROM "material_chunks"`;
   await prisma.allowedMaterial.deleteMany();
   await prisma.botConfig.deleteMany();
   await prisma.studyMaterial.deleteMany();

@@ -1,6 +1,12 @@
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, MembershipState, RegistrationPath } from '@prisma/client';
+import {
+  ClassroomRole,
+  EquippedSlot,
+  MembershipState,
+  RegistrationPath,
+  ShopItemKind,
+} from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AccessModule } from '../../access/access.module';
@@ -10,6 +16,7 @@ import { ApiConfigModule } from '../../config/config.module';
 import { configureHttp } from '../../http/configure-http';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DEFAULT_AVATAR } from '../../users/avatar.dto';
 import { INTERNAL_SERVICE_SECRET_HEADER } from './internal-service.guard';
 import { RealtimeJoinModule } from './realtime-join.module';
 
@@ -102,6 +109,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
   });
 
   afterAll(async () => {
+    await prisma?.desk.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroomMembership.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.parentLink.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroom.deleteMany({ where: { id: { in: classroomIds } } });
@@ -122,7 +130,103 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       classroomId,
       role: 'TEACHER',
       displayName: 'rv-teacher',
+      appearanceRevision: 0,
+      deskCount: 0,
+      appearance: {
+        baseAvatar: { ...DEFAULT_AVATAR },
+        items: { head: null, face: null, back: null, desk_decor: null },
+      },
     });
+  });
+
+  it('answers the member appearance from persisted state (#114)', async () => {
+    await prisma.avatarConfiguration.create({
+      data: {
+        userId: studentId,
+        appearance: {
+          bodyId: 'female',
+          hairId: 'afro',
+          topId: 'tshirt',
+          hairColor: '#AF6D63',
+          clothingColor: '#75B7DA',
+        },
+      },
+    });
+    const shopItem = await prisma.shopItem.create({
+      data: {
+        code: `rv-appearance-cap-${ts}`,
+        name: 'RV Appearance Cap',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 10,
+      },
+    });
+    const equipped = await prisma.equippedItem.create({
+      data: {
+        classroomId,
+        studentId,
+        slot: EquippedSlot.BACK,
+        shopItemId: shopItem.id,
+      },
+    });
+    try {
+      const res = await post({
+        userId: studentId,
+        sessionId: studentSessionId,
+        classroomId,
+      }).expect(200);
+      expect(res.body.appearance).toEqual({
+        baseAvatar: {
+          bodyId: 'female',
+          hairId: 'afro',
+          topId: 'tshirt',
+          hairColor: '#AF6D63',
+          clothingColor: '#75B7DA',
+        },
+        items: {
+          head: null,
+          face: null,
+          back: {
+            slot: 'back',
+            shopItemId: shopItem.id,
+            shopItemCode: `rv-appearance-cap-${ts}`,
+            shopItemName: 'RV Appearance Cap',
+            kind: 'AVATAR_ACCESSORY',
+          },
+          desk_decor: null,
+        },
+      });
+      // The only non-appearance field is an internal ordering token; no private data rides along.
+      expect(Object.keys(res.body).sort()).toEqual([
+        'appearance',
+        'appearanceRevision',
+        'classroomId',
+        'deskCount',
+        'displayName',
+        'role',
+        'sessionId',
+        'userId',
+      ]);
+      expect(JSON.stringify(res.body)).not.toContain('@example.com');
+    } finally {
+      await prisma.equippedItem.deleteMany({ where: { id: equipped.id } });
+      await prisma.shopItem.deleteMany({ where: { id: shopItem.id } });
+      await prisma.avatarConfiguration.deleteMany({ where: { userId: studentId } });
+    }
+  });
+
+  it('answers the current desk count, including an expanded 13th desk (#79)', async () => {
+    await prisma.desk.createMany({
+      data: Array.from({ length: 12 }, (_, idx) => ({ classroomId, deskIndex: idx + 1 })),
+    });
+    try {
+      const body = { userId: studentId, sessionId: studentSessionId, classroomId };
+      expect((await post(body).expect(200)).body.deskCount).toBe(12);
+
+      await prisma.desk.create({ data: { classroomId, deskIndex: 13 } });
+      expect((await post(body).expect(200)).body.deskCount).toBe(13);
+    } finally {
+      await prisma.desk.deleteMany({ where: { classroomId } });
+    }
   });
 
   it('maps an active student membership to its role', async () => {

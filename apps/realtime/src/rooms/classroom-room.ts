@@ -1,6 +1,9 @@
 import {
   AVATAR_INPUT_MESSAGE,
-  CLASSROOM_LAYOUT,
+  CHAT_MESSAGE_EVENT,
+  CHAT_MESSAGE_HIDDEN_EVENT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -13,6 +16,10 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
   type AvatarInput,
+  type ClassroomLayout,
+  type MemberAppearance,
+  type ChatMessageHiddenPayload,
+  type ChatMessagePayload,
 } from '@aula/contracts';
 import {
   ClientState,
@@ -26,7 +33,7 @@ import {
 } from '@colyseus/core';
 import { JoinDeniedError, type ClassroomAuth, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
-import { stepAvatar } from '../movement/step-avatar';
+import { isWalkable, stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
 import { pickSpawnPoint } from '../presence/spawn';
 import {
@@ -35,8 +42,32 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState } from './classroom-state';
-import type { EvictableRoom, RoomDirectory } from './room-directory';
+import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
+import type { DirectoryRoom, RoomDirectory } from './room-directory';
+
+/**
+ * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
+ * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
+ * equipped is simply absent from the items map.
+ */
+function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
+  avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
+  avatar.appearance.hairId = appearance.baseAvatar.hairId;
+  avatar.appearance.topId = appearance.baseAvatar.topId;
+  avatar.appearance.hairColor = appearance.baseAvatar.hairColor;
+  avatar.appearance.clothingColor = appearance.baseAvatar.clothingColor;
+  avatar.appearance.items.clear();
+  for (const [slot, item] of Object.entries(appearance.items)) {
+    if (item === null) continue;
+    const view = new EquippedItemView();
+    view.slot = item.slot;
+    view.shopItemId = item.shopItemId;
+    view.shopItemCode = item.shopItemCode;
+    view.shopItemName = item.shopItemName;
+    view.kind = item.kind;
+    avatar.appearance.items.set(slot, view);
+  }
+}
 
 /** Collaborators and settings a room receives from the server bootstrap. */
 export interface ClassroomRoomOptions {
@@ -69,10 +100,12 @@ interface PendingAdmission {
   userId: string;
   authSessionId: string;
   revoked: boolean;
+  appearance: MemberAppearance;
+  appearanceRevision: number;
 }
 
 /** Room logic that does not depend on the verifier. */
-export class ClassroomRoom extends Room<{ state: ClassroomState }> implements EvictableRoom {
+export class ClassroomRoom extends Room<{ state: ClassroomState }> implements DirectoryRoom {
   classroomId = '';
   protected options: ClassroomRoomOptions = {};
   protected verifier!: JoinVerifier;
@@ -87,6 +120,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
   private readonly authByConnection = new Map<string, ClassroomAuth>();
   /** Joins still waiting for the access check, by connection id: an eviction must reach them too. */
   private readonly pendingAdmissions = new Map<string, PendingAdmission>();
+  /** Walkable surface of this classroom; only {@link applyDeskCount} replaces it (#79). */
+  private layout: ClassroomLayout = buildClassroomLayout(MIN_CLASSROOM_DESKS);
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -109,6 +144,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     this.classroomId = classroomId;
     this.state = new ClassroomState();
     this.state.classroomId = classroomId;
+    this.state.deskCount = MIN_CLASSROOM_DESKS;
     this.patchRate = 1000 / PATCH_RATE_HZ;
     this.setFixedTimestep(({ dt }) => this.tick(dt), SIMULATION_TICK_RATE_HZ);
     this.options.directory?.register(classroomId, this);
@@ -139,6 +175,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       userId: auth.userId,
       authSessionId: auth.authSessionId,
       revoked: false,
+      appearance: auth.appearance,
+      appearanceRevision: auth.appearanceRevision,
     };
     this.pendingAdmissions.set(client.sessionId, admission);
     try {
@@ -155,6 +193,13 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.deskCount = current.deskCount;
+      if (current.appearanceRevision >= admission.appearanceRevision) {
+        admission.appearance = current.appearance;
+        admission.appearanceRevision = current.appearanceRevision;
+      }
+      auth.appearance = admission.appearance;
+      auth.appearanceRevision = admission.appearanceRevision;
     } catch (error) {
       if (error instanceof ServerError) throw error;
       if (admission.revoked || error instanceof JoinDeniedError) {
@@ -175,6 +220,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     }
     this.limiters.set(client.sessionId, new RateLimiter(INPUT_RATE_LIMIT_PER_SECOND));
     this.authByConnection.set(client.sessionId, auth);
+    // Before the avatar is placed, so a newcomer spawns in the layout the classroom has now.
+    this.applyDeskCount(auth.deskCount);
     if (attached.first) {
       this.addAvatar(auth);
     } else {
@@ -185,6 +232,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (avatar) {
         avatar.displayName = auth.displayName;
         avatar.role = auth.role;
+        if (auth.appearanceRevision >= avatar.appearanceRevision) {
+          avatar.appearanceRevision = auth.appearanceRevision;
+          applyAppearanceToAvatar(avatar, auth.appearance);
+        }
       }
       this.refreshStatus(auth.userId);
     }
@@ -234,10 +285,16 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
       if (!this.userConnections.has(client.sessionId)) return;
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.deskCount = current.deskCount;
+      this.applyDeskCount(current.deskCount);
+      auth.appearance = current.appearance;
+      auth.appearanceRevision = current.appearanceRevision;
       const avatar = this.state.avatars.get(userId);
-      if (avatar) {
+      if (avatar && current.appearanceRevision >= avatar.appearanceRevision) {
+        avatar.appearanceRevision = current.appearanceRevision;
         avatar.role = current.role;
         avatar.displayName = current.displayName;
+        applyAppearanceToAvatar(avatar, current.appearance);
       }
       this.userConnections.resume(client.sessionId);
       this.refreshStatus(userId);
@@ -256,6 +313,35 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
 
   onLeave(client: Client): void {
     this.releaseConnection(client.sessionId);
+  }
+
+  /**
+   * Applies an API-verified appearance update to the user's avatar (#114). Reached only through
+   * the room directory from the internal route, never from a client message. The monotonic
+   * revision makes at-least-once outbox replays and out-of-order deliveries harmless. Pending
+   * admissions retain the newest update so a join verification cannot overwrite it with an older
+   * snapshot.
+   */
+  applyAppearance(
+    userId: string,
+    appearanceRevision: number,
+    appearance: MemberAppearance,
+  ): boolean {
+    const avatar = this.state.avatars.get(userId);
+    let found = avatar !== undefined;
+    if (avatar && appearanceRevision > avatar.appearanceRevision) {
+      avatar.appearanceRevision = appearanceRevision;
+      applyAppearanceToAvatar(avatar, appearance);
+    }
+    for (const admission of this.pendingAdmissions.values()) {
+      if (admission.userId !== userId) continue;
+      found = true;
+      if (appearanceRevision > admission.appearanceRevision) {
+        admission.appearanceRevision = appearanceRevision;
+        admission.appearance = appearance;
+      }
+    }
+    return found;
   }
 
   /**
@@ -299,6 +385,41 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
   }
 
   /**
+   * Grows the classroom layout to the one built for `deskCount` desks (#79). It is the only place
+   * the layout changes: called with each verified identity (admission, reconnection) and from the
+   * API push after a desk expansion through the room directory. It is monotonic: desks are never
+   * deleted, so a count whose effective layout is not larger than the current one (counts below the
+   * minimum or not finite build the minimum layout) can only be stale, such as a re-verification
+   * answered before an expansion that arrives after its push, and is ignored. Avatars left on a
+   * point that is no longer walkable, such as the spot a new desk now occupies, move to a free
+   * spawn point; the others stay where they are.
+   */
+  applyDeskCount(deskCount: number): void {
+    const layout = buildClassroomLayout(deskCount);
+    const effectiveCount = layout.obstacles.length - 1; // every obstacle but the teacher desk
+    if (effectiveCount <= this.state.deskCount) return;
+    this.layout = layout;
+    this.state.deskCount = effectiveCount;
+    const avatars = [...this.state.avatars.values()];
+    const placed = avatars.filter((avatar) => isWalkable(layout, avatar.x, avatar.z));
+    for (const avatar of avatars) {
+      if (placed.includes(avatar)) continue;
+      const spawn = pickSpawnPoint(layout, placed);
+      avatar.x = spawn.x;
+      avatar.z = spawn.z;
+      placed.push(avatar);
+    }
+  }
+
+  broadcastChatMessage(payload: ChatMessagePayload): void {
+    this.broadcast(CHAT_MESSAGE_EVENT, payload);
+  }
+
+  broadcastChatMessageHidden(payload: ChatMessageHiddenPayload): void {
+    this.broadcast(CHAT_MESSAGE_HIDDEN_EVENT, payload);
+  }
+
+  /**
    * Forgets a connection for good. Idempotent, because a connection can be released twice (for
    * example by an eviction and then by the framework's own leave): the second call finds nothing.
    */
@@ -335,7 +456,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
     for (const [userId, intent] of this.intents) {
       const avatar = this.state.avatars.get(userId);
       if (!avatar) continue;
-      const next = stepAvatar(CLASSROOM_LAYOUT, avatar, intent, dtSeconds);
+      const next = stepAvatar(this.layout, avatar, intent, dtSeconds);
       // Only touched fields are patched, so a blocked avatar costs no bandwidth.
       if (next.x !== avatar.x) avatar.x = next.x;
       if (next.z !== avatar.z) avatar.z = next.z;
@@ -422,11 +543,13 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Ev
   }
 
   private addAvatar(identity: ClassroomAuth): void {
-    const spawn = pickSpawnPoint(CLASSROOM_LAYOUT, [...this.state.avatars.values()]);
+    const spawn = pickSpawnPoint(this.layout, [...this.state.avatars.values()]);
     const avatar = new Avatar();
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;
     avatar.role = identity.role;
+    avatar.appearanceRevision = identity.appearanceRevision;
+    applyAppearanceToAvatar(avatar, identity.appearance);
     avatar.x = spawn.x;
     avatar.z = spawn.z;
     this.state.avatars.set(identity.userId, avatar);

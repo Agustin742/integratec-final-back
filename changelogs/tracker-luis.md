@@ -1,5 +1,40 @@
 # Tracker — Luis
 
+## 2026-11-21 — Review fixes for Study Guide Bot RAG (PR #128 / #41)
+
+- **Status:** completed (local commits on `feat/41-study-guide-bot-rag`, awaiting push and CI)
+- **Area / files:** `apps/api/prisma/migrations/20261121000000_create_material_chunks/migration.sql`, `apps/api/src/bot/pgvector-material-index.adapter.ts`, `apps/api/src/bot/pgvector-material-index.spec.ts`, `apps/api/src/bot/bot-rag.integration.spec.ts`, `apps/api/src/bot/ai-provider.ports.ts`, `apps/api/src/bot/openai-compatible-ai.adapter.ts`, `apps/api/src/bot/answer-key-guard.service.ts`, `apps/api/src/bot/answer-key-guard.spec.ts`, `apps/api/src/bot/bot-ask.service.ts`, `apps/api/src/bot/bot-ask.service.spec.ts`, `apps/api/src/bot/bot-rate-limiter.service.ts`, `apps/api/src/bot/bot-rate-limiter.spec.ts`, `apps/api/src/bot/bot-ask.http.spec.ts`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/src/auth/testing/auth-test-config.ts`, `apps/api/src/openapi/openapi.spec.ts`, `apps/api/.env.example`, `infra/modules/app_config/secrets.tf`, `infra/deploy/compose.prod.yaml`, `infra/deploy/start-app.sh`, `infra/scripts/seed-app-secrets.sh`, `infra/envs/prod/tests/app_config.tftest.hcl`, `infra/envs/prod/tests/runtime_access.tftest.hcl`, `infra/README.md`, `scripts/ci/test_compose_prod.py`, `scripts/ci/test_start_app.py`, `README.md`, `docs/bot-study-guide.md`, `docs/technical-justification.md`, `changelogs/tracker-luis.md`
+- **Change:** Addressed both reviews on PR #128 (Calegaris items 1–4 and Agustin742 items 1–8):
+  1. Serialized `PgVectorMaterialIndexAdapter.index()` and `remove()` per `(classroomId, materialId)` via SHA-256 `bigint` `pg_advisory_xact_lock` inside `$transaction` (`maxWait: 10_000`) and added `Promise.all` concurrency integration coverage preventing `23505` unique collisions on `material_chunks_classroom_id_material_id_chunk_index_key`.
+  2. Tightened `AI_EMBEDDING_DIMENSION` startup validation in `api-config.ts` to fail fast unless it matches database `vector(768)` and raised `DEFAULT_AI_RETRIEVAL_MIN_SIMILARITY` to `0.55`.
+  3. Added an in-flight `hasExamInProgress` check inside `BotAskService.ask()` before executing read-only tools, added an overall request deadline (`<= 60s`) propagated into `OpenAiCompatibleAiAdapter`, capped tool calls (`3`/step, `8`/request), and mapped unexpected retrieval/DB tool failures to `503 ServiceUnavailableException`.
+  4. Added bounded expired-bucket sweeping in `BotRateLimiterService` (`maxBuckets = 10_000`) and concurrent `Promise.all` HTTP burst tests.
+  5. Closed the `list_my_pending_activities` `out_of_scope` bypass by returning deterministic server-formatted pending summaries whenever `citations.length === 0` (and appending `out_of_scope` on mixed/search queries), tied citations strictly to bounded excerpts used/grounded in the answer (`[Sn]` tags or lexical overlap), and delimited untrusted chunks/filenames in `<untrusted_material>` tags with prompt-injection tests.
+  6. Hardened `AnswerKeyGuardService` for short option giveaways (`"It's mitosis"`), casual EN/ES letter reveals (`"the answer is B"`, `"go with C"`, `"marcá la D"`), paraphrase token-overlap detection, and non-guiding solution-seeking responses.
+  7. Reset legacy `allowed_materials` rows marked `indexed` with zero `material_chunks` to `failed` in `20261121000000_create_material_chunks/migration.sql` so teachers visibly re-index them.
+  8. Wired `AI_PROVIDER_API_KEY` into production infrastructure (`infra/modules/app_config/secrets.tf`, host IAM `ReadAppSecrets`, `infra/deploy/start-app.sh`, `infra/deploy/compose.prod.yaml`, Terraform tests, Python CI tests, and `infra/README.md`).
+- **Reason:** Close concurrency, grounding, anti-cheat, migration-reset, production-secret wiring, deadline, and prompt-injection findings identified in PR #128 reviews.
+- **Validation:** Focused unit/OpenAPI suites passed **187/187 across 10 files (`0` skipped)**; real PostgreSQL + pgvector integration suites (`ankane/pgvector:v0.5.1` ephemeral container with all migrations applied) passed **14/14 across 3 files (`0` skipped)** (`bot-rag.integration.spec.ts` 5/5, `bot-ask.http.spec.ts` 7/7, `activities-exam-lockout.spec.ts` 2/2); `ComposeRenderTests` passed **2/2** (`docker compose config`); static Python CI checks (`test_start_app.py`, `test_seed_app_secrets.py`, systemd), `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `python scripts/ci/check_docs.py` (83 files), and `git diff --check origin/develop` passed. Full Ubuntu CI regression, `terraform test`, and Linux bash behavioral tests run in GitHub Actions on push.
+- **Next step:** Push commits to `feat/41-study-guide-bot-rag`, verify Backend CI (checks + both Terraform jobs) green, and coordinate merge of PR #128 before rebasing PR #123.
+
+## 2026-11-20 — Prevent stale appearance retries from overwriting newer state (PR #121)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/`, `apps/api/src/platform/realtime/`, `apps/api/src/users/`, `apps/api/src/equipment/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`
+- **Change:** Added monotonically increasing per-user appearance revisions so realtime ignores stale outbox snapshots, including races with join and reconnection verification.
+- **Reason:** A retried older outbox snapshot can arrive after a newer update and leave the live avatar stale.
+- **Validation:** Realtime (137/137), API appearance/join/reverification (97/97), PostgreSQL integration, OpenAPI (13/13), lint, typecheck, build, format, docs (82 files), and `git diff --check` passed locally. Backend CI (checks and both Terraform jobs) passed on code commit `52cc27f`; CI caught and prompted a correction to a legacy profile assertion affected by the new internal revision.
+- **Next step:** Await teammate re-review and merge of PR #121.
+
+## 2026-11-19 — Realtime classroom chat (#48)
+
+- **Status:** PR [#122](https://github.com/Agustin742/integratec-final-back/pull/122) open from `feat/48-chat-realtime` (commit `683c844`)
+- **Area / files:** `apps/api/src/chat/`, `apps/api/src/platform/realtime/`, `apps/realtime/src/internal/`, `apps/realtime/src/rooms/`, `packages/contracts/`, chat/realtime rules and documentation
+- **Change:** Implemented the approved REST-send, transactional-outbox, authenticated internal-HTTP broadcast flow and the `chat:message` / `chat:message.hidden` event contract. Message creation and first moderation atomically record minimal outbox events; the handler resolves persisted message content before dispatch. Colyseus validates the service request and broadcasts only to rooms for the matching classroom. Delivery retries do not roll back REST writes; clients deduplicate by ID and reconcile from REST history.
+- **Reason:** Deliver live chat without making Colyseus the persistence or authorization authority; REST history remains the recovery source.
+- **Verification:** `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `python scripts/ci/check_docs.py` (82 files), and `git diff --check origin/develop` passed. Focused API suites passed **114/114** tests (chat HTTP 39, chat send 21, OpenAPI 13, realtime chat handler/client 12, realtime eviction 29); realtime suites passed **63/63** (internal routes 22, rooms 41); shared contracts passed **2/2**. Integration tests ran against a temporary isolated PostgreSQL 17 database. API tests used Vitest's thread pool because the default pool produced a worker-specific Nest DI failure; all focused suites passed under threads. The full monorepo test suite was not run.
+- **Next step:** Await CI and review. The frontend integration remains tracked separately in frontend #51.
+
 ## 2026-11-15 — Submission grading, weighted points conversion, and review queue (Issue #32)
 
 - **Status:** completed

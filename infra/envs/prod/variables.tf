@@ -172,3 +172,39 @@ variable "import_existing_frontend" {
   default     = true
   nullable    = false
 }
+
+variable "alert_email_addresses" {
+  description = "Addresses that receive alarm and budget notifications. Required and kept out of git: set it in the git-ignored terraform.tfvars. Each address must confirm its SNS subscription from the inbox."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.alert_email_addresses) > 0
+    error_message = "alert_email_addresses must list at least one address."
+  }
+
+  validation {
+    condition     = alltrue([for e in var.alert_email_addresses : can(regex("^[^@[:space:]]+@[^@[:space:]]+[.][^@[:space:]]+$", e))])
+    error_message = "alert_email_addresses must contain only email addresses such as alerts@example.com."
+  }
+
+  validation {
+    condition     = length(distinct([for e in var.alert_email_addresses : lower(e)])) == length(var.alert_email_addresses)
+    error_message = "alert_email_addresses must not repeat an address (comparison ignores case)."
+  }
+
+  validation {
+    condition     = length(var.alert_email_addresses) <= 10
+    error_message = "alert_email_addresses may list at most 10 addresses (AWS Budgets allows 10 email subscribers per notification)."
+  }
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly cost limit in USD of the AWS Budget. The default of 40 leaves room over the expected spend of about 35 a month; notifications fire at 50 % and 80 % actual and 100 % forecasted."
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.monthly_budget_usd > 0
+    error_message = "monthly_budget_usd must be greater than 0."
+  }
+}

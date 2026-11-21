@@ -78,8 +78,99 @@ export const avatarInputSchema = z.strictObject({
 
 export type AvatarInput = z.infer<typeof avatarInputSchema>;
 
+/** Server to client: a persisted classroom chat message, announced after its database commit. */
+export const CHAT_MESSAGE_EVENT = 'chat:message';
+export const CHAT_MESSAGE_MAX_BODY_LENGTH = 2000;
+export const CHAT_MESSAGE_MAX_MENTIONED_USERS = 20;
+export const chatMessagePayloadSchema = z.strictObject({
+  id: z.uuid(),
+  classroomId: z.uuid(),
+  authorId: z.uuid(),
+  body: z.string().min(1).max(CHAT_MESSAGE_MAX_BODY_LENGTH),
+  mentionedUserIds: z.array(z.uuid()).max(CHAT_MESSAGE_MAX_MENTIONED_USERS),
+  createdAt: z.iso.datetime(),
+});
+export type ChatMessagePayload = z.infer<typeof chatMessagePayloadSchema>;
+
+/** Server to client: a persisted moderation change; REST history supplies staff audit details. */
+export const CHAT_MESSAGE_HIDDEN_EVENT = 'chat:message.hidden';
+export const chatMessageHiddenPayloadSchema = z.strictObject({
+  messageId: z.uuid(),
+  hiddenAt: z.iso.datetime(),
+});
+export type ChatMessageHiddenPayload = z.infer<typeof chatMessageHiddenPayloadSchema>;
+
+/** Authenticated NestJS-to-Colyseus service request; the public event payload stays nested. */
+export const chatRealtimeBroadcastSchema = z
+  .discriminatedUnion('event', [
+    z.strictObject({
+      classroomId: z.uuid(),
+      event: z.literal(CHAT_MESSAGE_EVENT),
+      payload: chatMessagePayloadSchema,
+    }),
+    z.strictObject({
+      classroomId: z.uuid(),
+      event: z.literal(CHAT_MESSAGE_HIDDEN_EVENT),
+      payload: chatMessageHiddenPayloadSchema,
+    }),
+  ])
+  .refine(
+    (broadcast) =>
+      broadcast.event !== CHAT_MESSAGE_EVENT ||
+      broadcast.payload.classroomId === broadcast.classroomId,
+    { message: 'Message classroomId must match the broadcast classroomId' },
+  );
+export type ChatRealtimeBroadcast = z.infer<typeof chatRealtimeBroadcastSchema>;
+
 export const AVATAR_STATUSES = ['online', 'reconnecting'] as const;
 export type AvatarStatus = (typeof AVATAR_STATUSES)[number];
+
+/**
+ * Slot names of avatar equipment as carried in appearance payloads. They match the API's
+ * equipment URL slot names; duplicated here so the realtime service can validate the payload
+ * without importing server code.
+ */
+export const APPEARANCE_SLOT_NAMES = ['head', 'face', 'back', 'desk_decor'] as const;
+export type AppearanceSlotName = (typeof APPEARANCE_SLOT_NAMES)[number];
+
+/** Public projection of one equipped item: catalog fields only, no purchase or price data. */
+export const equippedItemPayloadSchema = z.strictObject({
+  slot: z.enum(APPEARANCE_SLOT_NAMES),
+  shopItemId: z.string().min(1),
+  shopItemCode: z.string().min(1).max(80),
+  shopItemName: z.string().min(1).max(120),
+  kind: z.string().min(1).max(40),
+});
+export type EquippedItemPayload = z.infer<typeof equippedItemPayloadSchema>;
+
+/**
+ * Public appearance of one classroom member: base avatar plus equipped items per slot (#114).
+ * Unknown fields are rejected at every consumer so no private data can ride along.
+ */
+export const memberAppearanceSchema = z
+  .strictObject({
+    baseAvatar: z.strictObject({
+      bodyId: z.string().min(1).max(40),
+      hairId: z.string().min(1).max(40),
+      topId: z.string().min(1).max(40),
+      hairColor: z.string().min(1).max(40),
+      clothingColor: z.string().min(1).max(40),
+    }),
+    items: z.strictObject({
+      head: equippedItemPayloadSchema.nullable(),
+      face: equippedItemPayloadSchema.nullable(),
+      back: equippedItemPayloadSchema.nullable(),
+      desk_decor: equippedItemPayloadSchema.nullable(),
+    }),
+  })
+  .refine(
+    (appearance) =>
+      (Object.keys(appearance.items) as AppearanceSlotName[]).every(
+        (slot) => appearance.items[slot] === null || appearance.items[slot].slot === slot,
+      ),
+    { message: 'equipped item slot must match its items key' },
+  );
+export type MemberAppearance = z.infer<typeof memberAppearanceSchema>;
 
 /** Axis-aligned box on the floor plane (x, z), in layout units. */
 export interface LayoutBox {
@@ -112,20 +203,58 @@ const desk = (
   maxZ: centerZ + halfDepth,
 });
 
+/** Fewest student desks a classroom layout ever has: three rows of four. */
+export const MIN_CLASSROOM_DESKS = 12;
+
 /**
- * TEMPORARY: one fixed layout shared by every classroom until per-classroom layouts land (issue
- * #79). Walkable surface used by the server (collisions) and the frontend scene: a 16 by 12
- * classroom, the teacher desk at the front (negative z) and twelve student desks in three rows of
- * four. The entrance is at the back. Desks added by auto-expansion (#22) have no place here yet.
+ * Largest desk count a classroom layout accepts. Desks only grow one by one with student
+ * enrolments (#22), so 200 (fifty rows) is far beyond any real classroom; the cap keeps a corrupt
+ * or hostile count from building an arbitrarily large room on the realtime server.
  */
-export const CLASSROOM_LAYOUT: ClassroomLayout = {
-  bounds: { minX: -8, maxX: 8, minZ: -6, maxZ: 6 },
-  avatarRadius: 0.3,
-  obstacles: [
-    desk(0, -4.4, 1.5, 0.4),
-    ...[-1.8, 0.4, 2.6].flatMap((row) =>
-      [-4.5, -1.5, 1.5, 4.5].map((column) => desk(column, row, 0.8, 0.4)),
+export const MAX_CLASSROOM_DESKS = 200;
+
+/** Distance between two consecutive student desk rows (z axis). */
+export const CLASSROOM_DESK_ROW_SPACING = 2.2;
+
+const DESKS_PER_ROW = 4;
+const FIRST_ROW_Z = -1.8;
+const DESK_COLUMNS_X = [-4.5, -1.5, 1.5, 4.5];
+const BASE_BOUNDS: LayoutBox = { minX: -8, maxX: 8, minZ: -6, maxZ: 6 };
+const BASE_ROWS = MIN_CLASSROOM_DESKS / DESKS_PER_ROW;
+
+/** Snaps to centimetres so extra rows get clean decimals and the base room stays bit-identical. */
+const toCentimetres = (value: number): number => Math.round(value * 100) / 100;
+
+/**
+ * Walkable surface shared by the server (collisions) and the frontend scene, built from the number
+ * of student desks of a classroom (issues #79 and #22). The base room is 16 by 12 with the teacher
+ * desk at the front (negative z) and the entrance at the back. Student desks go in rows of four,
+ * front to back, columns left to right in deskIndex order; a new row appears with the first desk
+ * that does not fit, and a partial last row fills from the left. Fewer than twelve desks (or a
+ * non-finite count) yield the base twelve-desk room. Each extra row pushes the back wall by one row
+ * spacing; the teacher desk and the other walls never move, and spawn points stay behind the last
+ * row.
+ */
+export function buildClassroomLayout(deskCount: number): ClassroomLayout {
+  const effectiveCount = Number.isFinite(deskCount)
+    ? Math.max(MIN_CLASSROOM_DESKS, Math.floor(deskCount))
+    : MIN_CLASSROOM_DESKS;
+  const rows = Math.ceil(effectiveCount / DESKS_PER_ROW);
+  const maxZ = toCentimetres(BASE_BOUNDS.maxZ + CLASSROOM_DESK_ROW_SPACING * (rows - BASE_ROWS));
+  const studentDesks = Array.from({ length: effectiveCount }, (_, deskIndex) =>
+    desk(
+      DESK_COLUMNS_X[deskIndex % DESKS_PER_ROW],
+      toCentimetres(
+        FIRST_ROW_Z + CLASSROOM_DESK_ROW_SPACING * Math.floor(deskIndex / DESKS_PER_ROW),
+      ),
+      0.8,
+      0.4,
     ),
-  ],
-  spawnPoints: [-6, -4, -2, 0, 2, 4, 6].map((x) => ({ x, z: 5 })),
-};
+  );
+  return {
+    bounds: { ...BASE_BOUNDS, maxZ },
+    avatarRadius: 0.3,
+    obstacles: [desk(0, -4.4, 1.5, 0.4), ...studentDesks],
+    spawnPoints: [-6, -4, -2, 0, 2, 4, 6].map((x) => ({ x, z: toCentimetres(maxZ - 1) })),
+  };
+}

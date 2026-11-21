@@ -50,16 +50,30 @@ exit "${STUB_START_FAIL:-0}"
 """
 
 
-def tarball(release):
+# Fake systemctl: records its arguments; STUB_SYSTEMCTL_FAIL is the exit code it returns.
+SYSTEMCTL_STUB = r"""#!/usr/bin/env bash
+echo "$*" >> "$STUB_LOG/systemctl.log"
+exit "${STUB_SYSTEMCTL_FAIL:-0}"
+"""
+
+HEALTH_UNITS = ("app-container-health.service", "app-container-health.timer")
+
+
+def tarball(release, health_units=True):
     """Builds the host-files tarball: deploy/ and caddy/ at the top, like the pipeline packs them."""
     buffer = io.BytesIO()
+    members = [
+        ("deploy/start-app.sh", START_APP_STUB, 0o755),
+        ("deploy/compose.prod.yaml", "name: aula-virtual\n", 0o644),
+        ("deploy/RELEASE", release + "\n", 0o644),
+        ("caddy/Caddyfile", f"# {release}\n", 0o644),
+    ]
+    if health_units:
+        # Packed without the executable bit on purpose: the deploy must set it, like for start-app.sh.
+        members.append(("deploy/publish-container-health.sh", "#!/usr/bin/env bash\n", 0o644))
+        members += [(f"deploy/systemd/{unit}", f"# {unit} {release}\n", 0o644) for unit in HEALTH_UNITS]
     with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
-        for name, body, mode in (
-            ("deploy/start-app.sh", START_APP_STUB, 0o755),
-            ("deploy/compose.prod.yaml", "name: aula-virtual\n", 0o644),
-            ("deploy/RELEASE", release + "\n", 0o644),
-            ("caddy/Caddyfile", f"# {release}\n", 0o644),
-        ):
+        for name, body, mode in members:
             data = body.encode()
             info = tarfile.TarInfo(name)
             info.size = len(data)
@@ -80,9 +94,12 @@ class HostDeployScriptTests(unittest.TestCase):
         self.aula = self.tmp / "aula"
         for directory in (self.bin, self.fixtures, self.logs, self.aula / "infra" / "deploy", self.aula / "infra" / "caddy"):
             directory.mkdir(parents=True)
-        stub = self.bin / "aws"
-        stub.write_text(AWS_STUB, newline="\n")
-        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        for name, body in (("aws", AWS_STUB), ("systemctl", SYSTEMCTL_STUB)):
+            stub = self.bin / name
+            stub.write_text(body, newline="\n")
+            stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        self.systemd = self.tmp / "systemd"
+        self.systemd.mkdir()
         (self.aula / "infra" / "deploy" / "RELEASE").write_text("old\n", newline="\n")
         (self.aula / "infra" / "caddy" / "Caddyfile").write_text("# old\n", newline="\n")
         self.deploy_env = self.tmp / "deploy.env"
@@ -100,6 +117,7 @@ class HostDeployScriptTests(unittest.TestCase):
             STUB_FIXTURES=posix(self.fixtures),
             PATH=posix(self.bin) + os.pathsep + os.environ["PATH"],
             AULA_ROOT=posix(self.aula),
+            SYSTEMD_DIR=posix(self.systemd),
             DEPLOY_ENV_FILE=posix(self.deploy_env),
             HOST_FILES_URI=URI,
             HOST_FILES_SHA256=self.digest,
@@ -282,6 +300,37 @@ class HostDeployScriptTests(unittest.TestCase):
         result, out = self.run_script(drop=("AWS_REGION",))
         self.assertNotEqual(result.returncode, 0, out)
         self.assertEqual(self.log("aws.log"), [])
+
+    def test_the_container_health_units_are_installed_and_the_timer_is_enabled_after_a_successful_start(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        for unit in HEALTH_UNITS:
+            self.assertEqual((self.systemd / unit).read_text(), f"# {unit} new\n")
+        self.assertEqual(self.log("systemctl.log"), ["daemon-reload", "enable --now app-container-health.timer"])
+
+    def test_the_container_health_publisher_is_made_executable(self):
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertTrue(os.access(self.aula / "infra" / "deploy" / "publish-container-health.sh", os.X_OK))
+
+    def test_a_failing_start_installs_no_unit(self):
+        result, out = self.run_script({"STUB_START_FAIL": "7"})
+        self.assertEqual(result.returncode, 7, out)
+        self.assertEqual(list(self.systemd.iterdir()), [])
+        self.assertEqual(self.log("systemctl.log"), [])
+
+    def test_a_failing_systemctl_warns_but_does_not_fail_a_deployment_that_already_started(self):
+        result, out = self.run_script({"STUB_SYSTEMCTL_FAIL": "1"})
+        self.assertEqual(result.returncode, 0, out)
+        self.assertIn("could not enable the container health timer", out)
+        self.assertEqual(self.release(), "new")
+
+    def test_a_tarball_without_the_container_health_units_skips_the_install(self):
+        self.publish(tarball("new", health_units=False))
+        result, out = self.run_script()
+        self.assertEqual(result.returncode, 0, out)
+        self.assertEqual(list(self.systemd.iterdir()), [])
+        self.assertEqual(self.log("systemctl.log"), [])
 
     def test_output_never_includes_secret_looking_values(self):
         result, out = self.run_script()

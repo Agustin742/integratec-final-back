@@ -80,6 +80,7 @@ services:
       - JWT_SECRET
       - INVITATION_TOKEN_KEY
       - INTERNAL_SERVICE_SECRET
+      - AI_PROVIDER_API_KEY
       - DATABASE_URL
     networks:
       - private

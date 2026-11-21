@@ -1,5 +1,51 @@
 # Tracker — Agustin
 
+## 2026-11-20 — Prod alarms and monthly budget (#62)
+
+- **Status:** completed (pending PR into `develop`; nothing applied to AWS)
+- **Area / files:** `infra/modules/monitoring/`, `infra/modules/database/outputs.tf`, `infra/modules/runtime_access/`, `infra/modules/delivery_pipeline/`, `infra/envs/prod/`, `infra/deploy/publish-container-health.sh`, `infra/deploy/systemd/app-container-health.*`, `infra/pipeline/scripts/host-deploy.sh`, `scripts/ci/test_container_health.py`, `scripts/ci/test_host_deploy.py`, `infra/README.md`
+- **Change:**
+  - New `monitoring` module: an SNS alarm topic with email subscriptions, and a USD 40 monthly budget that emails at 50 % and 80 % actual and 100 % forecasted.
+  - Alarms: EC2 status checks and CPU; api and realtime container health, where no data counts as unhealthy; RDS free storage. An RDS event subscription reports availability.
+  - The host publishes Docker health every minute from a systemd timer that the deploy installs. The instance role may `PutMetricData` only in that namespace.
+  - The pipeline plan receives the new variables.
+- **Reason:** Prod had no alerts for failures or spend; the estimated spend is about USD 35/month.
+- **Verification:** `terraform test` 240 passed with the mock provider; deploy-file Python tests pass. `test_checks.py` cannot run locally because `bash` resolves to WSL; CI runs it. Per-task reviews approved.
+- **Next step:**
+  - PR into `develop`.
+  - After the merge, run a local apply before the pipeline runs, then confirm the email subscriptions and check the timer (`infra/README.md`, Monitoring).
+
+## 2026-11-20 — Per-classroom layout from the desk count (#79)
+
+- **Status:** completed (pending PR into `develop`)
+- **Area / files:** `packages/contracts/src/index.ts`, `packages/contracts/src/classroom-layout.spec.ts`, `packages/contracts/src/realtime/generated/`, `apps/realtime/src/rooms/`, `apps/realtime/src/join/`, `apps/realtime/src/internal/classroom-layout-route.ts`, `apps/api/src/internal/realtime/`, `apps/api/src/platform/realtime/`, `apps/api/src/classrooms/classroom-invitations.service.ts`, `rules/api-contracts.md`, `rules/realtime-and-presence.md`, `docs/technical-justification.md`
+- **Change:**
+  - `buildClassroomLayout(deskCount)` replaces the fixed `CLASSROOM_LAYOUT`: rows of four desks, and a new row with the first desk that does not fit.
+  - The join verification carries `deskCount`, capped by `MAX_CLASSROOM_DESKS`.
+  - Each room builds its own layout and syncs `deskCount` in its state.
+  - After a desk auto-expansion commits, the API pushes the new count through the outbox to `/internal/classroom-layout`. Rooms only grow, and avatars left on a blocked spot move to a free spawn point.
+- **Reason:** Desks added by auto-expansion (#22) had no place in the 3D classroom or in server collisions.
+- **Verification:** Unit, e2e and DB integration specs (RED then GREEN) on an isolated temporary database; per-task reviews approved.
+- **Next step:** PR into `develop`. The front builds its scene from `state.deskCount` with the shared builder (front counterpart).
+
+## 2026-11-20 — Chat inbox summaries and read markers (#124)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261120010000_create_chat_read_markers/`, `apps/api/prisma/seed.ts`, `apps/api/src/chat/chat-inbox.service.ts`, `apps/api/src/chat/chat-inbox.controller.ts`, `apps/api/src/chat/chat.dto.ts`, `apps/api/src/chat/chat-policy.ts`, `apps/api/src/chat/chat.module.ts`, `apps/api/openapi.json`, `docs/classroom-chat.md`
+- **Change:** New `GET /chats` returns one summary per classroom where the caller is a current student or staff member (latest visible message with a 120-character preview, unread count, newest activity first), and `PUT /classrooms/{id}/messages/read-marker` advances a per-user, per-classroom marker (`chat_read_markers`) that only moves forward. Hidden messages never show in the preview or count; own messages never count.
+- **Reason:** Backend counterpart of the front chat inbox (front issue #51): a page and navbar badge for the chats of all the user's classrooms.
+- **Verification:** New unit and DB integration specs (RED then GREEN) on an isolated temporary database.
+- **Next step:** Review, then PR into `develop`.
+
+## 2026-11-20 — Review fixes on PR #122 (realtime chat broadcast, #48)
+
+- **Status:** completed (pending CI and merge of PR #122)
+- **Area / files:** `apps/api/src/platform/outbox/outbox.dispatcher.ts`, `apps/api/src/platform/outbox/outbox.module.ts`, `apps/api/src/platform/realtime/realtime-events.recorder.ts`, `apps/api/src/platform/realtime/realtime-chat.handler.ts`, `apps/api/src/chat/chat.service.ts`, `apps/api/src/chat/chat.module.ts`, `docs/classroom-chat.md`
+- **Change:** Chat events are now dispatched right after the send and hide transactions commit (`OutboxDispatcher.dispatchNow`, best-effort, filtered by event id and type, tracked until settled on shutdown); the interval poll stays as the retry path. `chat:message.hidden` gets a longer retry budget (`CHAT_HIDDEN_MAX_ATTEMPTS`, same as eviction) so a moderated message does not stay visible to connected students during a long realtime outage; `chat:message` keeps the default.
+- **Reason:** Review findings on PR #122: delivery waited for the 5 s outbox poll although #48 resolved to call the internal route after commit, and hidden events gave up after about 75 s.
+- **Verification:** New unit specs (RED then GREEN); chat, realtime and outbox specs including DB integration on an isolated temporary database with `--pool=threads` (153 passed); lint, typecheck, build, `check_docs.py`; touched files Prettier-clean. Native review approved on each task commit.
+- **Next step:** CI green and merge.
+
 ## 2026-11-19 — Review fixes on PR #120 (bot materials, #40)
 
 - **Status:** in-progress

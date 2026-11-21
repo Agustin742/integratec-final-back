@@ -1,7 +1,59 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { AppearanceSlotName } from '@aula/contracts';
 
 export const STUB_SECRET = 'test-only-secret-with-at-least-32-characters';
+
+/**
+ * Public appearance payload the stub API answers with; mirrors `MemberAppearance` in contracts.
+ * The fixture always equips the head slot and leaves the others empty, so `head` is non-null.
+ */
+export interface StubAppearance {
+  baseAvatar: {
+    bodyId: string;
+    hairId: string;
+    topId: string;
+    hairColor: string;
+    clothingColor: string;
+  };
+  items: {
+    head: StubEquippedItem;
+    face: null;
+    back: null;
+    desk_decor: null;
+  };
+}
+
+export interface StubEquippedItem {
+  slot: AppearanceSlotName;
+  shopItemId: string;
+  shopItemCode: string;
+  shopItemName: string;
+  kind: string;
+}
+
+/** Deterministic appearance fixture; vary the hair color to tell two snapshots apart. */
+export const makeStubAppearance = (hairColor = '#AF6D63'): StubAppearance => ({
+  baseAvatar: {
+    bodyId: 'female',
+    hairId: 'afro',
+    topId: 'tshirt',
+    hairColor,
+    clothingColor: '#75B7DA',
+  },
+  items: {
+    head: {
+      slot: 'head',
+      shopItemId: '20000000-0000-4000-8000-000000000001',
+      shopItemCode: 'cap_blue',
+      shopItemName: 'Blue Classroom Cap',
+      kind: 'AVATAR_ACCESSORY',
+    },
+    face: null,
+    back: null,
+    desk_decor: null,
+  },
+});
 
 export interface StubUser {
   token: string;
@@ -9,6 +61,11 @@ export interface StubUser {
   sessionId: string;
   role: 'OWNER' | 'ADMIN' | 'TEACHER' | 'STUDENT';
   displayName: string;
+  appearanceRevision: number;
+  /** Desks of the classroom served on join and reverification (#79). */
+  deskCount: number;
+  /** Appearance served on join and reverification; mutate it to simulate a change. */
+  appearance: StubAppearance;
   /** Classrooms the user can currently access; mutate it to simulate access loss. */
   classrooms: Set<string>;
 }
@@ -70,6 +127,9 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
     classroomId,
     role: user.role,
     displayName: user.displayName,
+    appearanceRevision: user.appearanceRevision,
+    appearance: user.appearance,
+    deskCount: user.deskCount,
   });
 
   stub.server = createServer((req, res) => {
@@ -113,5 +173,8 @@ export const makeUser = (name: string, index: number, classrooms: string[]): Stu
   sessionId: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
   role: 'STUDENT',
   displayName: name,
+  appearanceRevision: 0,
+  deskCount: 12,
+  appearance: makeStubAppearance(),
   classrooms: new Set(classrooms),
 });

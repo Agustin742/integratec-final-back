@@ -2,18 +2,27 @@ import { Module } from '@nestjs/common';
 import { AccessModule } from '../access/access.module';
 import { ActivitiesModule } from '../activities/activities.module';
 import { AnnouncementsModule } from '../announcements/announcements.module';
-import { GradesModule } from '../grades/grades.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { GradesModule } from '../grades/grades.module';
 import { MetricsModule } from '../metrics/metrics.module';
+import { StorageModule } from '../platform/storage/storage.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CHAT_MODEL_PORT, EMBEDDING_MODEL_PORT } from './ai-provider.ports';
+import { AnswerKeyGuardService } from './answer-key-guard.service';
+import { BotAskController } from './bot-ask.controller';
+import { BotAskService } from './bot-ask.service';
 import { BotMaterialsController } from './bot-materials.controller';
 import { BotMaterialsService } from './bot-materials.service';
 import { BedrockInferenceAdapter } from './bedrock-inference.adapter';
+import { BotRateLimiterService } from './bot-rate-limiter.service';
 import { DailyReviewController } from './daily-review.controller';
 import { DailyReviewService } from './daily-review.service';
 import { DAILY_REVIEW_INFERENCE_PORT } from './daily-review-inference.port';
-import { InProcessMaterialIndexAdapter } from './in-process-material-index.adapter';
 import { MATERIAL_INDEX_PORT } from './material-index.port';
+import { MATERIAL_RETRIEVAL_PORT } from './material-retrieval.port';
+import { OpenAiCompatibleAiAdapter } from './openai-compatible-ai.adapter';
+import { PgVectorMaterialIndexAdapter } from './pgvector-material-index.adapter';
+import { TextExtractorService } from './text-extractor.service';
 
 @Module({
   imports: [
@@ -24,14 +33,22 @@ import { MATERIAL_INDEX_PORT } from './material-index.port';
     GradesModule,
     MetricsModule,
     PrismaModule,
+    StorageModule,
   ],
-  controllers: [BotMaterialsController, DailyReviewController],
+  controllers: [BotMaterialsController, BotAskController, DailyReviewController],
   providers: [
     BotMaterialsService,
+    BotAskService,
+    BotRateLimiterService,
+    AnswerKeyGuardService,
+    TextExtractorService,
     DailyReviewService,
-    // Default adapters: in-process index until the retrieval decision (HU-BOT-002),
-    // Bedrock for the daily-review summary. Tests override both ports with fakes.
-    { provide: MATERIAL_INDEX_PORT, useClass: InProcessMaterialIndexAdapter },
+    OpenAiCompatibleAiAdapter,
+    PgVectorMaterialIndexAdapter,
+    { provide: CHAT_MODEL_PORT, useExisting: OpenAiCompatibleAiAdapter },
+    { provide: EMBEDDING_MODEL_PORT, useExisting: OpenAiCompatibleAiAdapter },
+    { provide: MATERIAL_INDEX_PORT, useExisting: PgVectorMaterialIndexAdapter },
+    { provide: MATERIAL_RETRIEVAL_PORT, useExisting: PgVectorMaterialIndexAdapter },
     { provide: DAILY_REVIEW_INFERENCE_PORT, useClass: BedrockInferenceAdapter },
   ],
   // Consumed by MaterialsModule to exclude soft-removed materials from the bot.

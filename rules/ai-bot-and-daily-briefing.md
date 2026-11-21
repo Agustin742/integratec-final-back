@@ -10,16 +10,16 @@ The bot is a study guide that runs entirely in NestJS, answers from material the
 
 ## Provider integration
 
-- Inference **MUST** use Amazon Bedrock invoked from NestJS with the service's IAM role. The browser and Colyseus **MUST NOT** call the model provider. Provider keys, if any exist, **MUST NOT** leave the server; see [Configuration](./configuration-and-environments.md).
-- The model, region, and limits **MUST** be configuration values. Specific model choice is **open**.
-- Bedrock permissions **MUST** be limited to the required invoke actions on the chosen models and knowledge resources; see [AWS infrastructure](./aws-infrastructure.md).
+- Inference **MUST** use the configured external LLM provider invoked from NestJS over HTTPS in production (`D20`; Amazon Bedrock daily token quotas in `us-east-2` were verified as `0` and non-adjustable on the AWS Free plan account). The browser and Colyseus **MUST NOT** call the model provider. Provider API keys **MUST NOT** leave the server; see [Configuration](./configuration-and-environments.md).
+- The provider base URL, chat model, embedding model, embedding dimension, timeouts, retries, and usage limits **MUST** be configuration values (`AI_*`).
+- No Amazon Bedrock IAM permissions are required on the EC2 instance role unless a future deployment re-enables Bedrock; see [AWS infrastructure](./aws-infrastructure.md).
 
 ## Retrieval over approved material
 
-- Answers are produced by retrieval-augmented generation (RAG) **only over the Materials the teacher approved** for that classroom through BotConfig and AllowedMaterial. The bot **MUST NOT** answer from other classrooms' material, from unapproved material, or present its own knowledge as classroom content.
+- Answers are produced by retrieval-augmented generation (RAG) **only over the Materials the teacher approved** for that classroom through `BotConfig` and `AllowedMaterial`. The bot **MUST NOT** answer from other classrooms' material, from unapproved material, or present its own knowledge as classroom content.
 - The teacher (or the school Owner or Admin) configures the allowed material per classroom. There is no schedule in the configuration. A change **MUST** apply on the next request and **MUST NOT** reuse retrieved content from material that has since been disallowed or deleted.
-- The retrieval technology is a **candidate**: Amazon Bedrock Knowledge Bases or an equivalent, to be confirmed in `docs/technical-justification.md` (R6). Whatever the choice, the index **MUST** be partitioned or filtered per classroom so retrieval cannot cross classrooms or schools, and the filter **MUST** be applied by the server, never by the prompt.
-- Indexing of a Material happens after upload and after the file passes the same validation as any upload; indexing failure **MUST** leave the Material usable for its normal purposes and **MUST** be visible to the teacher. Handling a Material removed or replaced **MUST** also remove it from the index.
+- Retrieval stores chunked plain text and embeddings in PostgreSQL with `pgvector` (`material_chunks`, cosine distance with HNSW index, `D20`). Every retrieval SQL query **MUST** join `AllowedMaterial` (`index_state = 'indexed'`) and `StudyMaterial` (`removed_at IS NULL`) and filter by the server-resolved `classroomId`, never by prompt instructions.
+- Indexing of a Material happens after upload/enable and extracts bounded plain text from supported formats (PDF, DOCX, plain text/markdown); indexing failure **MUST** leave the Material usable for its normal purposes and **MUST** be visible to the teacher (`indexState = FAILED`). Handling a Material removed or disabled **MUST** also remove its chunks from the index.
 - When the approved material does not contain the answer, the bot **MUST** say so rather than invent one. Citing the source Material in an answer is **SHOULD**.
 - Material and student text are untrusted input. Instructions embedded in files or messages **MUST NOT** change tool permissions, scope, or system instructions.
 
@@ -59,27 +59,25 @@ The bot is a study guide that runs entirely in NestJS, answers from material the
 
 ## Provider failure and fallback
 
-- When Bedrock or the retrieval service is unavailable, errors, times out, or is throttled, the review **MUST** fall back to a structured summary built from the user's data without generated text, and that counts as delivered.
-- Interactive questions **MUST** return a clear, non-technical error and allow retry. Calls **MUST** use bounded timeouts and bounded retries; non-idempotent steps **MUST NOT** be retried blindly. See [Error handling](./error-handling-and-feedback.md).
+- When the AI provider or the retrieval service is unavailable, errors, times out, or is throttled, the daily review **MUST** fall back to a structured summary built from the user's data without generated text, and that counts as delivered.
+- Interactive questions **MUST** return a clear, non-technical error (`503`) and allow retry. Calls **MUST** use bounded timeouts and bounded retries; non-idempotent steps **MUST NOT** be retried blindly. See [Error handling](./error-handling-and-feedback.md).
 
 ## Usage limits
 
-- The server **MUST** limit bot usage per user (and **SHOULD** apply a global cap and a per-classroom cap) and respond with a clear message when exceeded. Numeric limits are **open** and **MUST** be configuration values.
+- The server **MUST** limit bot usage per user, per classroom, and globally (`AI_BOT_RATE_LIMIT_*` configuration values) and respond with a clear message (`429`) when exceeded.
 - Prompt, retrieval, and response sizes **MUST** be bounded.
 
 ## Privacy and observability
 
-- Prompts, responses, and retrieved content **MUST NOT** be logged by default; log operation, user identifier, outcome, latency, and token counts per [Observability and privacy](./observability-and-privacy.md).
-- Only data necessary for the request **SHOULD** be sent to the provider. Real personal data, and any real data of minors, **MUST NOT** appear in test prompts or fixtures.
-- Whether bot conversations are persisted (the `BotConversation` entity) and retention are **open**.
+- Prompts, responses, and retrieved content **MUST NOT** be logged by default; log operation, user identifier, classroom identifier, outcome, latency, and token counts per [Observability and privacy](./observability-and-privacy.md).
+- Because the external LLM provider processes classroom prompts and retrieved material excerpts outside AWS, only data necessary for the request **SHOULD** be sent to the provider. Real personal data, and any real data of minors, **MUST NOT** appear in prompts, test fixtures, or logs.
+- Interactive Study Guide Bot conversations are ephemeral (not persisted in PostgreSQL in the MVP; `D20`).
 
 ## Verification
 
-Tests **MUST** cover: retrieval limited to approved material and to the classroom; disallowed material no longer retrievable; the bot unavailable during an exam, including a request in flight; answer keys excluded from context and solution-seeking requests turned into guidance; Parent denied the bot and the review; modification requests declined; concurrent first-connection requests delivering once; day-boundary behavior at midnight Buenos Aires time; provider failure fallback; and rate limiting. Provider calls in tests **MUST** use fakes. Follow [Quality and testing](./quality-and-testing.md).
+Tests **MUST** cover: retrieval limited to approved material and to the classroom; disallowed or removed material no longer retrievable; the bot unavailable during an exam, including a request in flight; answer keys excluded from context and solution-seeking requests turned into guidance; Parent denied the bot and the review; modification requests declined; concurrent first-connection requests delivering once; day-boundary behavior at midnight Buenos Aires time; provider failure fallback; and rate limiting. Provider calls in tests **MUST** use fakes. Follow [Quality and testing](./quality-and-testing.md).
 
 ## Open decisions
 
-- Model selection, retrieval technology, and numeric usage limits.
-- Persistence of conversations and generated review text; retention.
-- Recovery when delivery fails after the delivery record is created, and review delivery on an exam day.
-- Extent of output checks against answer keys and misuse flagging.
+- Persistence of generated daily-review text; recovery when daily-review delivery fails after the delivery record is created; and daily-review delivery semantics on an exam day beyond the default.
+- Detecting and flagging suspected bot misuse to the teacher.
