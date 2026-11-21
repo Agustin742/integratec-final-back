@@ -42,6 +42,22 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   authCleanupBatchSize: 1000,
   gradeWeightTp: 1,
   gradeWeightExam: 1.5,
+  aiProviderApiKey: undefined,
+  aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  aiChatModel: 'gemini-2.5-flash',
+  aiEmbeddingModel: 'gemini-embedding-001',
+  aiEmbeddingDimension: 768,
+  aiRequestTimeoutSeconds: 20,
+  aiMaxRetries: 1,
+  aiMaxToolIterations: 4,
+  aiRetrievalTopK: 5,
+  aiRetrievalMinSimilarity: 0.35,
+  aiChunkMaxChars: 2400,
+  aiChunkOverlapChars: 300,
+  aiBotRateLimitWindowSeconds: 60,
+  aiBotRateLimitUserMax: 10,
+  aiBotRateLimitClassroomMax: 60,
+  aiBotRateLimitGlobalMax: 300,
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {
