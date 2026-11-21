@@ -272,6 +272,21 @@ export class BotAskService {
           toolCalls: completion.toolCalls,
         });
 
+        // Re-check before executing tools so an exam started mid-request blocks retrieval immediately.
+        if (access.myRole === 'STUDENT' && (await this.activities.hasExamInProgress(actorId))) {
+          this.logAudit(
+            actorId,
+            classroomId,
+            'exam_locked_in_flight',
+            startedAt,
+            promptTokens,
+            completionTokens,
+            toolCallsCount,
+            0,
+          );
+          throw conflict('exam', EXAM_LOCKED_MESSAGE);
+        }
+
         for (const call of completion.toolCalls) {
           toolCallsCount += 1;
           const toolResult = await this.executeReadOnlyTool(

@@ -10,11 +10,14 @@ import { API_CONFIG } from '../config/config.module';
 
 export const BOT_RATE_LIMITER_OPTIONS = Symbol('BOT_RATE_LIMITER_OPTIONS');
 
+const DEFAULT_MAX_TRACKED_BUCKETS = 10_000;
+
 export interface BotRateLimiterOptions {
   windowMs?: number;
   userMax?: number;
   classroomMax?: number;
   globalMax?: number;
+  maxBuckets?: number;
   now?: () => number;
 }
 
@@ -31,6 +34,7 @@ export class BotRateLimiterService {
   private readonly userMax: number;
   private readonly classroomMax: number;
   private readonly globalMax: number;
+  private readonly maxBuckets: number;
   private readonly now: () => number;
 
   constructor(
@@ -56,12 +60,20 @@ export class BotRateLimiterService {
       DEFAULT_AI_BOT_RATE_LIMIT_CLASSROOM_MAX;
     this.globalMax =
       options?.globalMax ?? config?.aiBotRateLimitGlobalMax ?? DEFAULT_AI_BOT_RATE_LIMIT_GLOBAL_MAX;
+    this.maxBuckets = Math.max(1, options?.maxBuckets ?? DEFAULT_MAX_TRACKED_BUCKETS);
     this.now = options?.now ?? (() => Date.now());
+  }
+
+  get trackedBucketCount(): number {
+    return this.buckets.size;
   }
 
   consume(userId: string, classroomId: string): void {
     const nowMs = this.now();
     const cutoff = nowMs - this.windowMs;
+    if (this.buckets.size > this.maxBuckets) {
+      this.sweepExpired(cutoff);
+    }
     const checks: Array<[string, number]> = [
       [`user:${userId}`, this.userMax],
       [`classroom:${classroomId}`, this.classroomMax],
@@ -87,6 +99,17 @@ export class BotRateLimiterService {
     for (const item of pruned) {
       item.recent.push(nowMs);
       this.buckets.set(item.key, item.recent);
+    }
+  }
+
+  private sweepExpired(cutoff: number): void {
+    for (const [key, timestamps] of this.buckets.entries()) {
+      const active = timestamps.filter((ts) => ts > cutoff);
+      if (active.length === 0) {
+        this.buckets.delete(key);
+      } else if (active.length !== timestamps.length) {
+        this.buckets.set(key, active);
+      }
     }
   }
 }

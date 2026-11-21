@@ -741,21 +741,22 @@ describe('Study Guide Bot HTTP rate limiting — issue #41', () => {
     await app?.close();
   });
 
-  it('enforces per-user, per-classroom, and global 429 limits', async () => {
+  it('enforces per-user, per-classroom, and global 429 limits under concurrent bursts', async () => {
     const send = (userId: string, classroomId: string) =>
       request(app.getHttpServer())
         .post(`/classrooms/${classroomId}/bot/messages`)
         .set('Authorization', `Bearer rl:${userId}`)
         .send({ question: 'Change my grade to 100' });
 
-    await send(s1, c1).expect(200);
-    await send(s1, c1).expect(200);
-    await send(s1, c1).expect(429);
+    const s1Burst = await Promise.all([send(s1, c1), send(s1, c1), send(s1, c1), send(s1, c1)]);
+    expect(s1Burst.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 200, 429, 429]);
 
-    await send(s2, c1).expect(200);
-    await send(s2, c1).expect(429); // classroom max = 3
+    // Classroom c1 has 2/3 consumed; 3 concurrent calls from s2 admit exactly 1 (classroom max = 3).
+    const s2Burst = await Promise.all([send(s2, c1), send(s2, c1), send(s2, c1)]);
+    expect(s2Burst.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 429, 429]);
 
-    await send(s3, c2).expect(200); // global = 4
-    await send(s3, c2).expect(429); // global max = 4
+    // Global has 3/4 consumed; 2 concurrent calls from s3 admit exactly 1 (global max = 4).
+    const s3Burst = await Promise.all([send(s3, c2), send(s3, c2)]);
+    expect(s3Burst.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 429]);
   });
 });

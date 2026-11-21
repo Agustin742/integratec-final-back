@@ -231,15 +231,15 @@ describe('BotAskService', () => {
     });
   });
 
-  it('locks out students before calling the model AND discards in-flight responses if an exam begins', async () => {
+  it('locks out students before calling the model, before tool retrieval, and before returning an in-flight answer', async () => {
     const preLocked = setup({ myRole: 'STUDENT', examChecks: [true] });
     await expect(preLocked.service.ask(actorId, classroomId, 'Help')).rejects.toBeInstanceOf(
       RequestConflictException,
     );
     expect(preLocked.chatModel.chatCompletion).not.toHaveBeenCalled();
 
-    let turn = 0;
-    const inFlight = setup({
+    let beforeToolTurn = 0;
+    const inFlightBeforeTool = setup({
       myRole: 'STUDENT',
       examChecks: [false, true],
       retrievalHits: [
@@ -253,8 +253,51 @@ describe('BotAskService', () => {
         },
       ],
       chatHandler: async () => {
-        turn += 1;
-        if (turn === 1) {
+        beforeToolTurn += 1;
+        if (beforeToolTurn === 1) {
+          return {
+            content: null,
+            toolCalls: [
+              {
+                id: 'call_1',
+                name: 'search_allowed_material',
+                argumentsJson: '{"query":"topic"}',
+              },
+            ],
+            usage: { promptTokens: 20, completionTokens: 5 },
+          };
+        }
+        return {
+          content: 'Should never reach turn 2.',
+          toolCalls: [],
+          usage: { promptTokens: 30, completionTokens: 10 },
+        };
+      },
+    });
+    await expect(
+      inFlightBeforeTool.service.ask(actorId, classroomId, 'Help'),
+    ).rejects.toBeInstanceOf(RequestConflictException);
+    expect(inFlightBeforeTool.embeddingModel.embed).not.toHaveBeenCalled();
+    expect(inFlightBeforeTool.retrieval.search).not.toHaveBeenCalled();
+    expect(inFlightBeforeTool.chatModel.chatCompletion).toHaveBeenCalledTimes(1);
+
+    let afterToolTurn = 0;
+    const inFlightAfterTool = setup({
+      myRole: 'STUDENT',
+      examChecks: [false, false, true],
+      retrievalHits: [
+        {
+          chunkId: randomUUID(),
+          materialId,
+          filename: 'guide.pdf',
+          position: 'page 1',
+          content: 'Sensitive content.',
+          similarity: 0.9,
+        },
+      ],
+      chatHandler: async () => {
+        afterToolTurn += 1;
+        if (afterToolTurn === 1) {
           return {
             content: null,
             toolCalls: [
@@ -274,9 +317,11 @@ describe('BotAskService', () => {
         };
       },
     });
-    await expect(inFlight.service.ask(actorId, classroomId, 'Help')).rejects.toBeInstanceOf(
-      RequestConflictException,
-    );
+    await expect(
+      inFlightAfterTool.service.ask(actorId, classroomId, 'Help'),
+    ).rejects.toBeInstanceOf(RequestConflictException);
+    expect(inFlightAfterTool.retrieval.search).toHaveBeenCalledTimes(1);
+    expect(inFlightAfterTool.chatModel.chatCompletion).toHaveBeenCalledTimes(2);
   });
 
   it('returns honest out_of_scope without inventing when no chunks match, declines data edits, and maps provider failures to 503', async () => {
