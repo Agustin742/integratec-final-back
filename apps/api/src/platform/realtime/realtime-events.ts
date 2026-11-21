@@ -35,6 +35,18 @@ export const REALTIME_SESSIONS_REVOKED_EVENT = 'realtime.sessions-revoked';
  */
 export const REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT = 'realtime.classroom-appearance-changed';
 
+/**
+ * Desks were added to a classroom by auto-expansion (#79). Payload: `{ classroomId, deskCount }`,
+ * where `deskCount` is the classroom's desk count after the insert, counted in the same
+ * transaction. Desks are never deleted, so realtime only ever grows a room's layout from it.
+ */
+export const REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT = 'realtime.classroom-layout-changed';
+
+export interface ClassroomLayoutChangedPayload {
+  classroomId: string;
+  deskCount: number;
+}
+
 export interface ClassroomAccessRevokedPayload {
   userId: string;
   classroomId: string;

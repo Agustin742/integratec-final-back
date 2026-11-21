@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { memberAppearanceSchema } from '@aula/contracts';
+import { MAX_CLASSROOM_DESKS, memberAppearanceSchema } from '@aula/contracts';
 import {
   CLASSROOM_ROLES,
   JoinDeniedError,
@@ -31,6 +31,8 @@ const verifiedJoinSchema = z.object({
   // Public appearance only: unknown or malformed fields deny the join (#114).
   appearance: memberAppearanceSchema,
   appearanceRevision: z.number().int().nonnegative(),
+  // Desks of the classroom (#79); a count the room could not lay out denies the join.
+  deskCount: z.number().int().min(0).max(MAX_CLASSROOM_DESKS),
 });
 
 export interface ApiJoinVerifierOptions {

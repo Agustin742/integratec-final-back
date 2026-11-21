@@ -16,6 +16,8 @@ export interface VerifiedJoin {
   appearance: MemberAppearance;
   /** Monotonic per-user appearance version for rejecting delayed outbox deliveries. */
   appearanceRevision: number;
+  /** Student desks the classroom has; the room lays out its walkable surface from it (#79). */
+  deskCount: number;
 }
 
 /**
@@ -32,6 +34,7 @@ export interface ClassroomAuth {
   /** Public appearance confirmed by the API; refreshed on admission and reconnection (#114). */
   appearance: MemberAppearance;
   appearanceRevision: number;
+  deskCount: number;
 }
 
 export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
@@ -42,6 +45,7 @@ export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
   displayName: identity.displayName,
   appearance: identity.appearance,
   appearanceRevision: identity.appearanceRevision,
+  deskCount: identity.deskCount,
 });
 
 /** A connection that was verified at join and now asks to come back. */
