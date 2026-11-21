@@ -217,8 +217,8 @@ run "secrets_are_read_by_exact_arn" {
   }
 
   assert {
-    condition     = toset(module.runtime_access.policy_statements["ReadAppSecrets"].Resource) == toset(concat(values(module.app_config.secret_arns), [module.database.master_user_secret_arn])) && length(module.runtime_access.policy_statements["ReadAppSecrets"].Resource) == 4
-    error_message = "Secrets access must cover the three app secrets and the RDS master secret, by exact ARN."
+    condition     = toset(module.runtime_access.policy_statements["ReadAppSecrets"].Resource) == toset(concat(values(module.app_config.secret_arns), [module.database.master_user_secret_arn])) && length(module.runtime_access.policy_statements["ReadAppSecrets"].Resource) == 5
+    error_message = "Secrets access must cover the four app secrets and the RDS master secret, by exact ARN."
   }
 
   assert {

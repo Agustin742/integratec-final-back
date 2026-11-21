@@ -29,6 +29,7 @@ DB_SECRET_ARN = "arn:aws:secretsmanager:us-east-2:111122223333:secret:rds!db-123
 JWT = "jwt-" + "J" * 60
 INVITATION = "0123456789abcdef" * 4
 INTERNAL = "internal-" + "I" * 60
+AI_KEY = "ai-provider-" + "A" * 40
 DB_USER = "aula_admin"
 DB_PASSWORD = "a:b#c?d%e&f=g+h~i!j$k*l(m)n"
 ECR_TOKEN = "ecr-token-" + "T" * 40
@@ -47,7 +48,7 @@ API_PARAMS = {
 }
 REALTIME_PARAMS = {"API_INTERNAL_URL": "http://api:3000", "NODE_ENV": "production"}
 
-SECRET_VALUES = [JWT, INVITATION, INTERNAL, DB_PASSWORD, quote(DB_PASSWORD, safe=""), ECR_TOKEN]
+SECRET_VALUES = [JWT, INVITATION, INTERNAL, AI_KEY, DB_PASSWORD, quote(DB_PASSWORD, safe=""), ECR_TOKEN]
 
 # Fake aws: answers from $STUB_FIXTURES, one file per call target; a missing file is an
 # AccessDenied-like failure. It emulates the --query/--output text of the real calls.
@@ -139,8 +140,8 @@ class StaticTests(unittest.TestCase):
             if re.search(r"\b(echo|printf)\b", line):
                 self.assertNotRegex(
                     line,
-                    r"\$\{?(jwt|invitation|internal|db_password|db_user|database_url|JWT_SECRET|"
-                    r"INVITATION_TOKEN_KEY|INTERNAL_SERVICE_SECRET|DATABASE_URL|password|token)",
+                    r"\$\{?(jwt|invitation|internal|ai_provider_api_key|db_password|db_user|database_url|JWT_SECRET|"
+                    r"INVITATION_TOKEN_KEY|INTERNAL_SERVICE_SECRET|AI_PROVIDER_API_KEY|DATABASE_URL|password|token)",
                     line,
                 )
 
@@ -188,6 +189,7 @@ class BehaviorTests(unittest.TestCase):
         self.write_secret("internal-service-secret", INTERNAL)
         self.write_secret("jwt-secret", JWT)
         self.write_secret("invitation-token-key", INVITATION)
+        self.write_secret("ai-provider-api-key", AI_KEY)
         (self.fixtures / fixture_name("secret", DB_SECRET_ARN)).write_text(
             f'{{"username":"{DB_USER}","password":"{DB_PASSWORD}"}}', newline="\n")
         (self.fixtures / fixture_name("ssm", f"/{PREFIX}/config/api")).write_text(
@@ -266,6 +268,7 @@ class BehaviorTests(unittest.TestCase):
         self.assertEqual(env["JWT_SECRET"], JWT)
         self.assertEqual(env["INVITATION_TOKEN_KEY"], INVITATION)
         self.assertEqual(env["INTERNAL_SERVICE_SECRET"], INTERNAL)
+        self.assertEqual(env["AI_PROVIDER_API_KEY"], AI_KEY)
         for key, value in {**API_PARAMS, **REALTIME_PARAMS}.items():
             if key != "NODE_ENV" and not key.startswith("DB_"):
                 self.assertEqual(env[key], value, key)
@@ -299,10 +302,13 @@ class BehaviorTests(unittest.TestCase):
                 self.assertNotIn(value, call)
 
     def test_caller_environment_cannot_override_fetched_values(self):
-        result, out = self.run_script(extra_env={"JWT_SECRET": "attacker", "DATABASE_URL": "attacker"})
+        result, out = self.run_script(
+            extra_env={"JWT_SECRET": "attacker", "AI_PROVIDER_API_KEY": "attacker", "DATABASE_URL": "attacker"}
+        )
         self.assertEqual(result.returncode, 0, out)
         env = self.compose_env()
         self.assertEqual(env["JWT_SECRET"], JWT)
+        self.assertEqual(env["AI_PROVIDER_API_KEY"], AI_KEY)
         self.assertTrue(env["DATABASE_URL"].startswith("postgresql://"))
 
     def test_nothing_is_written_to_disk(self):
@@ -323,6 +329,7 @@ class BehaviorTests(unittest.TestCase):
             "INTERNAL_SERVICE_SECRET": fixture_name("secret", f"{PREFIX}/internal-service-secret"),
             "JWT_SECRET": fixture_name("secret", f"{PREFIX}/jwt-secret"),
             "INVITATION_TOKEN_KEY": fixture_name("secret", f"{PREFIX}/invitation-token-key"),
+            "AI_PROVIDER_API_KEY": fixture_name("secret", f"{PREFIX}/ai-provider-api-key"),
             "RDS master secret": fixture_name("secret", DB_SECRET_ARN),
         }
         for label, fixture in targets.items():
