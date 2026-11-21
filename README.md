@@ -258,7 +258,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `AI_MAX_RETRIES`          | Default `1`; integer 0-3                          | Bounded retries on transient AI provider errors (`429`/`5xx`/network)    | Public         | Yes     |
 | `AI_MAX_TOOL_ITERATIONS`  | Default `4`; integer 1-8                          | Maximum tool-calling turns per Study Guide Bot query                     | Public         | Yes     |
 | `AI_RETRIEVAL_TOP_K`      | Default `5`; integer 1-20                         | Maximum chunks returned per RAG search                                   | Public         | Yes     |
-| `AI_RETRIEVAL_MIN_SIMILARITY` | Default `0.35`; decimal 0-1 (<= 4 decimals)   | Minimum cosine similarity threshold to surface a chunk                   | Public         | Yes     |
+| `AI_RETRIEVAL_MIN_SIMILARITY` | Default `0.55`; decimal 0-1 (<= 4 decimals)   | Minimum cosine similarity threshold to surface a chunk                   | Public         | Yes     |
 | `AI_CHUNK_MAX_CHARS`      | Default `2400`; integer 200-8000                  | Maximum character length per indexed chunk                               | Public         | Yes     |
 | `AI_CHUNK_OVERLAP_CHARS`  | Default `300`; integer 0-2000 (`< AI_CHUNK_MAX_CHARS`) | Character overlap between adjacent chunks                          | Public         | Yes     |
 | `AI_BOT_RATE_LIMIT_WINDOW` | Default `1m`; duration 1s-1h                     | Sliding-window duration for Study Guide Bot rate limits                  | Public         | Yes     |

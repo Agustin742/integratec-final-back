@@ -22,6 +22,8 @@ export interface ChatToolDefinition {
 export interface ChatCompletionRequest {
   messages: ChatMessage[];
   tools?: ChatToolDefinition[];
+  /** Optional remaining request-deadline budget in milliseconds. */
+  timeoutMs?: number;
 }
 
 export interface ChatUsage {
@@ -44,8 +46,13 @@ export interface EmbeddingResult {
   totalTokens: number;
 }
 
+export interface EmbeddingRequestOptions {
+  /** Optional remaining request-deadline budget in milliseconds. */
+  timeoutMs?: number;
+}
+
 export interface EmbeddingModelPort {
-  embed(texts: string[]): Promise<EmbeddingResult>;
+  embed(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingResult>;
 }
 
 /** Injection tokens for external AI provider ports. */

@@ -90,7 +90,7 @@ export interface ApiConfig {
   aiMaxToolIterations?: number;
   /** Maximum retrieved material chunks returned per RAG search (defaults to 5). */
   aiRetrievalTopK?: number;
-  /** Minimum cosine similarity required to surface a chunk (defaults to 0.35). */
+  /** Minimum cosine similarity required to surface a chunk (defaults to 0.55). */
   aiRetrievalMinSimilarity?: number;
   /** Maximum characters per indexed material chunk (defaults to 2400). */
   aiChunkMaxChars?: number;
@@ -163,7 +163,7 @@ export const DEFAULT_AI_MAX_TOOL_ITERATIONS = 4;
 export const MAX_AI_MAX_TOOL_ITERATIONS = 8;
 export const DEFAULT_AI_RETRIEVAL_TOP_K = 5;
 export const MAX_AI_RETRIEVAL_TOP_K = 20;
-export const DEFAULT_AI_RETRIEVAL_MIN_SIMILARITY = 0.35;
+export const DEFAULT_AI_RETRIEVAL_MIN_SIMILARITY = 0.55;
 export const MIN_AI_CHUNK_MAX_CHARS = 200;
 export const MAX_AI_CHUNK_MAX_CHARS = 8000;
 export const DEFAULT_AI_CHUNK_MAX_CHARS = 2400;

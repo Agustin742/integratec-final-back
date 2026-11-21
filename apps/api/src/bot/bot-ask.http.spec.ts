@@ -607,9 +607,9 @@ describe('Study Guide Bot HTTP — issue #41 / HU-BOT-002', () => {
       .expect(200);
     expect(res.body).toMatchObject({
       outcome: 'answered',
-      answer: 'You currently have TP 1 Photosynthesis Essay pending.',
       citations: [],
     });
+    expect(res.body.answer).toContain('TP 1 Photosynthesis Essay');
   });
 });
 

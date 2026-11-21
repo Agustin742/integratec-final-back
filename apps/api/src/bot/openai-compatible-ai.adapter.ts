@@ -17,6 +17,7 @@ import {
   type ChatModelPort,
   type ChatToolCall,
   type EmbeddingModelPort,
+  type EmbeddingRequestOptions,
   type EmbeddingResult,
 } from './ai-provider.ports';
 
@@ -128,7 +129,11 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
       payload.tool_choice = 'auto';
     }
 
-    const raw = (await this.postJson('/chat/completions', payload)) as RawChatCompletionResponse;
+    const raw = (await this.postJson(
+      '/chat/completions',
+      payload,
+      request.timeoutMs,
+    )) as RawChatCompletionResponse;
     const choice = Array.isArray(raw.choices) ? raw.choices[0] : undefined;
     const message = choice?.message;
     if (!message || typeof message !== 'object') {
@@ -171,18 +176,22 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
     };
   }
 
-  async embed(texts: string[]): Promise<EmbeddingResult> {
+  async embed(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingResult> {
     if (texts.length === 0) {
       return { vectors: [], totalTokens: 0 };
     }
     const model = this.config.aiEmbeddingModel ?? DEFAULT_AI_EMBEDDING_MODEL;
     const dimension = this.config.aiEmbeddingDimension ?? DEFAULT_AI_EMBEDDING_DIMENSION;
 
-    const raw = (await this.postJson('/embeddings', {
-      model,
-      input: texts,
-      dimensions: dimension,
-    })) as RawEmbeddingsResponse;
+    const raw = (await this.postJson(
+      '/embeddings',
+      {
+        model,
+        input: texts,
+        dimensions: dimension,
+      },
+      options?.timeoutMs,
+    )) as RawEmbeddingsResponse;
 
     if (!Array.isArray(raw.data) || raw.data.length !== texts.length) {
       throw new AiProviderUnavailableError();
@@ -223,7 +232,7 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
     return { vectors: ordered, totalTokens };
   }
 
-  private async postJson(path: string, body: unknown): Promise<unknown> {
+  private async postJson(path: string, body: unknown, requestTimeoutMs?: number): Promise<unknown> {
     const apiKey = this.config.aiProviderApiKey?.trim();
     if (!apiKey) {
       throw new AiProviderUnavailableError('External AI provider API key is not configured');
@@ -233,12 +242,26 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
       /\/+$/,
       '',
     );
-    const timeoutMs =
+    const configTimeoutMs =
       (this.config.aiRequestTimeoutSeconds ?? DEFAULT_AI_REQUEST_TIMEOUT_SECONDS) * 1000;
+    const effectiveTimeoutMs =
+      requestTimeoutMs !== undefined
+        ? Math.min(configTimeoutMs, Math.floor(requestTimeoutMs))
+        : configTimeoutMs;
+    if (effectiveTimeoutMs <= 0) {
+      throw new AiProviderUnavailableError('AI request deadline exceeded');
+    }
+
+    const deadlineAt = Date.now() + effectiveTimeoutMs;
     const maxRetries = this.config.aiMaxRetries ?? DEFAULT_AI_MAX_RETRIES;
     const serialized = JSON.stringify(body);
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) {
+        throw new AiProviderUnavailableError('AI request deadline exceeded');
+      }
+
       try {
         const response = await this.fetchFn(`${baseUrl}${path}`, {
           method: 'POST',
@@ -247,7 +270,7 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
             'Content-Type': 'application/json',
           },
           body: serialized,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(remainingMs),
         });
 
         if (response.ok) {
@@ -258,8 +281,13 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
           }
         }
 
-        if (attempt < maxRetries && isRetryableStatus(response.status)) {
-          await sleep(this.retryBaseDelayMs * (attempt + 1));
+        const retryDelay = this.retryBaseDelayMs * (attempt + 1);
+        if (
+          attempt < maxRetries &&
+          isRetryableStatus(response.status) &&
+          deadlineAt - Date.now() > retryDelay
+        ) {
+          await sleep(retryDelay);
           continue;
         }
         throw new AiProviderUnavailableError();
@@ -267,8 +295,9 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
         if (error instanceof AiProviderUnavailableError) {
           throw error;
         }
-        if (attempt < maxRetries) {
-          await sleep(this.retryBaseDelayMs * (attempt + 1));
+        const retryDelay = this.retryBaseDelayMs * (attempt + 1);
+        if (attempt < maxRetries && deadlineAt - Date.now() > retryDelay) {
+          await sleep(retryDelay);
           continue;
         }
         throw new AiProviderUnavailableError();

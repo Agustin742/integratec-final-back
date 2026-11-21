@@ -46,7 +46,7 @@ export const authTestConfig = (overrides: Partial<ApiConfig> = {}): ApiConfig =>
   aiMaxRetries: 1,
   aiMaxToolIterations: 4,
   aiRetrievalTopK: 5,
-  aiRetrievalMinSimilarity: 0.35,
+  aiRetrievalMinSimilarity: 0.55,
   aiChunkMaxChars: 2400,
   aiChunkOverlapChars: 300,
   aiBotRateLimitWindowSeconds: 60,

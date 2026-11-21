@@ -111,7 +111,7 @@ describe('PgVectorMaterialIndexAdapter (unit)', () => {
         classroomId,
         queryEmbedding: unitVector(0, 1536),
         topK: 5,
-        minSimilarity: 0.35,
+        minSimilarity: 0.55,
       }),
     ).rejects.toThrow(/768/);
     expect(storage.get).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe('PgVectorMaterialIndexAdapter (unit)', () => {
       classroomId,
       queryEmbedding: unitVector(0),
       topK: 5,
-      minSimilarity: 0.35,
+      minSimilarity: 0.55,
     });
 
     expect(hits).toHaveLength(1);
