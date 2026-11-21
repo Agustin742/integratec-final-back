@@ -1,5 +1,18 @@
 # Tracker — Luis
 
+## 2026-11-21 — Review fixes for Study Guide Bot RAG (PR #128 / #41)
+
+- **Status:** completed (local commits on `feat/41-study-guide-bot-rag`, awaiting push and CI)
+- **Area / files:** `apps/api/src/bot/pgvector-material-index.adapter.ts`, `apps/api/src/bot/pgvector-material-index.spec.ts`, `apps/api/src/bot/bot-rag.integration.spec.ts`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `README.md`, `apps/api/src/bot/bot-ask.service.ts`, `apps/api/src/bot/bot-ask.service.spec.ts`, `apps/api/src/bot/bot-rate-limiter.service.ts`, `apps/api/src/bot/bot-rate-limiter.spec.ts`, `apps/api/src/bot/bot-ask.http.spec.ts`, `changelogs/tracker-luis.md`
+- **Change:** Addressed all four review findings posted on PR #128:
+  1. Serialized `PgVectorMaterialIndexAdapter.index()` and `remove()` per `(classroomId, materialId)` via SHA-256 `bigint` `pg_advisory_xact_lock` inside `$transaction` (`maxWait: 10_000`) and added `Promise.all` concurrency integration coverage preventing `23505` unique collisions on `material_chunks_classroom_id_material_id_chunk_index_key`.
+  2. Tightened `AI_EMBEDDING_DIMENSION` startup validation in `api-config.ts` to fail fast unless it matches database `vector(768)` (`README.md` and `api-config.spec.ts` updated accordingly).
+  3. Added an in-flight `hasExamInProgress` check inside `BotAskService.ask()` before executing read-only tools so exams started mid-request block pgvector retrieval and follow-up LLM calls immediately with `409 Conflict`.
+  4. Added bounded expired-bucket sweeping in `BotRateLimiterService` (`maxBuckets`, default `10_000`) and upgraded HTTP rate-limit integration coverage to concurrent `Promise.all` bursts.
+- **Reason:** Close concurrency, startup-validation, exam-retrieval lockout, and memory-growth findings identified during PR #128 audit.
+- **Validation:** Focused unit/OpenAPI suites passed **181/181 across 10 files (`0` skipped)** (`api-config.spec.ts`, `bot-*`, `text-*`, `answer-key-guard.spec.ts`, `openai-compatible-ai.adapter.spec.ts`, `openapi.spec.ts`); real PostgreSQL + pgvector integration suites (`ankane/pgvector:v0.5.1` ephemeral container with all migrations applied) passed **13/13 across 3 files (`0` skipped)** (`bot-rag.integration.spec.ts` 4/4, `bot-ask.http.spec.ts` 7/7, `activities-exam-lockout.spec.ts` 2/2); `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `python scripts/ci/check_docs.py` (83 files), and `git diff --check origin/develop` passed. Full workspace regression runs in Ubuntu CI on push.
+- **Next step:** Push commits to `feat/41-study-guide-bot-rag`, verify Ubuntu CI green, and approve/merge PR #128 before rebasing PR #123.
+
 ## 2026-11-20 — Prevent stale appearance retries from overwriting newer state (PR #121)
 
 - **Status:** completed
