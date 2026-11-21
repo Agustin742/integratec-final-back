@@ -34,8 +34,10 @@ enablement (#40) is documented in [Bot materials](bot-materials.md).
   accounts with no classroom access always answer `not_due` and consume no delivery.
 - **Exam block:** a student with an exam in progress (same predicate
   `ActivitiesService.hasExamInProgress` that `rules/activities-and-grading.md` pins)
-  answers `not_due` without consuming the delivery — the recorded default for the
-  open "review on an exam day" decision.
+  answers `not_due` without consuming the delivery or persisting a question — checked
+  both before composition and again after inference (in-flight lockout). Answering an
+  already-delivered daily question while an exam is open returns `409 CONFLICT`
+  (`exam` field) without consuming the student's daily attempt budget.
 - **Sections:** composed only through the exported application services that REST
   uses (student pending activities, report-card grades, announcements, teacher grading
   queue), bounded per section, with per-classroom failure isolation: one failing

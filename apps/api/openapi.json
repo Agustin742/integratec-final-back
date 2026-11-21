@@ -3309,7 +3309,7 @@
             }
           },
           "409": {
-            "description": "The question belongs to another local day, was already answered today, or a concurrent correct answer won.",
+            "description": "The question belongs to another local day, was already answered today, a concurrent correct answer won, or the student has an exam in progress.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }

@@ -82,7 +82,7 @@ export class DailyReviewController {
   @ApiConflictResponse({
     type: ErrorEnvelopeDto,
     description:
-      'The question belongs to another local day, was already answered today, or a concurrent correct answer won.',
+      'The question belongs to another local day, was already answered today, a concurrent correct answer won, or the student has an exam in progress.',
   })
   @ApiTooManyRequestsResponse({
     type: ErrorEnvelopeDto,

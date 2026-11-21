@@ -74,6 +74,7 @@ const toQuestionDto = (row: QuestionPublicRow): DailyQuestionDto => ({
 const CORRECT_ANSWER_FEEDBACK = '¡Muy bien! Respuesta correcta y día de racha ganado. ¡Seguí así!';
 const WRONG_ANSWER_FEEDBACK =
   'Todavía no es la correcta. Repasá el material de la clase y probá de nuevo.';
+const EXAM_LOCKED_MESSAGE = 'The study guide bot is unavailable while an exam is in progress.';
 
 export type DailyReviewAudience = 'STUDENT' | 'TEACHER';
 
@@ -162,11 +163,17 @@ export class DailyReviewService {
 
     // The daily question is student-only and independent of the summary: it is
     // built from enabled material, and its failure is a `null` question while the
-    // review (generated or structured) is still delivered.
-    const dailyQuestion =
-      audience === 'STUDENT'
-        ? await this.generateDailyQuestion(userId, localDay, classrooms)
-        : null;
+    // review (generated or structured) is still delivered. Generation runs in
+    // memory so an in-flight exam lockout or losing concurrent GET never persists
+    // an orphan question row.
+    const generatedQuestion =
+      audience === 'STUDENT' ? await this.prepareDailyQuestion(userId, classrooms) : null;
+
+    // In-flight exam lockout: if an exam opened while sections or inference were
+    // running, abort before consuming the day's delivery or persisting a question.
+    if (audience === 'STUDENT' && (await this.activities.hasExamInProgress(userId))) {
+      return NOT_DUE;
+    }
 
     try {
       await this.prisma.dailyReviewDelivery.create({
@@ -177,6 +184,11 @@ export class DailyReviewService {
       if (isUniqueViolation(error)) return NOT_DUE;
       throw error;
     }
+
+    const dailyQuestion =
+      generatedQuestion === null
+        ? null
+        : await this.persistDailyQuestion(userId, localDay, generatedQuestion);
 
     return {
       status: 'due',
@@ -189,18 +201,16 @@ export class DailyReviewService {
   }
 
   /**
-   * Daily question generation (S3), run only on the delivery-winning path for a
-   * STUDENT. The prompt input is ONLY enabled material titles (plus classroom
-   * names) the user may already see; no enabled material means no question, even
-   * when the summary was generated. The answer key lives in the persisted row and
-   * never in a response DTO; generation failure leaves no row and does not block
-   * the review.
+   * Daily question generation (S3), computed in memory for a STUDENT before
+   * delivery persistence. The prompt input is ONLY enabled material titles (plus
+   * classroom names) the user may already see; no enabled material means no
+   * question, even when the summary was generated. Generation failure returns
+   * `null` and does not block the review.
    */
-  private async generateDailyQuestion(
+  private async prepareDailyQuestion(
     userId: string,
-    localDay: string,
     classrooms: ReviewClassroom[],
-  ): Promise<DailyQuestionDto | null> {
+  ): Promise<GeneratedDailyQuestion | null> {
     const studentClassroomIds = classrooms
       .filter((classroom) => classroom.myRole === 'STUDENT')
       .map((classroom) => classroom.id);
@@ -215,9 +225,18 @@ export class DailyReviewService {
     } catch {
       generated = null;
     }
-    const valid = generated === null ? null : normalizeGeneratedQuestion(generated);
-    if (valid === null) return null;
+    return generated === null ? null : normalizeGeneratedQuestion(generated);
+  }
 
+  /**
+   * Persists a validated daily question after the delivery row is claimed. The
+   * answer key lives in the persisted row and never in a response DTO.
+   */
+  private async persistDailyQuestion(
+    userId: string,
+    localDay: string,
+    valid: GeneratedDailyQuestion,
+  ): Promise<DailyQuestionDto | null> {
     try {
       const row = await this.prisma.dailyReviewQuestion.create({
         data: {
@@ -263,6 +282,12 @@ export class DailyReviewService {
       select: { id: true, localDay: true, attempts: true, answeredAt: true, correctOption: true },
     });
     if (question === null) throw new NotFoundException('Daily question not found');
+
+    // Exam lockout: block answering while an exam is open in any of the student's
+    // classrooms, before consuming an attempt from the daily budget.
+    if (await this.activities.hasExamInProgress(userId)) {
+      throw conflict('exam', EXAM_LOCKED_MESSAGE);
+    }
 
     const localDay = toLocalDay(new Date(), DEFAULT_LOCAL_DAY_TIME_ZONE);
     if (question.localDay !== localDay) {

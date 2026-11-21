@@ -54,7 +54,9 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     genFailStudent,
     invalidStudent,
     noMaterialStudent,
-  ] = Array.from({ length: 21 }, () => randomUUID());
+    inFlightExamStudent,
+    answerExamStudent,
+  ] = Array.from({ length: 23 }, () => randomUUID());
   const [
     classroom,
     reloadClassroom,
@@ -70,7 +72,9 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     genFailClassroom,
     invalidClassroom,
     noMaterialClassroom,
-  ] = Array.from({ length: 14 }, () => randomUUID());
+    inFlightExamClassroom,
+    answerExamClassroom,
+  ] = Array.from({ length: 16 }, () => randomUUID());
   const users: string[] = [
     teacher,
     student,
@@ -93,6 +97,8 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     genFailStudent,
     invalidStudent,
     noMaterialStudent,
+    inFlightExamStudent,
+    answerExamStudent,
   ];
 
   const path = () => '/users/me/daily-review';
@@ -122,6 +128,24 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
   };
   const inferenceFake: DailyReviewInferencePort = {
     generateSummary: async (input) => {
+      if (input.userId === inFlightExamStudent) {
+        const now = new Date();
+        await prisma.activity.create({
+          data: {
+            classroomId: inFlightExamClassroom,
+            createdById: teacher,
+            type: ActivityType.EXAM,
+            format: ActivityFormat.MULTIPLE_CHOICE,
+            state: ActivityState.PUBLISHED,
+            title: 'In-flight exam lockout',
+            opensAt: new Date(now.getTime() - 5 * 60 * 1000),
+            dueAt: new Date(now.getTime() + 30 * 60 * 1000),
+            publishedAt: now,
+            maxScore: 100,
+          },
+        });
+        return GENERATED_SUMMARY;
+      }
       if (input.userId === generatedStudent) return GENERATED_SUMMARY;
       if (input.userId === failedStudent) throw new Error('synthetic provider outage');
       return null;
@@ -353,6 +377,8 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           { id: genFailClassroom, name: 'Física 4°C', independentTeacherId: teacher },
           { id: invalidClassroom, name: 'Historia 5°B', independentTeacherId: teacher },
           { id: noMaterialClassroom, name: 'Música 1°A', independentTeacherId: teacher },
+          { id: inFlightExamClassroom, name: 'Literatura 3°A', independentTeacherId: teacher },
+          { id: answerExamClassroom, name: 'Economía 5°C', independentTeacherId: teacher },
         ],
       });
       await tx.classroomMembership.createMany({
@@ -370,6 +396,16 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
           {
             classroomId: noMaterialClassroom,
             userId: noMaterialStudent,
+            role: ClassroomRole.STUDENT,
+          },
+          {
+            classroomId: inFlightExamClassroom,
+            userId: inFlightExamStudent,
+            role: ClassroomRole.STUDENT,
+          },
+          {
+            classroomId: answerExamClassroom,
+            userId: answerExamStudent,
             role: ClassroomRole.STUDENT,
           },
         ],
@@ -402,6 +438,8 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
       await enableBotMaterial(questionClassroom, 'Guía de fotosíntesis.pdf');
       await enableBotMaterial(genFailClassroom, 'Apunte de ondas.pdf');
       await enableBotMaterial(invalidClassroom, 'Revolución de Mayo.pdf');
+      await enableBotMaterial(inFlightExamClassroom, 'Guía en vuelo.pdf');
+      await enableBotMaterial(answerExamClassroom, 'Guía de examen.pdf');
     });
   }, 30_000);
   afterAll(async () => {
@@ -804,5 +842,63 @@ describe('daily review delivery — issue #42 / HU-BOT-003', () => {
     expect(await prisma.dailyReviewQuestion.count({ where: { userId: noMaterialStudent } })).toBe(
       0,
     );
+  });
+
+  it('aborts delivery without creating delivery or question rows when an exam opens in flight', async () => {
+    const response = await get(inFlightExamStudent).expect(200);
+    expect(response.body).toEqual({ status: 'not_due' });
+    expect(await deliveries(inFlightExamStudent)).toBe(0);
+    expect(await prisma.dailyReviewQuestion.count({ where: { userId: inFlightExamStudent } })).toBe(
+      0,
+    );
+  });
+
+  it('returns 409 without consuming attempts when answering during an active exam and succeeds once the exam ends', async () => {
+    const review = await get(answerExamStudent).expect(200);
+    expect(review.body).toMatchObject({ status: 'due', audience: 'STUDENT' });
+    const questionId = review.body.dailyQuestion.id as string;
+
+    const now = new Date();
+    const activeExam = await prisma.activity.create({
+      data: {
+        classroomId: answerExamClassroom,
+        createdById: teacher,
+        type: ActivityType.EXAM,
+        format: ActivityFormat.MULTIPLE_CHOICE,
+        state: ActivityState.PUBLISHED,
+        title: 'Answer-time exam lockout',
+        opensAt: new Date(now.getTime() - 5 * 60 * 1000),
+        dueAt: new Date(now.getTime() + 30 * 60 * 1000),
+        publishedAt: now,
+        maxScore: 100,
+      },
+      select: { id: true },
+    });
+
+    const locked = await postAnswer(answerExamStudent, {
+      questionId,
+      answer: QUESTION.correctOption,
+    }).expect(409);
+    expect(locked.body.error.code).toBe('CONFLICT');
+
+    const whileLocked = await prisma.dailyReviewQuestion.findUniqueOrThrow({
+      where: { id: questionId },
+      select: { attempts: true, answeredAt: true },
+    });
+    expect(whileLocked).toEqual({ attempts: 0, answeredAt: null });
+    expect(await qualifyingDays(answerExamStudent)).toBe(0);
+
+    // Once the exam closes, the student can answer normally and earn the streak.
+    await prisma.activity.update({
+      where: { id: activeExam.id },
+      data: { dueAt: new Date(Date.now() - 60 * 1000) },
+    });
+
+    const unlocked = await postAnswer(answerExamStudent, {
+      questionId,
+      answer: QUESTION.correctOption,
+    }).expect(200);
+    expect(unlocked.body.correct).toBe(true);
+    expect(await qualifyingDays(answerExamStudent)).toBe(1);
   });
 });
