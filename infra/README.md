@@ -9,12 +9,12 @@ Rules: [Infrastructure as code](../rules/infrastructure-as-code.md), [AWS infras
 | Root | Purpose | State |
 |------|---------|-------|
 | `bootstrap/` | Creates the S3 bucket that stores every other root's state. Run once. | Local (`terraform.tfstate`, git-ignored). |
-| `envs/prod/` | Production environment: network, EC2 host, RDS database, container deployment resources, the deploy pipeline and the frontend Amplify app, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
+| `envs/prod/` | Production environment: network, EC2 host, RDS database, container deployment resources, the deploy pipeline, the alarms and budget, and the frontend Amplify app, plus the GitHub Actions OIDC provider and CI role (opt-in via `enable_github_oidc`). | Remote, `s3://<state bucket>/prod/terraform.tfstate`. |
 
 Conventions:
 
 - **Every root module has a `versions.tf`.** CI detects roots by that file and fails if a root is missing from the `terraform` job matrix in `.github/workflows/ci.yml`.
-- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`, `registry`, `app_config`, `storage`, `runtime_access`, `delivery_pipeline`) and have no `versions.tf` of their own.
+- Reusable child modules go under `infra/modules/` (`network`, `host`, `database`, `registry`, `app_config`, `storage`, `runtime_access`, `delivery_pipeline`, `monitoring`) and have no `versions.tf` of their own.
 - The `project` prefix (`aula-virtual` by default) **MUST** be the same in every root. The CI role policy in `envs/prod` derives the state bucket name from it and the account ID.
 - Tags `Project`, `Environment`, and `ManagedBy = "terraform"` are applied through provider `default_tags`.
 
@@ -436,6 +436,43 @@ Not fixed in #61:
 - Add script tests for a malformed `DB_SECRET_ARN` and an out-of-range `DB_PORT`, and keep the validation regexes of the script and of Terraform in sync.
 - Remove the now-redundant `compact()` in `envs/prod/main.tf`, and centralize the repeated mock overrides in the test files if Terraform supports it.
 - The `scripts/ci` tests that need PyYAML are skipped where it is not installed; decide whether CI installs it.
+
+## Monitoring (alarms and budget)
+
+Module `monitoring` (issue #62) adds the prod alerts. Alarms and the budget both notify the addresses in `alert_email_addresses`. The real addresses live only in the git-ignored `terraform.tfvars`; `example.tfvars` holds placeholders.
+
+### Resources
+
+| What | Resource | Signal |
+| --- | --- | --- |
+| Alarm topic | SNS topic `aula-virtual-prod-alarms` and one email subscription per address | Every alarm sends to it, both when it fires and when it recovers (`alarm_actions` and `ok_actions`). |
+| Monthly budget | AWS Budget `aula-virtual-prod-monthly-cost`, USD 40 (`monthly_budget_usd`) | Email at 50 % and 80 % of actual spend and at 100 % of forecasted spend. The expected spend is about USD 35/month. A budget is an alert, not a spending cap. |
+| Host | `host-status-instance`, `host-status-system`, `host-cpu-high` | EC2 status checks failed, or CPU above 80 % for 15 minutes. |
+| Containers | `api-unhealthy`, `realtime-unhealthy` | Docker healthcheck of the container. The timer `app-container-health.timer` on the host publishes `Healthy` (1 or 0) to the `AulaVirtual/Containers` namespace every minute. **No data counts as unhealthy**, so a dead host, timer or publisher also alarms. |
+| Database | `database-free-storage-low` and the RDS event subscription `db-events` | Free storage below 2 GiB; RDS availability, failure, low-storage and recovery events. |
+
+### One-time steps after the first apply
+
+1. **Confirm each email subscription.** AWS sends "AWS Notification - Subscription Confirmation" to every address in `alert_email_addresses`. Click the link in each one. Until then the subscription stays `PendingConfirmation` and no alarm email arrives. Check with `aws sns list-subscriptions-by-topic --topic-arn "$(terraform output -raw alarm_topic_arn)"`. The budget emails do not need this step: they go to the addresses directly.
+2. **Apply locally before the first pipeline run.** The deploy pipeline's plan project receives `alert_email_addresses` and `monthly_budget_usd` as `TF_VAR_*` environment variables, and only an apply updates them. After this change is merged into `develop`, the first pipeline run fails at its plan stage (before approval, so nothing changes). Run the local `terraform apply` from the merged `develop` first, then release the pipeline again.
+3. **Check the health timer** after the next deploy. `host-deploy.sh` installs and enables it after a successful start. From Session Manager, `systemctl status app-container-health.timer` should show it active, and the container alarms should move to `OK` within a few minutes.
+
+### Stopping the host or the database on purpose
+
+Stopping the EC2 host on purpose (for example to save credits between demos) makes the container alarms fire, because no data counts as unhealthy. The host status, CPU and storage alarms treat missing data as missing, so they stay quiet. To stop without alarm emails, turn the actions off first and back on after starting again:
+
+```sh
+aws cloudwatch disable-alarm-actions --alarm-names aula-virtual-prod-api-unhealthy aula-virtual-prod-realtime-unhealthy
+aws cloudwatch enable-alarm-actions --alarm-names aula-virtual-prod-api-unhealthy aula-virtual-prod-realtime-unhealthy
+```
+
+### Cleanup owner
+
+Agustin owns cleanup of experimental resources in this account. Anything created by hand for a test (outside Terraform) must be deleted by whoever created it on the same day, or reported to Agustin. Resources in this root are removed only through Terraform.
+
+### Estimated monthly cost (unverified)
+
+6 standard alarms (the free tier covers 10), 2 custom metrics (free tier: 10), about 43,800 `PutMetricData` calls (free tier: 1,000,000 API requests), SNS email notifications (free tier: 1,000), the RDS event subscription (no charge), and 1 budget (the first 2 are free). The expected cost is USD 0 inside those limits. The free tier limits were not checked against this account's Free plan.
 
 ## Deploy pipeline (CodePipeline and CodeBuild)
 

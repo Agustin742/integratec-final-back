@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The delivery pipeline module builds role and project ARNs from the account ID, and
   # CodeBuild validates them; the mock would return a random string, so it is pinned.
   override_data {
@@ -48,6 +57,7 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
 run "connection_links_github_and_is_named_by_prefix" {
@@ -133,6 +143,8 @@ run "artifact_expiration_is_configurable" {
     region                   = "us-east-2"
     allowed_origins          = ["https://app.example.com"]
     password_reset_url_base  = "https://app.example.com/reset-password"
+    alert_email_addresses    = ["alerts@example.com"]
+    monthly_budget_usd       = 40
     name_prefix              = "aula-virtual-prod"
     artifact_expiration_days = 90
     ecr_repository_names     = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
@@ -187,6 +199,8 @@ run "rejects_unsupported_log_retention" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -222,6 +236,8 @@ run "rejects_zero_artifact_expiration_days" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -257,6 +273,8 @@ run "rejects_fractional_artifact_expiration_days" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"
@@ -292,6 +310,8 @@ run "rejects_name_prefix_longer_than_17_characters" {
     region                  = "us-east-2"
     allowed_origins         = ["https://app.example.com"]
     password_reset_url_base = "https://app.example.com/reset-password"
+    alert_email_addresses   = ["alerts@example.com"]
+    monthly_budget_usd      = 40
     name_prefix             = "aula-virtual-prod-x"
     ecr_repository_names    = { api = "aula-virtual-prod-api", realtime = "aula-virtual-prod-realtime", migrate = "aula-virtual-prod-migrate" }
     host_instance_id        = "i-0123456789abcdef0"

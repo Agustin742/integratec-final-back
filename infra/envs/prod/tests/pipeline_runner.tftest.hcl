@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -48,6 +57,7 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
 run "projects_are_named_by_prefix_and_take_their_source_from_codepipeline" {
@@ -131,8 +141,18 @@ run "plan_environment_reproduces_the_local_apply_inputs" {
   }
 
   assert {
-    condition     = length(module.delivery_pipeline.terraform_projects.plan.environment_variables) == 6
-    error_message = "The plan project must receive exactly the state bucket and five TF_VAR_* values."
+    condition     = module.delivery_pipeline.terraform_projects.plan.environment_variables.TF_VAR_alert_email_addresses.value == jsonencode(["alerts@example.com"])
+    error_message = "alert_email_addresses must be injected as JSON, or the pipeline plan has no value for a required variable."
+  }
+
+  assert {
+    condition     = module.delivery_pipeline.terraform_projects.plan.environment_variables.TF_VAR_monthly_budget_usd.value == "40"
+    error_message = "monthly_budget_usd must be injected so the pipeline plan equals the local one."
+  }
+
+  assert {
+    condition     = length(module.delivery_pipeline.terraform_projects.plan.environment_variables) == 8
+    error_message = "The plan project must receive exactly the state bucket and seven TF_VAR_* values."
   }
 }
 

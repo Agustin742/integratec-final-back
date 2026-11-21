@@ -207,3 +207,13 @@ output "pipeline_deploy_role_arn" {
   description = "ARN of the service role of the deploy project (SSM Run Command on the host instance only)."
   value       = module.delivery_pipeline.deploy_role_arn
 }
+
+output "alarm_topic_arn" {
+  description = "ARN of the SNS topic alarms publish to; each email subscription must be confirmed from the inbox."
+  value       = module.monitoring.alarm_topic_arn
+}
+
+output "monthly_budget_name" {
+  description = "Name of the monthly AWS Budget (cost limit with 50 %, 80 % and forecasted 100 % notifications)."
+  value       = module.monitoring.budget_name
+}

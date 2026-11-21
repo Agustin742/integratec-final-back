@@ -66,6 +66,16 @@ variable "password_reset_url_base" {
   type        = string
 }
 
+variable "alert_email_addresses" {
+  description = "Value of the prod root variable of the same name, injected as TF_VAR_alert_email_addresses so the pipeline plan equals the local one."
+  type        = list(string)
+}
+
+variable "monthly_budget_usd" {
+  description = "Value of the prod root variable of the same name, injected as TF_VAR_monthly_budget_usd."
+  type        = number
+}
+
 variable "enable_github_oidc" {
   description = "Value of the prod root variable of the same name, injected as TF_VAR_enable_github_oidc."
   type        = bool

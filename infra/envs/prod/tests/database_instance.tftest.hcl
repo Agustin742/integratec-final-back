@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The delivery pipeline module builds role and project ARNs from the account ID, and
   # CodeBuild validates them; the mock would return a random string, so it is pinned.
   override_data {
@@ -48,6 +57,7 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
 run "instance_engine_and_sizing" {
@@ -76,6 +86,15 @@ run "instance_engine_and_sizing" {
   assert {
     condition     = module.database.instance_settings.identifier == "${var.project}-prod-db"
     error_message = "The instance identifier must be <prefix>-db."
+  }
+}
+
+run "instance_identifier_is_exposed" {
+  command = apply
+
+  assert {
+    condition     = module.database.identifier == "${var.project}-prod-db" && module.database.identifier == module.database.instance_settings.identifier
+    error_message = "The database module must expose the instance identifier (<prefix>-db) for the RDS alarms and events."
   }
 }
 

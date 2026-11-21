@@ -1,5 +1,11 @@
 locals {
   environment = "prod"
+
+  # CloudWatch namespace of the container health metric. One value feeds the host policy
+  # (PutMetricData condition) and the container alarms. The publisher script cannot read
+  # Terraform, so it repeats the value as its default (infra/deploy/publish-container-health.sh);
+  # monitoring.tftest.hcl and scripts/ci/test_container_health.py fail if the two differ.
+  container_health_namespace = "AulaVirtual/Containers"
 }
 
 # Prod compute is a single EC2 host (see rules/aws-infrastructure.md). The network
@@ -56,6 +62,20 @@ module "storage" {
   name_prefix = "${var.project}-${local.environment}"
 }
 
+# Alarm topic (email subscriptions) and the monthly cost budget. Later alarms publish to
+# module.monitoring.alarm_topic_arn.
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  name_prefix           = "${var.project}-${local.environment}"
+  alert_email_addresses = var.alert_email_addresses
+  monthly_budget_usd    = var.monthly_budget_usd
+
+  host_instance_id             = module.host.instance_id
+  database_instance_identifier = module.database.identifier
+  container_health_namespace   = local.container_health_namespace
+}
+
 # Foundation of the keyless deploy pipeline (D19): the GitHub connection (authorized once
 # by hand in the console), the artifact bucket, the CodeBuild log group and the Terraform
 # runner (CodeBuild plan and apply projects with their roles), the image build, the host
@@ -72,6 +92,8 @@ module "delivery_pipeline" {
   state_key               = "${local.environment}/terraform.tfstate"
   allowed_origins         = var.allowed_origins
   password_reset_url_base = var.password_reset_url_base
+  alert_email_addresses   = var.alert_email_addresses
+  monthly_budget_usd      = var.monthly_budget_usd
   enable_github_oidc      = var.enable_github_oidc
 
   # Repositories the images project pushes to.
@@ -108,6 +130,9 @@ module "runtime_access" {
 
   # The deploy pipeline publishes the host files here; the host reads host-files/* only.
   host_files_bucket_arn = module.delivery_pipeline.artifact_bucket_arn
+
+  # The host publishes the health of its containers to this namespace only.
+  container_health_namespace = local.container_health_namespace
 }
 
 module "app_config" {
