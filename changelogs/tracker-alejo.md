@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-21 — Review fixes on PR #127 (prod alarms and budget, #62)
+
+- **Status:** completed (ready to push to PR #127 for CI and merge into `develop`)
+- **Area / files:** `infra/modules/delivery_pipeline/terraform_runner_iam.tf`, `infra/envs/prod/tests/pipeline_runner.tftest.hcl`, `infra/envs/prod/tests/monitoring.tftest.hcl`, `infra/modules/monitoring/variables.tf`, `infra/modules/monitoring/alarms_containers.tf`, `changelogs/tracker-agustin.md`, `changelogs/tracker-alejo.md`
+- **Change:** Added least-privilege IAM statements (`ManageProjectAlarmTopics`, `ManageProjectAlarms`, `ManageBudgets`, `TagProjectBudgets`) to the `terraform_apply` role plus matching `terraform test` assertions, renamed `budget_is_a_monthly_cost_budget_of_20_usd` to `budget_is_a_monthly_cost_budget_of_40_usd`, removed the duplicated `default = 40` in `infra/modules/monitoring/variables.tf`, clarified the host-alarm contrast comment in `infra/modules/monitoring/alarms_containers.tf`, and merged `origin/develop` (`0849c65`, resolving `changelogs/tracker-agustin.md` by keeping both entries verbatim).
+- **Reason:** PR review found `terraform_apply` lacked IAM permissions to manage SNS topics/subscriptions, CloudWatch alarms, and AWS Budgets in future pipeline runs, plus minor test/comment cleanups and `develop` sync after merging PR #126.
+- **Verification:** `git diff --check origin/develop HEAD --` and `scripts/ci/check_docs.py` verified locally; `terraform fmt -check`, `terraform validate`, and `terraform test` run in GitHub Actions CI (`terraform` is not installed locally).
+- **Next step:** Push to `feat/62-alarms-budgets`, confirm 3/3 CI checks pass, and approve and merge PR #127 into `develop`.
+
 ## 2026-11-19 — Issue #114: share member appearance (base avatar + equipped items)
 
 - **Status:** completed (PR #121 into develop: MERGEABLE, CI 3/3 green — checks 2m50s incl. the full Linux suite, terraform bootstrap, terraform prod; awaiting team review; no merge authorized)

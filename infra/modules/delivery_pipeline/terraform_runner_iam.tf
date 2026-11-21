@@ -305,6 +305,42 @@ locals {
         Action   = ["codepipeline:*"]
         Resource = ["arn:aws:codepipeline:${local.account_arn_suffix}:${var.name_prefix}-*"]
       },
+      {
+        Sid      = "ManageProjectAlarmTopics"
+        Effect   = "Allow"
+        Action   = ["sns:*"]
+        Resource = ["arn:aws:sns:${local.account_arn_suffix}:${var.name_prefix}-*"]
+      },
+      {
+        # Metric alarms are named <name_prefix>-*; scoping to the alarm ARN prefix keeps
+        # PutMetricAlarm, DeleteAlarms, DescribeAlarms and tagging inside this environment.
+        Sid    = "ManageProjectAlarms"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DeleteAlarms",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:TagResource",
+          "cloudwatch:UntagResource",
+          "cloudwatch:ListTagsForResource",
+        ]
+        Resource = ["arn:aws:cloudwatch:${local.account_arn_suffix}:alarm:${var.name_prefix}-*"]
+      },
+      {
+        # AWS Budgets does not support resource-level ARNs for ViewBudget or ModifyBudget
+        # (which covers create, update and delete of budgets, notifications and subscribers),
+        # so "*" is required; tagging is scoped to <name_prefix>-* below.
+        Sid      = "ManageBudgets"
+        Effect   = "Allow"
+        Action   = ["budgets:ViewBudget", "budgets:ModifyBudget"]
+        Resource = ["*"]
+      },
+      {
+        Sid      = "TagProjectBudgets"
+        Effect   = "Allow"
+        Action   = ["budgets:TagResource", "budgets:UntagResource", "budgets:ListTagsForResource"]
+        Resource = ["arn:aws:budgets::${local.account_id}:budget/${var.name_prefix}-*"]
+      },
     ],
     # The GitHub OIDC provider exists only when enable_github_oidc is true.
     [for _ in range(var.enable_github_oidc ? 1 : 0) :
@@ -372,9 +408,9 @@ resource "aws_iam_role" "terraform_apply" {
 }
 
 # ReadOnlyAccess is used instead of a hand-written list because the refresh reads every
-# managed service (EC2, RDS, IAM, ECR, S3, SSM, Secrets Manager, CloudWatch Logs, Amplify,
-# CodeConnections, CodeBuild, CodePipeline), and a missing read would fail the plan of the
-# approval stage. The inline policy below denies the two data reads it would add.
+# managed service (EC2, RDS, IAM, ECR, S3, SSM, Secrets Manager, CloudWatch Logs and Alarms,
+# SNS, AWS Budgets, Amplify, CodeConnections, CodeBuild, CodePipeline), and a missing read
+# would fail the plan of the approval stage. The inline policy below denies the two data reads it would add.
 resource "aws_iam_role_policy_attachment" "terraform_plan_read_only" {
   role       = aws_iam_role.terraform_plan.name
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"

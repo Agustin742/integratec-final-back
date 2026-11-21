@@ -99,3 +99,13 @@ variable "retention_in_days" {
     error_message = "retention_in_days must be one of the values CloudWatch Logs supports (1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1096, 1827, 2192, 2557, 2922, 3288, 3653)."
   }
 }
+
+variable "container_health_namespace" {
+  description = "CloudWatch namespace the host may publish metrics to with cloudwatch:PutMetricData (the container health metric); no other namespace is allowed."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.#:/-]{1,255}$", var.container_health_namespace)) && !startswith(var.container_health_namespace, "AWS/")
+    error_message = "container_health_namespace must be 1 to 255 characters of letters, digits and _ . # : / -, and must not start with AWS/ (reserved by AWS)."
+  }
+}
