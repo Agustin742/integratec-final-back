@@ -1,5 +1,18 @@
 # Tracker — Luis
 
+## 2026-11-21 — Audit fixes and D20 provider migration for Daily Review (PR #123 / #42)
+
+- **Status:** completed (local commits on `feat/42-daily-review-question`, awaiting push and review)
+- **Area / files:** `apps/api/package.json`, `pnpm-lock.yaml`, `apps/api/.env.example`, `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261121010000_create_daily_review_deliveries_and_questions/`, `apps/api/src/activities/activities.service.ts`, `apps/api/src/bot/bot.module.ts`, `apps/api/src/bot/ai-daily-review-inference.adapter.ts`, `apps/api/src/bot/ai-daily-review-inference.adapter.spec.ts`, `apps/api/src/bot/daily-review-inference.port.ts`, `apps/api/src/bot/daily-review.service.ts`, `apps/api/src/bot/daily-review.controller.ts`, `apps/api/src/bot/daily-review.http.spec.ts`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/openapi.json`, `docs/daily-review.md`, `README.md`, `changelogs/tracker-alejo.md`, `changelogs/tracker-luis.md`
+- **Change:** Merged `develop` into `feat/42-daily-review-question`, re-timestamped the Prisma migration to `20261121010000_create_daily_review_deliveries_and_questions` (strictly after `20261121000000_create_material_chunks`), and resolved all audit blockers:
+  1. Migrated Daily Review inference from Amazon Bedrock (`@aws-sdk/client-bedrock-runtime`, `BEDROCK_*` env/config) to `CHAT_MODEL_PORT` (`AiDailyReviewInferenceAdapter`) per `rules/ai-bot-and-daily-briefing.md` D20, preserving prompt bounds, fail-closed `null` fallback, defensive JSON/quote/code-fence parsing, and privacy-safe structured logging, with 9 unit tests.
+  2. Added in-flight exam lockout in `DailyReviewService.getDailyReview`: daily question generation now runs in memory before a post-inference `hasExamInProgress` check, and `DailyReviewDelivery` is claimed before persisting `DailyReviewQuestion` so neither in-flight exam lockouts nor losing concurrent `GET` requests persist orphan rows.
+  3. Added answer-time exam lockout in `DailyReviewService.answerDailyQuestion`: returns HTTP 409 (`CONFLICT`, `exam` field) when an exam is in progress before incrementing `attempts`, preserving the student's daily attempt budget, with OpenAPI `@ApiConflictResponse` and docs updated.
+  4. Added HTTP integration tests covering both in-flight and answer-time exam lockouts against real PostgreSQL.
+- **Reason:** Bring PR #123 cleanly up to date with `develop` (post-PR #128), enforce D20 external AI provider compliance, and close exam lockout gaps before push and review.
+- **Validation:** All 29 Prisma migrations applied cleanly on fresh `ankane/pgvector:v0.5.1`; focused unit, OpenAPI, and PostgreSQL integration/HTTP suites passed **212/212 across 7 files (`0` skipped)**: `daily-review.http.spec.ts` (26/26), `openapi.spec.ts` (14/14), `bot-ask.http.spec.ts` (7/7), `bot-rag.integration.spec.ts` (5/5), `api-config.spec.ts` (142/142), `bot-ask.service.spec.ts` (9/9), and `ai-daily-review-inference.adapter.spec.ts` (9/9). `pnpm lint` (0 errors, 1 pre-existing warning in `openapi.spec.ts:537`), `pnpm typecheck` (all 3 workspaces), `pnpm format:check`, `python scripts/ci/check_docs.py` (84 files), and `git diff --check develop` passed.
+- **Next step:** Push `feat/42-daily-review-question` and verify Backend CI green for PR #123 review.
+
 ## 2026-11-21 — Review fixes for Study Guide Bot RAG (PR #128 / #41)
 
 - **Status:** completed (local commits on `feat/41-study-guide-bot-rag`, awaiting push and CI)
