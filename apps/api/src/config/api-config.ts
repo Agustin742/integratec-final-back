@@ -72,6 +72,38 @@ export interface ApiConfig {
   equipRateLimitWindowSeconds?: number;
   /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
   equipRateLimitMaxAttempts?: number;
+  /** Server-only API key for the OpenAI-compatible external LLM provider. Optional so boot succeeds before provisioning. */
+  aiProviderApiKey?: string;
+  /** Base URL of the external OpenAI-compatible provider API (defaults to Google Gemini OpenAI compatibility). */
+  aiProviderBaseUrl?: string;
+  /** Chat model identifier supporting tool calling (defaults to gemini-2.5-flash). */
+  aiChatModel?: string;
+  /** Embedding model identifier (defaults to gemini-embedding-001). */
+  aiEmbeddingModel?: string;
+  /** Output embedding vector length requested from the provider (defaults to 768). */
+  aiEmbeddingDimension?: number;
+  /** Per-request HTTP timeout in whole seconds for external AI provider calls (defaults to 20s). */
+  aiRequestTimeoutSeconds?: number;
+  /** Maximum bounded retries for transient network/429/5xx AI provider errors (defaults to 1). */
+  aiMaxRetries?: number;
+  /** Maximum tool-calling turns per bot question (defaults to 4). */
+  aiMaxToolIterations?: number;
+  /** Maximum retrieved material chunks returned per RAG search (defaults to 5). */
+  aiRetrievalTopK?: number;
+  /** Minimum cosine similarity required to surface a chunk (defaults to 0.35). */
+  aiRetrievalMinSimilarity?: number;
+  /** Maximum characters per indexed material chunk (defaults to 2400). */
+  aiChunkMaxChars?: number;
+  /** Character overlap between adjacent chunks of the same section (defaults to 300). */
+  aiChunkOverlapChars?: number;
+  /** Sliding window for Study Guide Bot rate limiting (defaults to 60s). */
+  aiBotRateLimitWindowSeconds?: number;
+  /** Maximum bot queries per user inside the sliding window (defaults to 10). */
+  aiBotRateLimitUserMax?: number;
+  /** Maximum bot queries per classroom inside the sliding window (defaults to 60). */
+  aiBotRateLimitClassroomMax?: number;
+  /** Maximum global bot queries across all classrooms inside the sliding window (defaults to 300). */
+  aiBotRateLimitGlobalMax?: number;
 }
 
 /** Upper bound for the refresh reuse grace window: a longer one defeats reuse detection. */
@@ -114,6 +146,37 @@ export const MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 3600;
 export const MAX_EQUIP_RATE_LIMIT_ATTEMPTS = 1000;
 export const DEFAULT_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 60;
 export const DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
+/** Study Guide Bot external AI provider, RAG, and rate-limiter bounds and defaults. */
+export const DEFAULT_AI_PROVIDER_BASE_URL =
+  'https://generativelanguage.googleapis.com/v1beta/openai';
+export const DEFAULT_AI_CHAT_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_AI_EMBEDDING_MODEL = 'gemini-embedding-001';
+export const DEFAULT_AI_EMBEDDING_DIMENSION = 768;
+export const MIN_AI_EMBEDDING_DIMENSION = 64;
+export const MAX_AI_EMBEDDING_DIMENSION = 3072;
+export const DEFAULT_AI_REQUEST_TIMEOUT_SECONDS = 20;
+export const MAX_AI_REQUEST_TIMEOUT_SECONDS = 120;
+export const DEFAULT_AI_MAX_RETRIES = 1;
+export const MAX_AI_MAX_RETRIES = 3;
+export const DEFAULT_AI_MAX_TOOL_ITERATIONS = 4;
+export const MAX_AI_MAX_TOOL_ITERATIONS = 8;
+export const DEFAULT_AI_RETRIEVAL_TOP_K = 5;
+export const MAX_AI_RETRIEVAL_TOP_K = 20;
+export const DEFAULT_AI_RETRIEVAL_MIN_SIMILARITY = 0.35;
+export const MIN_AI_CHUNK_MAX_CHARS = 200;
+export const MAX_AI_CHUNK_MAX_CHARS = 8000;
+export const DEFAULT_AI_CHUNK_MAX_CHARS = 2400;
+export const MAX_AI_CHUNK_OVERLAP_CHARS = 2000;
+export const DEFAULT_AI_CHUNK_OVERLAP_CHARS = 300;
+export const MAX_AI_BOT_RATE_LIMIT_WINDOW_SECONDS = 3600;
+export const DEFAULT_AI_BOT_RATE_LIMIT_WINDOW_SECONDS = 60;
+export const MAX_AI_BOT_RATE_LIMIT_USER_MAX = 1000;
+export const DEFAULT_AI_BOT_RATE_LIMIT_USER_MAX = 10;
+export const MAX_AI_BOT_RATE_LIMIT_CLASSROOM_MAX = 10000;
+export const DEFAULT_AI_BOT_RATE_LIMIT_CLASSROOM_MAX = 60;
+export const MAX_AI_BOT_RATE_LIMIT_GLOBAL_MAX = 100000;
+export const DEFAULT_AI_BOT_RATE_LIMIT_GLOBAL_MAX = 300;
 
 /** Local realtime server, used when `REALTIME_INTERNAL_URL` is unset outside production. */
 export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
@@ -169,8 +232,46 @@ const GRADE_WEIGHT_MESSAGE =
   'must be a finite decimal between 0.1 and 10 with at most 2 decimal places';
 const EQUIP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
 const EQUIP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_EQUIP_RATE_LIMIT_ATTEMPTS}`;
+const AI_BASE_URL_MESSAGE =
+  'must be an absolute http(s) URL without credentials, query string or fragment';
+const AI_MODEL_MESSAGE = 'must be 1-120 non-whitespace characters';
+const AI_EMBEDDING_DIMENSION_MESSAGE = `must be an integer between ${MIN_AI_EMBEDDING_DIMENSION} and ${MAX_AI_EMBEDDING_DIMENSION}`;
+const AI_TIMEOUT_MESSAGE = `must be a duration between 1s and ${MAX_AI_REQUEST_TIMEOUT_SECONDS}s, such as 20s`;
+const AI_MAX_RETRIES_MESSAGE = `must be an integer between 0 and ${MAX_AI_MAX_RETRIES}`;
+const AI_MAX_TOOL_ITERATIONS_MESSAGE = `must be an integer between 1 and ${MAX_AI_MAX_TOOL_ITERATIONS}`;
+const AI_RETRIEVAL_TOP_K_MESSAGE = `must be an integer between 1 and ${MAX_AI_RETRIEVAL_TOP_K}`;
+const AI_SIMILARITY_MESSAGE =
+  'must be a finite decimal between 0 and 1 with at most 4 decimal places';
+const AI_CHUNK_MAX_CHARS_MESSAGE = `must be an integer between ${MIN_AI_CHUNK_MAX_CHARS} and ${MAX_AI_CHUNK_MAX_CHARS}`;
+const AI_CHUNK_OVERLAP_CHARS_MESSAGE = `must be an integer between 0 and ${MAX_AI_CHUNK_OVERLAP_CHARS}`;
+const AI_BOT_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
+const AI_BOT_USER_MAX_MESSAGE = `must be an integer between 1 and ${MAX_AI_BOT_RATE_LIMIT_USER_MAX}`;
+const AI_BOT_CLASSROOM_MAX_MESSAGE = `must be an integer between 1 and ${MAX_AI_BOT_RATE_LIMIT_CLASSROOM_MAX}`;
+const AI_BOT_GLOBAL_MAX_MESSAGE = `must be an integer between 1 and ${MAX_AI_BOT_RATE_LIMIT_GLOBAL_MAX}`;
 
 const required = { error: 'is required' };
+
+const boundedInt = (fallback: number, min: number, max: number, message: string) =>
+  z
+    .string()
+    .default(String(fallback))
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+$/, message)
+        .transform(Number)
+        .pipe(z.number().min(min, message).max(max, message)),
+    );
+
+const aiModelName = (fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .transform((value) => value.trim())
+    .refine(
+      (value) => value.length >= 1 && value.length <= 120 && !/\s/.test(value),
+      AI_MODEL_MESSAGE,
+    );
 
 const duration = (
   fallback: string,
@@ -412,6 +513,97 @@ const envSchema = z
               .max(MAX_EQUIP_RATE_LIMIT_ATTEMPTS, EQUIP_RATE_LIMIT_MAX_MESSAGE),
           ),
       ),
+    AI_PROVIDER_API_KEY: z
+      .string()
+      .transform((value) => value.trim())
+      .optional(),
+    AI_PROVIDER_BASE_URL: z
+      .string()
+      .default(DEFAULT_AI_PROVIDER_BASE_URL)
+      .transform((value) => value.trim().replace(/\/+$/, ''))
+      .refine(isResetUrlBase, AI_BASE_URL_MESSAGE),
+    AI_CHAT_MODEL: aiModelName(DEFAULT_AI_CHAT_MODEL),
+    AI_EMBEDDING_MODEL: aiModelName(DEFAULT_AI_EMBEDDING_MODEL),
+    AI_EMBEDDING_DIMENSION: boundedInt(
+      DEFAULT_AI_EMBEDDING_DIMENSION,
+      MIN_AI_EMBEDDING_DIMENSION,
+      MAX_AI_EMBEDDING_DIMENSION,
+      AI_EMBEDDING_DIMENSION_MESSAGE,
+    ),
+    AI_REQUEST_TIMEOUT: duration(
+      `${DEFAULT_AI_REQUEST_TIMEOUT_SECONDS}s`,
+      MAX_AI_REQUEST_TIMEOUT_SECONDS,
+      AI_TIMEOUT_MESSAGE,
+    ),
+    AI_MAX_RETRIES: boundedInt(
+      DEFAULT_AI_MAX_RETRIES,
+      0,
+      MAX_AI_MAX_RETRIES,
+      AI_MAX_RETRIES_MESSAGE,
+    ),
+    AI_MAX_TOOL_ITERATIONS: boundedInt(
+      DEFAULT_AI_MAX_TOOL_ITERATIONS,
+      1,
+      MAX_AI_MAX_TOOL_ITERATIONS,
+      AI_MAX_TOOL_ITERATIONS_MESSAGE,
+    ),
+    AI_RETRIEVAL_TOP_K: boundedInt(
+      DEFAULT_AI_RETRIEVAL_TOP_K,
+      1,
+      MAX_AI_RETRIEVAL_TOP_K,
+      AI_RETRIEVAL_TOP_K_MESSAGE,
+    ),
+    AI_RETRIEVAL_MIN_SIMILARITY: z
+      .string()
+      .default(String(DEFAULT_AI_RETRIEVAL_MIN_SIMILARITY))
+      .pipe(
+        z
+          .string()
+          .regex(/^(?:0(?:\.\d{1,4})?|1(?:\.0{1,4})?)$/, AI_SIMILARITY_MESSAGE)
+          .transform(Number)
+          .pipe(
+            z
+              .number()
+              .finite(AI_SIMILARITY_MESSAGE)
+              .min(0, AI_SIMILARITY_MESSAGE)
+              .max(1, AI_SIMILARITY_MESSAGE),
+          ),
+      ),
+    AI_CHUNK_MAX_CHARS: boundedInt(
+      DEFAULT_AI_CHUNK_MAX_CHARS,
+      MIN_AI_CHUNK_MAX_CHARS,
+      MAX_AI_CHUNK_MAX_CHARS,
+      AI_CHUNK_MAX_CHARS_MESSAGE,
+    ),
+    AI_CHUNK_OVERLAP_CHARS: boundedInt(
+      DEFAULT_AI_CHUNK_OVERLAP_CHARS,
+      0,
+      MAX_AI_CHUNK_OVERLAP_CHARS,
+      AI_CHUNK_OVERLAP_CHARS_MESSAGE,
+    ),
+    AI_BOT_RATE_LIMIT_WINDOW: duration(
+      '1m',
+      MAX_AI_BOT_RATE_LIMIT_WINDOW_SECONDS,
+      AI_BOT_RATE_LIMIT_WINDOW_MESSAGE,
+    ),
+    AI_BOT_RATE_LIMIT_USER_MAX: boundedInt(
+      DEFAULT_AI_BOT_RATE_LIMIT_USER_MAX,
+      1,
+      MAX_AI_BOT_RATE_LIMIT_USER_MAX,
+      AI_BOT_USER_MAX_MESSAGE,
+    ),
+    AI_BOT_RATE_LIMIT_CLASSROOM_MAX: boundedInt(
+      DEFAULT_AI_BOT_RATE_LIMIT_CLASSROOM_MAX,
+      1,
+      MAX_AI_BOT_RATE_LIMIT_CLASSROOM_MAX,
+      AI_BOT_CLASSROOM_MAX_MESSAGE,
+    ),
+    AI_BOT_RATE_LIMIT_GLOBAL_MAX: boundedInt(
+      DEFAULT_AI_BOT_RATE_LIMIT_GLOBAL_MAX,
+      1,
+      MAX_AI_BOT_RATE_LIMIT_GLOBAL_MAX,
+      AI_BOT_GLOBAL_MAX_MESSAGE,
+    ),
   })
   .superRefine((env, ctx) => {
     // A production link must point at the real frontend, never silently at localhost.
@@ -475,6 +667,29 @@ const envSchema = z
         code: 'custom',
         path: ['GRADE_WEIGHT_EXAM'],
         message: 'must be strictly greater than GRADE_WEIGHT_TP',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      typeof env.AI_PROVIDER_BASE_URL === 'string' &&
+      isResetUrlBase(env.AI_PROVIDER_BASE_URL) &&
+      new URL(env.AI_PROVIDER_BASE_URL).protocol !== 'https:'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_PROVIDER_BASE_URL'],
+        message: 'must use HTTPS in production',
+      });
+    }
+    if (
+      typeof env.AI_CHUNK_OVERLAP_CHARS === 'number' &&
+      typeof env.AI_CHUNK_MAX_CHARS === 'number' &&
+      env.AI_CHUNK_OVERLAP_CHARS >= env.AI_CHUNK_MAX_CHARS
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AI_CHUNK_OVERLAP_CHARS'],
+        message: 'must be strictly less than AI_CHUNK_MAX_CHARS',
       });
     }
   });
@@ -542,5 +757,21 @@ export function loadApiConfig(env: Env): ApiConfig {
     gradeWeightExam: values.GRADE_WEIGHT_EXAM,
     equipRateLimitWindowSeconds: values.EQUIP_RATE_LIMIT_WINDOW,
     equipRateLimitMaxAttempts: values.EQUIP_RATE_LIMIT_MAX,
+    aiProviderApiKey: values.AI_PROVIDER_API_KEY,
+    aiProviderBaseUrl: values.AI_PROVIDER_BASE_URL,
+    aiChatModel: values.AI_CHAT_MODEL,
+    aiEmbeddingModel: values.AI_EMBEDDING_MODEL,
+    aiEmbeddingDimension: values.AI_EMBEDDING_DIMENSION,
+    aiRequestTimeoutSeconds: values.AI_REQUEST_TIMEOUT,
+    aiMaxRetries: values.AI_MAX_RETRIES,
+    aiMaxToolIterations: values.AI_MAX_TOOL_ITERATIONS,
+    aiRetrievalTopK: values.AI_RETRIEVAL_TOP_K,
+    aiRetrievalMinSimilarity: values.AI_RETRIEVAL_MIN_SIMILARITY,
+    aiChunkMaxChars: values.AI_CHUNK_MAX_CHARS,
+    aiChunkOverlapChars: values.AI_CHUNK_OVERLAP_CHARS,
+    aiBotRateLimitWindowSeconds: values.AI_BOT_RATE_LIMIT_WINDOW,
+    aiBotRateLimitUserMax: values.AI_BOT_RATE_LIMIT_USER_MAX,
+    aiBotRateLimitClassroomMax: values.AI_BOT_RATE_LIMIT_CLASSROOM_MAX,
+    aiBotRateLimitGlobalMax: values.AI_BOT_RATE_LIMIT_GLOBAL_MAX,
   };
 }
