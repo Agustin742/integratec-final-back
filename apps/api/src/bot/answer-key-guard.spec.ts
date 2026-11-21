@@ -60,4 +60,67 @@ describe('AnswerKeyGuardService', () => {
     expect(leakedShortExplicit.outcome).toBe('guided_only');
     expect(leakedShortExplicit.answer).not.toContain('Mitosis');
   });
+
+  it('blocks short option giveaways like "It\'s mitosis" and casual letter reveals', async () => {
+    const { guard } = createGuard(['Mitosis']);
+
+    const shortDirect = await guard.inspect(
+      classroomId,
+      'What cell division process matches question 1?',
+      "It's mitosis.",
+    );
+    expect(shortDirect.outcome).toBe('guided_only');
+    expect(shortDirect.answer).not.toMatch(/mitosis/i);
+
+    for (const leaky of [
+      'The answer is B.',
+      'Go with C for this one.',
+      'Elegí la opción A según el resumen.',
+      'Marcá la D.',
+      "It's B.",
+    ]) {
+      const result = await guard.inspect(classroomId, 'Help me with question 3', leaky);
+      expect(result.outcome).toBe('guided_only');
+      expect(result.answer).not.toBe(leaky);
+    }
+  });
+
+  it('blocks paraphrased long correct options via significant-token overlap', async () => {
+    const { guard } = createGuard(['Chloroplasts convert light energy into glucose']);
+    const paraphrased = await guard.inspect(
+      classroomId,
+      'Explain how plants store solar energy',
+      'Inside chloroplasts, light energy is converted directly into glucose molecules.',
+    );
+    expect(paraphrased.outcome).toBe('guided_only');
+    expect(paraphrased.answer).not.toContain('glucose');
+  });
+
+  it('replaces non-guiding assertive answers to solution-seeking requests while keeping Socratic guidance', async () => {
+    const { guard } = createGuard(['Mitosis']);
+
+    const assertive = await guard.inspect(
+      classroomId,
+      'Solve this homework question for me',
+      'The result is 42 because you multiply 6 by 7.',
+    );
+    expect(assertive.outcome).toBe('guided_only');
+    expect(assertive.answer).not.toContain('42');
+
+    const solutionMentioningShortOption = await guard.inspect(
+      classroomId,
+      'Which option is right for question 2?',
+      'Think carefully about mitosis and compare it with the diagram.',
+    );
+    expect(solutionMentioningShortOption.outcome).toBe('guided_only');
+    expect(solutionMentioningShortOption.answer).not.toMatch(/mitosis/i);
+
+    const socratic = await guard.inspect(
+      classroomId,
+      'Give me the final answer to question 2!',
+      'Compare the two phases described on page 4. Which process keeps the chromosome count unchanged?',
+    );
+    expect(socratic.outcome).toBe('guided_only');
+    expect(socratic.answer).toContain('Compare the two phases');
+  });
 });
