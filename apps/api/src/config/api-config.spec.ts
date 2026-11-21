@@ -607,7 +607,7 @@ describe('loadApiConfig', () => {
           AI_PROVIDER_BASE_URL: 'https://ai.example.test/v1///',
           AI_CHAT_MODEL: 'gpt-4o-mini',
           AI_EMBEDDING_MODEL: 'text-embedding-3-small',
-          AI_EMBEDDING_DIMENSION: '1536',
+          AI_EMBEDDING_DIMENSION: '768',
           AI_REQUEST_TIMEOUT: '30s',
           AI_MAX_RETRIES: '2',
           AI_MAX_TOOL_ITERATIONS: '6',
@@ -625,7 +625,7 @@ describe('loadApiConfig', () => {
         aiProviderBaseUrl: 'https://ai.example.test/v1',
         aiChatModel: 'gpt-4o-mini',
         aiEmbeddingModel: 'text-embedding-3-small',
-        aiEmbeddingDimension: 1536,
+        aiEmbeddingDimension: 768,
         aiRequestTimeoutSeconds: 30,
         aiMaxRetries: 2,
         aiMaxToolIterations: 6,
@@ -668,6 +668,9 @@ describe('loadApiConfig', () => {
       expect(messageOf({ ...validEnv(), AI_EMBEDDING_DIMENSION: '32' })).toContain(
         'AI_EMBEDDING_DIMENSION',
       );
+      const mismatchMsg = messageOf({ ...validEnv(), AI_EMBEDDING_DIMENSION: '1536' });
+      expect(mismatchMsg).toContain('AI_EMBEDDING_DIMENSION');
+      expect(mismatchMsg).toContain('768');
       expect(messageOf({ ...validEnv(), AI_RETRIEVAL_MIN_SIMILARITY: '1.5' })).toContain(
         'AI_RETRIEVAL_MIN_SIMILARITY',
       );

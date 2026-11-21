@@ -253,7 +253,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `AI_PROVIDER_BASE_URL`    | Default `https://generativelanguage.googleapis.com/v1beta/openai`; `http(s)` URL (HTTPS in prod) | Base URL for `/chat/completions` and `/embeddings` | Public | Yes |
 | `AI_CHAT_MODEL`           | Default `gemini-2.5-flash`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
 | `AI_EMBEDDING_MODEL`      | Default `gemini-embedding-001`; 1-120 non-whitespace chars | Text embedding model identifier                                  | Public         | Yes     |
-| `AI_EMBEDDING_DIMENSION`  | Default `768`; integer 64-3072 (must match DB `vector(768)`) | Requested embedding dimension                                   | Public         | Yes     |
+| `AI_EMBEDDING_DIMENSION`  | Default `768`; must equal `768` (DB `vector(768)`)             | Requested embedding dimension                                   | Public         | Yes     |
 | `AI_REQUEST_TIMEOUT`      | Default `20s`; duration 1s-120s                   | Per-request HTTP timeout for external AI calls                           | Public         | Yes     |
 | `AI_MAX_RETRIES`          | Default `1`; integer 0-3                          | Bounded retries on transient AI provider errors (`429`/`5xx`/network)    | Public         | Yes     |
 | `AI_MAX_TOOL_ITERATIONS`  | Default `4`; integer 1-8                          | Maximum tool-calling turns per Study Guide Bot query                     | Public         | Yes     |
