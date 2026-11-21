@@ -17,6 +17,10 @@ locals {
       description = "32-byte invitation token key as 64 lowercase hex characters (decodeKey32 in api-config.ts)."
       services    = ["api"]
     }
+    AI_PROVIDER_API_KEY = {
+      description = "External AI provider API key for the Study Guide Bot (loaded out-of-band via aws secretsmanager put-secret-value)."
+      services    = ["api"]
+    }
   }
 
   secret_names = { for k, _ in local.secrets : k => "${var.name_prefix}/${lower(replace(k, "_", "-"))}" }

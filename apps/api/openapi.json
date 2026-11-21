@@ -3124,6 +3124,124 @@
         "tags": ["bot"]
       }
     },
+    "/classrooms/{id}/bot/status": {
+      "get": {
+        "description": "Returns whether the Study Guide Bot is available, locked during an active exam (students only), or missing indexed approved materials.",
+        "operationId": "BotAskController_getStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotStatusDto" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parents cannot use the Study Guide Bot.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get server-decided Study Guide Bot availability for this classroom",
+        "tags": ["bot"]
+      }
+    },
+    "/classrooms/{id}/bot/messages": {
+      "post": {
+        "description": "Answers strictly from teacher-approved classroom material using pgvector RAG and returns server-verified citations. Rejects students while an exam is in progress (including in-flight queries) with 409 Conflict.",
+        "operationId": "BotAskController_ask",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AskStudyGuideBotDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotAnswerDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid question payload.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parents cannot use the Study Guide Bot.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Blocked because the student has an exam in progress.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "503": {
+            "description": "External AI provider is temporarily unavailable.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Ask the classroom Study Guide Bot a study question",
+        "tags": ["bot"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -6374,6 +6492,65 @@
           "indexState",
           "createdAt"
         ]
+      },
+      "BotStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether the Study Guide Bot is currently available to the caller."
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["exam_in_progress", "no_materials", "disabled"],
+            "nullable": true,
+            "description": "Server-decided reason when `available` is `false`; otherwise `null`."
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "User-facing explanation when unavailable; otherwise `null`."
+          }
+        },
+        "required": ["available", "reason", "message"]
+      },
+      "AskStudyGuideBotDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Plain-text study question for the classroom Study Guide Bot."
+          }
+        },
+        "required": ["question"]
+      },
+      "BotCitationDto": {
+        "type": "object",
+        "properties": {
+          "materialId": { "type": "string", "format": "uuid" },
+          "filename": { "type": "string", "maxLength": 120, "example": "guia-unidad-1.pdf" },
+          "excerpt": { "type": "string", "nullable": true }
+        },
+        "required": ["materialId", "filename", "excerpt"]
+      },
+      "BotAnswerDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "answer": {
+            "type": "string",
+            "description": "Plain-text study guidance answer from the server."
+          },
+          "outcome": { "type": "string", "enum": ["answered", "out_of_scope", "guided_only"] },
+          "citations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BotCitationDto" }
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "answer", "outcome", "citations", "createdAt"]
       },
       "RosterGuardianDto": {
         "type": "object",
