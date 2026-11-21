@@ -113,7 +113,8 @@ describe('Study Guide Bot HTTP — issue #41 / HU-BOT-002', () => {
       if (chatScript) {
         return chatScript(req, chatStep);
       }
-      if (chatStep === 1) {
+      const hasToolResult = req.messages.some((message) => message.role === 'tool');
+      if (!hasToolResult) {
         return {
           content: null,
           toolCalls: [
@@ -469,8 +470,8 @@ describe('Study Guide Bot HTTP — issue #41 / HU-BOT-002', () => {
     });
     capturedChatRequests.length = 0;
     chatStep = 0;
-    chatScript = async (_req, step) => {
-      if (step === 1) {
+    chatScript = async (req) => {
+      if (!req.messages.some((message) => message.role === 'tool')) {
         return {
           content: null,
           toolCalls: [
@@ -534,8 +535,8 @@ describe('Study Guide Bot HTTP — issue #41 / HU-BOT-002', () => {
       },
     });
 
-    chatScript = async (_req, step) => {
-      if (step === 1) {
+    chatScript = async (req) => {
+      if (!req.messages.some((message) => message.role === 'tool')) {
         return {
           content: null,
           toolCalls: [
@@ -578,8 +579,8 @@ describe('Study Guide Bot HTTP — issue #41 / HU-BOT-002', () => {
   });
 
   it('executes list_my_pending_activities against real classroom activities without inventing citations', async () => {
-    chatScript = async (req, step) => {
-      if (step === 1) {
+    chatScript = async (req) => {
+      if (!req.messages.some((message) => message.role === 'tool')) {
         return {
           content: null,
           toolCalls: [

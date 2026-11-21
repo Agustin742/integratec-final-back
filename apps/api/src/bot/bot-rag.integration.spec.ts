@@ -18,7 +18,7 @@ import {
 import { BotMaterialsService } from './bot-materials.service';
 import { MATERIAL_INDEX_PORT, type MaterialIndexPort } from './material-index.port';
 import { MATERIAL_RETRIEVAL_PORT, type MaterialRetrievalPort } from './material-retrieval.port';
-import { PNG_BYTES, buildMinimalDocx, buildMinimalPdf } from './testing/material-fixtures';
+import { PNG_BYTES, buildMinimalPdf } from './testing/material-fixtures';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 
@@ -42,7 +42,7 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
 
   const [teacherA, teacherB] = [randomUUID(), randomUUID()];
   const [classroomA, classroomB] = [randomUUID(), randomUUID()];
-  const [pdfMat, docxMat, txtMat, pngMat, foreignPdfMat] = [
+  const [pdfMat, mdMat, txtMat, pngMat, foreignPdfMat] = [
     randomUUID(),
     randomUUID(),
     randomUUID(),
@@ -87,9 +87,9 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
       body: buildMinimalPdf(['Photosynthesis converts light inside chloroplasts.']),
       contentType: 'application/pdf',
     });
-    storageObjects.set(`materials/${classroomA}/${docxMat}`, {
-      body: buildMinimalDocx(['Equivalent fractions share the same ratio.']),
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    storageObjects.set(`materials/${classroomA}/${mdMat}`, {
+      body: Buffer.from('# Fractions\nEquivalent fractions share the same ratio.', 'utf8'),
+      contentType: 'text/markdown',
     });
     storageObjects.set(`materials/${classroomA}/${txtMat}`, {
       body: Buffer.from('An ecosystem links living organisms and abiotic factors.', 'utf8'),
@@ -161,13 +161,13 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
             sizeBytes: 1200,
           },
           {
-            id: docxMat,
+            id: mdMat,
             classroomId: classroomA,
             authorId: teacherA,
-            objectKey: `materials/${classroomA}/${docxMat}`,
-            filename: 'math-fractions.docx',
-            contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            sizeBytes: 1400,
+            objectKey: `materials/${classroomA}/${mdMat}`,
+            filename: 'math-fractions.md',
+            contentType: 'text/markdown',
+            sizeBytes: 200,
           },
           {
             id: txtMat,
@@ -205,14 +205,14 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
     await app?.close();
   });
 
-  it('indexes PDF, DOCX and plain text into pgvector and isolates retrieval by classroom', async () => {
+  it('indexes PDF, Markdown and plain text into pgvector and isolates retrieval by classroom', async () => {
     const enabledPdf = await botMaterials.enable(teacherA, classroomA, pdfMat);
-    const enabledDocx = await botMaterials.enable(teacherA, classroomA, docxMat);
+    const enabledMd = await botMaterials.enable(teacherA, classroomA, mdMat);
     const enabledTxt = await botMaterials.enable(teacherA, classroomA, txtMat);
     const enabledForeign = await botMaterials.enable(teacherB, classroomB, foreignPdfMat);
 
     expect(enabledPdf.indexState).toBe('INDEXED');
-    expect(enabledDocx.indexState).toBe('INDEXED');
+    expect(enabledMd.indexState).toBe('INDEXED');
     expect(enabledTxt.indexState).toBe('INDEXED');
     expect(enabledForeign.indexState).toBe('INDEXED');
 
@@ -281,7 +281,7 @@ describe('pgvector RAG pipeline integration — issue #41 / HU-BOT-002', () => {
 
     // Even if stale chunks remain in DB, soft-removing StudyMaterial excludes it immediately.
     await prisma.studyMaterial.update({
-      where: { id: docxMat },
+      where: { id: mdMat },
       data: { removedAt: new Date(), removedById: teacherA },
     });
     expect(

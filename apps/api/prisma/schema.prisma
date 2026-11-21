@@ -1138,5 +1138,7 @@ model MaterialChunk {
 
   @@unique([classroomId, materialId, chunkIndex])
   @@index([classroomId, materialId])
+  // `material_chunks_embedding_hnsw_idx` (USING hnsw vector_cosine_ops) lives in SQL migration
+  // `20261121000000_create_material_chunks` because Prisma 6 PSL cannot express `USING hnsw`.
   @@map("material_chunks")
 }
