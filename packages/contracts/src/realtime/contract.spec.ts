@@ -2,7 +2,8 @@ import { describe, it, expect, expectTypeOf } from 'vitest';
 import {
   AVATAR_INPUT_MESSAGE,
   AVATAR_STATUSES,
-  CLASSROOM_LAYOUT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLASSROOM_ROOM_NAME,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
@@ -19,6 +20,8 @@ import {
   type ClassroomJoinOptions,
   type LayoutBox,
 } from '../index';
+
+const LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
 
 describe('realtime contract', () => {
   it('pins the room name the frontend joins', () => {
@@ -92,7 +95,7 @@ describe('realtime contract', () => {
   });
 
   describe('classroom layout', () => {
-    const { bounds, obstacles, spawnPoints, avatarRadius } = CLASSROOM_LAYOUT;
+    const { bounds, obstacles, spawnPoints, avatarRadius } = LAYOUT;
     const overlaps = (a: LayoutBox, b: LayoutBox) =>
       a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
     const inside = (outer: LayoutBox, inner: LayoutBox) =>

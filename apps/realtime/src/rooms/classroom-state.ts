@@ -48,5 +48,10 @@ export class Avatar extends Schema {
  */
 export class ClassroomState extends Schema {
   @type('string') classroomId = '';
+  /**
+   * Student desks of the classroom. The client builds the same walkable layout the server collides
+   * against with `buildClassroomLayout(deskCount)` (#79), so this always mirrors the server's layout.
+   */
+  @type('uint16') deskCount = 12;
   @type({ map: Avatar }) avatars = new MapSchema<Avatar>();
 }

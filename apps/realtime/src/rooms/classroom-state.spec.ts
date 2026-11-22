@@ -3,6 +3,10 @@ import { MapSchema } from '@colyseus/schema';
 import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
 
 describe('ClassroomState', () => {
+  it('starts with the minimum desk count so every room has a layout before its first join (#79)', () => {
+    expect(new ClassroomState().deskCount).toBe(12);
+  });
+
   it('starts with an empty avatar map', () => {
     const state = new ClassroomState();
     expect(state.avatars).toBeInstanceOf(MapSchema);

@@ -1,0 +1,12 @@
+# Runs app-container-health.service one minute after boot and every minute after each run.
+# The alarms treat a missing metric as unhealthy, so a stopped timer raises an alarm.
+[Unit]
+Description=Publish the container health every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

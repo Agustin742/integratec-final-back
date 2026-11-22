@@ -13,13 +13,16 @@ classroom partition, so bot retrieval can never cross classrooms or schools.
 expose the indexing outcome per material; the reason is set exactly while the
 state is `FAILED` (database CHECK) and is a fixed, non-diagnostic message.
 
-The retrieval technology is still an open decision (candidate: Amazon Bedrock
-Knowledge Bases or an equivalent). Indexing therefore goes through the
-`MaterialIndexPort` boundary with a default in-process adapter that records
-per-classroom partition membership; the real retrieval adapter replaces it in
-HU-BOT-002 without changing the endpoints or the data model. The port contract
-requires a re-index to fully replace earlier chunks, so a re-enable never reuses
-previously retrieved content.
+Indexing and retrieval go through the `MaterialIndexPort` and `MaterialRetrievalPort`
+boundaries backed by `PgVectorMaterialIndexAdapter` (decision
+[D20](./technical-justification.md#d20-external-ai-provider-pgvector-rag-and-study-guide-bot-boundaries)):
+text is extracted from PDF (`unpdf`), DOCX (`mammoth`), and UTF-8 plain
+text/markdown, chunked, embedded with the configured external provider, and stored
+in PostgreSQL `material_chunks` (`vector(768)` with HNSW cosine indexing). Unsupported
+types (such as images) record `FAILED` with the fixed message while leaving the
+study material usable. The port contract requires a re-index to delete and re-insert
+all `(classroomId, materialId)` chunks inside one transaction, so a re-enable never
+reuses previously retrieved content.
 
 ## REST endpoints
 

@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The mock returns random strings for ARNs; runtime_access validates the bucket ARN
   # format, so the bucket ARN is pinned to a well-formed value.
   override_resource {
@@ -73,6 +82,7 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
 run "deploy_project_runs_the_buildspec_from_the_pipeline_source" {

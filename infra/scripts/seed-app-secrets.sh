@@ -21,6 +21,8 @@
 #   - INTERNAL_SERVICE_SECRET and JWT_SECRET: 64 characters, no punctuation, no spaces.
 #   - INVITATION_TOKEN_KEY: 64 characters of 0-9a-f (the API's decodeKey32 accepts
 #     exactly 64 hex characters).
+#   - AI_PROVIDER_API_KEY is NOT generated here because it is an external provider
+#     credential; store it out-of-band with `aws secretsmanager put-secret-value`.
 #   - The generated value is validated before it is stored, held only in a shell
 #     variable, never printed or written to a file, and unset right after use. It is
 #     handed to put-secret-value on stdin (--secret-string file:///dev/stdin), so it

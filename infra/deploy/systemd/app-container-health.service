@@ -1,0 +1,12 @@
+# Publishes the health of the api and realtime containers to CloudWatch (see publish-container-health.sh).
+# Installed on the host under /etc/systemd/system by infra/pipeline/scripts/host-deploy.sh on every
+# deploy. The environment file holds the same NON-secret inputs as app-db-refresh.service; this unit
+# only needs AWS_REGION from it. A failed run is not restarted: it waits for the next timer run.
+[Unit]
+Description=Publish the container health metric to CloudWatch
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/aula-app/deploy.env
+ExecStart=/opt/aula/infra/deploy/publish-container-health.sh
+TimeoutStartSec=90

@@ -2,7 +2,8 @@ import {
   AVATAR_INPUT_MESSAGE,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
-  CLASSROOM_LAYOUT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -15,6 +16,7 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
   type AvatarInput,
+  type ClassroomLayout,
   type MemberAppearance,
   type ChatMessageHiddenPayload,
   type ChatMessagePayload,
@@ -31,7 +33,7 @@ import {
 } from '@colyseus/core';
 import { JoinDeniedError, type ClassroomAuth, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
-import { stepAvatar } from '../movement/step-avatar';
+import { isWalkable, stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
 import { pickSpawnPoint } from '../presence/spawn';
 import {
@@ -118,6 +120,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   private readonly authByConnection = new Map<string, ClassroomAuth>();
   /** Joins still waiting for the access check, by connection id: an eviction must reach them too. */
   private readonly pendingAdmissions = new Map<string, PendingAdmission>();
+  /** Walkable surface of this classroom; only {@link applyDeskCount} replaces it (#79). */
+  private layout: ClassroomLayout = buildClassroomLayout(MIN_CLASSROOM_DESKS);
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -140,6 +144,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     this.classroomId = classroomId;
     this.state = new ClassroomState();
     this.state.classroomId = classroomId;
+    this.state.deskCount = MIN_CLASSROOM_DESKS;
     this.patchRate = 1000 / PATCH_RATE_HZ;
     this.setFixedTimestep(({ dt }) => this.tick(dt), SIMULATION_TICK_RATE_HZ);
     this.options.directory?.register(classroomId, this);
@@ -188,6 +193,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       }
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.deskCount = current.deskCount;
       if (current.appearanceRevision >= admission.appearanceRevision) {
         admission.appearance = current.appearance;
         admission.appearanceRevision = current.appearanceRevision;
@@ -214,6 +220,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     }
     this.limiters.set(client.sessionId, new RateLimiter(INPUT_RATE_LIMIT_PER_SECOND));
     this.authByConnection.set(client.sessionId, auth);
+    // Before the avatar is placed, so a newcomer spawns in the layout the classroom has now.
+    this.applyDeskCount(auth.deskCount);
     if (attached.first) {
       this.addAvatar(auth);
     } else {
@@ -277,6 +285,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       if (!this.userConnections.has(client.sessionId)) return;
       auth.role = current.role;
       auth.displayName = current.displayName;
+      auth.deskCount = current.deskCount;
+      this.applyDeskCount(current.deskCount);
       auth.appearance = current.appearance;
       auth.appearanceRevision = current.appearanceRevision;
       const avatar = this.state.avatars.get(userId);
@@ -374,6 +384,33 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     return evicted;
   }
 
+  /**
+   * Grows the classroom layout to the one built for `deskCount` desks (#79). It is the only place
+   * the layout changes: called with each verified identity (admission, reconnection) and from the
+   * API push after a desk expansion through the room directory. It is monotonic: desks are never
+   * deleted, so a count whose effective layout is not larger than the current one (counts below the
+   * minimum or not finite build the minimum layout) can only be stale, such as a re-verification
+   * answered before an expansion that arrives after its push, and is ignored. Avatars left on a
+   * point that is no longer walkable, such as the spot a new desk now occupies, move to a free
+   * spawn point; the others stay where they are.
+   */
+  applyDeskCount(deskCount: number): void {
+    const layout = buildClassroomLayout(deskCount);
+    const effectiveCount = layout.obstacles.length - 1; // every obstacle but the teacher desk
+    if (effectiveCount <= this.state.deskCount) return;
+    this.layout = layout;
+    this.state.deskCount = effectiveCount;
+    const avatars = [...this.state.avatars.values()];
+    const placed = avatars.filter((avatar) => isWalkable(layout, avatar.x, avatar.z));
+    for (const avatar of avatars) {
+      if (placed.includes(avatar)) continue;
+      const spawn = pickSpawnPoint(layout, placed);
+      avatar.x = spawn.x;
+      avatar.z = spawn.z;
+      placed.push(avatar);
+    }
+  }
+
   broadcastChatMessage(payload: ChatMessagePayload): void {
     this.broadcast(CHAT_MESSAGE_EVENT, payload);
   }
@@ -419,7 +456,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     for (const [userId, intent] of this.intents) {
       const avatar = this.state.avatars.get(userId);
       if (!avatar) continue;
-      const next = stepAvatar(CLASSROOM_LAYOUT, avatar, intent, dtSeconds);
+      const next = stepAvatar(this.layout, avatar, intent, dtSeconds);
       // Only touched fields are patched, so a blocked avatar costs no bandwidth.
       if (next.x !== avatar.x) avatar.x = next.x;
       if (next.z !== avatar.z) avatar.z = next.z;
@@ -506,7 +543,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   }
 
   private addAvatar(identity: ClassroomAuth): void {
-    const spawn = pickSpawnPoint(CLASSROOM_LAYOUT, [...this.state.avatars.values()]);
+    const spawn = pickSpawnPoint(this.layout, [...this.state.avatars.values()]);
     const avatar = new Avatar();
     avatar.userId = identity.userId;
     avatar.displayName = identity.displayName;

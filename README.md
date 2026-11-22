@@ -54,6 +54,15 @@ backend/
 
 - [Classroom shop and purchases](docs/shop.md): student-only `GET /classrooms/:id/shop/items`, `GET /classrooms/:id/shop/purchases`, and idempotent `POST /classrooms/:id/shop/purchase` with per-classroom overrides, `isImplemented` enforcement, atomic `PointsLedgerService.debit` integration, unique ownership (`409 Conflict`), and per-user rate limiting (`429 TOO_MANY_REQUESTS`).
 
+## Study Guide Bot
+
+- [Teacher bot material enablement](docs/bot-materials.md): teacher-only `/classrooms/:id/bot/materials` configuration and `pgvector` indexing lifecycle (`PENDING` / `INDEXED` / `FAILED`).
+- [Study Guide Bot](docs/bot-study-guide.md): `GET /classrooms/:id/bot/status` and `POST /classrooms/:id/bot/messages` with classroom-scoped `pgvector` RAG, external OpenAI-compatible LLM integration (`D20`), anti-copy output guard, pre-call and in-flight exam lockout (`409 Conflict`), sliding-window rate limits (`429`), and privacy-safe telemetry.
+
+## Daily review and daily question
+
+- [Daily review and daily question](docs/daily-review.md): authenticated `GET /users/me/daily-review` and `POST /users/me/daily-review/daily-question`, delivered once per local day (server clock, `America/Argentina/Buenos_Aires`) under a `(user, local day)` unique constraint, composed through the same services REST uses, with an AI-generated summary via the configured external OpenAI-compatible provider (`D20`) that fails closed to a structured PostgreSQL-only fallback, and one generated question from enabled bot material whose correct answer credits the streak (`DAILY_REVIEW_ANSWERED`, at most once per local day, answer key never serialized).
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.
@@ -259,6 +268,22 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `SHOP_PURCHASE_RATE_LIMIT_MAX` | Default `20`; integer 1-1000               | Maximum shop purchase attempts per user inside the sliding window        | Public         | Yes     |
 | `GRADE_WEIGHT_TP`         | Default `1`; decimal 0.1-10 (<= 2 decimals)       | Points multiplier applied to graded TP activities                        | Public         | Yes     |
 | `GRADE_WEIGHT_EXAM`       | Default `1.5`; decimal 0.1-10 (<= 2 decimals), `> GRADE_WEIGHT_TP` | Points multiplier applied to graded EXAM activities     | Public         | Yes     |
+| `AI_PROVIDER_API_KEY`     | Optional; trimmed non-empty string                | Server-only API key for the OpenAI-compatible AI provider (unset leaves live calls failing closed with `503`) | Private | Yes |
+| `AI_PROVIDER_BASE_URL`    | Default `https://generativelanguage.googleapis.com/v1beta/openai`; `http(s)` URL (HTTPS in prod) | Base URL for `/chat/completions` and `/embeddings` | Public | Yes |
+| `AI_CHAT_MODEL`           | Default `gemini-2.5-flash`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
+| `AI_EMBEDDING_MODEL`      | Default `gemini-embedding-001`; 1-120 non-whitespace chars | Text embedding model identifier                                  | Public         | Yes     |
+| `AI_EMBEDDING_DIMENSION`  | Default `768`; must equal `768` (DB `vector(768)`)             | Requested embedding dimension                                   | Public         | Yes     |
+| `AI_REQUEST_TIMEOUT`      | Default `20s`; duration 1s-120s                   | Per-request HTTP timeout for external AI calls                           | Public         | Yes     |
+| `AI_MAX_RETRIES`          | Default `1`; integer 0-3                          | Bounded retries on transient AI provider errors (`429`/`5xx`/network)    | Public         | Yes     |
+| `AI_MAX_TOOL_ITERATIONS`  | Default `4`; integer 1-8                          | Maximum tool-calling turns per Study Guide Bot query                     | Public         | Yes     |
+| `AI_RETRIEVAL_TOP_K`      | Default `5`; integer 1-20                         | Maximum chunks returned per RAG search                                   | Public         | Yes     |
+| `AI_RETRIEVAL_MIN_SIMILARITY` | Default `0.55`; decimal 0-1 (<= 4 decimals)   | Minimum cosine similarity threshold to surface a chunk                   | Public         | Yes     |
+| `AI_CHUNK_MAX_CHARS`      | Default `2400`; integer 200-8000                  | Maximum character length per indexed chunk                               | Public         | Yes     |
+| `AI_CHUNK_OVERLAP_CHARS`  | Default `300`; integer 0-2000 (`< AI_CHUNK_MAX_CHARS`) | Character overlap between adjacent chunks                          | Public         | Yes     |
+| `AI_BOT_RATE_LIMIT_WINDOW` | Default `1m`; duration 1s-1h                     | Sliding-window duration for Study Guide Bot rate limits                  | Public         | Yes     |
+| `AI_BOT_RATE_LIMIT_USER_MAX` | Default `10`; integer 1-1000                   | Maximum bot queries per user inside the window                           | Public         | Yes     |
+| `AI_BOT_RATE_LIMIT_CLASSROOM_MAX` | Default `60`; integer 1-10000             | Maximum bot queries per classroom inside the window                      | Public         | Yes     |
+| `AI_BOT_RATE_LIMIT_GLOBAL_MAX` | Default `300`; integer 1-100000              | Maximum global bot queries inside the window                             | Public         | Yes     |
 
 ### Realtime (`apps/realtime`)
 

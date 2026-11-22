@@ -1,4 +1,13 @@
 mock_provider "aws" {
+  # The mock returns random strings for ARNs; the email subscriptions validate the topic
+  # ARN format, so the alarm topic ARN is pinned to a well-formed value.
+  override_resource {
+    target = module.monitoring.aws_sns_topic.alarms
+    values = {
+      arn = "arn:aws:sns:us-east-2:123456789012:aula-virtual-prod-alarms"
+    }
+  }
+
   # The delivery pipeline module builds role and project ARNs from the account ID, and
   # CodeBuild validates them; the mock would return a random string, so it is pinned.
   override_data {
@@ -48,18 +57,19 @@ variables {
   project                  = "aula-virtual"
   allowed_origins          = ["https://app.example.com"]
   password_reset_url_base  = "https://app.example.com/reset-password"
+  alert_email_addresses    = ["alerts@example.com"]
 }
 
-run "three_generated_secrets_with_expected_names" {
+run "four_app_secrets_with_expected_names" {
   command = apply
 
   assert {
-    condition     = toset(keys(module.app_config.secret_arns)) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY"])
-    error_message = "There must be exactly three secrets keyed by the env var name they feed."
+    condition     = toset(keys(module.app_config.secret_arns)) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY", "AI_PROVIDER_API_KEY"])
+    error_message = "There must be exactly four secrets keyed by the env var name they feed."
   }
 
   assert {
-    condition     = module.app_config.secret_names["INTERNAL_SERVICE_SECRET"] == "aula-virtual-prod/internal-service-secret" && module.app_config.secret_names["JWT_SECRET"] == "aula-virtual-prod/jwt-secret" && module.app_config.secret_names["INVITATION_TOKEN_KEY"] == "aula-virtual-prod/invitation-token-key"
+    condition     = module.app_config.secret_names["INTERNAL_SERVICE_SECRET"] == "aula-virtual-prod/internal-service-secret" && module.app_config.secret_names["JWT_SECRET"] == "aula-virtual-prod/jwt-secret" && module.app_config.secret_names["INVITATION_TOKEN_KEY"] == "aula-virtual-prod/invitation-token-key" && module.app_config.secret_names["AI_PROVIDER_API_KEY"] == "aula-virtual-prod/ai-provider-api-key"
     error_message = "Secret names must be <name_prefix>/<kebab-case env var name>."
   }
 
@@ -74,7 +84,7 @@ run "three_generated_secrets_with_expected_names" {
   }
 
   assert {
-    condition     = toset(keys(output.app_secret_arns)) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY"])
+    condition     = toset(keys(output.app_secret_arns)) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY", "AI_PROVIDER_API_KEY"])
     error_message = "The root must expose the secret ARNs keyed by env var name."
   }
 }
@@ -179,8 +189,8 @@ run "realtime_only_gets_internal_service_secret" {
   }
 
   assert {
-    condition     = toset(keys(module.app_config.service_secret_arns["api"])) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY"])
-    error_message = "api must receive all three secrets."
+    condition     = toset(keys(module.app_config.service_secret_arns["api"])) == toset(["INTERNAL_SERVICE_SECRET", "JWT_SECRET", "INVITATION_TOKEN_KEY", "AI_PROVIDER_API_KEY"])
+    error_message = "api must receive all four secrets."
   }
 
   assert {

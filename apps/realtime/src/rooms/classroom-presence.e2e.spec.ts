@@ -2,7 +2,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import type { Room as SdkRoom } from '@colyseus/sdk';
 import {
-  CLASSROOM_LAYOUT,
+  buildClassroomLayout,
+  MIN_CLASSROOM_DESKS,
   CLASSROOM_ROOM_NAME,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_REASON_TOO_MANY_CONNECTIONS,
@@ -19,6 +20,8 @@ import {
 } from '../testing/stub-api';
 import { waitUntil } from '../testing/wait-until';
 import type { ClassroomRoom } from './classroom-room';
+
+const LAYOUT = buildClassroomLayout(MIN_CLASSROOM_DESKS);
 
 const CLASSROOM_A = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const CLASSROOM_B = '11111111-1111-4111-8111-111111111111';
@@ -66,7 +69,7 @@ describe('ClassroomRoom presence (real Colyseus server + stub API)', () => {
       role: 'STUDENT',
       status: 'online',
     });
-    const { spawnPoints, bounds } = CLASSROOM_LAYOUT;
+    const { spawnPoints, bounds } = LAYOUT;
     expect(spawnPoints).toContainEqual({ x: avatar.x, z: avatar.z });
     expect(avatar.x).toBeGreaterThan(bounds.minX);
     expect(avatar.x).toBeLessThan(bounds.maxX);

@@ -3124,6 +3124,208 @@
         "tags": ["bot"]
       }
     },
+    "/classrooms/{id}/bot/status": {
+      "get": {
+        "description": "Returns whether the Study Guide Bot is available, locked during an active exam (students only), or missing indexed approved materials.",
+        "operationId": "BotAskController_getStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotStatusDto" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parents cannot use the Study Guide Bot.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Get server-decided Study Guide Bot availability for this classroom",
+        "tags": ["bot"]
+      }
+    },
+    "/classrooms/{id}/bot/messages": {
+      "post": {
+        "description": "Answers strictly from teacher-approved classroom material using pgvector RAG and returns server-verified citations. Rejects students while an exam is in progress (including in-flight queries) with 409 Conflict.",
+        "operationId": "BotAskController_ask",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/AskStudyGuideBotDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/BotAnswerDto" } }
+            }
+          },
+          "400": {
+            "description": "Invalid question payload.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parents cannot use the Study Guide Bot.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, or inaccessible classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Blocked because the student has an exam in progress.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "503": {
+            "description": "External AI provider is temporarily unavailable.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Ask the classroom Study Guide Bot a study question",
+        "tags": ["bot"]
+      }
+    },
+    "/users/me/daily-review": {
+      "get": {
+        "description": "Server-decided state for the local day (America/Argentina/Buenos_Aires, server clock). `not_due` covers every non-delivery cause (already delivered today, another tab, parent, no classroom access, exam in progress); the client does not distinguish causes. The first authenticated access of the day delivers once under a unique constraint, so reloads and concurrent tabs cannot re-deliver.",
+        "operationId": "DailyReviewController_getDailyReview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "`not_due`, or the full review payload with `status: due`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DailyReviewResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Daily review state for the authenticated user",
+        "tags": ["bot"]
+      }
+    },
+    "/users/me/daily-review/daily-question": {
+      "post": {
+        "description": "Validates the chosen option against the server-only answer key and credits the study streak at most once per local day. The answer key never leaves the server. Wrong answers are retryable inside a per-user attempt budget for the local day; a correct answer closes the question and further attempts answer 409.",
+        "operationId": "DailyReviewController_answerDailyQuestion",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AnswerDailyQuestionDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Answer evaluation with the live streak summary.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DailyQuestionAnswerResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body: missing `questionId`/`answer`, non-string values, empty answer, or over 120 characters.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "No question for this user (foreign or malformed `questionId`, no question delivered today, teacher or parent).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "The question belongs to another local day, was already answered today, a concurrent correct answer won, or the student has an exam in progress.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "The per-user attempt budget for the local day is exhausted.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Answer the daily review question",
+        "tags": ["bot"]
+      }
+    },
     "/classrooms/{id}/roster": {
       "get": {
         "description": "Includes active and inactive student memberships and historical guardian links. Ordered by displayName ascending, then membership id ascending. Separate from the D12 member directory.",
@@ -6374,6 +6576,219 @@
           "indexState",
           "createdAt"
         ]
+      },
+      "BotStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether the Study Guide Bot is currently available to the caller."
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["exam_in_progress", "no_materials", "disabled"],
+            "nullable": true,
+            "description": "Server-decided reason when `available` is `false`; otherwise `null`."
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "User-facing explanation when unavailable; otherwise `null`."
+          }
+        },
+        "required": ["available", "reason", "message"]
+      },
+      "AskStudyGuideBotDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Plain-text study question for the classroom Study Guide Bot."
+          }
+        },
+        "required": ["question"]
+      },
+      "BotCitationDto": {
+        "type": "object",
+        "properties": {
+          "materialId": { "type": "string", "format": "uuid" },
+          "filename": { "type": "string", "maxLength": 120, "example": "guia-unidad-1.pdf" },
+          "excerpt": { "type": "string", "nullable": true }
+        },
+        "required": ["materialId", "filename", "excerpt"]
+      },
+      "BotAnswerDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "answer": {
+            "type": "string",
+            "description": "Plain-text study guidance answer from the server."
+          },
+          "outcome": { "type": "string", "enum": ["answered", "out_of_scope", "guided_only"] },
+          "citations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BotCitationDto" }
+          },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "answer", "outcome", "citations", "createdAt"]
+      },
+      "DailyReviewItemDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["pending_activity", "recent_grade", "announcement", "teacher_review"],
+            "description": "Row kind; the frontend renders each kind with its own layout."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "example": "Trabajo práctico de fotosíntesis"
+          },
+          "classroomName": { "type": "string", "maxLength": 120, "example": "Biología 3°B" },
+          "dueAt": {
+            "type": "object",
+            "nullable": true,
+            "format": "date-time",
+            "description": "ISO 8601 UTC instant; the frontend displays it in the school time zone."
+          },
+          "detail": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 280,
+            "description": "Kind-specific detail, for example a grade rendered as \"9/10\"."
+          }
+        },
+        "required": ["kind", "title", "classroomName", "dueAt", "detail"]
+      },
+      "DailyReviewSectionDto": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string", "enum": ["pending", "news"] },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DailyReviewItemDto" }
+          }
+        },
+        "required": ["kind", "items"]
+      },
+      "DailyQuestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Question id to submit with the chosen answer."
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 280,
+            "example": "¿Qué organelo realiza la fotosíntesis?"
+          },
+          "options": {
+            "minItems": 2,
+            "maxItems": 6,
+            "description": "Answer options; the submission sends the chosen option text.",
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "materialTitle": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 120,
+            "description": "Source material title the question was built from, when known."
+          }
+        },
+        "required": ["id", "prompt", "options", "materialTitle"]
+      },
+      "DailyReviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["not_due", "due"] },
+          "audience": {
+            "type": "string",
+            "enum": ["STUDENT", "TEACHER"],
+            "description": "Present when status is `due`: students get review + question, teachers review only."
+          },
+          "contentKind": {
+            "type": "string",
+            "enum": ["generated", "structured"],
+            "description": "Present when status is `due`. `structured` is the fallback built only from PostgreSQL data with `summary: null`; the frontend labels it non-generated."
+          },
+          "summary": {
+            "type": "object",
+            "nullable": true,
+            "maxLength": 400,
+            "description": "Model wording when contentKind is `generated`; null on the structured fallback."
+          },
+          "sections": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/DailyReviewSectionDto" }
+          },
+          "dailyQuestion": {
+            "nullable": true,
+            "description": "Present for students when the server has a question for the day; null on the structured fallback.",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/DailyQuestionDto" }]
+          }
+        },
+        "required": ["status"]
+      },
+      "AnswerDailyQuestionDto": {
+        "type": "object",
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000000",
+            "description": "Id of the daily question delivered to this user today."
+          },
+          "answer": { "type": "string", "maxLength": 120, "example": "Cloroplasto" }
+        },
+        "required": ["questionId", "answer"]
+      },
+      "DailyQuestionStreakDto": {
+        "type": "object",
+        "properties": {
+          "currentStreak": {
+            "type": "number",
+            "minimum": 0,
+            "example": 5,
+            "description": "Chain alive as of today."
+          },
+          "bestStreak": { "type": "number", "minimum": 0, "example": 9 },
+          "lastQualifiedDate": {
+            "type": "object",
+            "nullable": true,
+            "example": "2026-11-19",
+            "description": "Local day (YYYY-MM-DD, America/Argentina/Buenos_Aires) of the last qualifying activity."
+          }
+        },
+        "required": ["currentStreak", "bestStreak", "lastQualifiedDate"]
+      },
+      "DailyQuestionAnswerResponseDto": {
+        "type": "object",
+        "properties": {
+          "correct": {
+            "type": "boolean",
+            "example": true,
+            "description": "Exact trimmed-text match against the stored answer key."
+          },
+          "feedback": {
+            "type": "string",
+            "maxLength": 280,
+            "example": "¡Muy bien! Respuesta correcta y día de racha ganado.",
+            "description": "Server-authored feedback in the product language; never model output."
+          },
+          "streak": {
+            "description": "Live streak after this answer.",
+            "allOf": [{ "$ref": "#/components/schemas/DailyQuestionStreakDto" }]
+          }
+        },
+        "required": ["correct", "feedback", "streak"]
       },
       "RosterGuardianDto": {
         "type": "object",

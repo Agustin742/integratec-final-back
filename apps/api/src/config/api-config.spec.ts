@@ -65,6 +65,23 @@ describe('loadApiConfig', () => {
       gradeWeightExam: 1.5,
       equipRateLimitWindowSeconds: 60,
       equipRateLimitMaxAttempts: 20,
+      dailyQuestionMaxAttempts: 5,
+      aiProviderApiKey: undefined,
+      aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      aiChatModel: 'gemini-2.5-flash',
+      aiEmbeddingModel: 'gemini-embedding-001',
+      aiEmbeddingDimension: 768,
+      aiRequestTimeoutSeconds: 20,
+      aiMaxRetries: 1,
+      aiMaxToolIterations: 4,
+      aiRetrievalTopK: 5,
+      aiRetrievalMinSimilarity: 0.55,
+      aiChunkMaxChars: 2400,
+      aiChunkOverlapChars: 300,
+      aiBotRateLimitWindowSeconds: 60,
+      aiBotRateLimitUserMax: 10,
+      aiBotRateLimitClassroomMax: 60,
+      aiBotRateLimitGlobalMax: 300,
     });
   });
 
@@ -74,6 +91,22 @@ describe('loadApiConfig', () => {
       authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
       authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
     });
+  });
+
+  it('parses explicit daily-question attempt limits and rejects malformed ones', () => {
+    expect(
+      loadApiConfig({
+        ...validEnv(),
+        DAILY_QUESTION_MAX_ATTEMPTS: '10',
+      }),
+    ).toMatchObject({
+      dailyQuestionMaxAttempts: 10,
+    });
+    for (const value of ['0', '21', 'x']) {
+      expect(messageOf({ ...validEnv(), DAILY_QUESTION_MAX_ATTEMPTS: value })).toContain(
+        'DAILY_QUESTION_MAX_ATTEMPTS',
+      );
+    }
   });
 
   it('accepts an AUTH_CLEANUP_INTERVAL of 7d and rejects 8d', () => {
@@ -579,6 +612,95 @@ describe('loadApiConfig', () => {
         expect(message).toContain('GRADE_WEIGHT_EXAM');
         expect(message).toContain('strictly greater than GRADE_WEIGHT_TP');
       }
+    });
+  });
+
+  describe('study guide bot AI settings', () => {
+    it('parses valid AI provider, RAG and bot rate-limit overrides', () => {
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          AI_PROVIDER_API_KEY: '  synthetic-provider-key  ',
+          AI_PROVIDER_BASE_URL: 'https://ai.example.test/v1///',
+          AI_CHAT_MODEL: 'gpt-4o-mini',
+          AI_EMBEDDING_MODEL: 'text-embedding-3-small',
+          AI_EMBEDDING_DIMENSION: '768',
+          AI_REQUEST_TIMEOUT: '30s',
+          AI_MAX_RETRIES: '2',
+          AI_MAX_TOOL_ITERATIONS: '6',
+          AI_RETRIEVAL_TOP_K: '8',
+          AI_RETRIEVAL_MIN_SIMILARITY: '0.45',
+          AI_CHUNK_MAX_CHARS: '1500',
+          AI_CHUNK_OVERLAP_CHARS: '200',
+          AI_BOT_RATE_LIMIT_WINDOW: '2m',
+          AI_BOT_RATE_LIMIT_USER_MAX: '25',
+          AI_BOT_RATE_LIMIT_CLASSROOM_MAX: '100',
+          AI_BOT_RATE_LIMIT_GLOBAL_MAX: '500',
+        }),
+      ).toMatchObject({
+        aiProviderApiKey: 'synthetic-provider-key',
+        aiProviderBaseUrl: 'https://ai.example.test/v1',
+        aiChatModel: 'gpt-4o-mini',
+        aiEmbeddingModel: 'text-embedding-3-small',
+        aiEmbeddingDimension: 768,
+        aiRequestTimeoutSeconds: 30,
+        aiMaxRetries: 2,
+        aiMaxToolIterations: 6,
+        aiRetrievalTopK: 8,
+        aiRetrievalMinSimilarity: 0.45,
+        aiChunkMaxChars: 1500,
+        aiChunkOverlapChars: 200,
+        aiBotRateLimitWindowSeconds: 120,
+        aiBotRateLimitUserMax: 25,
+        aiBotRateLimitClassroomMax: 100,
+        aiBotRateLimitGlobalMax: 500,
+      });
+    });
+
+    it('rejects non-HTTPS AI_PROVIDER_BASE_URL in production and malformed URLs', () => {
+      const prodMsg = messageOf({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset',
+        REALTIME_INTERNAL_URL: 'http://realtime:2567',
+        AI_PROVIDER_BASE_URL: 'http://provider.example.test/v1',
+      });
+      expect(prodMsg).toContain('AI_PROVIDER_BASE_URL');
+      expect(prodMsg).toContain('HTTPS');
+
+      expect(
+        messageOf({ ...validEnv(), AI_PROVIDER_BASE_URL: 'https://user:pass@ai.test/v1?x=1' }),
+      ).toContain('AI_PROVIDER_BASE_URL');
+    });
+
+    it('rejects AI_CHUNK_OVERLAP_CHARS >= AI_CHUNK_MAX_CHARS and invalid bounds', () => {
+      const overlapMsg = messageOf({
+        ...validEnv(),
+        AI_CHUNK_MAX_CHARS: '500',
+        AI_CHUNK_OVERLAP_CHARS: '500',
+      });
+      expect(overlapMsg).toContain('AI_CHUNK_OVERLAP_CHARS');
+      expect(overlapMsg).toContain('AI_CHUNK_MAX_CHARS');
+
+      expect(messageOf({ ...validEnv(), AI_EMBEDDING_DIMENSION: '32' })).toContain(
+        'AI_EMBEDDING_DIMENSION',
+      );
+      const mismatchMsg = messageOf({ ...validEnv(), AI_EMBEDDING_DIMENSION: '1536' });
+      expect(mismatchMsg).toContain('AI_EMBEDDING_DIMENSION');
+      expect(mismatchMsg).toContain('768');
+      expect(messageOf({ ...validEnv(), AI_RETRIEVAL_MIN_SIMILARITY: '1.5' })).toContain(
+        'AI_RETRIEVAL_MIN_SIMILARITY',
+      );
+      expect(messageOf({ ...validEnv(), AI_CHAT_MODEL: 'bad model' })).toContain('AI_CHAT_MODEL');
+    });
+
+    it('never echoes AI_PROVIDER_API_KEY in validation errors', () => {
+      const msg = messageOf({
+        ...validEnv(),
+        AI_PROVIDER_API_KEY: 'super-secret-ai-key-do-not-leak',
+        AI_RETRIEVAL_TOP_K: '999',
+      });
+      expect(msg).not.toContain('super-secret-ai-key-do-not-leak');
     });
   });
 

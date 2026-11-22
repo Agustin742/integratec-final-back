@@ -46,6 +46,11 @@ output "subnet_group_subnet_ids" {
   value       = aws_db_subnet_group.this.subnet_ids
 }
 
+output "identifier" {
+  description = "Identifier of the RDS instance; the CloudWatch DBInstanceIdentifier dimension and the RDS event source."
+  value       = aws_db_instance.this.identifier
+}
+
 output "endpoint" {
   description = "Connection endpoint of the instance (host:port)."
   value       = aws_db_instance.this.endpoint

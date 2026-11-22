@@ -21,7 +21,13 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "infra/deploy/compose.prod.yaml"
 CADDYFILE = ROOT / "infra/caddy/Caddyfile"
 
-SECRET_NAMES = {"JWT_SECRET", "INVITATION_TOKEN_KEY", "INTERNAL_SERVICE_SECRET", "DATABASE_URL"}
+SECRET_NAMES = {
+    "JWT_SECRET",
+    "INVITATION_TOKEN_KEY",
+    "INTERNAL_SERVICE_SECRET",
+    "AI_PROVIDER_API_KEY",
+    "DATABASE_URL",
+}
 
 # Everything each service may receive. Literals are the non-secret values fixed by the image
 # contract; every other entry is a bare name whose value comes from the process environment of
@@ -37,6 +43,7 @@ API_ENV = {
     "JWT_SECRET",
     "INVITATION_TOKEN_KEY",
     "INTERNAL_SERVICE_SECRET",
+    "AI_PROVIDER_API_KEY",
     "DATABASE_URL",
 }
 REALTIME_ENV = {
@@ -154,7 +161,7 @@ class ComposeStructureTests(unittest.TestCase):
     def test_only_the_api_receives_database_credentials_and_signing_keys(self):
         realtime = {e.split("=")[0] for e in self.services["realtime"]["environment"]}
         caddy = {e.split("=")[0] for e in self.services["caddy"]["environment"]}
-        for name in ("DATABASE_URL", "JWT_SECRET", "INVITATION_TOKEN_KEY", "S3_BUCKET", "S3_REGION"):
+        for name in ("DATABASE_URL", "JWT_SECRET", "INVITATION_TOKEN_KEY", "AI_PROVIDER_API_KEY", "S3_BUCKET", "S3_REGION"):
             self.assertNotIn(name, realtime)
             self.assertNotIn(name, caddy)
         for name in SECRET_NAMES - {"INTERNAL_SERVICE_SECRET"}:
@@ -208,6 +215,7 @@ class ComposeRenderTests(unittest.TestCase):
         "DATABASE_URL": "postgresql://u:p@h:5432/d",
         "INVITATION_TOKEN_KEY": "a" * 64,
         "INTERNAL_SERVICE_SECRET": "i" * 40,
+        "AI_PROVIDER_API_KEY": "ai-key-" + "k" * 32,
         "ALLOWED_ORIGINS": "https://app.example.com",
         "PASSWORD_RESET_URL_BASE": "https://app.example.com/reset",
         "S3_REGION": "us-east-2",
@@ -232,6 +240,8 @@ class ComposeRenderTests(unittest.TestCase):
         self.assertIn("DATABASE_URL", services["api"]["environment"])
         self.assertNotIn("DATABASE_URL", services["realtime"]["environment"])
         self.assertNotIn("JWT_SECRET", services["realtime"]["environment"])
+        self.assertNotIn("AI_PROVIDER_API_KEY", services["realtime"]["environment"])
+        self.assertIn("AI_PROVIDER_API_KEY", services["api"]["environment"])
         self.assertEqual(set(services["migrate"]["environment"]), {"DATABASE_URL"})
 
     def test_missing_required_inputs_fail_closed(self):

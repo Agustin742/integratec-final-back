@@ -42,6 +42,22 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   authCleanupBatchSize: 1000,
   gradeWeightTp: 1,
   gradeWeightExam: 1.5,
+  aiProviderApiKey: undefined,
+  aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  aiChatModel: 'gemini-2.5-flash',
+  aiEmbeddingModel: 'gemini-embedding-001',
+  aiEmbeddingDimension: 768,
+  aiRequestTimeoutSeconds: 20,
+  aiMaxRetries: 1,
+  aiMaxToolIterations: 4,
+  aiRetrievalTopK: 5,
+  aiRetrievalMinSimilarity: 0.55,
+  aiChunkMaxChars: 2400,
+  aiChunkOverlapChars: 300,
+  aiBotRateLimitWindowSeconds: 60,
+  aiBotRateLimitUserMax: 10,
+  aiBotRateLimitClassroomMax: 60,
+  aiBotRateLimitGlobalMax: 300,
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {
@@ -503,5 +519,26 @@ describe('openapi export', () => {
     const committed = readFileSync(OPENAPI_FILE_PATH, 'utf8').replace(/\r\n/g, '\n');
     expect(await renderOpenApiJson()).toBe(committed);
     expect(committed.endsWith('\n')).toBe(true);
+  });
+
+  it('publishes the daily review contract with the generated daily-question shape (issue #119)', async () => {
+    const committed = JSON.parse(readFileSync(OPENAPI_FILE_PATH, 'utf8'));
+    const schemas = committed.components.schemas;
+    expect(schemas.DailyQuestionDto).toBeDefined();
+    expect(Object.keys(schemas.DailyQuestionDto.properties).sort()).toEqual([
+      'id',
+      'materialTitle',
+      'options',
+      'prompt',
+    ]);
+    // The answer key and attempt state are server-side only: no public schema may
+    // ever name them (independent verification finding F1 pinned the payload shape,
+    // this pins the non-leakage the rules require).
+    for (const schema of Object.values<any>(schemas)) {
+      expect(Object.keys(schema.properties ?? {})).not.toContain('correctOption');
+      expect(Object.keys(schema.properties ?? {})).not.toContain('answeredAt');
+    }
+    const dailyQuestion = schemas.DailyReviewResponseDto.properties.dailyQuestion;
+    expect(dailyQuestion.allOf?.[0]?.$ref).toBe('#/components/schemas/DailyQuestionDto');
   });
 });
