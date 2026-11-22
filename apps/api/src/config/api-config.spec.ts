@@ -65,6 +65,7 @@ describe('loadApiConfig', () => {
       gradeWeightExam: 1.5,
       equipRateLimitWindowSeconds: 60,
       equipRateLimitMaxAttempts: 20,
+      dailyQuestionMaxAttempts: 5,
       aiProviderApiKey: undefined,
       aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
       aiChatModel: 'gemini-2.5-flash',
@@ -90,6 +91,22 @@ describe('loadApiConfig', () => {
       authCleanupIntervalSeconds: DEFAULT_AUTH_CLEANUP_INTERVAL_SECONDS,
       authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
     });
+  });
+
+  it('parses explicit daily-question attempt limits and rejects malformed ones', () => {
+    expect(
+      loadApiConfig({
+        ...validEnv(),
+        DAILY_QUESTION_MAX_ATTEMPTS: '10',
+      }),
+    ).toMatchObject({
+      dailyQuestionMaxAttempts: 10,
+    });
+    for (const value of ['0', '21', 'x']) {
+      expect(messageOf({ ...validEnv(), DAILY_QUESTION_MAX_ATTEMPTS: value })).toContain(
+        'DAILY_QUESTION_MAX_ATTEMPTS',
+      );
+    }
   });
 
   it('accepts an AUTH_CLEANUP_INTERVAL of 7d and rejects 8d', () => {

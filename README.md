@@ -59,6 +59,10 @@ backend/
 - [Teacher bot material enablement](docs/bot-materials.md): teacher-only `/classrooms/:id/bot/materials` configuration and `pgvector` indexing lifecycle (`PENDING` / `INDEXED` / `FAILED`).
 - [Study Guide Bot](docs/bot-study-guide.md): `GET /classrooms/:id/bot/status` and `POST /classrooms/:id/bot/messages` with classroom-scoped `pgvector` RAG, external OpenAI-compatible LLM integration (`D20`), anti-copy output guard, pre-call and in-flight exam lockout (`409 Conflict`), sliding-window rate limits (`429`), and privacy-safe telemetry.
 
+## Daily review and daily question
+
+- [Daily review and daily question](docs/daily-review.md): authenticated `GET /users/me/daily-review` and `POST /users/me/daily-review/daily-question`, delivered once per local day (server clock, `America/Argentina/Buenos_Aires`) under a `(user, local day)` unique constraint, composed through the same services REST uses, with an AI-generated summary via the configured external OpenAI-compatible provider (`D20`) that fails closed to a structured PostgreSQL-only fallback, and one generated question from enabled bot material whose correct answer credits the streak (`DAILY_REVIEW_ANSWERED`, at most once per local day, answer key never serialized).
+
 ## Local setup and development
 
 Requirements: **Node.js 22** and **pnpm >= 10**.

@@ -72,6 +72,8 @@ export interface ApiConfig {
   equipRateLimitWindowSeconds?: number;
   /** Maximum equipment change attempts per user inside the sliding window (defaults to 20). */
   equipRateLimitMaxAttempts?: number;
+  /** Maximum daily-question answer attempts per user per local day (defaults to 5). */
+  dailyQuestionMaxAttempts?: number;
   /** Server-only API key for the OpenAI-compatible external LLM provider. Optional so boot succeeds before provisioning. */
   aiProviderApiKey?: string;
   /** Base URL of the external OpenAI-compatible provider API (defaults to Google Gemini OpenAI compatibility). */
@@ -146,6 +148,10 @@ export const MAX_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 3600;
 export const MAX_EQUIP_RATE_LIMIT_ATTEMPTS = 1000;
 export const DEFAULT_EQUIP_RATE_LIMIT_WINDOW_SECONDS = 60;
 export const DEFAULT_EQUIP_RATE_LIMIT_MAX_ATTEMPTS = 20;
+
+/** Per-user daily answer attempts: wrong answers allow retry, bounded per day. */
+export const MAX_DAILY_QUESTION_ATTEMPTS = 20;
+export const DEFAULT_DAILY_QUESTION_ATTEMPTS = 5;
 
 /** Study Guide Bot external AI provider, RAG, and rate-limiter bounds and defaults. */
 export const DEFAULT_AI_PROVIDER_BASE_URL =
@@ -232,6 +238,7 @@ const GRADE_WEIGHT_MESSAGE =
   'must be a finite decimal between 0.1 and 10 with at most 2 decimal places';
 const EQUIP_RATE_LIMIT_WINDOW_MESSAGE = 'must be a duration between 1s and 1h, such as 1m';
 const EQUIP_RATE_LIMIT_MAX_MESSAGE = `must be an integer between 1 and ${MAX_EQUIP_RATE_LIMIT_ATTEMPTS}`;
+const DAILY_QUESTION_ATTEMPTS_MESSAGE = `must be an integer between 1 and ${MAX_DAILY_QUESTION_ATTEMPTS}`;
 const AI_BASE_URL_MESSAGE =
   'must be an absolute http(s) URL without credentials, query string or fragment';
 const AI_MODEL_MESSAGE = 'must be 1-120 non-whitespace characters';
@@ -513,6 +520,12 @@ const envSchema = z
               .max(MAX_EQUIP_RATE_LIMIT_ATTEMPTS, EQUIP_RATE_LIMIT_MAX_MESSAGE),
           ),
       ),
+    DAILY_QUESTION_MAX_ATTEMPTS: boundedInt(
+      DEFAULT_DAILY_QUESTION_ATTEMPTS,
+      1,
+      MAX_DAILY_QUESTION_ATTEMPTS,
+      DAILY_QUESTION_ATTEMPTS_MESSAGE,
+    ),
     AI_PROVIDER_API_KEY: z
       .string()
       .transform((value) => value.trim())
@@ -757,6 +770,7 @@ export function loadApiConfig(env: Env): ApiConfig {
     gradeWeightExam: values.GRADE_WEIGHT_EXAM,
     equipRateLimitWindowSeconds: values.EQUIP_RATE_LIMIT_WINDOW,
     equipRateLimitMaxAttempts: values.EQUIP_RATE_LIMIT_MAX,
+    dailyQuestionMaxAttempts: values.DAILY_QUESTION_MAX_ATTEMPTS,
     aiProviderApiKey: values.AI_PROVIDER_API_KEY,
     aiProviderBaseUrl: values.AI_PROVIDER_BASE_URL,
     aiChatModel: values.AI_CHAT_MODEL,

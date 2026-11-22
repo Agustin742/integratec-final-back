@@ -14,5 +14,8 @@ import { AnnouncementsService } from './announcements.service';
   imports: [PrismaModule, AccessModule, NotificationsModule, EmailModule, OutboxModule],
   controllers: [AnnouncementsController],
   providers: [AnnouncementsService, NotificationEmailService, NotificationEmailHandler],
+  // AnnouncementsService is also consumed by the bot's daily review (composition
+  // via services, rules/architecture.md), not only by this module's controller.
+  exports: [AnnouncementsService],
 })
 export class AnnouncementsModule {}

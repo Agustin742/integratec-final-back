@@ -10,6 +10,8 @@ import { MetricsService } from './metrics.service';
   imports: [PrismaModule, AccessModule],
   controllers: [StudentMetricsController, ClassroomMetricsController],
   providers: [MetricRecordingService, MetricsService],
-  exports: [MetricRecordingService],
+  // MetricsService is also consumed by the bot's daily review (composition via
+  // services, rules/architecture.md), not only by this module's controllers.
+  exports: [MetricRecordingService, MetricsService],
 })
 export class MetricsModule {}
