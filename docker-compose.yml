@@ -64,6 +64,19 @@ services:
       MC_HOST_local: http://${MINIO_ROOT_USER:-minioadmin}:${MINIO_ROOT_PASSWORD:-minioadmin}@minio:9000
     command: ['mb', '--ignore-existing', 'local/${S3_BUCKET:-aula-virtual-dev}']
 
+  mailpit:
+    image: axllent/mailpit:v1.22
+    container_name: aula-mailpit
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025'
+      - '127.0.0.1:${MAILPIT_HTTP_PORT:-8025}:8025'
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit_data:/data
+
   api:
     build:
       context: .
@@ -105,6 +118,11 @@ services:
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
       AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-gemini-embedding-001}
       AI_EMBEDDING_DIMENSION: ${AI_EMBEDDING_DIMENSION:-768}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      EMAIL_FROM: ${EMAIL_FROM:-soporte@fundacion-integrar.org.ar}
     ports:
       - '127.0.0.1:3000:3000'
     profiles:
@@ -134,3 +152,5 @@ volumes:
     name: aula_postgres_data
   minio_data:
     name: aula_minio_data
+  mailpit_data:
+    name: aula_mailpit_data

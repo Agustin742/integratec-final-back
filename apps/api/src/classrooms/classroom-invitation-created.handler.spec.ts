@@ -58,6 +58,12 @@ describe('ClassroomInvitationCreatedHandler', () => {
     authCleanupBatchSize: 1000,
     gradeWeightTp: 1,
     gradeWeightExam: 1.5,
+    emailProvider: 'smtp',
+    smtpHost: 'localhost',
+    smtpPort: 1025,
+    smtpSecure: false,
+    smtpAuth: undefined,
+    emailFrom: 'soporte@fundacion-integrar.org.ar',
   };
 
   beforeEach(async () => {

@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const NODE_ENVIRONMENTS = ['development', 'test', 'production'] as const;
 export type NodeEnvironment = (typeof NODE_ENVIRONMENTS)[number];
 
+export const EMAIL_PROVIDERS = ['memory', 'smtp', 'ses'] as const;
+export type EmailProvider = (typeof EMAIL_PROVIDERS)[number];
+
 /**
  * Typed, validated configuration of the API.
  *
@@ -13,6 +16,12 @@ export interface ApiConfig {
   nodeEnv: NodeEnvironment;
   port: number;
   databaseUrl: string;
+  emailProvider: EmailProvider;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpAuth: { user: string; pass: string } | undefined;
+  emailFrom: string;
   accessTokenTtlSeconds: number;
   refreshTokenTtlSeconds: number;
   /**
@@ -257,6 +266,12 @@ const AI_BOT_CLASSROOM_MAX_MESSAGE = `must be an integer between 1 and ${MAX_AI_
 const AI_BOT_GLOBAL_MAX_MESSAGE = `must be an integer between 1 and ${MAX_AI_BOT_RATE_LIMIT_GLOBAL_MAX}`;
 
 const required = { error: 'is required' };
+
+const booleanFlag = (fallback: boolean) =>
+  z
+    .enum(['true', 'false'], { error: 'must be true or false' })
+    .default(fallback ? 'true' : 'false')
+    .transform((value) => value === 'true');
 
 const boundedInt = (fallback: number, min: number, max: number, message: string) =>
   z
@@ -617,6 +632,18 @@ const envSchema = z
       MAX_AI_BOT_RATE_LIMIT_GLOBAL_MAX,
       AI_BOT_GLOBAL_MAX_MESSAGE,
     ),
+    EMAIL_PROVIDER: z
+      .enum(EMAIL_PROVIDERS, { error: `must be one of: ${EMAIL_PROVIDERS.join(', ')}` })
+      .default('smtp'),
+    SMTP_HOST: z.string().default('localhost'),
+    SMTP_PORT: boundedInt(1025, 1, 65535, 'must be an integer between 1 and 65535'),
+    SMTP_SECURE: booleanFlag(false),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    EMAIL_FROM: z
+      .string()
+      .email('must be a valid email address')
+      .default('soporte@fundacion-integrar.org.ar'),
   })
   .superRefine((env, ctx) => {
     // A production link must point at the real frontend, never silently at localhost.
@@ -705,6 +732,14 @@ const envSchema = z
         message: 'must be strictly less than AI_CHUNK_MAX_CHARS',
       });
     }
+    if ((env.SMTP_USER === undefined) !== (env.SMTP_PASS === undefined)) {
+      const missing = env.SMTP_USER === undefined ? 'SMTP_USER' : 'SMTP_PASS';
+      ctx.addIssue({
+        code: 'custom',
+        path: [missing],
+        message: 'is required when the other SMTP credential variable is set',
+      });
+    }
   });
 
 type Env = NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -787,5 +822,14 @@ export function loadApiConfig(env: Env): ApiConfig {
     aiBotRateLimitUserMax: values.AI_BOT_RATE_LIMIT_USER_MAX,
     aiBotRateLimitClassroomMax: values.AI_BOT_RATE_LIMIT_CLASSROOM_MAX,
     aiBotRateLimitGlobalMax: values.AI_BOT_RATE_LIMIT_GLOBAL_MAX,
+    emailProvider: values.EMAIL_PROVIDER,
+    smtpHost: values.SMTP_HOST,
+    smtpPort: values.SMTP_PORT,
+    smtpSecure: values.SMTP_SECURE,
+    smtpAuth:
+      values.SMTP_USER !== undefined && values.SMTP_PASS !== undefined
+        ? { user: values.SMTP_USER, pass: values.SMTP_PASS }
+        : undefined,
+    emailFrom: values.EMAIL_FROM,
   };
 }

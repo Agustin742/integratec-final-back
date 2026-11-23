@@ -305,3 +305,12 @@
 - **Change:** Updated internal links and rule anchors across requirements decisions and architecture diagrams to align with realigned school domain rules (`classrooms-and-roles.md`, `activities-and-grading.md`, `communication-and-notifications.md`).
 - **Reason:** Resolve broken link and anchor errors reported by `scripts/ci/check_docs.py`.
 - **Next step:** Review backend architecture and proceed with implementation.
+
+## 2026-11-23 — Implement SMTP email adapter and Mailpit for local testing
+
+- **Status:** completed
+- **Area / files:** `docker-compose.yml`, `.env.example`, `apps/api/package.json`, `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/src/platform/email/`
+- **Change:** Added Mailpit container service to `docker-compose.yml` (`1025` SMTP, `8025` Web UI) with named volume `mailpit_data`. Added `nodemailer` dependency. Expanded `ApiConfig` with Zod validation for `EMAIL_PROVIDER` (`memory`, `smtp`, `ses`), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `EMAIL_FROM`. Implemented `SmtpEmailAdapter` with security-safe metadata logging (no PII/tokens in logs) and graceful shutdown. Updated `EmailModule` to use dynamic factory resolution for `EMAIL_PORT` based on `config.emailProvider`. Added comprehensive unit tests in `api-config.spec.ts` and `email.spec.ts`.
+- **Reason:** Enable local end-to-end testing of password reset tokens and classroom invitations without sending real emails to external mailboxes or hardcoding an email provider.
+- **Next step:** Run local stack and verify password reset and invitation flows via Mailpit Web UI.
+

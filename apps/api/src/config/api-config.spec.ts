@@ -82,6 +82,12 @@ describe('loadApiConfig', () => {
       aiBotRateLimitUserMax: 10,
       aiBotRateLimitClassroomMax: 60,
       aiBotRateLimitGlobalMax: 300,
+      emailProvider: 'smtp',
+      smtpHost: 'localhost',
+      smtpPort: 1025,
+      smtpSecure: false,
+      smtpAuth: undefined,
+      emailFrom: 'soporte@fundacion-integrar.org.ar',
     });
   });
 
@@ -702,6 +708,81 @@ describe('loadApiConfig', () => {
       });
       expect(msg).not.toContain('super-secret-ai-key-do-not-leak');
     });
+  });
+
+  describe('email configuration', () => {
+    it('applies default email delivery configuration', () => {
+      expect(loadApiConfig(validEnv())).toMatchObject({
+        emailProvider: 'smtp',
+        smtpHost: 'localhost',
+        smtpPort: 1025,
+        smtpSecure: false,
+        smtpAuth: undefined,
+        emailFrom: 'soporte@fundacion-integrar.org.ar',
+      });
+    });
+
+    it('parses custom SMTP configuration with credentials', () => {
+      expect(
+        loadApiConfig({
+          ...validEnv(),
+          EMAIL_PROVIDER: 'smtp',
+          SMTP_HOST: 'smtp.sendgrid.net',
+          SMTP_PORT: '587',
+          SMTP_SECURE: 'true',
+          SMTP_USER: 'apikey',
+          SMTP_PASS: 'secret-smtp-password',
+          EMAIL_FROM: 'notifications@fundacion-integrar.org.ar',
+        }),
+      ).toMatchObject({
+        emailProvider: 'smtp',
+        smtpHost: 'smtp.sendgrid.net',
+        smtpPort: 587,
+        smtpSecure: true,
+        smtpAuth: { user: 'apikey', pass: 'secret-smtp-password' },
+        emailFrom: 'notifications@fundacion-integrar.org.ar',
+      });
+    });
+
+    it('accepts memory and ses as email providers', () => {
+      expect(loadApiConfig({ ...validEnv(), EMAIL_PROVIDER: 'memory' }).emailProvider).toBe(
+        'memory',
+      );
+      expect(loadApiConfig({ ...validEnv(), EMAIL_PROVIDER: 'ses' }).emailProvider).toBe('ses');
+    });
+
+    it('rejects an unknown EMAIL_PROVIDER', () => {
+      expect(messageOf({ ...validEnv(), EMAIL_PROVIDER: 'mailgun' })).toContain('EMAIL_PROVIDER');
+    });
+
+    it.each(['0', '65536', 'abc', '-1', '1025.5'])('rejects invalid SMTP_PORT=%s', (port) => {
+      expect(messageOf({ ...validEnv(), SMTP_PORT: port })).toContain('SMTP_PORT');
+    });
+
+    it.each(['yes', '1', 'TRUE'])('rejects invalid SMTP_SECURE=%s', (value) => {
+      expect(messageOf({ ...validEnv(), SMTP_SECURE: value })).toContain('SMTP_SECURE');
+    });
+
+    it('requires both SMTP credentials or neither', () => {
+      expect(messageOf({ ...validEnv(), SMTP_USER: 'only-user' })).toContain('SMTP_PASS');
+      expect(messageOf({ ...validEnv(), SMTP_PASS: 'only-pass' })).toContain('SMTP_USER');
+    });
+
+    it('never echoes SMTP credentials in the error message', () => {
+      const message = messageOf({
+        ...validEnv(),
+        SMTP_USER: 'secret-user',
+        PORT: 'invalid',
+      });
+      expect(message).not.toContain('secret-user');
+    });
+
+    it.each(['not-an-email', 'missing@domain', '@no-local.com'])(
+      'rejects invalid EMAIL_FROM=%s',
+      (from) => {
+        expect(messageOf({ ...validEnv(), EMAIL_FROM: from })).toContain('EMAIL_FROM');
+      },
+    );
   });
 
   it('never echoes secret values in the error message', () => {
