@@ -8,10 +8,10 @@ import {
   PrismaClient,
   RegistrationPath,
   SchoolRole,
-  ShopItemKind,
 } from '@prisma/client';
 import { hashPassword } from '../src/auth/password-hash';
 import { assertSafeToSeed } from './seed-guard';
+import { SHOP_CATALOG } from './seed-shop-catalog';
 
 const prisma = new PrismaClient();
 const DEMO_PASSWORD = 'AulaLocal2026!';
@@ -204,91 +204,9 @@ async function main(): Promise<void> {
     },
   });
 
-  // 6. Synthetic classroom shop catalog (never seeded in production or SQL migrations).
-  await prisma.shopItem.createMany({
-    data: [
-      {
-        code: 'cap_blue',
-        name: 'Gorra azul del aula',
-        description: 'Una gorra azul clásica para tu avatar.',
-        kind: ShopItemKind.AVATAR_ACCESSORY,
-        defaultPrice: 50,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'cap', slot: 'head', color: '#1E3A8A' },
-      },
-      {
-        code: 'headphones_studio',
-        name: 'Auriculares de estudio',
-        description: 'Auriculares para personalizar tu avatar.',
-        kind: ShopItemKind.AVATAR_ACCESSORY,
-        defaultPrice: 80,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'headphones', slot: 'head' },
-      },
-      {
-        code: 'glasses_round',
-        name: 'Anteojos redondos',
-        description: 'Anteojos livianos para personalizar tu avatar.',
-        kind: ShopItemKind.AVATAR_ACCESSORY,
-        defaultPrice: 40,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'glasses', slot: 'face' },
-      },
-      {
-        code: 'backpack_explorer',
-        name: 'Mochila exploradora',
-        description: 'Una mochila para personalizar tu avatar.',
-        kind: ShopItemKind.AVATAR_ACCESSORY,
-        defaultPrice: 100,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'backpack', slot: 'back' },
-      },
-      {
-        code: 'desk_plant',
-        name: 'Planta para el pupitre',
-        description: 'Una pequeña planta decorativa para el aula.',
-        kind: ShopItemKind.DESK_UPGRADE,
-        defaultPrice: 60,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'desk_plant', slot: 'desk_decor' },
-      },
-      {
-        code: 'classroom_theme_warm',
-        name: 'Tema cálido para el aula',
-        description: 'Desbloquea una ambientación cálida para toda el aula.',
-        kind: ShopItemKind.CLASSROOM_ITEM,
-        defaultPrice: 150,
-        isActive: true,
-        isImplemented: true,
-        metadata: { assetId: 'classroom_theme_warm', effect: 'theme_warm' },
-      },
-      {
-        code: 'minigame_pong',
-        name: 'Minijuego de ping-pong',
-        description: 'Previsto para una versión futura; todavía no se puede comprar.',
-        kind: ShopItemKind.CLASSROOM_ITEM,
-        defaultPrice: 200,
-        isActive: true,
-        isImplemented: false,
-        metadata: { assetId: 'minigame_pong', planned: true },
-      },
-      {
-        code: 'pet_scarf',
-        name: 'Bufanda para Michi',
-        description: 'Accesorio previsto para una versión futura; todavía no se puede comprar.',
-        kind: ShopItemKind.PET_ACCESSORY,
-        defaultPrice: 45,
-        isActive: true,
-        isImplemented: false,
-        metadata: { assetId: 'pet_scarf', planned: true },
-      },
-    ],
-  });
+  // 6. Synthetic shop catalog: modular avatar accessories and paid styles (never seeded in
+  // production or SQL migrations).
+  await prisma.shopItem.createMany({ data: [...SHOP_CATALOG] });
 
   // 7. Test badge catalog for the idempotent awarding mechanism (HU-GAM-002).
   // The real medal catalog, its conditions, and its rewards are open (gap 18);

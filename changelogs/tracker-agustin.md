@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-24 — Seed the avatar shop catalog (#145, BK-3)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/seed.ts`, `apps/api/prisma/seed-shop-catalog.ts`, `apps/api/prisma/seed-shop-catalog.spec.ts`, `docs/shop.md`
+- **Change:** The synthetic shop catalog now has 21 avatar accessories and 25 paid hair/top styles (46 items, 80 to 250 points); the eight old placeholder items are gone. The catalog moved to its own module so a spec can check colors, prices and that paid styles match `avatar-catalog.ts` one to one.
+- **Reason:** The shop must sell what the front avatar editor can render.
+- **Verification:** Catalog spec written RED first, then GREEN; seed run on a throwaway database.
+- **Next step:** BK-4 contract regeneration.
+
 ## 2026-11-24 — Modular avatar catalog (#145, BK-1)
 
 - **Status:** in-progress

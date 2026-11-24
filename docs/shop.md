@@ -34,7 +34,7 @@ Query parameters share the [pagination and sorting contract](api-conventions.md#
 
 ## Synthetic seeding
 
-`apps/api/prisma/seed.ts` (guarded by `assertSafeToSeed`) resets shop tables (`classroomItem`, `studentPurchase`, `classroomShopItem`, `shopItem`) before `TRUNCATE TABLE "point_transactions"` and seeds synthetic implemented and unimplemented catalog items for local development only. Catalog items are never seeded in SQL migrations or production.
+`apps/api/prisma/seed.ts` (guarded by `assertSafeToSeed`) resets shop tables (`classroomItem`, `studentPurchase`, `classroomShopItem`, `shopItem`) before `TRUNCATE TABLE "point_transactions"` and seeds the synthetic catalog for local development only: 21 avatar accessories (`<slot>_<assetId>` codes, metadata `{ assetId, slot, color }`) and one `AVATAR_STYLE` item per paid hair and top (`hair_<id>` / `top_<id>`), all implemented, priced 80 to 250. The catalog lives in `apps/api/prisma/seed-shop-catalog.ts`, and its spec checks that the styles match the paid ids in `avatar-catalog.ts`. Catalog items are never seeded in SQL migrations or production.
 
 ## Verification
 
