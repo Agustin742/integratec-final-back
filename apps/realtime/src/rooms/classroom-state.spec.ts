@@ -52,7 +52,7 @@ describe('ClassroomState', () => {
     const head = new EquippedItemView();
     head.slot = 'head';
     head.shopItemId = '20000000-0000-4000-8000-000000000001';
-    head.shopItemCode = 'cap_blue';
+    head.shopItemCode = 'head_cap';
     head.shopItemName = 'Blue Classroom Cap';
     head.kind = 'AVATAR_ACCESSORY';
     avatar.appearance.items.set('head', head);
@@ -70,7 +70,7 @@ describe('ClassroomState', () => {
     expect(stored?.appearance.items.get('head')).toMatchObject({
       slot: 'head',
       shopItemId: '20000000-0000-4000-8000-000000000001',
-      shopItemCode: 'cap_blue',
+      shopItemCode: 'head_cap',
       shopItemName: 'Blue Classroom Cap',
       kind: 'AVATAR_ACCESSORY',
     });

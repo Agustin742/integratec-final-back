@@ -38,7 +38,7 @@ const APPEARANCE: MemberAppearance = {
     head: {
       slot: 'head',
       shopItemId: '20000000-0000-4000-8000-000000000001',
-      shopItemCode: 'cap_blue',
+      shopItemCode: 'head_cap',
       shopItemName: 'Blue Classroom Cap',
       kind: 'AVATAR_ACCESSORY',
     },

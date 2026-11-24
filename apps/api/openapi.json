@@ -6591,7 +6591,7 @@
         "type": "object",
         "properties": {
           "id": { "type": "string", "format": "uuid" },
-          "code": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "code": { "type": "string", "maxLength": 80, "example": "head_cap" },
           "name": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
           "description": {
             "type": "string",
@@ -6644,7 +6644,7 @@
           "classroomId": { "type": "string", "format": "uuid" },
           "studentId": { "type": "string", "format": "uuid" },
           "shopItemId": { "type": "string", "format": "uuid" },
-          "shopItemCode": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "head_cap" },
           "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
           "shopItemKind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] },
           "pointTransactionId": { "type": "string", "format": "uuid" },
@@ -6994,7 +6994,7 @@
         "properties": {
           "slot": { "allOf": [{ "$ref": "#/components/schemas/EquippedSlotName" }] },
           "shopItemId": { "type": "string", "format": "uuid" },
-          "shopItemCode": { "type": "string", "maxLength": 80, "example": "cap_blue" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "head_cap" },
           "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
           "kind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] }
         },

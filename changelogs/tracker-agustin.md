@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-24 — Align contract examples with the modular catalog (#145, BK-4)
+
+- **Status:** completed
+- **Area / files:** `apps/api/openapi.json`, `apps/api/src/shop/shop.dto.ts`, `apps/api/src/equipment/equipment.dto.ts`, `apps/api/src/internal/realtime/realtime-join.dto.ts`, realtime and contracts spec fixtures
+- **Change:** Swagger/DTO examples and appearance fixtures now use a real catalog code (`head_cap`) instead of the removed placeholder `cap_blue`. OpenAPI re-exported; realtime generated contracts regenerated and unchanged. Docs (`shop.md`, `profile-avatar.md`, `equipment.md`) already matched the final contract. Purely synthetic shop/equipment test fixtures keep their own codes on purpose.
+- **Reason:** The contract surface must not advertise codes that the seed catalog no longer has.
+- **Verification:** `openapi.spec.ts`, edited specs, `realtime:codegen:check`, lint and typecheck.
+- **Next step:** Open the PR to `develop`.
+
 ## 2026-11-24 — Seed the avatar shop catalog (#145, BK-3)
 
 - **Status:** in-progress
@@ -7,7 +16,7 @@
 - **Change:** The synthetic shop catalog now has 21 avatar accessories and 25 paid hair/top styles (46 items, 80 to 250 points); the eight old placeholder items are gone. The catalog moved to its own module so a spec can check colors, prices and that paid styles match `avatar-catalog.ts` one to one.
 - **Reason:** The shop must sell what the front avatar editor can render.
 - **Verification:** Catalog spec written RED first, then GREEN; seed run on a throwaway database.
-- **Next step:** BK-4 contract regeneration.
+- **Next step:** BK-4 contract regeneration (done).
 
 ## 2026-11-24 — Modular avatar catalog (#145, BK-1)
 

@@ -55,7 +55,7 @@ export class EquippedSlotDto {
   @ApiProperty({ format: 'uuid' })
   shopItemId!: string;
 
-  @ApiProperty({ maxLength: 80, example: 'cap_blue' })
+  @ApiProperty({ maxLength: 80, example: 'head_cap' })
   shopItemCode!: string;
 
   @ApiProperty({ maxLength: 120, example: 'Blue Classroom Cap' })
