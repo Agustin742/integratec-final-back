@@ -457,6 +457,20 @@ export class ShopService {
     return rows[0] ?? null;
   }
 
+  private async readStyleKey(
+    tx: Prisma.TransactionClient,
+    shopItemId: string,
+  ): Promise<{ styleType: string; styleId: string } | null> {
+    const row = await tx.shopItem.findUnique({
+      where: { id: shopItemId },
+      select: { metadata: true },
+    });
+    const { styleType, styleId } = toMetadataRecord(row?.metadata ?? null);
+    return typeof styleType === 'string' && typeof styleId === 'string'
+      ? { styleType, styleId }
+      : null;
+  }
+
   private async assertNotAlreadyOwned(
     tx: Prisma.TransactionClient,
     classroomId: string,
@@ -464,10 +478,12 @@ export class ShopService {
     shopItemId: string,
     kind: ShopItemKind,
   ): Promise<void> {
-    if (kind === ShopItemKind.AVATAR_STYLE) {
+    const styleKey =
+      kind === ShopItemKind.AVATAR_STYLE ? await this.readStyleKey(tx, shopItemId) : null;
+    if (styleKey) {
       // Membership locks are per classroom; serialize the same style across classrooms.
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtextextended(${`avatar-style:${studentId}:${shopItemId}`}, 0))
+        SELECT pg_advisory_xact_lock(hashtextextended(${`avatar-style:${studentId}:${styleKey.styleType}:${styleKey.styleId}`}, 0))
       `;
     }
 
@@ -486,12 +502,26 @@ export class ShopService {
     }
 
     if (kind === ShopItemKind.AVATAR_STYLE) {
-      // The unique key is per classroom, but a style belongs to the user's global avatar.
-      const ownedElsewhere = await tx.studentPurchase.findFirst({
-        where: { studentId, shopItemId },
+      // The unique key is per classroom and per item, but a style belongs to the user's global
+      // avatar: any item selling the same style, bought in any classroom, already unlocked it.
+      const unlocked = await tx.studentPurchase.findFirst({
+        where: {
+          studentId,
+          shopItem: {
+            kind: ShopItemKind.AVATAR_STYLE,
+            ...(styleKey
+              ? {
+                  AND: [
+                    { metadata: { path: ['styleType'], equals: styleKey.styleType } },
+                    { metadata: { path: ['styleId'], equals: styleKey.styleId } },
+                  ],
+                }
+              : { id: shopItemId }),
+          },
+        },
         select: { id: true },
       });
-      if (ownedElsewhere) {
+      if (unlocked) {
         throw new ConflictException('Avatar style already unlocked for this student');
       }
     }

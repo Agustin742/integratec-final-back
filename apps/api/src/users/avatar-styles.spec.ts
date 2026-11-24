@@ -36,6 +36,7 @@ function makeIds() {
     hoodie: randomUUID(),
     fakeBraid: randomUUID(),
     cap: randomUUID(),
+    dreadsTwin: randomUUID(),
   };
 }
 
@@ -139,6 +140,17 @@ describe('Paid avatar styles (#145)', () => {
           metadata: { styleType: 'hair', styleId: 'dreads' },
         },
         {
+          // A second item selling the same style (for example a seasonal duplicate).
+          id: ids.dreadsTwin,
+          code: `style_hair_dreads_twin_${ids.dreadsTwin}`,
+          name: 'Dreads twin',
+          description: 'Same style, different item',
+          kind: ShopItemKind.AVATAR_STYLE,
+          defaultPrice: 100,
+          isImplemented: true,
+          metadata: { styleType: 'hair', styleId: 'dreads' },
+        },
+        {
           id: ids.hoodie,
           code: `style_top_hoodie_${ids.hoodie}`,
           name: 'Hoodie',
@@ -188,7 +200,7 @@ describe('Paid avatar styles (#145)', () => {
 
   afterEach(async () => {
     // Shop items are global: remove this test's fixtures so style codes stay unambiguous.
-    const itemIds = [ids.dreads, ids.hoodie, ids.fakeBraid, ids.cap];
+    const itemIds = [ids.dreads, ids.dreadsTwin, ids.hoodie, ids.fakeBraid, ids.cap];
     await prisma.equippedItem.deleteMany({ where: { shopItemId: { in: itemIds } } });
     await prisma.classroomShopItem.deleteMany({ where: { shopItemId: { in: itemIds } } });
     await prisma.classroomItem.deleteMany({ where: { shopItemId: { in: itemIds } } });
@@ -225,12 +237,13 @@ describe('Paid avatar styles (#145)', () => {
       });
     }
     expect(items.filter((i) => i.free === false && i.owned === true)).toEqual([]);
-    expect(items).toContainEqual({
+    // Other specs or a seeded database may also sell this style: assert the shape, not the code.
+    expect(items.find((i) => i.styleId === 'dreads')).toEqual({
       styleType: 'hair',
       styleId: 'dreads',
       free: false,
       owned: false,
-      shopItemCode: `style_hair_dreads_${ids.dreads}`,
+      shopItemCode: expect.stringContaining('hair_dreads'),
     });
   });
 
@@ -295,6 +308,15 @@ describe('Paid avatar styles (#145)', () => {
         where: { studentId: ids.student, shopItemId: ids.dreads },
       }),
     ).toBe(1);
+  });
+
+  it('rejects a second shop item that sells a style the user already unlocked', async () => {
+    await buy(ids.classroomA, ids.student, ids.dreads).expect(201);
+    const before = await ledger.getBalance(ids.classroomB, ids.student);
+    for (const classroomId of [ids.classroomA, ids.classroomB]) {
+      envelope((await buy(classroomId, ids.student, ids.dreadsTwin).expect(409)).body, 'CONFLICT');
+    }
+    expect(await ledger.getBalance(ids.classroomB, ids.student)).toBe(before);
   });
 
   it('shows a style bought elsewhere as owned and not purchasable in the other classroom', async () => {
