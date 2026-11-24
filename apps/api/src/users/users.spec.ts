@@ -17,14 +17,14 @@ import { AvatarAccessPort } from './avatar-access.port';
 
 const base = {
   bodyId: 'male',
-  hairId: 'afro',
-  topId: 'hoodie',
+  hairId: 'classic-short',
+  topId: 'school-sweatshirt',
   hairColor: '#6C4D48',
   clothingColor: '#5B4F96',
 };
 const alternate = {
   bodyId: 'female',
-  hairId: 'classic-short',
+  hairId: 'bob',
   topId: 'basic-tshirt',
   hairColor: '#AF6D63',
   clothingColor: '#F4E6D2',
