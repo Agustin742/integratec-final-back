@@ -20,7 +20,9 @@ import {
 } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
 import { validateMaterialFile, type MaterialFile } from './material-file';
-import type { ListMaterialsQueryDto, MaterialDto } from './materials.dto';
+import { lockActiveModule } from './material-module-lock';
+import { authorizeMaterialAccess } from './material-access';
+import { UNASSIGNED_FILTER, type ListMaterialsQueryDto, type MaterialDto } from './materials.dto';
 
 const PUBLIC_SELECT = {
   id: true,
@@ -29,6 +31,7 @@ const PUBLIC_SELECT = {
   filename: true,
   contentType: true,
   sizeBytes: true,
+  moduleId: true,
   createdAt: true,
 } satisfies Prisma.StudyMaterialSelect;
 type PublicRow = Prisma.StudyMaterialGetPayload<{ select: typeof PUBLIC_SELECT }>;
@@ -44,29 +47,47 @@ export class MaterialsService {
     private readonly botMaterials: BotMaterialsService,
   ) {}
 
-  private async authorize(actorId: string, classroomId: string, write = false) {
-    const access = await this.access.verifyClassroomAccess(actorId, classroomId, {
-      requiredRole: write ? 'STAFF' : 'ANY',
-    });
-    if (access.myRole === 'PARENT')
-      throw new ForbiddenException('Material is for staff and students');
-    return access;
+  private authorize(actorId: string, classroomId: string, write = false) {
+    return authorizeMaterialAccess(this.access, actorId, classroomId, write);
   }
 
-  async upload(actorId: string, classroomId: string, file: MaterialFile | undefined) {
+  /** A module filter or target must be an active module of the same classroom. */
+  private async assertActiveModule(classroomId: string, moduleId: string) {
+    if (!UUID_PATTERN.test(moduleId)) throw new NotFoundException('Module not found');
+    const module = await this.prisma.materialModule.findFirst({
+      where: { id: moduleId, classroomId, removedAt: null },
+      select: { id: true },
+    });
+    if (!module) throw new NotFoundException('Module not found');
+  }
+
+  async upload(
+    actorId: string,
+    classroomId: string,
+    file: MaterialFile | undefined,
+    moduleId?: string,
+  ) {
     await this.authorize(actorId, classroomId, true);
     const metadata = validateMaterialFile(file);
+    if (moduleId) await this.assertActiveModule(classroomId, moduleId);
     const id = randomUUID();
     const objectKey = `materials/${classroomId}/${id}`;
     assertSafeStorageKey(objectKey);
     try {
       await this.storage.put(objectKey, file!.buffer, { contentType: metadata.contentType });
-      const row = await this.prisma.studyMaterial.create({
-        data: { id, classroomId, authorId: actorId, objectKey, ...metadata },
-        select: PUBLIC_SELECT,
-      });
+      const data = { id, classroomId, authorId: actorId, objectKey, ...metadata };
+      // Plain uploads keep the single nontransactional insert; placing it in a module also
+      // share-locks the module so a concurrent module removal cannot strand the material.
+      const row = moduleId
+        ? await this.prisma.$transaction(async (tx) => {
+            await lockActiveModule(tx, classroomId, moduleId);
+            return tx.studyMaterial.create({ data: { ...data, moduleId }, select: PUBLIC_SELECT });
+          })
+        : await this.prisma.studyMaterial.create({ data, select: PUBLIC_SELECT });
       return toDto(row);
-    } catch {
+    } catch (error) {
+      // The module was removed after validation: a definite refusal, not an uncertain outcome.
+      if (error instanceof NotFoundException) throw error;
       // Either system may have committed before a timeout. Never delete here: that could
       // break a committed material. Reconcile the possible private orphan operationally.
       throw new ServiceUnavailableException(
@@ -81,7 +102,13 @@ export class MaterialsService {
       allowed: ['createdAt'] as const,
       default: { field: 'createdAt', direction: 'desc' },
     });
-    const where = { classroomId, removedAt: null };
+    const filter = query.moduleId;
+    if (filter && filter !== UNASSIGNED_FILTER) await this.assertActiveModule(classroomId, filter);
+    const where = {
+      classroomId,
+      removedAt: null,
+      ...(filter && { moduleId: filter === UNASSIGNED_FILTER ? null : filter }),
+    };
     const [rows, total] = await this.prisma.$transaction([
       this.prisma.studyMaterial.findMany({
         where,
@@ -113,6 +140,25 @@ export class MaterialsService {
       throw new ForbiddenException('Material write requires staff authority');
     }
     return row;
+  }
+
+  /** Moves a material to a module of the same classroom, or to unassigned with null. */
+  async move(actorId: string, classroomId: string, materialId: string, moduleId: string | null) {
+    const material = await this.resolve(actorId, classroomId, materialId, true);
+    return this.prisma.$transaction(async (tx) => {
+      if (moduleId) await lockActiveModule(tx, classroomId, moduleId);
+      const result = await tx.studyMaterial.updateMany({
+        where: { id: material.id, classroomId, removedAt: null },
+        data: { moduleId },
+      });
+      if (result.count === 0) throw new NotFoundException('Material not found');
+      return toDto(
+        await tx.studyMaterial.findUniqueOrThrow({
+          where: { id: material.id },
+          select: PUBLIC_SELECT,
+        }),
+      );
+    });
   }
 
   async download(actorId: string, classroomId: string, materialId: string) {

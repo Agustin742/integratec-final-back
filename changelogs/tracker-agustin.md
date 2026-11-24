@@ -1,5 +1,18 @@
 # Tracker — Agustin
 
+## 2026-11-24 — Ordered material modules (#142)
+
+- **Status:** completed (pending PR into `develop`)
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261124040907_material_modules/`, `apps/api/src/materials/`, `apps/api/openapi.json`
+- **Change:**
+  - New `MaterialModule` (classroom-scoped name, optional description, position, soft delete) and a nullable `StudyMaterial.moduleId`, where null means unassigned.
+  - `/classrooms/:id/material-modules`: list, create, rename, reorder (`PUT order`) and remove. Removing a module never blocks: its materials return to unassigned.
+  - `PATCH /classrooms/:id/materials/:materialId` moves a material; upload accepts an optional `moduleId`; the material list filters by `moduleId` or `unassigned`.
+  - Same visibility as materials: staff and students read, teacher-level staff write, parents denied. A module and a material of different classrooms answer 404.
+- **Reason:** A flat material list does not scale to courses with hundreds of files.
+- **Verification:** DB-backed HTTP spec written RED first, then GREEN, on an isolated temporary database.
+- **Next step:** The front issue builds the module UI from the regenerated OpenAPI types.
+
 ## 2026-11-20 — Prod alarms and monthly budget (#62)
 
 - **Status:** completed (pending PR into `develop`; nothing applied to AWS)

@@ -204,8 +204,23 @@ describe('OpenAPI document', () => {
       'filename',
       'contentType',
       'sizeBytes',
+      'moduleId',
       'createdAt',
     ]);
+    for (const [path, method] of [
+      ['/classrooms/{id}/material-modules', 'get'],
+      ['/classrooms/{id}/material-modules', 'post'],
+      ['/classrooms/{id}/material-modules/order', 'put'],
+      ['/classrooms/{id}/material-modules/{moduleId}', 'patch'],
+      ['/classrooms/{id}/material-modules/{moduleId}', 'delete'],
+      [`${root}/{materialId}`, 'patch'],
+    ] as const) {
+      const operation = doc.paths[path]?.[method];
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      for (const status of ['401', '403', '404']) {
+        expect(operation?.responses[status]).toBeDefined();
+      }
+    }
     expect(doc.components?.schemas?.MaterialDownloadDto).toMatchObject({
       required: ['url', 'expiresInSeconds'],
     });
