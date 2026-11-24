@@ -2533,7 +2533,7 @@
     },
     "/classrooms/{id}/materials": {
       "post": {
-        "description": "Teacher-level staff only. One nonempty PDF/PNG/JPEG, at most 10 MiB. Leading byte signature, declared MIME and filename extension must agree; no scanning or complete content parsing. Filename: 1–120 ASCII letters, digits, spaces, dots, underscores, parentheses or hyphens, starting with a letter or digit. No other multipart fields.",
+        "description": "Teacher-level staff only. One nonempty PDF/PNG/JPEG, at most 10 MiB. Leading byte signature, declared MIME and filename extension must agree; no scanning or complete content parsing. Filename: 1–120 ASCII letters, digits, spaces, dots, underscores, parentheses or hyphens, starting with a letter or digit. The only other multipart field is the optional `moduleId` (an active module of this classroom; omitted means unassigned).",
         "operationId": "MaterialsController_upload",
         "parameters": [
           {
@@ -2552,7 +2552,10 @@
                 "type": "object",
                 "required": ["file"],
                 "additionalProperties": false,
-                "properties": { "file": { "type": "string", "format": "binary" } }
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "moduleId": { "type": "string", "format": "uuid" }
+                }
               }
             }
           }
@@ -2606,7 +2609,7 @@
         "tags": ["materials"]
       },
       "get": {
-        "description": "Staff and current students only. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Parents have no material permission.",
+        "description": "Staff and current students only. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Optional `moduleId` filter: a module UUID of this classroom (404 if absent or removed) or `unassigned`. Parents have no material permission.",
         "operationId": "MaterialsController_list",
         "parameters": [
           {
@@ -2636,6 +2639,13 @@
             "in": "query",
             "description": "Field to order by; prefix with \"-\" for descending. Allowed fields and the default order are listed per endpoint.",
             "schema": { "example": "-createdAt", "type": "string" }
+          },
+          {
+            "name": "moduleId",
+            "required": false,
+            "in": "query",
+            "description": "Only materials of this module (UUID), or \"unassigned\" for materials in no module. Omit for all active materials.",
+            "schema": { "example": "unassigned", "type": "string" }
           }
         ],
         "responses": {
@@ -2691,6 +2701,113 @@
         },
         "security": [{ "bearer": [] }],
         "summary": "List active study materials",
+        "tags": ["materials"]
+      }
+    },
+    "/classrooms/{id}/materials/{materialId}": {
+      "patch": {
+        "description": "Teacher-level staff only. Body `moduleId` is an active module of the same classroom, or null to unassign. A module of another classroom is a 404.",
+        "operationId": "MaterialsController_move",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "Material UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/MoveMaterialDto" } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/MaterialDto" } }
+            }
+          },
+          "400": {
+            "description": "moduleId is not a UUID or null.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope resource.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Move a material to a module or to unassigned",
+        "tags": ["materials"]
+      },
+      "delete": {
+        "description": "Teacher-level staff only. Retains author, metadata, removal actor/time and private object; hides it from lists and blocks new signed URLs. Repeated removal returns 404.",
+        "operationId": "MaterialsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "materialId",
+            "required": true,
+            "in": "path",
+            "description": "Material UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "" },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope resource.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Logically remove study material",
         "tags": ["materials"]
       }
     },
@@ -2753,10 +2870,178 @@
         "tags": ["materials"]
       }
     },
-    "/classrooms/{id}/materials/{materialId}": {
-      "delete": {
-        "description": "Teacher-level staff only. Retains author, metadata, removal actor/time and private object; hides it from lists and blocks new signed URLs. Repeated removal returns 404.",
-        "operationId": "MaterialsController_remove",
+    "/classrooms/{id}/material-modules": {
+      "get": {
+        "description": "Staff and current students only (same visibility as materials). Active modules ordered by position, with the count of active materials in each. Materials with no module are \"unassigned\": list them with `GET /classrooms/:id/materials?moduleId=unassigned`.",
+        "operationId": "MaterialModulesController_list",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaterialModuleListDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role (students write, parents read).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope classroom or module.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List the classroom material modules in order",
+        "tags": ["materials"]
+      },
+      "post": {
+        "description": "Teacher-level staff only. The module is appended after the last one.",
+        "operationId": "MaterialModulesController_create",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMaterialModuleDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/MaterialModuleDto" } }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role (students write, parents read).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope classroom or module.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Module limit reached (100).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Create a module",
+        "tags": ["materials"]
+      }
+    },
+    "/classrooms/{id}/material-modules/order": {
+      "put": {
+        "description": "Teacher-level staff only. `moduleIds` must list every active module of the classroom exactly once; positions are rewritten to 0..n-1. Returns the new ordered list.",
+        "operationId": "MaterialModulesController_reorder",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReorderMaterialModulesDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MaterialModuleListDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "The list misses, repeats or invents modules.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role (students write, parents read).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope classroom or module.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Reorder the modules",
+        "tags": ["materials"]
+      }
+    },
+    "/classrooms/{id}/material-modules/{moduleId}": {
+      "patch": {
+        "description": "Teacher-level staff only. At least one field is required; `description: null` clears it.",
+        "operationId": "MaterialModulesController_update",
         "parameters": [
           {
             "name": "id",
@@ -2766,10 +3051,73 @@
             "schema": { "type": "string" }
           },
           {
-            "name": "materialId",
+            "name": "moduleId",
             "required": true,
             "in": "path",
-            "description": "Material UUID",
+            "description": "Module UUID",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMaterialModuleDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/MaterialModuleDto" } }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Visible classroom, insufficient role (students write, parents read).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Invalid, absent, removed or out-of-scope classroom or module.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Rename a module or change its description",
+        "tags": ["materials"]
+      },
+      "delete": {
+        "description": "Teacher-level staff only. Logical removal. The module never blocks on content: its materials are NOT deleted, they return to unassigned (`moduleId: null`) in the same transaction. Repeated removal returns 404.",
+        "operationId": "MaterialModulesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "moduleId",
+            "required": true,
+            "in": "path",
+            "description": "Module UUID",
             "schema": { "type": "string" }
           }
         ],
@@ -2782,20 +3130,20 @@
             }
           },
           "403": {
-            "description": "Visible classroom, insufficient role.",
+            "description": "Visible classroom, insufficient role (students write, parents read).",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
           },
           "404": {
-            "description": "Invalid, absent, removed or out-of-scope resource.",
+            "description": "Invalid, absent, removed or out-of-scope classroom or module.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
           }
         },
         "security": [{ "bearer": [] }],
-        "summary": "Logically remove study material",
+        "summary": "Remove a module",
         "tags": ["materials"]
       }
     },
@@ -6415,6 +6763,12 @@
             "enum": ["application/pdf", "image/png", "image/jpeg"]
           },
           "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 10485760 },
+          "moduleId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Module the material belongs to; null means unassigned."
+          },
           "createdAt": { "type": "string", "format": "date-time" }
         },
         "required": [
@@ -6424,8 +6778,21 @@
           "filename",
           "contentType",
           "sizeBytes",
+          "moduleId",
           "createdAt"
         ]
+      },
+      "MoveMaterialDto": {
+        "type": "object",
+        "properties": {
+          "moduleId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Target module of this classroom, or null to unassign the material."
+          }
+        },
+        "required": ["moduleId"]
       },
       "MaterialDownloadDto": {
         "type": "object",
@@ -6443,6 +6810,79 @@
           }
         },
         "required": ["url", "expiresInSeconds"]
+      },
+      "MaterialModuleDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "classroomId": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "maxLength": 80, "example": "Unit 1" },
+          "description": { "type": "string", "nullable": true, "maxLength": 500 },
+          "position": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based order within the classroom."
+          },
+          "materialCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Active materials in this module."
+          },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "name",
+          "description",
+          "position",
+          "materialCount",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "MaterialModuleListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Active modules ordered by position.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/MaterialModuleDto" }
+          }
+        },
+        "required": ["items"]
+      },
+      "CreateMaterialModuleDto": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 80 },
+          "description": { "type": "string", "maxLength": 500 }
+        },
+        "required": ["name"]
+      },
+      "ReorderMaterialModulesDto": {
+        "type": "object",
+        "properties": {
+          "moduleIds": {
+            "description": "Every active module of the classroom exactly once, in the desired order. Anything else is rejected.",
+            "type": "array",
+            "items": { "type": "string", "format": "uuid" }
+          }
+        },
+        "required": ["moduleIds"]
+      },
+      "UpdateMaterialModuleDto": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 80 },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 500,
+            "description": "Send null to clear the description."
+          }
+        }
       },
       "EquippedSlotName": { "type": "string", "enum": ["head", "face", "back", "desk_decor"] },
       "EquippedSlotDto": {

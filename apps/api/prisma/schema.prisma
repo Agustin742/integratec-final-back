@@ -146,6 +146,7 @@ model User {
   createdActivities        Activity[]
   authoredStudyMaterials   StudyMaterial[]       @relation("MaterialAuthor")
   removedStudyMaterials    StudyMaterial[]       @relation("MaterialRemover")
+  removedMaterialModules   MaterialModule[]      @relation("MaterialModuleRemover")
   forumThreads             ActivityForumThread[] @relation("ActivityForumThreadAuthor")
   forumPosts               ActivityForumPost[]   @relation("ActivityForumPostAuthor")
   equippedItems            EquippedItem[]
@@ -297,6 +298,7 @@ model Classroom {
   messages            Message[]
   chatReadMarkers     ChatReadMarker[]
   studyMaterials      StudyMaterial[]
+  materialModules     MaterialModule[]
   equippedItems       EquippedItem[]
   botConfig           BotConfig?
   botAllowedMaterials AllowedMaterial[]
@@ -318,9 +320,12 @@ model StudyMaterial {
   sizeBytes   Int       @map("size_bytes")
   removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
   removedById String?   @map("removed_by_id") @db.Uuid
+  /// Null means unassigned. Same-classroom integrity is enforced by the service.
+  moduleId    String?   @map("module_id") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  module        MaterialModule?   @relation(fields: [moduleId], references: [id], onDelete: Restrict)
   classroom     Classroom         @relation(fields: [classroomId], references: [id], onDelete: Restrict)
   author        User              @relation("MaterialAuthor", fields: [authorId], references: [id], onDelete: Restrict)
   removedBy      User?             @relation("MaterialRemover", fields: [removedById], references: [id], onDelete: Restrict)
@@ -330,7 +335,30 @@ model StudyMaterial {
   @@index([classroomId, removedAt, createdAt, id])
   @@index([authorId])
   @@index([removedById])
+  @@index([moduleId])
   @@map("study_materials")
+}
+
+/// Ordered, single-level grouping of a classroom's study materials. Logical removal keeps
+/// history; removing a module moves its materials back to unassigned.
+model MaterialModule {
+  id          String    @id @default(uuid()) @db.Uuid
+  classroomId String    @map("classroom_id") @db.Uuid
+  name        String    @db.VarChar(80)
+  description String?   @db.VarChar(500)
+  position    Int
+  removedAt   DateTime? @map("removed_at") @db.Timestamptz(6)
+  removedById String?   @map("removed_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  classroom Classroom       @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  removedBy User?           @relation("MaterialModuleRemover", fields: [removedById], references: [id], onDelete: Restrict)
+  materials StudyMaterial[]
+
+  @@index([classroomId, removedAt, position, id])
+  @@index([removedById])
+  @@map("material_modules")
 }
 
 model ClassroomMembership {

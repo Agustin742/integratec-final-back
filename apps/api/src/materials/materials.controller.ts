@@ -1,10 +1,12 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Header,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -32,7 +34,13 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { ApiPaginatedResponse } from '../http/pagination/api-paginated-response';
 import { MATERIAL_MAX_BYTES, type MaterialFile } from './material-file';
-import { ListMaterialsQueryDto, MaterialDownloadDto, MaterialDto } from './materials.dto';
+import {
+  ListMaterialsQueryDto,
+  MaterialDownloadDto,
+  MaterialDto,
+  UploadMaterialBodyDto,
+} from './materials.dto';
+import { MoveMaterialDto } from './material-modules.dto';
 import { MaterialsService } from './materials.service';
 
 @ApiTags('materials')
@@ -56,13 +64,13 @@ export class MaterialsController {
     FileInterceptor('file', {
       // Multer treats its byte threshold as exclusive. Allow the extra byte into memory
       // and reject it in the service, so exactly 10 MiB is accepted.
-      limits: { fileSize: MATERIAL_MAX_BYTES + 1, files: 1, fields: 0, parts: 2 },
+      limits: { fileSize: MATERIAL_MAX_BYTES + 1, files: 1, fields: 1, parts: 2 },
     }),
   )
   @ApiOperation({
     summary: 'Upload one private study material',
     description:
-      'Teacher-level staff only. One nonempty PDF/PNG/JPEG, at most 10 MiB. Leading byte signature, declared MIME and filename extension must agree; no scanning or complete content parsing. Filename: 1–120 ASCII letters, digits, spaces, dots, underscores, parentheses or hyphens, starting with a letter or digit. No other multipart fields.',
+      'Teacher-level staff only. One nonempty PDF/PNG/JPEG, at most 10 MiB. Leading byte signature, declared MIME and filename extension must agree; no scanning or complete content parsing. Filename: 1–120 ASCII letters, digits, spaces, dots, underscores, parentheses or hyphens, starting with a letter or digit. The only other multipart field is the optional `moduleId` (an active module of this classroom; omitted means unassigned).',
   })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -70,7 +78,10 @@ export class MaterialsController {
       type: 'object',
       required: ['file'],
       additionalProperties: false,
-      properties: { file: { type: 'string', format: 'binary' } },
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        moduleId: { type: 'string', format: 'uuid' },
+      },
     },
   })
   @ApiCreatedResponse({ type: MaterialDto })
@@ -87,15 +98,16 @@ export class MaterialsController {
     @CurrentUser('userId') actorId: string,
     @Param('id') classroomId: string,
     @UploadedFile() file: MaterialFile | undefined,
+    @Body() body: UploadMaterialBodyDto,
   ) {
-    return this.materials.upload(actorId, classroomId, file);
+    return this.materials.upload(actorId, classroomId, file, body.moduleId);
   }
 
   @Get()
   @ApiOperation({
     summary: 'List active study materials',
     description:
-      'Staff and current students only. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Parents have no material permission.',
+      'Staff and current students only. Offset pagination; sort is createdAt or -createdAt (default), with ID in the same direction as tiebreaker. Optional `moduleId` filter: a module UUID of this classroom (404 if absent or removed) or `unassigned`. Parents have no material permission.',
   })
   @ApiPaginatedResponse(MaterialDto, 'Active classroom material metadata; no storage keys.')
   @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'Invalid pagination or sort.' })
@@ -105,6 +117,24 @@ export class MaterialsController {
     @Query() query: ListMaterialsQueryDto,
   ) {
     return this.materials.list(actorId, classroomId, query);
+  }
+
+  @Patch(':materialId')
+  @ApiParam({ name: 'materialId', description: 'Material UUID' })
+  @ApiOperation({
+    summary: 'Move a material to a module or to unassigned',
+    description:
+      'Teacher-level staff only. Body `moduleId` is an active module of the same classroom, or null to unassign. A module of another classroom is a 404.',
+  })
+  @ApiOkResponse({ type: MaterialDto })
+  @ApiBadRequestResponse({ type: ErrorEnvelopeDto, description: 'moduleId is not a UUID or null.' })
+  move(
+    @CurrentUser('userId') actorId: string,
+    @Param('id') classroomId: string,
+    @Param('materialId') materialId: string,
+    @Body() dto: MoveMaterialDto,
+  ) {
+    return this.materials.move(actorId, classroomId, materialId, dto.moduleId);
   }
 
   @Get(':materialId/download')
