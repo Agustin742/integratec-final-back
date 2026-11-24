@@ -1,3 +1,4 @@
+import { applyDecorators } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
@@ -6,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
@@ -58,10 +60,33 @@ export class MaterialModuleListDto {
   items!: MaterialModuleDto[];
 }
 
-/** Trims; an empty description is normalized to `null` by the service. */
-const trim = Transform(({ value }: { value: unknown }) =>
-  typeof value === 'string' ? value.trim() : value,
-);
+// eslint-disable-next-line no-control-regex -- Reject NUL and unsafe C0/C1 control characters while allowing tabs and newlines.
+const UNSAFE_DESCRIPTION_CONTROL_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/u;
+
+/** The property may be omitted, but an explicit `null` is a validation error. */
+function OptionalButNotNull() {
+  return ValidateIf((_object: unknown, value: unknown) => value !== undefined);
+}
+
+/**
+ * Multi-line plain text description: rejects NUL and unsafe C0/C1 control characters while
+ * allowing tabs and newlines; trims safe strings so an empty value normalizes to `null`.
+ */
+function ModuleDescription(): PropertyDecorator {
+  return applyDecorators(
+    Transform(({ value }: { value: unknown }) =>
+      typeof value === 'string' && !UNSAFE_DESCRIPTION_CONTROL_CHARS.test(value)
+        ? value.trim()
+        : value,
+    ),
+    IsString(),
+    // eslint-disable-next-line no-control-regex -- Explicitly reject unsafe control characters.
+    Matches(/^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]*$/u, {
+      message: 'description must not contain control characters',
+    }),
+    MaxLength(MATERIAL_MODULE_LIMITS.descriptionMax),
+  );
+}
 
 export class CreateMaterialModuleDto {
   @ApiProperty({ maxLength: MATERIAL_MODULE_LIMITS.nameMax })
@@ -72,17 +97,15 @@ export class CreateMaterialModuleDto {
   name!: string;
 
   @ApiPropertyOptional({ maxLength: MATERIAL_MODULE_LIMITS.descriptionMax })
-  @IsOptional()
-  @trim
-  @IsString()
-  @MaxLength(MATERIAL_MODULE_LIMITS.descriptionMax)
+  @OptionalButNotNull()
+  @ModuleDescription()
   description?: string;
 }
 
 /** At least one field is required; `description: null` clears it, `name: null` is invalid. */
 export class UpdateMaterialModuleDto {
   @ApiPropertyOptional({ maxLength: MATERIAL_MODULE_LIMITS.nameMax })
-  @ValidateIf((_o: unknown, value: unknown) => value !== undefined)
+  @OptionalButNotNull()
   @IsString()
   @IsNotEmpty({ message: 'name must not be empty' })
   @VisibleText('name')
@@ -96,9 +119,7 @@ export class UpdateMaterialModuleDto {
     description: 'Send null to clear the description.',
   })
   @IsOptional()
-  @trim
-  @IsString()
-  @MaxLength(MATERIAL_MODULE_LIMITS.descriptionMax)
+  @ModuleDescription()
   description?: string | null;
 }
 

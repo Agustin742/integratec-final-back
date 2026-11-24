@@ -15,7 +15,8 @@ CREATE TABLE "material_modules" (
 
     CONSTRAINT "material_modules_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "material_modules_name_check" CHECK (btrim("name") <> ''),
-    CONSTRAINT "material_modules_position_check" CHECK ("position" >= 0)
+    CONSTRAINT "material_modules_position_check" CHECK ("position" >= 0),
+    CONSTRAINT "material_modules_removal_check" CHECK (("removed_at" IS NULL) = ("removed_by_id" IS NULL))
 );
 
 -- CreateIndex

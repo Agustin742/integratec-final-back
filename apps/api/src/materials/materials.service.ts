@@ -73,21 +73,35 @@ export class MaterialsService {
     const id = randomUUID();
     const objectKey = `materials/${classroomId}/${id}`;
     assertSafeStorageKey(objectKey);
+    let stored = false;
+    let createStarted = false;
     try {
       await this.storage.put(objectKey, file!.buffer, { contentType: metadata.contentType });
+      stored = true;
       const data = { id, classroomId, authorId: actorId, objectKey, ...metadata };
       // Plain uploads keep the single nontransactional insert; placing it in a module also
       // share-locks the module so a concurrent module removal cannot strand the material.
-      const row = moduleId
-        ? await this.prisma.$transaction(async (tx) => {
-            await lockActiveModule(tx, classroomId, moduleId);
-            return tx.studyMaterial.create({ data: { ...data, moduleId }, select: PUBLIC_SELECT });
-          })
-        : await this.prisma.studyMaterial.create({ data, select: PUBLIC_SELECT });
+      let row: PublicRow;
+      if (moduleId) {
+        row = await this.prisma.$transaction(async (tx) => {
+          await lockActiveModule(tx, classroomId, moduleId);
+          createStarted = true;
+          return tx.studyMaterial.create({ data: { ...data, moduleId }, select: PUBLIC_SELECT });
+        });
+      } else {
+        createStarted = true;
+        row = await this.prisma.studyMaterial.create({ data, select: PUBLIC_SELECT });
+      }
       return toDto(row);
     } catch (error) {
-      // The module was removed after validation: a definite refusal, not an uncertain outcome.
-      if (error instanceof NotFoundException) throw error;
+      // The module was removed after validation and before any DB write began: a definite
+      // refusal, so clean up the newly uploaded object on a best-effort basis.
+      if (error instanceof NotFoundException) {
+        if (stored && !createStarted) {
+          await this.storage.delete(objectKey).catch(() => undefined);
+        }
+        throw error;
+      }
       // Either system may have committed before a timeout. Never delete here: that could
       // break a committed material. Reconcile the possible private orphan operationally.
       throw new ServiceUnavailableException(

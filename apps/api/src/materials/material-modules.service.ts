@@ -4,6 +4,7 @@ import { AccessVerificationService, UUID_PATTERN } from '../access/access-verifi
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
 import { authorizeMaterialAccess } from './material-access';
+import { lockClassroomMaterialModules } from './material-module-lock';
 import {
   MATERIAL_MODULE_LIMITS,
   type CreateMaterialModuleDto,
@@ -77,6 +78,9 @@ export class MaterialModulesService {
   async create(actorId: string, classroomId: string, dto: CreateMaterialModuleDto) {
     await authorizeMaterialAccess(this.access, actorId, classroomId, true);
     const row = await this.prisma.$transaction(async (tx) => {
+      // Serialize classroom module lifecycle mutations so position assignment and the 100-module
+      // cap are atomic across concurrent creates, reorders and removals.
+      await lockClassroomMaterialModules(tx, classroomId);
       const { _max, _count } = await tx.materialModule.aggregate({
         where: this.active(classroomId),
         _max: { position: true },
@@ -131,7 +135,9 @@ export class MaterialModulesService {
   async reorder(actorId: string, classroomId: string, dto: ReorderMaterialModulesDto) {
     await authorizeMaterialAccess(this.access, actorId, classroomId, true);
     await this.prisma.$transaction(async (tx) => {
-      // Lock the classroom's active modules so concurrent reorders serialize.
+      // Lock the classroom first so concurrent creates/removals cannot slip phantom rows past
+      // the active-module snapshot, then lock active module rows in deterministic ID order.
+      await lockClassroomMaterialModules(tx, classroomId);
       const current = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
         SELECT id FROM material_modules
         WHERE classroom_id = ${classroomId}::uuid AND removed_at IS NULL
@@ -160,7 +166,9 @@ export class MaterialModulesService {
   async remove(actorId: string, classroomId: string, moduleId: string) {
     const module = await this.resolve(actorId, classroomId, moduleId);
     await this.prisma.$transaction(async (tx) => {
-      // Module row first: it waits for in-flight uploads/moves that share-lock it.
+      // Lock order: classroom advisory lock -> module row (waits for upload/move FOR SHARE) ->
+      // study_materials unassignment. Acyclic with upload/move, which never take the advisory lock.
+      await lockClassroomMaterialModules(tx, classroomId);
       const result = await tx.materialModule.updateMany({
         where: { id: module.id, ...this.active(classroomId) },
         data: { removedAt: new Date(), removedById: actorId },

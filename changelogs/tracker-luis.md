@@ -1,5 +1,20 @@
 # Tracker — Luis
 
+## 2026-11-24 — Review fixes for ordered material modules (PR #144 / #142)
+
+- **Status:** completed (committed and pushed to `feat/142-material-modules` for PR #144)
+- **Area / files:** `apps/api/src/materials/material-module-lock.ts`, `apps/api/src/materials/material-modules.service.ts`, `apps/api/src/materials/material-modules.dto.ts`, `apps/api/src/materials/materials.dto.ts`, `apps/api/src/materials/materials.service.ts`, `apps/api/prisma/migrations/20261124040907_material_modules/migration.sql`, `apps/api/src/materials/material-modules.http.spec.ts`, `changelogs/tracker-luis.md`
+- **Change:** Addressed all 6 review findings on PR #144:
+  1. Added SHA-256 signed 64-bit `bigint` classroom advisory transaction lock `lockClassroomMaterialModules` (`material-modules:<classroomId>`) in `material-module-lock.ts` and acquired it first inside `$transaction` in `MaterialModulesService.create()`, `reorder()`, and `remove()` with documented acyclic lock ordering against `upload`/`move` `FOR SHARE` row locks.
+  2. Restricted `ListMaterialsQueryDto.moduleId` regex to lowercase `unassigned` plus case-insensitive hex UUID (`[0-9a-fA-F]`) so `?moduleId=UNASSIGNED` consistently returns `400 VALIDATION_FAILED` matching OpenAPI.
+  3. Added best-effort `storage.delete(objectKey)` cleanup in `MaterialsService.upload()` when `lockActiveModule` throws `NotFoundException` before `studyMaterial.create` begins, avoiding S3 orphans on concurrent module deletion.
+  4. Hardened `CreateMaterialModuleDto.description` and `UpdateMaterialModuleDto.description` with unsafe C0/C1 control-character rejection (including `\u0000` while preserving tabs/newlines) and aligned `CreateMaterialModuleDto.description` with `@OptionalButNotNull()` so explicit `null` returns `400` matching non-nullable OpenAPI.
+  5. Added `CONSTRAINT "material_modules_removal_check" CHECK (("removed_at" IS NULL) = ("removed_by_id" IS NULL))` to `20261124040907_material_modules/migration.sql` for parity with `study_materials`.
+  6. Replaced the vacuous Bot/RAG deletion test with real `BotConfig`, `AllowedMaterial` (`INDEXED`), and `material_chunks` rows (`count === 1` before/after), added S3 mid-upload deletion cleanup, NUL/control-char/`?moduleId=UNASSIGNED`/foreign-module filter tests, and Gate A `Promise.all` concurrency tests (`POST` contiguous positions + 100-module cap race + `PUT /order`, concurrent `DELETE` `[204, 404]`, `DELETE` vs `upload`/`move` zero-stranded invariant, and `PUT /order` vs `POST`).
+- **Reason:** Close concurrency, orphan-storage, validation, migration constraint, and test coverage findings from PR #144 review.
+- **Validation:** All 30 Prisma migrations applied cleanly twice on isolated `pgvector/pgvector:pg16`; focused suites passed **80/80 across 3 files (`0` skipped)**: `material-modules.http.spec.ts` (30/30), `materials.http.spec.ts` (36/36), `openapi.spec.ts` (14/14). `prisma:generate`, `openapi:export` (zero drift on `apps/api/openapi.json`), `pnpm lint` (0 errors, 1 pre-existing warning in `openapi.spec.ts:559`), `pnpm typecheck` (all 3 workspaces), `pnpm format:check`, `python scripts/ci/check_docs.py` (84 files), and `git diff --check origin/develop` passed.
+- **Next step:** Verify Backend CI green on PR #144 and merge into `develop`.
+
 ## 2026-11-21 — Audit fixes and D20 provider migration for Daily Review (PR #123 / #42)
 
 - **Status:** completed (local commits on `feat/42-daily-review-question`, awaiting push and review)

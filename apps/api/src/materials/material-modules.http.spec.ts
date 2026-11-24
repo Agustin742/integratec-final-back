@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, RegistrationPath } from '@prisma/client';
+import { ClassroomRole, MaterialIndexState, RegistrationPath } from '@prisma/client';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../app.module';
@@ -11,6 +11,7 @@ import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-dat
 import { configureHttp } from '../http/configure-http';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PrismaService } from '../prisma/prisma.service';
+import { MATERIAL_MODULE_LIMITS } from './material-modules.dto';
 
 const pdf = Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n');
 const databaseUrl = loadIsolatedTestDatabaseUrl();
@@ -196,6 +197,9 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
       ['missing name', {}],
       ['overlong name', { name: 'a'.repeat(81) }],
       ['overlong description', { name: 'ok', description: 'a'.repeat(501) }],
+      ['NUL byte in description', { name: 'ok', description: 'Intro\u0000' }],
+      ['control character in description', { name: 'ok', description: 'Intro\x07' }],
+      ['null description on create', { name: 'ok', description: null }],
       ['unknown field', { name: 'ok', position: 3 }],
     ])('rejects %s with 400', async (_label, body) => {
       const before = await listModules();
@@ -209,10 +213,17 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
         .send({ name: 'New name' })
         .expect(200);
       expect(renamed.body).toMatchObject({ id: mod.id, name: 'New name', description: 'Desc' });
+      const multiline = await call('patch', teacher, `/material-modules/${mod.id}`)
+        .send({ description: 'Line 1\nLine 2' })
+        .expect(200);
+      expect(multiline.body).toMatchObject({ name: 'New name', description: 'Line 1\nLine 2' });
       const cleared = await call('patch', teacher, `/material-modules/${mod.id}`)
         .send({ description: null })
         .expect(200);
       expect(cleared.body).toMatchObject({ name: 'New name', description: null });
+      await call('patch', teacher, `/material-modules/${mod.id}`)
+        .send({ description: 'Bad\u0000desc' })
+        .expect(400);
       await call('patch', teacher, `/material-modules/${mod.id}`).send({ name: null }).expect(400);
       await call('patch', teacher, `/material-modules/${mod.id}`).send({}).expect(400);
     });
@@ -284,8 +295,25 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
         .expect(400);
     });
 
+    it('cleans up the newly stored object when the module is removed mid-upload', async () => {
+      const mod = await createModule('Mid-upload removed');
+      let uploadedKey: string | undefined;
+      vi.mocked(storage.put).mockImplementationOnce(async (key) => {
+        uploadedKey = key;
+        await prisma.materialModule.update({
+          where: { id: mod.id },
+          data: { removedAt: new Date(), removedById: teacher },
+        });
+      });
+      await upload(teacher, classroom, mod.id).expect(404);
+      expect(uploadedKey).toBeDefined();
+      expect(vi.mocked(storage.delete)).toHaveBeenCalledWith(uploadedKey);
+      expect(await prisma.studyMaterial.count({ where: { moduleId: mod.id } })).toBe(0);
+    });
+
     it('filters materials by module and by unassigned', async () => {
       const mod = await createModule('Filter module');
+      const foreign = await createModule('Foreign filter', otherTeacher, foreignClassroom);
       const inside = await createMaterial(mod.id);
       const outside = await createMaterial();
       const byModule = await listMaterials({ moduleId: mod.id });
@@ -297,7 +325,9 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
       const all = await listMaterials({ pageSize: '100' });
       expect(all.map((m) => m.id)).toEqual(expect.arrayContaining([inside.id, outside.id]));
       await call('get', teacher, '/materials').query({ moduleId: 'nope' }).expect(400);
+      await call('get', teacher, '/materials').query({ moduleId: 'UNASSIGNED' }).expect(400);
       await call('get', teacher, '/materials').query({ moduleId: randomUUID() }).expect(404);
+      await call('get', teacher, '/materials').query({ moduleId: foreign.id }).expect(404);
     });
 
     it('keeps removed materials out of module counts', async () => {
@@ -331,14 +361,61 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
     it('does not touch chunks or allowed-material state', async () => {
       const mod = await createModule('Bot safe');
       const material = await createMaterial(mod.id);
-      const before = await prisma.allowedMaterial.count({ where: { materialId: material.id } });
+      const botConfig = await prisma.botConfig.upsert({
+        where: { classroomId: classroom },
+        create: { classroomId: classroom },
+        update: {},
+      });
+      await prisma.allowedMaterial.create({
+        data: {
+          botConfigId: botConfig.id,
+          classroomId: classroom,
+          materialId: material.id,
+          indexState: MaterialIndexState.INDEXED,
+        },
+      });
+      const zeroVector = `[${Array.from({ length: 768 }, () => 0).join(',')}]`;
+      await prisma.$executeRaw`
+        INSERT INTO "material_chunks" (
+          "id",
+          "classroom_id",
+          "material_id",
+          "chunk_index",
+          "content",
+          "position",
+          "embedding"
+        ) VALUES (
+          ${randomUUID()}::uuid,
+          ${classroom}::uuid,
+          ${material.id}::uuid,
+          0,
+          'Lesson excerpt preserved across module deletion',
+          'p. 1',
+          ${zeroVector}::vector
+        )`;
+      const countChunks = async () => {
+        const [row] = await prisma.$queryRaw<{ count: bigint }[]>`
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "material_chunks"
+          WHERE "classroom_id" = ${classroom}::uuid AND "material_id" = ${material.id}::uuid`;
+        return Number(row?.count ?? 0n);
+      };
+      expect(await prisma.allowedMaterial.count({ where: { materialId: material.id } })).toBe(1);
+      expect(await countChunks()).toBe(1);
+
       await call('delete', teacher, `/material-modules/${mod.id}`).expect(204);
-      expect(await prisma.allowedMaterial.count({ where: { materialId: material.id } })).toBe(
-        before,
-      );
-      expect(
-        (await prisma.studyMaterial.findUniqueOrThrow({ where: { id: material.id } })).removedAt,
-      ).toBeNull();
+
+      const allowedAfter = await prisma.allowedMaterial.findMany({
+        where: { materialId: material.id },
+      });
+      expect(allowedAfter).toHaveLength(1);
+      expect(allowedAfter[0]?.indexState).toBe(MaterialIndexState.INDEXED);
+      expect(await countChunks()).toBe(1);
+      const materialAfter = await prisma.studyMaterial.findUniqueOrThrow({
+        where: { id: material.id },
+      });
+      expect(materialAfter.removedAt).toBeNull();
+      expect(materialAfter.moduleId).toBeNull();
     });
   });
 
@@ -368,6 +445,104 @@ describe('material modules HTTP — ordered modules inside a classroom', () => {
       ).toBeNull();
       const order = [...(await listModules()).map((m) => m.id), foreignModule.id];
       await call('put', teacher, '/material-modules/order').send({ moduleIds: order }).expect(400);
+    });
+  });
+
+  describe('concurrency and transaction serialization', () => {
+    const createIsolatedClassroom = async (name: string) => {
+      const id = randomUUID();
+      await prisma.classroom.create({ data: { id, name, independentTeacherId: teacher } });
+      return id;
+    };
+
+    it('serializes concurrent POST /material-modules with contiguous positions and enforces the 100-module cap', async () => {
+      const batchClassroom = await createIsolatedClassroom('Concurrent creates');
+      const batchResponses = await Promise.all(
+        Array.from({ length: 5 }, (_, index) =>
+          call('post', teacher, '/material-modules', batchClassroom).send({
+            name: `Concurrent ${index}`,
+          }),
+        ),
+      );
+      expect(batchResponses.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+      const createdPositions = batchResponses
+        .map((r) => (r.body as ModuleBody).position)
+        .sort((a, b) => a - b);
+      expect(createdPositions).toEqual([0, 1, 2, 3, 4]);
+
+      const capClassroom = await createIsolatedClassroom('Module cap race');
+      await prisma.materialModule.createMany({
+        data: Array.from({ length: MATERIAL_MODULE_LIMITS.maxModules - 1 }, (_, position) => ({
+          id: randomUUID(),
+          classroomId: capClassroom,
+          name: `Seed ${position}`,
+          position,
+        })),
+      });
+      const capResponses = await Promise.all([
+        call('post', teacher, '/material-modules', capClassroom).send({ name: 'Cap A' }),
+        call('post', teacher, '/material-modules', capClassroom).send({ name: 'Cap B' }),
+      ]);
+      expect(capResponses.map((r) => r.status).sort((a, b) => a - b)).toEqual([201, 409]);
+      const activeModules = await listModules(teacher, capClassroom);
+      expect(activeModules).toHaveLength(MATERIAL_MODULE_LIMITS.maxModules);
+      const reversedIds = [...activeModules].reverse().map((m) => m.id);
+      const reordered = await call('put', teacher, '/material-modules/order', capClassroom)
+        .send({ moduleIds: reversedIds })
+        .expect(200);
+      expect(reordered.body.items.map((m: ModuleBody) => m.id)).toEqual(reversedIds);
+    });
+
+    it('resolves concurrent DELETE /material-modules/:moduleId with [204, 404]', async () => {
+      const delClassroom = await createIsolatedClassroom('Concurrent deletes');
+      const mod = await createModule('Delete once', teacher, delClassroom);
+      const responses = await Promise.all([
+        call('delete', teacher, `/material-modules/${mod.id}`, delClassroom),
+        call('delete', teacher, `/material-modules/${mod.id}`, delClassroom),
+      ]);
+      expect(responses.map((r) => r.status).sort((a, b) => a - b)).toEqual([204, 404]);
+    });
+
+    it('never leaves an active material pointing to a deleted module when DELETE races upload and move', async () => {
+      const raceClassroom = await createIsolatedClassroom('Delete vs upload and move');
+      for (let round = 0; round < 5; round++) {
+        const mod = await createModule(`Race target ${round}`, teacher, raceClassroom);
+        const loose = await createMaterial(undefined, teacher, raceClassroom);
+        const [delRes, uploadRes, moveRes] = await Promise.all([
+          call('delete', teacher, `/material-modules/${mod.id}`, raceClassroom),
+          upload(teacher, raceClassroom, mod.id),
+          call('patch', teacher, `/materials/${loose.id}`, raceClassroom).send({
+            moduleId: mod.id,
+          }),
+        ]);
+        expect(delRes.status).toBe(204);
+        expect([201, 404]).toContain(uploadRes.status);
+        expect([200, 404]).toContain(moveRes.status);
+        const stranded = await prisma.studyMaterial.count({
+          where: { classroomId: raceClassroom, moduleId: mod.id, removedAt: null },
+        });
+        expect(stranded).toBe(0);
+      }
+    });
+
+    it('serializes concurrent PUT /material-modules/order and POST /material-modules without 500s', async () => {
+      const orderClassroom = await createIsolatedClassroom('Reorder vs create');
+      const m1 = await createModule('Order 1', teacher, orderClassroom);
+      const m2 = await createModule('Order 2', teacher, orderClassroom);
+      const m3 = await createModule('Order 3', teacher, orderClassroom);
+      const [reorderRes, createRes] = await Promise.all([
+        call('put', teacher, '/material-modules/order', orderClassroom).send({
+          moduleIds: [m3.id, m2.id, m1.id],
+        }),
+        call('post', teacher, '/material-modules', orderClassroom).send({ name: 'Order 4' }),
+      ]);
+      expect(createRes.status).toBe(201);
+      expect([200, 400]).toContain(reorderRes.status);
+      const finalModules = await listModules(teacher, orderClassroom);
+      expect(finalModules).toHaveLength(4);
+      const positions = finalModules.map((m) => m.position);
+      expect(new Set(positions).size).toBe(4);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
     });
   });
 });
