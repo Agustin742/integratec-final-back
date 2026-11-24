@@ -206,8 +206,8 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
           userId: activeStudent1,
           appearance: {
             bodyId: 'female',
-            hairId: 'original',
-            topId: 'tshirt',
+            hairId: 'classic-short',
+            topId: 'basic-tshirt',
             hairColor: '#353849',
             clothingColor: '#75B7DA',
           },
@@ -391,8 +391,8 @@ describe('Classroom Directory PostgreSQL HTTP Integration — API contracts, pri
     expect(res.body.items[0].displayName).toBe('Alice Walker');
     expect(res.body.items[0].avatar).toEqual({
       bodyId: 'female',
-      hairId: 'original',
-      topId: 'tshirt',
+      hairId: 'classic-short',
+      topId: 'basic-tshirt',
       hairColor: '#353849',
       clothingColor: '#75B7DA',
     });

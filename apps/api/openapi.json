@@ -5249,15 +5249,55 @@
           "bodyId": { "type": "string", "enum": ["male", "female"], "example": "male" },
           "hairId": {
             "type": "string",
-            "enum": ["afro", "dreads", "original"],
-            "example": "afro",
-            "description": "male: afro/dreads; female: afro/original."
+            "enum": [
+              "afro",
+              "afro-with-headband",
+              "bob",
+              "box-braids",
+              "braid",
+              "bun",
+              "buzz-cut",
+              "classic-short",
+              "dreads",
+              "fringe",
+              "half-up",
+              "long-curls",
+              "long-straight",
+              "long-wavy",
+              "messy",
+              "middle-part",
+              "ponytail",
+              "short-curls",
+              "side-part",
+              "soft-mohawk",
+              "two-braids",
+              "two-pigtails",
+              "wavy"
+            ],
+            "example": "classic-short",
+            "description": "Allowed for both bodies. Some styles are unlocked through the shop."
           },
           "topId": {
             "type": "string",
-            "enum": ["hoodie", "tank", "tshirt"],
-            "example": "hoodie",
-            "description": "male: hoodie/tank; female: hoodie/tank/tshirt. Uniforms excluded."
+            "enum": [
+              "basic-tshirt",
+              "denim-jacket",
+              "flannel-shirt",
+              "holiday-sweater",
+              "hoodie",
+              "national-team-jersey",
+              "school-polo",
+              "school-smock",
+              "school-sweatshirt",
+              "shirt-and-tie",
+              "sweater",
+              "tank-top",
+              "track-jacket",
+              "vest",
+              "winter-coat"
+            ],
+            "example": "school-sweatshirt",
+            "description": "Allowed for both bodies. Some styles are unlocked through the shop."
           },
           "hairColor": {
             "type": "string",

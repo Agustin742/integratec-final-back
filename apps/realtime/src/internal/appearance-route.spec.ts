@@ -13,7 +13,7 @@ const APPEARANCE = {
   baseAvatar: {
     bodyId: 'female',
     hairId: 'afro',
-    topId: 'tshirt',
+    topId: 'basic-tshirt',
     hairColor: '#353849',
     clothingColor: '#75B7DA',
   },

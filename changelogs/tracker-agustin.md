@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-24 — Modular avatar catalog (#145, BK-1)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/users/avatar-catalog.ts`, `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`, test fixtures
+- **Change:** The avatar contract now accepts 23 hair ids and 15 top ids for both bodies; legacy `original`, `tank` and `tshirt` are removed. `avatar-catalog.ts` is the single source of truth and exports the free/paid split for the shop work. The default avatar is `classic-short` hair with `school-sweatshirt`.
+- **Reason:** The front merged the modular avatar assets; some styles become paid unlockables in the next tasks.
+- **Verification:** Catalog spec written RED first, then GREEN.
+- **Next step:** BK-2 paid-style ownership.
+
 ## 2026-11-24 — Ordered material modules (#142)
 
 - **Status:** completed (pending PR into `develop`)

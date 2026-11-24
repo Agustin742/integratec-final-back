@@ -65,7 +65,7 @@ export class BaseAvatarPayloadDto {
   @ApiProperty({ example: 'afro' })
   hairId!: string;
 
-  @ApiProperty({ example: 'tshirt' })
+  @ApiProperty({ example: 'basic-tshirt' })
   topId!: string;
 
   @ApiProperty({ example: '#6C4D48' })

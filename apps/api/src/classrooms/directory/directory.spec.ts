@@ -59,8 +59,8 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
               avatarConfig: {
                 appearance: {
                   bodyId: 'female',
-                  hairId: 'original',
-                  topId: 'tshirt',
+                  hairId: 'classic-short',
+                  topId: 'basic-tshirt',
                   hairColor: '#353849',
                   clothingColor: '#75B7DA',
                 },
@@ -420,8 +420,8 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
       });
       expect(result.items[0].avatar).toEqual({
         bodyId: 'female',
-        hairId: 'original',
-        topId: 'tshirt',
+        hairId: 'classic-short',
+        topId: 'basic-tshirt',
         hairColor: '#353849',
         clothingColor: '#75B7DA',
       });

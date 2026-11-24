@@ -24,8 +24,13 @@ The user approved **free body, hairstyle and ordinary base clothing**, reserving
 
 | `bodyId` | Compatible `hairId` | Compatible `topId` |
 | --- | --- | --- |
-| `male` | `afro`, `dreads` | `hoodie`, `tank` |
-| `female` | `afro`, `original` | `hoodie`, `tank`, `tshirt` |
+| `male`, `female` | All 23 hair ids below | All 15 top ids below |
+
+Hair ids: `afro`, `afro-with-headband`, `bob`, `box-braids`, `braid`, `bun`, `buzz-cut`, `classic-short`, `dreads`, `fringe`, `half-up`, `long-curls`, `long-straight`, `long-wavy`, `messy`, `middle-part`, `ponytail`, `short-curls`, `side-part`, `soft-mohawk`, `two-braids`, `two-pigtails`, `wavy`.
+
+Top ids: `basic-tshirt`, `denim-jacket`, `flannel-shirt`, `holiday-sweater`, `hoodie`, `national-team-jersey`, `school-polo`, `school-smock`, `school-sweatshirt`, `shirt-and-tie`, `sweater`, `tank-top`, `track-jacket`, `vest`, `winter-coat`.
+
+Free styles (the rest are shop unlockables, enforced separately): hair `afro`, `bob`, `bun`, `buzz-cut`, `classic-short`, `long-straight`, `middle-part`, `ponytail`, `short-curls`; tops `basic-tshirt`, `school-smock`, `school-sweatshirt`, `tank-top`. The catalog lives in `apps/api/src/users/avatar-catalog.ts`. The legacy ids `original`, `tank` and `tshirt` are no longer accepted.
 
 | Field | Allowed values |
 | --- | --- |
@@ -41,8 +46,8 @@ Every avatar PATCH requires **all five fields**, including compatible hair and t
 ```json
 {
   "bodyId": "female",
-  "hairId": "original",
-  "topId": "tshirt",
+  "hairId": "classic-short",
+  "topId": "basic-tshirt",
   "hairColor": "#AF6D63",
   "clothingColor": "#F4E6D2"
 }

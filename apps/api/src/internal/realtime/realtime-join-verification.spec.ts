@@ -178,7 +178,7 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
     const STORED_BASE_AVATAR = {
       bodyId: 'female',
       hairId: 'afro',
-      topId: 'tshirt',
+      topId: 'basic-tshirt',
       hairColor: '#AF6D63',
       clothingColor: '#75B7DA',
     };

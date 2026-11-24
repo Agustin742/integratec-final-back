@@ -25,8 +25,8 @@ const databaseUrl = loadIsolatedTestDatabaseUrl();
 /** A valid, palette-checked base avatar the tests patch to. */
 const PATCHED = {
   bodyId: 'female',
-  hairId: 'original',
-  topId: 'tshirt',
+  hairId: 'classic-short',
+  topId: 'basic-tshirt',
   hairColor: '#AF6D63',
   clothingColor: '#F4E6D2',
 } as const;

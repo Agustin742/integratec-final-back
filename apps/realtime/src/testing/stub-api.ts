@@ -37,7 +37,7 @@ export const makeStubAppearance = (hairColor = '#AF6D63'): StubAppearance => ({
   baseAvatar: {
     bodyId: 'female',
     hairId: 'afro',
-    topId: 'tshirt',
+    topId: 'basic-tshirt',
     hairColor,
     clothingColor: '#75B7DA',
   },

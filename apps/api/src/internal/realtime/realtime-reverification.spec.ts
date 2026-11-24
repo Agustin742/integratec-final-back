@@ -146,7 +146,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
         appearance: {
           bodyId: 'female',
           hairId: 'afro',
-          topId: 'tshirt',
+          topId: 'basic-tshirt',
           hairColor: '#AF6D63',
           clothingColor: '#75B7DA',
         },
@@ -178,7 +178,7 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
         baseAvatar: {
           bodyId: 'female',
           hairId: 'afro',
-          topId: 'tshirt',
+          topId: 'basic-tshirt',
           hairColor: '#AF6D63',
           clothingColor: '#75B7DA',
         },

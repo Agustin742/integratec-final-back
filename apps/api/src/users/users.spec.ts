@@ -24,8 +24,8 @@ const base = {
 };
 const alternate = {
   bodyId: 'female',
-  hairId: 'original',
-  topId: 'tshirt',
+  hairId: 'classic-short',
+  topId: 'basic-tshirt',
   hairColor: '#AF6D63',
   clothingColor: '#F4E6D2',
 };
@@ -321,7 +321,7 @@ describe('Own profile and base avatar (#20)', () => {
     [{ ...base, bodyId: 'robot' }, 'bodyId'],
     [{ ...base, hairId: 'original' }, 'hairId'],
     [{ ...base, topId: 'tshirt' }, 'topId'],
-    [{ ...alternate, hairId: 'dreads' }, 'hairId'],
+    [{ ...alternate, topId: 'tank' }, 'topId'],
     [{ ...base, topId: 'uniform' }, 'topId'],
     [{ ...base, hairColor: '#000000' }, 'hairColor'],
     [{ ...base, clothingColor: 'https://example.test/color' }, 'clothingColor'],
@@ -369,8 +369,16 @@ describe('Own profile and base avatar (#20)', () => {
 
   it('accepts every body-compatible free hairstyle/top and each palette color', async () => {
     const choices = [
-      { bodyId: 'male', hairs: ['afro', 'dreads'], tops: ['hoodie', 'tank'] },
-      { bodyId: 'female', hairs: ['afro', 'original'], tops: ['hoodie', 'tank', 'tshirt'] },
+      {
+        bodyId: 'male',
+        hairs: ['afro', 'classic-short', 'dreads'],
+        tops: ['school-sweatshirt', 'tank-top'],
+      },
+      {
+        bodyId: 'female',
+        hairs: ['bob', 'ponytail'],
+        tops: ['basic-tshirt', 'hoodie', 'winter-coat'],
+      },
     ];
     for (const { bodyId, hairs, tops } of choices) {
       for (const hairId of hairs) {
