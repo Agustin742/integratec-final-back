@@ -313,4 +313,3 @@
 - **Change:** Added Mailpit container service to `docker-compose.yml` (`1025` SMTP, `8025` Web UI) with named volume `mailpit_data`. Added `nodemailer` dependency. Expanded `ApiConfig` with Zod validation for `EMAIL_PROVIDER` (`memory`, `smtp`, `ses`), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `EMAIL_FROM`. Implemented `SmtpEmailAdapter` with security-safe metadata logging (no PII/tokens in logs) and graceful shutdown. Updated `EmailModule` to use dynamic factory resolution for `EMAIL_PORT` based on `config.emailProvider`. Added comprehensive unit tests in `api-config.spec.ts` and `email.spec.ts`.
 - **Reason:** Enable local end-to-end testing of password reset tokens and classroom invitations without sending real emails to external mailboxes or hardcoding an email provider.
 - **Next step:** Run local stack and verify password reset and invitation flows via Mailpit Web UI.
-
