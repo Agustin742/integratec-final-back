@@ -37,6 +37,12 @@ export interface ApiConfig {
    * elsewhere it defaults to the local frontend.
    */
   passwordResetUrlBase: string;
+  /**
+   * Frontend page that accepts a classroom invitation. The emailed link is `<base>?token=<token>`,
+   * so the base has no query string or fragment. Optional in production (defaults to the origin of
+   * `PASSWORD_RESET_URL_BASE` + `/invitations/accept`); must use HTTPS in production if set.
+   */
+  invitationAcceptUrlBase: string;
   invitationTtlSeconds: number;
   outboxPollIntervalSeconds: number;
   outboxMaxAttempts: number;
@@ -197,7 +203,10 @@ export const DEFAULT_AI_BOT_RATE_LIMIT_GLOBAL_MAX = 300;
 export const DEFAULT_REALTIME_INTERNAL_URL = 'http://localhost:2567';
 
 /** Local frontend reset page, used when `PASSWORD_RESET_URL_BASE` is unset outside production. */
-export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/reset-password';
+export const DEFAULT_PASSWORD_RESET_URL_BASE = 'http://localhost:5173/password-reset';
+
+/** Local frontend invitation page, used when `INVITATION_ACCEPT_URL_BASE` is unset outside production. */
+export const DEFAULT_INVITATION_ACCEPT_URL_BASE = 'http://localhost:5173/invitations/accept';
 
 export interface ConfigIssue {
   variable: string;
@@ -236,7 +245,9 @@ const ENDPOINT_MESSAGE =
 const REUSE_GRACE_MESSAGE = 'must be a duration between 0s and 5m, such as 30s (0s disables it)';
 const PASSWORD_RESET_TTL_MESSAGE = 'must be a duration between 1s and 24h, such as 1h';
 const PASSWORD_RESET_URL_MESSAGE =
-  'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/reset-password';
+  'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/password-reset';
+const INVITATION_ACCEPT_URL_MESSAGE =
+  'must be an absolute http(s) URL without credentials, query string or fragment, e.g. https://app.example.com/invitations/accept';
 const SIGNED_URL_TTL_MESSAGE = 'must be a duration between 1s and 1h, such as 5m';
 
 const AUTH_CLEANUP_INTERVAL_MESSAGE = 'must be a duration between 1s and 7d, such as 24h';
@@ -422,6 +433,11 @@ const envSchema = z
     PASSWORD_RESET_URL_BASE: z
       .string()
       .refine(isResetUrlBase, PASSWORD_RESET_URL_MESSAGE)
+      .optional(),
+    // A rejected value is never echoed (it could carry credentials), only the variable name.
+    INVITATION_ACCEPT_URL_BASE: z
+      .string()
+      .refine(isResetUrlBase, INVITATION_ACCEPT_URL_MESSAGE)
       .optional(),
     INVITATION_TTL: duration('7d'),
     // A rejected value is never echoed, only the variable name.
@@ -666,6 +682,18 @@ const envSchema = z
         message: 'must use HTTPS in production',
       });
     }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.INVITATION_ACCEPT_URL_BASE !== undefined &&
+      isResetUrlBase(env.INVITATION_ACCEPT_URL_BASE) &&
+      new URL(env.INVITATION_ACCEPT_URL_BASE).protocol !== 'https:'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['INVITATION_ACCEPT_URL_BASE'],
+        message: 'must use HTTPS in production',
+      });
+    }
     // Evictions must go to the real realtime server, never silently to a local default.
     if (env.NODE_ENV === 'production' && env.REALTIME_INTERNAL_URL === undefined) {
       ctx.addIssue({
@@ -770,6 +798,7 @@ export function loadApiConfig(env: Env): ApiConfig {
   }
 
   const values = result.data;
+  const passwordResetUrlBase = values.PASSWORD_RESET_URL_BASE ?? DEFAULT_PASSWORD_RESET_URL_BASE;
   return {
     nodeEnv: values.NODE_ENV,
     port: values.PORT,
@@ -778,7 +807,12 @@ export function loadApiConfig(env: Env): ApiConfig {
     refreshTokenTtlSeconds: values.REFRESH_TOKEN_TTL,
     refreshReuseGraceSeconds: values.REFRESH_REUSE_GRACE,
     passwordResetTtlSeconds: values.PASSWORD_RESET_TTL,
-    passwordResetUrlBase: values.PASSWORD_RESET_URL_BASE ?? DEFAULT_PASSWORD_RESET_URL_BASE,
+    passwordResetUrlBase,
+    invitationAcceptUrlBase:
+      values.INVITATION_ACCEPT_URL_BASE ??
+      (values.NODE_ENV === 'production'
+        ? `${new URL(passwordResetUrlBase).origin}/invitations/accept`
+        : DEFAULT_INVITATION_ACCEPT_URL_BASE),
     invitationTtlSeconds: values.INVITATION_TTL,
     outboxPollIntervalSeconds: values.OUTBOX_POLL_INTERVAL,
     outboxMaxAttempts: values.OUTBOX_MAX_ATTEMPTS,

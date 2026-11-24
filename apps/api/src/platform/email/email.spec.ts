@@ -6,6 +6,7 @@ import { authTestConfig } from '../../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../../config/config.module';
 import { EmailModule } from './email.module';
 import { EMAIL_PORT, type EmailMessage, type EmailPort } from './email.port';
+import { escapeHtml } from './escape-html';
 import { InMemoryEmailAdapter } from './in-memory-email.adapter';
 import { SmtpEmailAdapter } from './smtp-email.adapter';
 
@@ -193,5 +194,13 @@ describe('SmtpEmailAdapter', () => {
     adapter.onModuleDestroy();
 
     expect(close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('escapeHtml', () => {
+  it('escapes HTML metacharacters cleanly', () => {
+    expect(escapeHtml(`<a href="x">'&'</a>`)).toBe(
+      '&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;',
+    );
   });
 });

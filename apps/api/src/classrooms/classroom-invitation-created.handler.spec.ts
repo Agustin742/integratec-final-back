@@ -38,7 +38,8 @@ describe('ClassroomInvitationCreatedHandler', () => {
     refreshTokenTtlSeconds: 604800,
     refreshReuseGraceSeconds: 30,
     passwordResetTtlSeconds: 3600,
-    passwordResetUrlBase: 'http://localhost/reset',
+    passwordResetUrlBase: 'https://invite-frontend.example.edu.ar/password-reset',
+    invitationAcceptUrlBase: 'https://invite-frontend.example.edu.ar/invitations/accept',
     invitationTtlSeconds: 604800,
     outboxPollIntervalSeconds: 5,
     outboxMaxAttempts: 5,
@@ -46,7 +47,7 @@ describe('ClassroomInvitationCreatedHandler', () => {
     internalServiceSecret: 'secret',
     jwtSecret: 'jwt-secret',
     invitationTokenKey: TOKEN_KEY,
-    allowedOrigins: ['https://aula.example.edu.ar'],
+    allowedOrigins: ['https://cors-only.example.edu.ar'],
     s3Bucket: 'bucket',
     s3Region: 'sa-east-1',
     s3Endpoint: undefined,
@@ -119,14 +120,54 @@ describe('ClassroomInvitationCreatedHandler', () => {
 
     await handler.handle(event);
 
+    const expectedUrl =
+      'https://invite-frontend.example.edu.ar/invitations/accept?token=opaque-token-12345';
     expect(mockEmail.send).toHaveBeenCalledTimes(1);
     expect(mockEmail.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'student@example.edu.ar',
         subject: 'Invitation to join Matemática 1',
-        text: expect.stringContaining('opaque-token-12345'),
+        text: expect.stringContaining(expectedUrl),
+        html: expect.stringContaining(`href="${expectedUrl}"`),
+        idempotencyKey: `classroom-invitation:${event.id}`,
       }),
     );
+    const sent = (mockEmail.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as {
+      text: string;
+      html: string;
+    };
+    expect(sent.text).not.toContain('https://cors-only.example.edu.ar');
+    expect(sent.html).not.toContain('https://cors-only.example.edu.ar');
+  });
+
+  it('escapes HTML special characters in classroom name inside invitation HTML body', async () => {
+    const invitationId = randomUUID();
+    const classroomId = randomUUID();
+    mockPrisma.invitation.findUnique.mockResolvedValue({
+      id: invitationId,
+      state: 'PENDING',
+      expiresAt: new Date('2026-12-01T12:00:00.000Z'),
+      classroom: { name: '<script>alert(1)</script> & "5to"', deletedAt: null },
+    });
+
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId,
+        classroomId,
+        targetEmail: 'student@example.edu.ar',
+        role: 'STUDENT',
+        encryptedToken: encryptSecret('opaque-token-xss', TOKEN_KEY, invitationId),
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await handler.handle(event);
+
+    const sent = (mockEmail.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as { html: string };
+    expect(sent.html).not.toContain('<script>');
+    expect(sent.html).toContain('&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;5to&quot;');
   });
 
   it('skips email delivery when invitation is revoked or deleted', async () => {
