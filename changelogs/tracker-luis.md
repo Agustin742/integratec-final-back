@@ -313,3 +313,11 @@
 - **Change:** Added Mailpit container service to `docker-compose.yml` (`1025` SMTP, `8025` Web UI) with named volume `mailpit_data`. Added `nodemailer` dependency. Expanded `ApiConfig` with Zod validation for `EMAIL_PROVIDER` (`memory`, `smtp`, `ses`), `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `EMAIL_FROM`. Implemented `SmtpEmailAdapter` with security-safe metadata logging (no PII/tokens in logs) and graceful shutdown. Updated `EmailModule` to use dynamic factory resolution for `EMAIL_PORT` based on `config.emailProvider`. Added comprehensive unit tests in `api-config.spec.ts` and `email.spec.ts`.
 - **Reason:** Enable local end-to-end testing of password reset tokens and classroom invitations without sending real emails to external mailboxes or hardcoding an email provider.
 - **Next step:** Run local stack and verify password reset and invitation flows via Mailpit Web UI.
+
+## 2026-11-23 — Align password reset URL path and decouple invitation URL base (Issue #132)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/config/api-config.ts`, `apps/api/src/config/api-config.spec.ts`, `apps/api/src/platform/email/escape-html.ts`, `apps/api/src/auth/password-reset-requested.handler.ts`, `apps/api/src/classrooms/classroom-invitation-created.handler.ts`, `docker-compose.yml`, `.env.example`, `apps/api/.env.example`, `README.md`
+- **Change:** Updated `DEFAULT_PASSWORD_RESET_URL_BASE` and local environment defaults from `/reset-password` to `/password-reset` to match the frontend router. Added `INVITATION_ACCEPT_URL_BASE` to `ApiConfig` (defaulting to `http://localhost:5173/invitations/accept` outside production, or `${new URL(passwordResetUrlBase).origin}/invitations/accept` in production when omitted, enforcing HTTPS if provided in production) and updated `ClassroomInvitationCreatedHandler` to use it instead of `allowedOrigins[0]`. Added `escapeHtml` helper, XSS-safe `html` email bodies, and explicit `idempotencyKey` values to both `PasswordResetRequestedHandler` and `ClassroomInvitationCreatedHandler`, along with unit tests.
+- **Reason:** Resolve broken `404` password-reset email links and decouple invitation links from CORS origin allowlists (`#132`).
+- **Next step:** Open and merge PR for `#132` into `develop`, then continue with `#131` (Multiple Choice points credit).

@@ -41,7 +41,8 @@ describe('loadApiConfig', () => {
       refreshTokenTtlSeconds: 604800,
       refreshReuseGraceSeconds: 30,
       passwordResetTtlSeconds: 3600,
-      passwordResetUrlBase: 'http://localhost:5173/reset-password',
+      passwordResetUrlBase: 'http://localhost:5173/password-reset',
+      invitationAcceptUrlBase: 'http://localhost:5173/invitations/accept',
       invitationTtlSeconds: 604800,
       outboxPollIntervalSeconds: 5,
       outboxMaxAttempts: 5,
@@ -366,10 +367,77 @@ describe('loadApiConfig', () => {
         loadApiConfig({
           ...validEnv(),
           NODE_ENV: 'production',
-          PASSWORD_RESET_URL_BASE: 'https://app.example.com/reset-password',
+          PASSWORD_RESET_URL_BASE: 'https://app.example.com/password-reset',
           REALTIME_INTERNAL_URL: 'http://realtime:2567',
         }).passwordResetUrlBase,
-      ).toBe('https://app.example.com/reset-password');
+      ).toBe('https://app.example.com/password-reset');
+    });
+  });
+
+  describe('INVITATION_ACCEPT_URL_BASE', () => {
+    it.each([
+      'not-a-url',
+      '/relative-invite-path',
+      'ftp://app.example.com/invitations/accept',
+      'https://app.example.com/invitations/accept?token=x',
+      'https://app.example.com/invitations/accept#frag',
+      'https://user:pw@app.example.com/invitations/accept',
+    ])('rejects INVITATION_ACCEPT_URL_BASE=%s without echoing values', (value) => {
+      for (const nodeEnv of ['development', 'test', 'production']) {
+        const message = messageOf({
+          ...validEnv(),
+          NODE_ENV: nodeEnv,
+          PASSWORD_RESET_URL_BASE: 'https://app.example.com/password-reset',
+          REALTIME_INTERNAL_URL: 'http://realtime:2567',
+          INVITATION_ACCEPT_URL_BASE: value,
+        });
+        expect(message).toContain('INVITATION_ACCEPT_URL_BASE');
+        expect(message).toContain('must be an absolute http(s) URL');
+        if (value !== 'ftp://app.example.com/invitations/accept') {
+          expect(message).not.toContain(value);
+        } else {
+          expect(message).not.toContain('ftp://');
+        }
+        expect(message).not.toContain('pw@');
+      }
+    });
+
+    it('rejects an HTTP INVITATION_ACCEPT_URL_BASE in production without echoing values', () => {
+      const url = 'http://app.example.com/invitations/accept';
+      const message = messageOf({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: 'https://app.example.com/password-reset',
+        REALTIME_INTERNAL_URL: 'http://realtime:2567',
+        INVITATION_ACCEPT_URL_BASE: url,
+      });
+      expect(message).toContain('INVITATION_ACCEPT_URL_BASE');
+      expect(message).toContain('must use HTTPS in production');
+      expect(message).not.toContain(url);
+      expect(message).not.toContain(SECRET);
+      expect(message).not.toContain(JWT_SECRET_VALUE);
+    });
+
+    it('derives the production invitation base URL from PASSWORD_RESET_URL_BASE origin when omitted', () => {
+      const config = loadApiConfig({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: 'https://app.example.com/auth/password-reset',
+        REALTIME_INTERNAL_URL: 'http://realtime:2567',
+        ALLOWED_ORIGINS: 'https://other-cors-origin.example.com',
+      });
+      expect(config.invitationAcceptUrlBase).toBe('https://app.example.com/invitations/accept');
+    });
+
+    it('accepts an explicit HTTPS INVITATION_ACCEPT_URL_BASE in production', () => {
+      const config = loadApiConfig({
+        ...validEnv(),
+        NODE_ENV: 'production',
+        PASSWORD_RESET_URL_BASE: 'https://app.example.com/password-reset',
+        INVITATION_ACCEPT_URL_BASE: 'https://invite.example.com/join',
+        REALTIME_INTERNAL_URL: 'http://realtime:2567',
+      });
+      expect(config.invitationAcceptUrlBase).toBe('https://invite.example.com/join');
     });
   });
 

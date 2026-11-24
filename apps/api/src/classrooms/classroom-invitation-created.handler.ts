@@ -3,6 +3,7 @@ import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { decryptSecret } from '../platform/crypto/secret-box';
 import { EMAIL_PORT, type EmailPort } from '../platform/email/email.port';
+import { escapeHtml } from '../platform/email/escape-html';
 import {
   OutboxHandlerRegistry,
   type OutboxEventEnvelope,
@@ -63,13 +64,19 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
       );
 
       const classroomName = invitation.classroom?.name ?? 'Virtual Classroom';
-      const baseUrl = this.config.allowedOrigins[0] || 'http://localhost:3000';
-      const acceptUrl = `${baseUrl}/invitations/accept?token=${token}`;
+      const acceptUrl = `${this.config.invitationAcceptUrlBase}?token=${token}`;
+      const expiresAtIso = invitation.expiresAt.toISOString();
 
       await this.email.send({
         to: payload.targetEmail,
         subject: `Invitation to join ${classroomName}`,
-        text: `You have been invited to join the virtual classroom "${classroomName}". Use the following link to accept the invitation:\n\n${acceptUrl}\n\nThis link will expire on ${invitation.expiresAt.toISOString()}.`,
+        text: `You have been invited to join the virtual classroom "${classroomName}". Use the following link to accept the invitation:\n\n${acceptUrl}\n\nThis link will expire on ${expiresAtIso}.`,
+        html: [
+          `<p>You have been invited to join the virtual classroom <strong>${escapeHtml(classroomName)}</strong>.</p>`,
+          `<p><a href="${escapeHtml(acceptUrl)}">Accept the invitation</a></p>`,
+          `<p>This link will expire on ${escapeHtml(expiresAtIso)}.</p>`,
+        ].join('\n'),
+        idempotencyKey: `classroom-invitation:${event.id}`,
       });
     } catch (error) {
       this.logger.warn({

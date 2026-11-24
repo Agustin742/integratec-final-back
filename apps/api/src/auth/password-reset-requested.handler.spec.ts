@@ -87,12 +87,16 @@ describe('PasswordResetRequestedHandler (idempotent outbox consumer)', () => {
   });
 
   it('creates the token and sends one email', async () => {
-    await handler.handle(eventFor({ userId }));
+    const event = eventFor({ userId });
+    await handler.handle(event);
 
     expect(mailbox.sent).toHaveLength(1);
     expect(mailbox.sent[0].to).toBe(email);
     const token = rawTokenOf(mailbox.sent[0]);
-    expect(mailbox.sent[0].text).toContain(`${config.passwordResetUrlBase}?token=${token}`);
+    const expectedLink = `${config.passwordResetUrlBase}?token=${token}`;
+    expect(mailbox.sent[0].text).toContain(expectedLink);
+    expect(mailbox.sent[0].html).toContain(`href="${expectedLink}"`);
+    expect(mailbox.sent[0].idempotencyKey).toBe(`password-reset:${event.id}`);
     const rows = await prisma.passwordResetToken.findMany({ where: { userId } });
     expect(rows).toHaveLength(1);
     expect(rows[0].tokenHash).toBe(hashOpaqueToken(token));

@@ -52,7 +52,8 @@ describe('ClassroomInvitationsService', () => {
     refreshTokenTtlSeconds: 604800,
     refreshReuseGraceSeconds: 30,
     passwordResetTtlSeconds: 3600,
-    passwordResetUrlBase: 'http://localhost/reset',
+    passwordResetUrlBase: 'http://localhost/password-reset',
+    invitationAcceptUrlBase: 'http://localhost/invitations/accept',
     invitationTtlSeconds: 604800, // 7 days
     outboxPollIntervalSeconds: 5,
     outboxMaxAttempts: 5,

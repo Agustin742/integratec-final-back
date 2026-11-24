@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { EMAIL_PORT, type EmailPort } from '../platform/email/email.port';
+import { escapeHtml } from '../platform/email/escape-html';
 import {
   OutboxHandlerRegistry,
   type OutboxEventEnvelope,
@@ -98,6 +99,8 @@ export class PasswordResetRequestedHandler implements OnModuleInit {
       to: user.email,
       subject: 'Reset your password',
       text: this.messageText(token),
+      html: this.messageHtml(token),
+      idempotencyKey: `password-reset:${eventId}`,
     });
     await this.prisma.passwordResetToken.update({
       where: { id: row.id },
@@ -115,6 +118,16 @@ export class PasswordResetRequestedHandler implements OnModuleInit {
       link,
       '',
       'If you did not ask for this, ignore this email: your password stays the same.',
+    ].join('\n');
+  }
+
+  private messageHtml(token: string): string {
+    const link = `${this.config.passwordResetUrlBase}?token=${token}`;
+    const ttl = describeDuration(this.config.passwordResetTtlSeconds);
+    return [
+      '<p>We received a request to reset your password.</p>',
+      `<p><a href="${escapeHtml(link)}">Choose a new password</a> (valid for ${escapeHtml(ttl)}).</p>`,
+      '<p>If you did not ask for this, ignore this email: your password stays the same.</p>',
     ].join('\n');
   }
 }
