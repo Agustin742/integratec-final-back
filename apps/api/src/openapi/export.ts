@@ -52,6 +52,12 @@ const EXPORT_CONFIG: ApiConfig = {
   authCleanupBatchSize: DEFAULT_AUTH_CLEANUP_BATCH_SIZE,
   gradeWeightTp: DEFAULT_GRADE_WEIGHT_TP,
   gradeWeightExam: DEFAULT_GRADE_WEIGHT_EXAM,
+  emailProvider: 'smtp',
+  smtpHost: 'localhost',
+  smtpPort: 1025,
+  smtpSecure: false,
+  smtpAuth: undefined,
+  emailFrom: 'soporte@fundacion-integrar.org.ar',
 };
 
 /** Returns the OpenAPI document as repository-formatted JSON ending with a newline. */

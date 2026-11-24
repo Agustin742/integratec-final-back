@@ -58,6 +58,12 @@ const config = (nodeEnv: ApiConfig['nodeEnv']): ApiConfig => ({
   aiBotRateLimitUserMax: 10,
   aiBotRateLimitClassroomMax: 60,
   aiBotRateLimitGlobalMax: 300,
+  emailProvider: 'smtp',
+  smtpHost: 'localhost',
+  smtpPort: 1025,
+  smtpSecure: false,
+  smtpAuth: undefined,
+  emailFrom: 'soporte@fundacion-integrar.org.ar',
 });
 
 async function createApp(nodeEnv: ApiConfig['nodeEnv']): Promise<INestApplication> {

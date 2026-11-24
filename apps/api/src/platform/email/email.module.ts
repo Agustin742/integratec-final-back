@@ -1,10 +1,32 @@
 import { Module } from '@nestjs/common';
-import { EMAIL_PORT } from './email.port';
+import type { ApiConfig } from '../../config/api-config';
+import { API_CONFIG } from '../../config/config.module';
+import { EMAIL_PORT, type EmailPort } from './email.port';
 import { InMemoryEmailAdapter } from './in-memory-email.adapter';
+import { SmtpEmailAdapter } from './smtp-email.adapter';
 
-/** Binds {@link EMAIL_PORT} to the in-memory stub until a provider is chosen. */
 @Module({
-  providers: [InMemoryEmailAdapter, { provide: EMAIL_PORT, useExisting: InMemoryEmailAdapter }],
-  exports: [EMAIL_PORT, InMemoryEmailAdapter],
+  providers: [
+    InMemoryEmailAdapter,
+    SmtpEmailAdapter,
+    {
+      provide: EMAIL_PORT,
+      useFactory: (
+        config: ApiConfig,
+        inMemory: InMemoryEmailAdapter,
+        smtp: SmtpEmailAdapter,
+      ): EmailPort => {
+        if (config.emailProvider === 'smtp') {
+          return smtp;
+        }
+        if (config.emailProvider === 'memory') {
+          return inMemory;
+        }
+        throw new Error(`Unsupported email provider: ${config.emailProvider}`);
+      },
+      inject: [API_CONFIG, InMemoryEmailAdapter, SmtpEmailAdapter],
+    },
+  ],
+  exports: [EMAIL_PORT, InMemoryEmailAdapter, SmtpEmailAdapter],
 })
 export class EmailModule {}
