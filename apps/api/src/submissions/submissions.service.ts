@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { ActivityFormat, ActivityState, Prisma, StreakQualifyingSource } from '@prisma/client';
+import {
+  ActivityFormat,
+  ActivityState,
+  ActivityType,
+  Prisma,
+  StreakQualifyingSource,
+} from '@prisma/client';
 import {
   AccessVerificationService,
   type ClassroomAccessRole,
@@ -8,11 +14,20 @@ import {
 } from '../access/access-verification.service';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
+import {
+  AUTO_GRADED_MC_FEEDBACK,
+  buildLedgerReason,
+  calculateWeightedGradePoints,
+  resolveActivityTypeWeight,
+  SUBMISSION_GRADE_SOURCE_TYPE,
+} from '../grades/grade-points';
 import { conflict } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
-import { StreakService } from '../gamification/streak.service';
+import { isExamPassed, StreakService } from '../gamification/streak.service';
+import { NotificationRecorder } from '../notifications/notification-recorder.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
+import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
 import { MetricRecordingService } from '../metrics/metric-recording.service';
@@ -165,6 +180,8 @@ export class SubmissionsService {
     private readonly outbox: OutboxWriter,
     private readonly streaks: StreakService,
     private readonly metrics: MetricRecordingService,
+    private readonly pointsLedger: PointsLedgerService,
+    private readonly notifications: NotificationRecorder,
   ) {}
 
   /**
@@ -467,11 +484,15 @@ export class SubmissionsService {
           where: { id: activityId, classroomId, deletedAt: null },
           select: {
             state: true,
+            type: true,
             format: true,
+            title: true,
             opensAt: true,
             dueAt: true,
             allowLate: true,
             maxScore: true,
+            weightMultiplier: true,
+            createdById: true,
           },
         });
         if (!current || current.state !== ActivityState.PUBLISHED) throw this.notFound();
@@ -521,6 +542,91 @@ export class SubmissionsService {
         });
         // Same transaction as the row: the metric exists if and only if the submission commits.
         await this.metrics.recordSubmission(tx, { classroomId, userId: studentId, at: now });
+        let autoGradeId: string | null = null;
+        if (evaluation) {
+          // Auto-graded multiple-choice submissions receive an authoritative Grade, GradeRevision,
+          // weighted points credit, grade_posted notification, and EXAM_PASSED streak in the exact
+          // same transaction as the submission (rules/activities-and-grading.md D11 & D18).
+          const typeWeight = resolveActivityTypeWeight(current.type, this.config);
+          const pointsAwarded = calculateWeightedGradePoints(
+            evaluation.autoScore,
+            typeWeight,
+            current.weightMultiplier,
+          );
+          const gradeId = randomUUID();
+          let pointTransactionId: string | null = null;
+          if (pointsAwarded > 0) {
+            const creditResult = await this.pointsLedger.credit(
+              {
+                classroomId,
+                studentId,
+                actorId: current.createdById,
+                amount: pointsAwarded,
+                sourceType: SUBMISSION_GRADE_SOURCE_TYPE,
+                sourceId: gradeId,
+                reason: buildLedgerReason(
+                  'Grade',
+                  current.title,
+                  evaluation.autoScore,
+                  current.maxScore,
+                ),
+              },
+              tx,
+            );
+            pointTransactionId = creditResult.entry.id;
+          }
+
+          await tx.grade.create({
+            data: {
+              id: gradeId,
+              submissionId: row.id,
+              graderId: current.createdById,
+              score: evaluation.autoScore,
+              feedback: AUTO_GRADED_MC_FEEDBACK,
+              activityTitle: current.title,
+              maxScore: current.maxScore,
+              pointsAwarded,
+              typeWeight: new Prisma.Decimal(typeWeight.toFixed(2)),
+              weightMultiplier: new Prisma.Decimal(current.weightMultiplier.toString()),
+              pointTransactionId,
+              version: 1,
+              gradedAt: now,
+            },
+          });
+
+          await tx.gradeRevision.create({
+            data: {
+              gradeId,
+              graderId: current.createdById,
+              version: 1,
+              score: evaluation.autoScore,
+              feedback: AUTO_GRADED_MC_FEEDBACK,
+              pointsDelta: pointsAwarded,
+              pointTransactionId,
+            },
+          });
+
+          await this.notifications.record(tx, {
+            kind: 'grade_posted',
+            classroomId,
+            resourceId: gradeId,
+            recipientId: studentId,
+            studentId,
+          });
+
+          if (
+            current.type === ActivityType.EXAM &&
+            isExamPassed(evaluation.autoScore, current.maxScore)
+          ) {
+            await this.streaks.recordQualifying(tx, {
+              studentId,
+              source: StreakQualifyingSource.EXAM_PASSED,
+              at: row.submittedAt,
+            });
+          }
+
+          autoGradeId = gradeId;
+        }
         if (!isLate) {
           // Same transaction as the row: the event exists if and only if the submission commits.
           const payload: SubmissionOnTimePayload = {
@@ -541,7 +647,10 @@ export class SubmissionsService {
             at: row.submittedAt,
           });
         }
-        return { created: true, row };
+        return {
+          created: true,
+          row: autoGradeId ? { ...row, grade: { id: autoGradeId } } : row,
+        };
       } catch (error) {
         // Only callback rejection establishes that this invocation will not request COMMIT.
         // Do not mark an outer $transaction rejection: it can happen after a successful COMMIT.

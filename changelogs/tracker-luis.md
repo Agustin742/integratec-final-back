@@ -321,3 +321,11 @@
 - **Change:** Updated `DEFAULT_PASSWORD_RESET_URL_BASE` and local environment defaults from `/reset-password` to `/password-reset` to match the frontend router. Added `INVITATION_ACCEPT_URL_BASE` to `ApiConfig` (defaulting to `http://localhost:5173/invitations/accept` outside production, or `${new URL(passwordResetUrlBase).origin}/invitations/accept` in production when omitted, enforcing HTTPS if provided in production) and updated `ClassroomInvitationCreatedHandler` to use it instead of `allowedOrigins[0]`. Added `escapeHtml` helper, XSS-safe `html` email bodies, and explicit `idempotencyKey` values to both `PasswordResetRequestedHandler` and `ClassroomInvitationCreatedHandler`, along with unit tests.
 - **Reason:** Resolve broken `404` password-reset email links and decouple invitation links from CORS origin allowlists (`#132`).
 - **Next step:** Open and merge PR for `#132` into `develop`, then continue with `#131` (Multiple Choice points credit).
+
+## 2026-11-24 — Credit weighted points, Grade, notification, and exam streak on Multiple Choice submissions (Issue #131)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/grades/grade-points.ts`, `apps/api/src/grades/grades.service.ts`, `apps/api/src/submissions/submissions.module.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/submissions/submissions.integration.spec.ts`, `docs/submissions.md`
+- **Change:** Shared `buildLedgerReason` and `AUTO_GRADED_MC_FEEDBACK` from `grades/grade-points.ts`, wired `PointsModule` and `NotificationsModule` into `SubmissionsModule`, and updated `SubmissionsService.persist()` so auto-graded `MULTIPLE_CHOICE` submissions atomically persist `Grade` + `GradeRevision`, credit weighted points via `PointsLedgerService.credit()` (skipping ledger writes when `pointsAwarded === 0`), record `grade_posted` notifications, record `StreakQualifyingSource.EXAM_PASSED` for passing exams, and return `status: 'graded'`. Added integration and `Promise.all` concurrency tests covering `TP`, weighted late `EXAM`, `0`-point submissions, and duplicate-race protection.
+- **Reason:** Resolve Issue `#131` where Multiple Choice submissions computed `autoScore` without creating a `Grade` or crediting student wallet points.
+- **Next step:** Open PR for `#131` into `develop` and move card to `In review`.
