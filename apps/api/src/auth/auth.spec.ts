@@ -355,6 +355,60 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       createdUserIds.push(successfulRes.body.id);
     });
 
+    it('registers an INVITEE standalone account with empty avatar and zero school/classroom roles', async () => {
+      const email = `invitee.student.${Date.now()}@example.com`;
+      const res = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({
+          email,
+          password: 'passwordSegura123',
+          displayName: 'Alumna Sofía',
+          path: RegistrationPath.INVITEE,
+        })
+        .expect(201);
+
+      expect(res.body).toMatchObject({
+        email,
+        displayName: 'Alumna Sofía',
+        path: RegistrationPath.INVITEE,
+      });
+      expect(res.body.school).toBeUndefined();
+      createdUserIds.push(res.body.id);
+
+      const dbUser = await prisma.user.findUnique({
+        where: { id: res.body.id },
+        include: {
+          avatarConfig: true,
+          schoolMemberships: true,
+          classroomMemberships: true,
+        },
+      });
+      expect(dbUser).not.toBeNull();
+      expect(dbUser?.registrationPath).toBe(RegistrationPath.INVITEE);
+      expect(dbUser?.avatarConfig).not.toBeNull();
+      expect(dbUser?.schoolMemberships).toHaveLength(0);
+      expect(dbUser?.classroomMemberships).toHaveLength(0);
+    });
+
+    it('handles concurrent duplicate INVITEE registrations by returning one 201 and one 409', async () => {
+      const email = `concurrent.invitee.${Date.now()}@example.com`;
+      const payload = {
+        email,
+        password: 'passwordSegura123',
+        displayName: 'Alumno Concurrente',
+        path: RegistrationPath.INVITEE,
+      };
+
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer()).post('/auth/register').send(payload),
+        request(app.getHttpServer()).post('/auth/register').send(payload),
+      ]);
+
+      expect([res1.status, res2.status].sort()).toEqual([201, 409]);
+      const winner = res1.status === 201 ? res1 : res2;
+      createdUserIds.push(winner.body.id);
+    });
+
     it('enforces atomicity: rolls back all changes if any part of the transaction fails (failure injection)', async () => {
       const failingEmail = `atomic.fail.${Date.now()}@example.com`;
       const authService = app.get(AuthService);

@@ -57,6 +57,7 @@ enum InvitationState {
 enum RegistrationPath {
   INDEPENDENT_TEACHER @map("independent_teacher")
   SCHOOL              @map("school")
+  INVITEE             @map("invitee")
 
   @@map("registration_path")
 }
