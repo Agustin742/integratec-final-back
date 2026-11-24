@@ -4,7 +4,9 @@ import type { ApiConfig } from '../config/api-config';
 export const GRADE_SCORE_MIN = 0;
 export const GRADE_SCORE_MAX = 100;
 export const GRADE_FEEDBACK_MAX_LENGTH = 5000;
+export const MAX_LEDGER_REASON_LENGTH = 240;
 export const SUBMISSION_GRADE_SOURCE_TYPE = 'submission_grade';
+export const AUTO_GRADED_MC_FEEDBACK = 'Auto-graded multiple choice';
 
 const DECIMAL_TWO_PLACES = /^\d+(?:\.(\d{1,2}))?$/;
 
@@ -63,4 +65,17 @@ export function calculateWeightedGradePoints(
   const activityHundredths = toHundredths(activityWeightMultiplier);
   const tenThousandths = score * typeHundredths * activityHundredths;
   return Math.trunc((tenThousandths + 5_000) / 10_000);
+}
+
+/** Builds a bounded human-readable reason string for a grade-related points ledger entry. */
+export function buildLedgerReason(
+  prefix: string,
+  activityTitle: string,
+  score: number,
+  maxScore: number,
+): string {
+  const full = `${prefix}: ${activityTitle} (${score}/${maxScore})`;
+  return full.length <= MAX_LEDGER_REASON_LENGTH
+    ? full
+    : full.slice(0, MAX_LEDGER_REASON_LENGTH).trimEnd();
 }

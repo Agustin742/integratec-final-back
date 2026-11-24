@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, Prisma, PrismaClient, RegistrationPath } from '@prisma/client';
+import {
+  ClassroomRole,
+  Prisma,
+  PrismaClient,
+  RegistrationPath,
+  StreakQualifyingSource,
+} from '@prisma/client';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SessionAuthGuard } from '../auth/session-auth.guard';
@@ -16,6 +22,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { docxBytes, exeBytes, jpegBytes, pdfBytes, pngBytes } from '../testing/file-fixtures';
 import { InMemoryStorage } from '../testing/in-memory-storage';
 import { futureInstant } from '../testing/relative-dates';
+import { AUTO_GRADED_MC_FEEDBACK, SUBMISSION_GRADE_SOURCE_TYPE } from '../grades/grade-points';
+import { NOTIFICATION_REQUESTED_EVENT } from '../notifications/notification-recorder.service';
 import { SubmissionsModule } from './submissions.module';
 import { SubmissionsService } from './submissions.service';
 
@@ -40,7 +48,6 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
   );
   const users = [teacher, s1, s2, stranger, parent, sElsewhere, other, sLeaving];
   const [classroomA, classroomB] = [randomUUID(), randomUUID()];
-  let fixtureReady = false;
   const token = (actor: string) => `Bearer submissions-test:${actor}`;
 
   const publishedActivity = async (overrides: Partial<Prisma.ActivityUncheckedCreateInput> = {}) =>
@@ -142,7 +149,6 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
         data: { parentId: parent, childId: s1, classroomId: classroomA },
       });
     });
-    fixtureReady = true;
   }, 30_000);
 
   afterEach(() => {
@@ -152,30 +158,9 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
   });
 
   afterAll(async () => {
-    try {
-      if (fixtureReady) {
-        const classrooms = [classroomA, classroomB];
-        await prisma.$transaction(async (tx) => {
-          const activity = { classroomId: { in: classrooms } };
-          // Answers reference questions and options with restrict; remove them first.
-          await tx.submissionAnswer.deleteMany({ where: { submission: { activity } } });
-          await tx.submissionFile.deleteMany({ where: { submission: { activity } } });
-          await tx.submission.deleteMany({ where: { activity } });
-          // Multiple-choice activities carry questions and options with restrict FKs.
-          await tx.option.deleteMany({ where: { question: { activity } } });
-          await tx.question.deleteMany({ where: { activity } });
-          await tx.activity.deleteMany({ where: activity });
-          await tx.parentLink.deleteMany({ where: { classroomId: { in: classrooms } } });
-          await tx.classroomMembership.deleteMany({ where: { classroomId: { in: classrooms } } });
-          // Metric rows reference users and classrooms with restrict; remove them first.
-          await tx.activityMetric.deleteMany({ where: { classroomId: { in: classrooms } } });
-          await tx.classroom.deleteMany({ where: { id: { in: classrooms } } });
-          await tx.user.deleteMany({ where: { id: { in: users } } });
-        });
-      }
-    } finally {
-      await app?.close();
-    }
+    // PointTransaction rows created by MC auto-grading are immutable at the DB trigger level;
+    // fixtures use unique per-run UUIDs inside the isolated test database (matching grades.integration.spec.ts).
+    await app?.close();
   }, 30_000);
 
   describe('happy path', () => {
@@ -1079,7 +1064,7 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       expect(res.body).toMatchObject({
         activityId,
         isLate: false,
-        status: 'submitted',
+        status: 'graded',
         autoScore: 100,
         files: [],
       });
@@ -1110,6 +1095,54 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
       );
       // A multiple-choice submission stores no objects.
       expect(putCalls()).toBe(puts);
+
+      // Auto-graded MC submissions persist Grade, GradeRevision, weighted points, and grade_posted.
+      const grade = await prisma.grade.findUnique({ where: { submissionId: rows[0].id } });
+      expect(grade).not.toBeNull();
+      expect(grade).toMatchObject({
+        submissionId: rows[0].id,
+        graderId: teacher,
+        score: 100,
+        feedback: AUTO_GRADED_MC_FEEDBACK,
+        pointsAwarded: 100,
+        version: 1,
+      });
+      expect(grade!.pointTransactionId).toMatch(/^[0-9a-f-]{36}$/);
+
+      const revisions = await prisma.gradeRevision.findMany({ where: { gradeId: grade!.id } });
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0]).toMatchObject({
+        version: 1,
+        score: 100,
+        pointsDelta: 100,
+        pointTransactionId: grade!.pointTransactionId,
+      });
+
+      const ledgerRow = await prisma.pointTransaction.findUnique({
+        where: { id: grade!.pointTransactionId! },
+      });
+      expect(ledgerRow).toMatchObject({
+        classroomId: classroomA,
+        studentId: s1,
+        amount: 100,
+        sourceType: SUBMISSION_GRADE_SOURCE_TYPE,
+        sourceId: grade!.id,
+      });
+
+      const notificationEvent = await prisma.outboxEvent.findFirst({
+        where: {
+          type: NOTIFICATION_REQUESTED_EVENT,
+          payload: { path: ['resourceId'], equals: grade!.id },
+        },
+      });
+      expect(notificationEvent).not.toBeNull();
+      expect(notificationEvent!.payload).toMatchObject({
+        kind: 'grade_posted',
+        classroomId: classroomA,
+        resourceId: grade!.id,
+        recipientId: s1,
+        studentId: s1,
+      });
     });
 
     it('grades only correct answers: unanswered and wrong answers count as incorrect', async () => {
@@ -1304,6 +1337,157 @@ describe('POST /activities/:id/submissions PostgreSQL HTTP — activities-and-gr
         select: { submissionCount: true },
       });
       expect((after?.submissionCount ?? 0) - (before?.submissionCount ?? 0)).toBe(1);
+    });
+
+    it('credits weighted EXAM points and records EXAM_PASSED streak even on a late passing submission', async () => {
+      const freshStudent = randomUUID();
+      await prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            id: freshStudent,
+            displayName: 'MC Exam Student',
+            email: `mc-exam-${freshStudent}@example.invalid`,
+            passwordHash: 'synthetic-unused-mc-hash',
+            registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+          },
+        });
+        await tx.classroomMembership.create({
+          data: { classroomId: classroomA, userId: freshStudent, role: ClassroomRole.STUDENT },
+        });
+      });
+
+      // Default authTestConfig: gradeWeightExam = 1.5; multiplier = 1.2 => 100 * 1.5 * 1.2 = 180.
+      const { activityId, questions } = await mcActivity(2, {
+        type: 'EXAM',
+        opensAt: new Date(Date.now() - 3 * HOUR_MS),
+        dueAt: new Date(Date.now() - HOUR_MS),
+        allowLate: true,
+        weightMultiplier: new Prisma.Decimal('1.20'),
+      });
+
+      const res = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.correct })),
+        { actor: freshStudent },
+      ).expect(201);
+
+      expect(res.body).toMatchObject({
+        isLate: true,
+        status: 'graded',
+        autoScore: 100,
+      });
+
+      const grade = await prisma.grade.findUnique({ where: { submissionId: res.body.id } });
+      expect(grade).toMatchObject({
+        score: 100,
+        pointsAwarded: 180,
+      });
+      const txRow = await prisma.pointTransaction.findUnique({
+        where: { id: grade!.pointTransactionId! },
+      });
+      expect(txRow?.amount).toBe(180);
+
+      const streakDays = await prisma.streakQualifyingDay.findMany({
+        where: { studentId: freshStudent },
+      });
+      expect(streakDays).toHaveLength(1);
+      expect(streakDays[0].source).toBe(StreakQualifyingSource.EXAM_PASSED);
+    });
+
+    it('creates a zero-point Grade without writing a ledger entry or EXAM_PASSED streak when autoScore is 0', async () => {
+      const zeroStudent = randomUUID();
+      await prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            id: zeroStudent,
+            displayName: 'MC Zero Student',
+            email: `mc-zero-${zeroStudent}@example.invalid`,
+            passwordHash: 'synthetic-unused-mc-hash',
+            registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+          },
+        });
+        await tx.classroomMembership.create({
+          data: { classroomId: classroomA, userId: zeroStudent, role: ClassroomRole.STUDENT },
+        });
+      });
+
+      const { activityId, questions } = await mcActivity(2, {
+        type: 'EXAM',
+        opensAt: new Date(Date.now() - 3 * HOUR_MS),
+        dueAt: new Date(Date.now() - HOUR_MS),
+        allowLate: true,
+      });
+
+      const res = await submitMc(
+        activityId,
+        questions.map((question) => ({ questionId: question.id, optionId: question.wrong })),
+        { actor: zeroStudent },
+      ).expect(201);
+
+      expect(res.body).toMatchObject({ status: 'graded', autoScore: 0 });
+      const grade = await prisma.grade.findUnique({ where: { submissionId: res.body.id } });
+      expect(grade).toMatchObject({
+        score: 0,
+        pointsAwarded: 0,
+        pointTransactionId: null,
+      });
+      const ledgerRows = await prisma.pointTransaction.findMany({
+        where: { classroomId: classroomA, studentId: zeroStudent },
+      });
+      expect(ledgerRows).toHaveLength(0);
+      const streakDays = await prisma.streakQualifyingDay.findMany({
+        where: { studentId: zeroStudent },
+      });
+      expect(streakDays).toHaveLength(0);
+    });
+
+    it('never double-credits points or creates duplicate grades under concurrent MC submissions', async () => {
+      const raceStudent = randomUUID();
+      await prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            id: raceStudent,
+            displayName: 'MC Race Student',
+            email: `mc-race-${raceStudent}@example.invalid`,
+            passwordHash: 'synthetic-unused-mc-hash',
+            registrationPath: RegistrationPath.INDEPENDENT_TEACHER,
+          },
+        });
+        await tx.classroomMembership.create({
+          data: { classroomId: classroomA, userId: raceStudent, role: ClassroomRole.STUDENT },
+        });
+      });
+
+      const { activityId, questions } = await mcActivity(2, { type: 'EXAM' });
+      const answers = questions.map((question) => ({
+        questionId: question.id,
+        optionId: question.correct,
+      }));
+
+      // Two concurrent requests with distinct idempotency keys race on (activityId, studentId).
+      const [first, second] = await Promise.all([
+        submitMc(activityId, answers, { actor: raceStudent, key: randomUUID() }),
+        submitMc(activityId, answers, { actor: raceStudent, key: randomUUID() }),
+      ]);
+
+      expect([first.status, second.status].sort()).toEqual([201, 409]);
+
+      const submissions = await prisma.submission.findMany({
+        where: { activityId, studentId: raceStudent },
+      });
+      expect(submissions).toHaveLength(1);
+
+      const grades = await prisma.grade.findMany({
+        where: { submissionId: submissions[0].id },
+      });
+      expect(grades).toHaveLength(1);
+      expect(grades[0].pointsAwarded).toBe(150);
+
+      const ledgerRows = await prisma.pointTransaction.findMany({
+        where: { classroomId: classroomA, studentId: raceStudent },
+      });
+      expect(ledgerRows).toHaveLength(1);
+      expect(ledgerRows[0].amount).toBe(150);
     });
   });
 });

@@ -19,6 +19,7 @@ import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
 import {
+  buildLedgerReason,
   calculateWeightedGradePoints,
   resolveActivityTypeWeight,
   SUBMISSION_GRADE_SOURCE_TYPE,
@@ -31,8 +32,6 @@ import {
   type ListGradingQueueQueryDto,
   type RegradeSubmissionDto,
 } from './grades.dto';
-
-const MAX_LEDGER_REASON_LENGTH = 240;
 
 type LockedActivityRow = {
   id: string;
@@ -128,18 +127,6 @@ function assertScoreWithinMaxScore(score: number, maxScore: number): void {
       { field: 'score', messages: [`score must not exceed the activity maxScore (${maxScore})`] },
     ]);
   }
-}
-
-function buildLedgerReason(
-  prefix: string,
-  activityTitle: string,
-  score: number,
-  maxScore: number,
-): string {
-  const full = `${prefix}: ${activityTitle} (${score}/${maxScore})`;
-  return full.length <= MAX_LEDGER_REASON_LENGTH
-    ? full
-    : full.slice(0, MAX_LEDGER_REASON_LENGTH).trimEnd();
 }
 
 function toGradeResponseDto(
