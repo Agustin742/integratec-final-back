@@ -39,6 +39,10 @@ Free styles (the rest are shop unlockables, enforced separately): hair `afro`, `
 
 Colors come from the frontend art-direction Character palette, accept either HEX letter case, and are returned/stored uppercase. IDs are case-sensitive. Arbitrary HEX, URLs, accessory fields, and uniforms are rejected. Uniform tint behavior has not been verified.
 
+### Style availability
+
+`GET /users/me/avatar/styles` returns `{ items: [{ styleType, styleId, free, owned, shopItemCode }] }` for every hair id followed by every top id. Free styles are always `owned` with `shopItemCode: null`; paid styles are `owned` after a purchase in any classroom, and `shopItemCode` names the shop item that sells them (or `null` when none is on sale yet). The front uses it to lock or unlock choices in the avatar editor.
+
 ### Complete snapshot, not partial merge
 
 Every avatar PATCH requires **all five fields**, including compatible hair and top when changing body. For example:
@@ -80,7 +84,7 @@ Valid existing appearance JSON is projected to these five fields only. Malformed
 - Missing, malformed, expired or revoked credentials: `401 UNAUTHENTICATED`. The merged `AuthModule` global `SessionAuthGuard` protects all three routes before DTO validation; `@CurrentUser('userId')` consumes its verified identity. UsersModule adds no second guard/session verification and changes no shared auth behavior.
 - Missing/invalid fields, unknown fields (including `userId`, email or accessories), unsupported palette values or incompatible options: `400 VALIDATION_FAILED`, with `error.details` entries containing `field` and `messages`. Rejected input does not change either user's data.
 - Unsupported stored appearance is a response fallback, not a rejected profile operation. Name updates use the verified identity directly without an appearance pre-read.
-- `AvatarAccessPort.assertCanUse(verifiedUserId, snapshot)` runs before avatar persistence. Its current adapter admits only compatible free base options. It does **not** simulate purchases or verify shop ownership. Future paid options require a persisted-ownership adapter and an explicitly extended contract; unknown choices remain denied until then. An adapter denial must prevent the write (`403 FORBIDDEN`).
+- `AvatarAccessPort.assertCanUse(verifiedUserId, snapshot)` runs before avatar persistence. The adapter (`ShopAvatarAccess`) first checks body compatibility (`400`), then requires ownership of every paid `hairId` or `topId`: the user must hold a `StudentPurchase` of an `AVATAR_STYLE` shop item whose `metadata.styleType`/`styleId` match, in **any** classroom, whether or not the item is still active. Free styles never need a purchase. A missing unlock or an adapter denial prevents the write (`403 FORBIDDEN`).
 
 Example validation envelope (synthetic correlation ID):
 

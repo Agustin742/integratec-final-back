@@ -371,13 +371,13 @@ describe('Own profile and base avatar (#20)', () => {
     const choices = [
       {
         bodyId: 'male',
-        hairs: ['afro', 'classic-short', 'dreads'],
+        hairs: ['afro', 'classic-short', 'buzz-cut'],
         tops: ['school-sweatshirt', 'tank-top'],
       },
       {
         bodyId: 'female',
         hairs: ['bob', 'ponytail'],
-        tops: ['basic-tshirt', 'hoodie', 'winter-coat'],
+        tops: ['basic-tshirt', 'school-smock'],
       },
     ];
     for (const { bodyId, hairs, tops } of choices) {

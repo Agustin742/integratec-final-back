@@ -5,6 +5,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { AvatarAccessPort } from './avatar-access.port';
 import { AvatarDto, avatarSnapshot } from './avatar.dto';
+import { AvatarStylesDto } from './avatar-styles.dto';
+import { AvatarStylesService } from './avatar-styles.service';
 import {
   advanceAppearanceRevision,
   memberAppearanceFor,
@@ -32,6 +34,7 @@ export class UsersService {
     private readonly access: AvatarAccessPort,
     private readonly classroomAccess: AccessVerificationService,
     private readonly realtimeEvents: RealtimeEventsRecorder,
+    private readonly avatarStyles: AvatarStylesService,
   ) {}
 
   async getMe(userId: string): Promise<OwnProfileDto> {
@@ -51,6 +54,11 @@ export class UsersService {
       select: profileSelection,
     });
     return this.toProfile(user);
+  }
+
+  /** Availability of every hair and top style for the user (free, owned, shop item code). */
+  listAvatarStyles(userId: string): Promise<AvatarStylesDto> {
+    return this.avatarStyles.listForUser(userId);
   }
 
   async updateAvatar(userId: string, dto: AvatarDto): Promise<AvatarDto> {

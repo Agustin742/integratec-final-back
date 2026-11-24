@@ -95,6 +95,7 @@ enum ShopItemKind {
   AVATAR_ACCESSORY @map("avatar_accessory")
   DESK_UPGRADE     @map("desk_upgrade")
   PET_ACCESSORY    @map("pet_accessory")
+  AVATAR_STYLE     @map("avatar_style")
 
   @@map("shop_item_kind")
 }

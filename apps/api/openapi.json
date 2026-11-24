@@ -267,9 +267,33 @@
         "tags": ["users"]
       }
     },
+    "/users/me/avatar/styles": {
+      "get": {
+        "description": "Every hair and top id with `free`, `owned` and the code of the shop item that sells it. Free styles are always owned. A paid style is owned once the user bought it in any classroom, even if the shop item was later deactivated.",
+        "operationId": "UsersController_listAvatarStyles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AvatarStylesDto" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked session.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List avatar style availability",
+        "tags": ["users"]
+      }
+    },
     "/users/me/avatar": {
       "patch": {
-        "description": "Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.",
+        "description": "Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, free hair and free tops need no purchase; paid hair and tops require a shop purchase made in any classroom. Accessories and uniforms are not supported.",
         "operationId": "UsersController_updateAvatar",
         "parameters": [],
         "requestBody": {
@@ -298,7 +322,7 @@
             }
           },
           "403": {
-            "description": "Avatar access adapter denied use.",
+            "description": "FORBIDDEN when hairId or topId is a paid style the user has not unlocked in the shop, or the avatar access adapter denied use.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -5337,6 +5361,40 @@
         },
         "required": ["displayName"]
       },
+      "AvatarStyleAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "styleType": { "type": "string", "enum": ["hair", "top"], "example": "hair" },
+          "styleId": {
+            "type": "string",
+            "example": "dreads",
+            "description": "Catalog id used in `hairId` or `topId`."
+          },
+          "free": { "type": "boolean", "description": "Free styles never need a purchase." },
+          "owned": {
+            "type": "boolean",
+            "description": "True for free styles and for paid styles the user bought in any classroom. Ownership is global to the user."
+          },
+          "shopItemCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "hair_dreads",
+            "description": "Code of the shop item that sells the style, or null for free styles and styles not yet on sale. Buy it through the classroom shop."
+          }
+        },
+        "required": ["styleType", "styleId", "free", "owned", "shopItemCode"]
+      },
+      "AvatarStylesDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Every hair id followed by every top id, alphabetical within each type.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AvatarStyleAvailabilityDto" }
+          }
+        },
+        "required": ["items"]
+      },
       "CreateClassroomDto": {
         "type": "object",
         "properties": {
@@ -6521,7 +6579,13 @@
       },
       "ShopItemKind": {
         "type": "string",
-        "enum": ["CLASSROOM_ITEM", "AVATAR_ACCESSORY", "DESK_UPGRADE", "PET_ACCESSORY"]
+        "enum": [
+          "CLASSROOM_ITEM",
+          "AVATAR_ACCESSORY",
+          "DESK_UPGRADE",
+          "PET_ACCESSORY",
+          "AVATAR_STYLE"
+        ]
       },
       "ShopCatalogItemDto": {
         "type": "object",

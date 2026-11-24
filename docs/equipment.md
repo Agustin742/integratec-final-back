@@ -18,7 +18,7 @@ Send the session access token as `Authorization: Bearer <access token>`.
 ## Equip invariants
 
 - **Ownership proof (AC2):** equipping requires a `StudentPurchase` for `(classroomId, studentId, shopItemId)`. A shop item that exists but was not purchased in this classroom returns `403 Forbidden` and nothing changes; the check runs inside the equip transaction, so a rejected operation never persists state.
-- **Slot compatibility:** the item's `kind` must be `AVATAR_ACCESSORY` for `head`/`face`/`back` or `DESK_UPGRADE` for `desk_decor`, and `ShopItem.metadata.slot` must declare the requested slot; otherwise the API returns `409 Conflict`. `CLASSROOM_ITEM` and `PET_ACCESSORY` kinds are not equipable.
+- **Slot compatibility:** the item's `kind` must be `AVATAR_ACCESSORY` for `head`/`face`/`back` or `DESK_UPGRADE` for `desk_decor`, and `ShopItem.metadata.slot` must declare the requested slot; otherwise the API returns `409 Conflict`. `CLASSROOM_ITEM`, `PET_ACCESSORY` and `AVATAR_STYLE` kinds are not equipable.
 - **Idempotency:** equipping the same item twice keeps one `EquippedItem` row (unique `(classroomId, studentId, slot)`); equipping a different item replaces the slot content; unequipping an empty slot is a no-op.
 - **Unknown resources:** an unknown shop item UUID returns `404 NOT_FOUND` (inactive items that the student actually purchased remain equipable; the purchase is the entitlement).
 - **Per-user rate limiting:** `EquipmentRateLimiter` protects `PUT` with a sliding window configured via `EQUIP_RATE_LIMIT_WINDOW` (default `1m`) and `EQUIP_RATE_LIMIT_MAX` (default `20`), returning `429 TOO_MANY_REQUESTS`. Read-only `GET` is never rate limited.

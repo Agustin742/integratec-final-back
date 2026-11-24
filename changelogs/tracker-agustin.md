@@ -9,6 +9,15 @@
 - **Verification:** Catalog spec written RED first, then GREEN.
 - **Next step:** BK-2 paid-style ownership.
 
+## 2026-11-24 — Paid avatar styles in the shop (#145, BK-2)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261124120000_add_avatar_style_shop_kind/`, `apps/api/src/users/` (`shop-avatar-access.ts`, `avatar-styles.*`, controller, module), `apps/api/src/shop/shop.service.ts`, `docs/profile-avatar.md`, `docs/shop.md`, `docs/equipment.md`
+- **Change:** New `AVATAR_STYLE` shop kind. Saving an avatar with a paid hair or top now requires a purchase of the matching style item in any classroom (`403` otherwise). New `GET /users/me/avatar/styles` lists every hair and top with `free`, `owned` and `shopItemCode`. Buying a style already owned in another classroom answers `409` without charging; styles stay non-equipable.
+- **Reason:** Paid styles must be earned in the shop, not selectable by editing the request.
+- **Verification:** DB-backed spec written RED first, then GREEN.
+- **Next step:** BK-3 seed catalog, BK-4 contract regeneration.
+
 ## 2026-11-24 — Ordered material modules (#142)
 
 - **Status:** completed (pending PR into `develop`)

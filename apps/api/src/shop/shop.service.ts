@@ -80,6 +80,9 @@ function mapShopItemKind(raw: ShopItemKind | string): ShopItemKind {
     case ShopItemKind.PET_ACCESSORY:
     case 'pet_accessory':
       return ShopItemKind.PET_ACCESSORY;
+    case ShopItemKind.AVATAR_STYLE:
+    case 'avatar_style':
+      return ShopItemKind.AVATAR_STYLE;
     default:
       throw new Error(`Unsupported shop item kind: ${String(raw)}`);
   }
@@ -177,7 +180,11 @@ export class ShopService {
               select: { priceOverride: true, isEnabled: true },
             },
             purchases: {
-              where: { classroomId, studentId: actorUserId },
+              // Avatar styles unlock the user's global avatar: a purchase anywhere counts.
+              where: {
+                studentId: actorUserId,
+                OR: [{ classroomId }, { shopItem: { kind: ShopItemKind.AVATAR_STYLE } }],
+              },
               select: { id: true },
             },
             classroomItems: {
@@ -457,6 +464,13 @@ export class ShopService {
     shopItemId: string,
     kind: ShopItemKind,
   ): Promise<void> {
+    if (kind === ShopItemKind.AVATAR_STYLE) {
+      // Membership locks are per classroom; serialize the same style across classrooms.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`avatar-style:${studentId}:${shopItemId}`}, 0))
+      `;
+    }
+
     const existingStudentPurchase = await tx.studentPurchase.findUnique({
       where: {
         classroomId_studentId_shopItemId: {
@@ -469,6 +483,17 @@ export class ShopService {
     });
     if (existingStudentPurchase) {
       throw new ConflictException('Shop item already purchased by student');
+    }
+
+    if (kind === ShopItemKind.AVATAR_STYLE) {
+      // The unique key is per classroom, but a style belongs to the user's global avatar.
+      const ownedElsewhere = await tx.studentPurchase.findFirst({
+        where: { studentId, shopItemId },
+        select: { id: true },
+      });
+      if (ownedElsewhere) {
+        throw new ConflictException('Avatar style already unlocked for this student');
+      }
     }
 
     if (kind === ShopItemKind.CLASSROOM_ITEM) {
