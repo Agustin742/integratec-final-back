@@ -12,7 +12,6 @@ import {
   NPC_INTERACT_COOLDOWN_MS,
   NPC_INTERACT_MAX_DISTANCE,
   NPC_INTERACT_MESSAGE,
-  NpcState,
   npcInteractSchema,
   TUTOR_BOT_PHRASES,
 } from './index';
@@ -139,9 +138,10 @@ describe('memberAppearanceSchema (#114)', () => {
 });
 
 describe('NPC contract (#147)', () => {
-  it('names the two NPCs and the state set', () => {
+  it('pins the NPC ids the frontend renders and gives every NPC an emote list', () => {
     expect(NPC_IDS).toEqual(['pet', 'tutorBot']);
-    expect(Object.values(NpcState)).toEqual(['idle', 'walking', 'emote', 'sleeping', 'reacting']);
+    expect(Object.keys(NPC_EMOTES)).toEqual(NPC_IDS);
+    expect(Object.values(NPC_EMOTES).every((emotes) => emotes.length > 0)).toBe(true);
   });
 
   it('lists the emotes each NPC can play', () => {

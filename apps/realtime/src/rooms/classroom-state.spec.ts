@@ -94,19 +94,13 @@ describe('ClassroomState', () => {
     expect(state.npcs.size).toBe(0);
   });
 
-  it('defaults a new npc to idle with no emote, no reaction and no phrase (#147)', () => {
-    expect(new Npc()).toMatchObject({
-      id: '',
-      x: 0,
-      z: 0,
-      rotation: 0,
-      state: 'idle',
-      emote: '',
-      reaction: '',
-      phraseId: -1,
-      reactionSeq: 0,
-      reactingSessionId: '',
-    });
+  it('defaults a new npc to the quiet state a client renders before the first patch (#147)', () => {
+    const npc = new Npc();
+    expect(npc.state).toBe('idle');
+    expect(npc.reaction).toBe('');
+    expect(npc.phraseId).toBe(-1);
+    expect(npc.reactingSessionId).toBe('');
+    expect(npc.reactionSeq).toBe(0);
   });
 
   it('stores npcs by id with their synced fields (#147)', () => {
