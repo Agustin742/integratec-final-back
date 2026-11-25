@@ -39,9 +39,9 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Register account and select organizational path',
+    summary: 'Register account and select onboarding path',
     description:
-      'Creates a user account, baseline avatar configuration, and the initial organizational structure atomically.',
+      'Creates a user account and baseline avatar configuration atomically with its initial organizational structure (SCHOOL or INDEPENDENT_TEACHER), or issues an initial authenticated session with zero school/classroom roles for INVITEE accounts.',
   })
   @ApiCreatedResponse({
     type: RegisterResponseDto,

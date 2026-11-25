@@ -31,12 +31,13 @@ El producto combinará escuelas y aulas virtuales persistentes; actividades con 
 
 ### 2.1 Escuelas, profesores y aulas
 
-Al registrarse se elige entre **dos caminos de organización**:
+Al registrarse con espacio de trabajo propio se elige entre **dos caminos de organización**; quienes ingresan mediante código de aula o invitación pueden crear además una cuenta **sin organización inicial** (`invitee`) antes de canjearla:
 
 | Camino | Estructura | Quién lo usa |
 |---|---|---|
 | **Profesor independiente** | Profesor → aulas | Un docente que dicta por su cuenta y crea sus propias aulas. |
 | **Escuela** | Escuela → profesores → aulas | Una institución cuyo Dueño/Admin invita profesores, y estos gestionan sus aulas. |
+| **Invitado sin organización** *(standalone)* | Cuenta sin escuela ni aulas | Alumnos (o invitados) que se registran para luego canjear un código de aula o invitación por correo. |
 
 - El **aula** es el espacio persistente del producto: agrupa a su profesor, alumnos, material, actividades, chat, tablón de anuncios y mascota. Existe independientemente de si hay avatares conectados; la presencia es temporal.
 - Cada aula tiene **una mascota** propia.
@@ -382,7 +383,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 ### 7.3 Flujo completo de uso
 
 1. El usuario entra a la URL pública servida por **Amplify** y descarga React, Three.js, React Three Fiber y demás recursos del cliente.
-2. Al registrarse elige su camino (profesor independiente o escuela) o acepta una **invitación por email**. El navegador llama por **HTTPS** a la API **NestJS** a través de **Caddy**; NestJS valida la identidad y consulta o modifica los datos en **RDS PostgreSQL** mediante **Prisma**.
+2. Al registrarse elige uno de los dos caminos de organización (profesor independiente o escuela), o bien crea una cuenta standalone (`invitee`, con sesión inicial sin privilegios) para aceptar una **invitación por email** o canjear un **código de aula**. El navegador llama por **HTTPS** a la API **NestJS** a través de **Caddy**; NestJS valida la identidad y consulta o modifica los datos en **RDS PostgreSQL** mediante **Prisma**.
 3. El profesor crea el aula, sube material a **S3**, configura el material permitido para el bot e invita a alumnos y padres por email.
 4. Al entrar al aula (3D o 2D), el cliente solicita conexión a **Colyseus** por HTTPS/WSS. Colyseus valida la identidad y la pertenencia al aula con el backend de negocio y vincula la sesión activa con el aula persistente.
 5. **Colyseus** sincroniza movimientos, presencia y estado efímero (incluidos congelar y silenciar); **Three.js** representa estos cambios. No se escriben posiciones de cada fotograma en RDS.

@@ -40,9 +40,12 @@ export class RegisterRequestDto {
   @ApiProperty({
     enum: RegistrationPath,
     example: RegistrationPath.INDEPENDENT_TEACHER,
-    description: 'Organizational path chosen during registration',
+    description:
+      'Registration path: INDEPENDENT_TEACHER, SCHOOL, or INVITEE (standalone account with no school/workspace until joining via invitation or code)',
   })
-  @IsEnum(RegistrationPath, { message: 'path must be either INDEPENDENT_TEACHER or SCHOOL' })
+  @IsEnum(RegistrationPath, {
+    message: 'path must be INDEPENDENT_TEACHER, SCHOOL, or INVITEE',
+  })
   path!: RegistrationPath;
 
   @ApiPropertyOptional({

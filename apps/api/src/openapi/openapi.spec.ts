@@ -562,5 +562,8 @@ describe('openapi export', () => {
     }
     const dailyQuestion = schemas.DailyReviewResponseDto.properties.dailyQuestion;
     expect(dailyQuestion.allOf?.[0]?.$ref).toBe('#/components/schemas/DailyQuestionDto');
+
+    const registerSession = schemas.RegisterResponseDto.properties.session;
+    expect(JSON.stringify(registerSession)).toContain('#/components/schemas/TokenPairResponseDto');
   });
 });
