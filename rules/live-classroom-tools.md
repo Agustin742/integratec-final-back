@@ -1,6 +1,6 @@
 # Live Classroom Tools (Server Side)
 
-Live classroom tools are teacher-driven controls and collaboration channels that act on a running classroom. The server authorizes every control, enforces its effect, and never trusts a client to apply a restriction on itself or on others.
+Live classroom tools are teacher-driven controls and collaboration channels that act on a running classroom. The server authorizes every control and enforces server-owned effects. Audio enforcement for the bounded P2P voice-call exception depends on conforming clients; see [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception).
 
 ## Authority and scope
 
@@ -24,8 +24,9 @@ Live classroom tools are teacher-driven controls and collaboration channels that
 
 ### Mute everyone
 
-- **Mute everyone** silences the voice and video-call audio of all students. The server enforces it by withholding or revoking publish permission in the media service, not only by asking clients to mute.
-- Students **MUST NOT** be able to unmute themselves while the classroom is muted. Whether a student can raise a hand or be selectively unmuted by the teacher is **open**.
+- **Mute everyone** silences students' call audio. For media-service calls the server **MUST** withhold or revoke publish permission, not only ask clients to mute. The bounded P2P voice-call exception follows [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception), with client-dependent audio enforcement.
+- For that voice-call exception, per-user forced mute **MUST** survive connection replacement and leave/rejoin for the lifetime of the call, unless a moderator lifts it or the existing `allowSelfUnmute` semantics permit self-unmute. This is required policy, not a claim of verified implementation.
+- Outside that exception, students **MUST NOT** unmute themselves while the classroom is muted; hand raising and selective unmuting remain **open**.
 
 ### Chat mute
 
@@ -42,7 +43,7 @@ Live classroom tools are teacher-driven controls and collaboration channels that
 
 ## Calls and live presentations
 
-- Video calls, voice calls, and live presentations use a **media service**. The service is a **candidate**: LiveKit or Amazon Chime SDK, to be decided and justified in `docs/technical-justification.md`. This rule is independent of the choice.
+- Video calls, voice calls, and live presentations use a **media service**, except for the bounded voice-only scope in [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception). LiveKit or Amazon Chime SDK remain **candidates** for the media-service direction. The following media-session credential, permission, removal, traffic, and provider-availability requirements apply to that direction, not to the P2P exception.
 - NestJS issues **short-lived access credentials** for a media session only after verifying that the requester has current access to the classroom. A client-supplied room name **MUST NOT** select the session; the server maps a classroom to a media session.
 - Credentials **MUST** carry only the permissions the role needs: teachers may publish and moderate; students' publish permission follows the mute-everyone state and the presentation rule. Credentials **MUST NOT** be logged and **MUST NOT** appear in URLs that are logged.
 - Access loss, expulsion, session end, or logout **MUST** remove the participant from the media session promptly.
@@ -66,6 +67,8 @@ Live classroom tools are teacher-driven controls and collaboration channels that
 - A malformed or unauthorized control message **MUST** be dropped without side effects and without revealing the existence of other classrooms.
 
 ## Verification
+
+For the P2P exception, tests **MUST** cover server authorization, signaling isolation, and the required moderation-lifetime policy above; client audio checks **MUST** distinguish conforming-client behavior from the threat limitation in D21. Media credential/provider checks below apply only to media-service implementations.
 
 Tests **MUST** cover: each control rejected for student, parent, other-classroom teacher, and unauthenticated senders; accepted for the classroom's teacher and for the school Owner or Admin; freeze applying to later joins and rejecting movement input; controls persisting across reconnection; collaboration lock rejecting student edits; media credentials denied without classroom access; credentials expiring; and removal from the media session after access loss. Provider calls in tests **MUST** use fakes. Follow [Quality and testing](./quality-and-testing.md).
 

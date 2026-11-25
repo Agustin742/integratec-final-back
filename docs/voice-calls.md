@@ -2,11 +2,11 @@
 
 Voice-only calls for a classroom (a class call run by the teacher) and between two members of the same classroom (a direct call). Each participant is shown as their avatar by the client; the server never carries audio.
 
-Normative rules live in [Realtime and presence](../rules/realtime-and-presence.md). This page describes what is implemented.
+Normative rules live in [Realtime and presence](../rules/realtime-and-presence.md) and [Live classroom tools](../rules/live-classroom-tools.md). [D21](technical-justification.md#d21-bounded-p2p-voice-call-exception) records Alejo's bounded P2P decision for backend PR #151 / #149 and frontend PR #145 / #141. This page describes the implementation design; required audit policy is labeled separately and is not verification evidence.
 
 ## Architecture
 
-- **Audio is peer-to-peer.** Every participant opens a WebRTC connection to every other one (a full mesh) and sends Opus audio only. The server is not in the media path, so there is nothing to scale or record on it.
+- **Audio is peer-to-peer.** Every participant opens a WebRTC connection to every other one (a full mesh) and sends Opus audio only. Audio bandwidth and peer connections grow with group size; the server handles signaling and state, not media. This is a small-group voice-only exception, not the direction for future video, presentations, or scale (D21).
 - **STUN only.** Peers discover their public address through public STUN servers. There is no TURN relay, so two peers behind restrictive networks (symmetric NAT, strict corporate firewalls) may fail to connect. Adding TURN is a deployment decision, not a code change on the server.
 - **Signaling goes through the `call` Colyseus room** in `apps/realtime`, the same process as the classroom room. `call:signal` relays an SDP offer, answer or ICE candidate from one participant to one other participant of the same room. The sender is the connection, never the payload, and a target that is not in the room is dropped silently. Payloads are never logged (they carry network addresses).
 - **The room also holds the shared call state**: participants with their public appearance, self mute, speaking flag, emote, forced mute, `allowSelfUnmute` and `focusMode` (`CallState`, generated under `packages/contracts/src/realtime/generated/`).
@@ -37,7 +37,8 @@ Only moderators of a class call can act; anyone else is ignored silently, and di
 - `call:moderate`: `mute-all`, `mute` / `unmute` one participant, `allow-self-unmute` (on or off) and `focus-mode`. Forced mute never targets a moderator.
 - `call:end` ends the call for everyone (`call:ended`, reason `moderator_ended`).
 - **Focus mode** locks the 3D world for students while the class call runs. It is enforced on the server: the room directory mirrors the call into the classroom room (`classCallActive`, `focusMode` in `ClassroomState`), and the classroom room ignores student movement while it is on. Moderators are never affected. If the last moderator leaves, focus mode is cleared (nobody could lift it) and the call stays alive.
-- Mute is enforced by the sender (track disabled) and by receivers (muted peers are not played); the server state is the source of truth for both.
+- Mute is enforced by conforming senders (track disabled) and receivers (muted peers are not played); server state is the source of truth for both. The server cannot block raw P2P audio: a modified sender and receiver can ignore mute. Server-side call state, signaling, and access controls are not media-service publish revocation (D21).
+- **Required audit policy, not yet verified here:** forced-mute continuity across replacement and rejoin for the call lifetime follows [the moderation rule](../rules/live-classroom-tools.md#mute-everyone); moderator lifting and existing `allowSelfUnmute` semantics remain unchanged.
 
 ## Ringing a direct call
 

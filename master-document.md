@@ -121,7 +121,7 @@ Controles del profesor:
 
 Herramientas de clase en vivo:
 
-- **Videollamadas y llamadas de voz**, y **presentaciones en vivo**.
+- **Videollamadas y llamadas de voz**, y **presentaciones en vivo**. Para voz únicamente, Alejo aprobó el 2026-11-25 conservar el P2P de PR backend #151 / #149 y frontend #145 / #141 con moderación de audio dependiente de clientes conformes; alcance, límites y revisión en [D21](docs/technical-justification.md#d21-bounded-p2p-voice-call-exception), sin afirmar aprobación de todo el equipo.
 - **Pizarra, herramienta de gráficos y LaTeX colaborativos.**
 
 ### 2.9 Modo 3D y modo 2D clásico
@@ -234,7 +234,7 @@ El bot utiliza un servicio de IA coordinado por NestJS. Las claves del proveedor
 | Repositorios | **Frontend:** `Agustin742/integratec-final-front`; **backend:** `Agustin742/integratec-final-back`. | Repositorios independientes, con CI, build y responsabilidad de despliegue propios. La distribución de contratos entre repositorios (OpenAPI generado por NestJS) está decidida a la espera de aprobación del equipo; ver `docs/technical-justification.md`. |
 | IA | **Amazon Bedrock + herramientas NestJS** | Inferencia del bot (guía de estudio). |
 | RAG | **Bedrock Knowledge Bases o equivalente** *(candidato, a definir)* | Recuperación sobre material aprobado por el profesor. |
-| Video y voz | **Servicio de medios WebRTC** *(a definir; candidatos: LiveKit, Amazon Chime SDK)* | Videollamadas, llamadas de voz y presentaciones en vivo. |
+| Video y voz | **Servicio de medios WebRTC** *(a definir; candidatos: LiveKit, Amazon Chime SDK)*; excepción de voz P2P [D21](docs/technical-justification.md#d21-bounded-p2p-voice-call-exception) | Video, presentaciones y voz fuera de la excepción; D21 conserva señalización/estado en Colyseus y audio entre pares. |
 | Sincronización colaborativa | **Colyseus o un CRDT como Yjs** *(candidato, a definir)* | Pizarra, gráficos y LaTeX colaborativos con bloqueo de colaboración. |
 | Renderizado de LaTeX | **KaTeX** *(candidato, a definir)* | Fórmulas matemáticas en la herramienta LaTeX. |
 | Correo electrónico | **Amazon SES** *(candidato, a definir)* | Invitaciones y notificaciones por email a padres. |
@@ -285,6 +285,8 @@ La arquitectura siguiente describe el diseño previsto, no servicios ya implemen
 
 **Decisión de separación:** NestJS y Colyseus son responsabilidades lógicas distintas y, de inicio, **servicios desplegables separados**. Colyseus no reemplaza la API REST ni PostgreSQL. Los contratos lógicos entre NestJS y Colyseus pertenecen al backend; la distribución de contratos entre los repositorios frontend y backend (OpenAPI generado por NestJS) está decidida a la espera de aprobación del equipo; ver `docs/technical-justification.md`. Para coordinar operaciones persistentes, Colyseus utilizará contratos y servicios de aplicación seguros; nunca confiará en permisos aportados solo por el cliente. La integración específica entre ambos servicios se documentará en `rules/architecture.md`.
 
+**Excepción de voz:** el servicio de medios de este esquema y de la topología de §7 no interviene en las llamadas P2P acotadas por [D21](docs/technical-justification.md#d21-bounded-p2p-voice-call-exception); video, presentaciones y evolución de escala conservan esa dirección.
+
 ### 6.2 Canales y propiedad de los datos
 
 | Información o acción | Autoridad principal | Canal habitual |
@@ -300,7 +302,7 @@ La arquitectura siguiente describe el diseño previsto, no servicios ya implemen
 | Notificación de cambio en un aula activa | Colyseus, tras confirmar la operación | Colyseus/WSS |
 | Consultas y acciones del bot | NestJS + proveedor IA | HTTPS; eventos si se necesita actualización en vivo |
 | Mensajería en vivo | Colyseus en aulas activas o canal dedicado justificado | Colyseus/WSS por defecto |
-| Video y voz | Servicio de medios (a definir); NestJS emite credenciales de acceso | WebRTC |
+| Video y voz | Servicio de medios (a definir), con credenciales NestJS; excepción de voz D21: acceso/estado/señalización en Colyseus, audio P2P | WebRTC; señalización D21 por Colyseus/WSS |
 | Pizarra/gráficos/LaTeX colaborativos | Colyseus o CRDT (a definir) | WSS |
 | Email de invitaciones y notificaciones | NestJS vía servicio de correo (a definir) | API del servicio de correo |
 
@@ -376,7 +378,7 @@ AWS aloja y conecta **las mismas tecnologías elegidas para el producto**: el na
 | **Amazon Bedrock** | Inferencia de modelos para el bot y, como candidato, Knowledge Bases para el RAG. | NestJS invoca Bedrock desde el servidor con permisos IAM y ejecuta sus propias herramientas autorizadas. |
 | **S3** | Material y archivos subidos (PDF, imágenes), entregas y recursos del mundo 3D que requieran almacenamiento de objetos. | Acceso controlado desde el backend; recursos públicos se entregan con políticas de distribución adecuadas. |
 | **Amazon SES** *(candidato, a definir)* | Envío de invitaciones y notificaciones por email. | NestJS lo invoca desde el servidor con permisos IAM; requiere verificación de dominio/remitente. |
-| **Servicio de medios WebRTC** *(a definir)* | Video, voz y presentaciones en vivo. | NestJS emite credenciales de acceso por aula; el navegador se conecta por WebRTC. Su alojamiento (servicio administrado o propio) se decidirá en la justificación técnica. |
+| **Servicio de medios WebRTC** *(a definir)* | Video, voz fuera de D21 y presentaciones en vivo. | NestJS emite credenciales de acceso por aula; el navegador se conecta por WebRTC. Su alojamiento (servicio administrado o propio) se decidirá en la justificación técnica. |
 | **Secrets Manager + IAM** | Secretos de la aplicación y permisos entre servicios. | Credenciales y secretos no quedan en Git ni en el bundle del frontend. |
 | **CloudWatch + AWS Budgets** | Registros, observabilidad, alarmas y presupuesto. | Supervisión de fallos, latencia, consumo y costos continuos. |
 
@@ -547,7 +549,7 @@ Esta sección resume el fundamento; la comparación formal requerida por **R6** 
 | RDS PostgreSQL + Prisma ORM | Relaciones fuertes entre escuelas, aulas, roles, actividades, notas y puntos. | MongoDB/otros ORM; cambios de esquema y migraciones requieren disciplina. |
 | AWS con un host EC2 y Docker Compose | Hospeda procesos persistentes para NestJS y Colyseus detrás de Caddy. | ECS/Fargate con ALB (diseño anterior, descartado por costo fijo) o PaaS administrados; el host único es un punto único de falla y exige parchear el sistema operativo y Docker. |
 | Amazon Bedrock desde NestJS (RAG: Knowledge Bases o equivalente, a confirmar) | IA gestionada en AWS con IAM y autorización centralizadas en NestJS; el RAG limita al bot al material aprobado. | Llamada directa desde frontend descartada por seguridad; RAG propio con vector store (más control, más operación); dependencia y costos de inferencia de AWS. |
-| Servicio de medios WebRTC (LiveKit o Amazon Chime SDK, a definir) | Video, voz y presentaciones sin construir infraestructura WebRTC propia. | Mesh P2P (no escala) o servidor propio (más operación); un servicio administrado añade costo y dependencia. |
+| Servicio de medios WebRTC (LiveKit o Amazon Chime SDK, a definir) | Video, presentaciones y voz fuera de [D21](docs/technical-justification.md#d21-bounded-p2p-voice-call-exception), sin construir infraestructura WebRTC propia. | D21 conserva mesh P2P solo para voz de grupos pequeños; no escala ni impide audio entre clientes modificados. Un servicio administrado añade costo y dependencia. |
 | Sincronización colaborativa (Colyseus o Yjs, a definir) | Pizarra, gráficos y LaTeX compartidos con bloqueo del profesor. | Colyseus reutiliza infraestructura existente; un CRDT ofrece mejor resolución de conflictos a costa de otra pieza. |
 | Amazon SES (a definir) | Invitaciones y notificaciones por email dentro de AWS. | Proveedores externos de correo; SES exige verificación de dominio y salida del modo sandbox. |
 

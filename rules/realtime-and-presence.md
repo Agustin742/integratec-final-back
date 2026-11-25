@@ -48,7 +48,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Control messages (freeze, mute everyone, collaboration lock, disable games) are accepted only from a user whose current teacher-level authority over the classroom NestJS has confirmed; any other sender is ignored without side effects. See [Live classroom tools](./live-classroom-tools.md).
 - **Freeze** assigns each student avatar a seat and locks it there (the teacher is not locked); the lock is ephemeral room state, applied to later joins and reconnections, and reversed by an explicit unfreeze.
 - **Chat mute** and **games disabled** are persisted classroom states (the persistent write is by NestJS) and are broadcast to connected clients after the commit (`chat:muted`, a games-state event). A client that connects later receives the current state on join.
-- **Mute everyone** is enforced by the media service permissions as well as announced to clients; the broadcast alone is not enforcement.
+- **Mute everyone** uses media-service permissions except in the bounded P2P voice-call exception [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception). Its audio-enforcement limits and moderation-lifetime requirements follow [Live classroom tools](./live-classroom-tools.md#mute-everyone); synchronized state alone does not block P2P audio.
 - Illustrative events such as `classroom:frozen`, `chat:muted`, and `whiteboard:update` are not final until specified under [API contracts](./api-contracts.md).
 
 ## Collaborative whiteboard sync
