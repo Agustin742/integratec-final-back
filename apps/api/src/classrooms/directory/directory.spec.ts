@@ -22,6 +22,7 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
   let controller: ClassroomDirectoryController;
   let access: { verifyClassroomAccess: ReturnType<typeof vi.fn> };
   let prisma: {
+    shopItem: { findMany: ReturnType<typeof vi.fn> };
     classroomMembership: { findMany: ReturnType<typeof vi.fn> };
     user: { findUnique: ReturnType<typeof vi.fn> };
   };
@@ -49,6 +50,7 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
       verifyClassroomAccess: vi.fn().mockResolvedValue(defaultAccessResult),
     };
     prisma = {
+      shopItem: { findMany: vi.fn().mockResolvedValue([]) },
       classroomMembership: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -59,8 +61,8 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
               avatarConfig: {
                 appearance: {
                   bodyId: 'female',
-                  hairId: 'original',
-                  topId: 'tshirt',
+                  hairId: 'classic-short',
+                  topId: 'basic-tshirt',
                   hairColor: '#353849',
                   clothingColor: '#75B7DA',
                 },
@@ -412,6 +414,36 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
   });
 
   describe('Avatar Normalization & Privacy', () => {
+    it('replaces only legacy fields and unowned paid styles', async () => {
+      prisma.classroomMembership.findMany.mockResolvedValueOnce([
+        {
+          role: ClassroomRole.STUDENT,
+          user: {
+            id: studentId1,
+            displayName: 'Alice',
+            avatarConfig: {
+              appearance: {
+                ...DEFAULT_AVATAR,
+                bodyId: 'female',
+                hairId: 'original',
+                topId: 'hoodie',
+                hairColor: '#AF6D63',
+                clothingColor: '#F4E6D2',
+              },
+            },
+          },
+        },
+      ]);
+      prisma.user.findUnique.mockResolvedValueOnce(null);
+      const result = await service.list(studentId1, classroomId, { page: 1, pageSize: 20 });
+      expect(result.items[0].avatar).toEqual({
+        ...DEFAULT_AVATAR,
+        bodyId: 'female',
+        hairColor: '#AF6D63',
+        clothingColor: '#F4E6D2',
+      });
+    });
+
     it('returns custom avatar when appearance is valid', async () => {
       const result = await service.list(studentId1, classroomId, {
         page: 1,
@@ -420,8 +452,8 @@ describe('ClassroomDirectoryService & Controller (Issue #52 - HU-AUL-005, D12)',
       });
       expect(result.items[0].avatar).toEqual({
         bodyId: 'female',
-        hairId: 'original',
-        topId: 'tshirt',
+        hairId: 'classic-short',
+        topId: 'basic-tshirt',
         hairColor: '#353849',
         clothingColor: '#75B7DA',
       });

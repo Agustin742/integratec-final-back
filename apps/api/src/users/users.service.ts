@@ -5,10 +5,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import { AvatarAccessPort } from './avatar-access.port';
 import { AvatarDto, avatarSnapshot } from './avatar.dto';
+import { AvatarStylesDto } from './avatar-styles.dto';
+import { AvatarStylesService } from './avatar-styles.service';
 import {
   advanceAppearanceRevision,
   memberAppearanceFor,
-  readBaseAppearance,
+  readableBaseAppearance,
 } from './member-appearance';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 
@@ -32,6 +34,7 @@ export class UsersService {
     private readonly access: AvatarAccessPort,
     private readonly classroomAccess: AccessVerificationService,
     private readonly realtimeEvents: RealtimeEventsRecorder,
+    private readonly avatarStyles: AvatarStylesService,
   ) {}
 
   async getMe(userId: string): Promise<OwnProfileDto> {
@@ -51,6 +54,11 @@ export class UsersService {
       select: profileSelection,
     });
     return this.toProfile(user);
+  }
+
+  /** Availability of every hair and top style for the user (free, owned, shop item code). */
+  listAvatarStyles(userId: string): Promise<AvatarStylesDto> {
+    return this.avatarStyles.listForUser(userId);
   }
 
   async updateAvatar(userId: string, dto: AvatarDto): Promise<AvatarDto> {
@@ -105,17 +113,19 @@ export class UsersService {
     }
   }
 
-  private toProfile(user: ProfileRecord): OwnProfileDto {
+  private async toProfile(user: ProfileRecord): Promise<OwnProfileDto> {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      avatar: this.readAppearance(user.avatarConfig?.appearance),
+      avatar: await this.readAppearance(user.id, user.avatarConfig?.appearance),
     };
   }
 
-  private readAppearance(value: Prisma.JsonValue | undefined): AvatarDto {
-    return readBaseAppearance(value, { onUnsupported: () => this.unsupportedAppearance() });
+  private readAppearance(userId: string, value: Prisma.JsonValue | undefined): Promise<AvatarDto> {
+    return readableBaseAppearance(this.prisma, userId, value, {
+      onUnsupported: () => this.unsupportedAppearance(),
+    });
   }
 
   private unsupportedAppearance(): void {

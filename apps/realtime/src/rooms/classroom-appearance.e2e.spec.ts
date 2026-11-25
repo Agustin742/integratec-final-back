@@ -114,7 +114,7 @@ describe('ClassroomRoom live appearance updates (real Colyseus server + stub API
       'observer decoded the new appearance',
     );
     const decoded = clientAvatarOf(observerRoom, ada.userId);
-    expect(decoded?.appearance?.items.get('head')?.shopItemCode).toBe('cap_blue');
+    expect(decoded?.appearance?.items.get('head')?.shopItemCode).toBe('head_cap');
     expect(decoded?.appearance?.items.has('face')).toBe(false);
   });
 

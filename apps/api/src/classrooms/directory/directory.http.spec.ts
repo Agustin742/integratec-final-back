@@ -26,8 +26,8 @@ const membershipRow = {
     avatarConfig: {
       appearance: {
         bodyId: 'female',
-        hairId: 'original',
-        topId: 'tshirt',
+        hairId: 'classic-short',
+        topId: 'basic-tshirt',
         hairColor: '#353849',
         clothingColor: '#75B7DA',
       },
@@ -129,8 +129,8 @@ describe('Classroom Directory HTTP — classrooms-and-roles, security, API contr
             role: 'STUDENT',
             avatar: {
               bodyId: 'female',
-              hairId: 'original',
-              topId: 'tshirt',
+              hairId: 'classic-short',
+              topId: 'basic-tshirt',
               hairColor: '#353849',
               clothingColor: '#75B7DA',
             },

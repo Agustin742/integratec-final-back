@@ -1,5 +1,41 @@
 # Tracker — Agustin
 
+## 2026-11-24 — Align contract examples with the modular catalog (#145, BK-4)
+
+- **Status:** completed
+- **Area / files:** `apps/api/openapi.json`, `apps/api/src/shop/shop.dto.ts`, `apps/api/src/equipment/equipment.dto.ts`, `apps/api/src/internal/realtime/realtime-join.dto.ts`, realtime and contracts spec fixtures
+- **Change:** Swagger/DTO examples and appearance fixtures now use a real catalog code (`head_cap`) instead of the removed placeholder `cap_blue`. OpenAPI re-exported; realtime generated contracts regenerated and unchanged. Docs (`shop.md`, `profile-avatar.md`, `equipment.md`) already matched the final contract. Purely synthetic shop/equipment test fixtures keep their own codes on purpose.
+- **Reason:** The contract surface must not advertise codes that the seed catalog no longer has.
+- **Verification:** `openapi.spec.ts`, edited specs, `realtime:codegen:check`, lint and typecheck.
+- **Next step:** Open the PR to `develop`.
+
+## 2026-11-24 — Seed the avatar shop catalog (#145, BK-3)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/seed.ts`, `apps/api/prisma/seed-shop-catalog.ts`, `apps/api/prisma/seed-shop-catalog.spec.ts`, `docs/shop.md`
+- **Change:** The synthetic shop catalog now has 21 avatar accessories and 25 paid hair/top styles (46 items, 80 to 250 points); the eight old placeholder items are gone. The catalog moved to its own module so a spec can check colors, prices and that paid styles match `avatar-catalog.ts` one to one.
+- **Reason:** The shop must sell what the front avatar editor can render.
+- **Verification:** Catalog spec written RED first, then GREEN; seed run on a throwaway database.
+- **Next step:** BK-4 contract regeneration (done).
+
+## 2026-11-24 — Modular avatar catalog (#145, BK-1)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/src/users/avatar-catalog.ts`, `apps/api/src/users/avatar.dto.ts`, `apps/api/src/users/avatar.dto.spec.ts`, `apps/api/openapi.json`, `docs/profile-avatar.md`, test fixtures
+- **Change:** The avatar contract now accepts 23 hair ids and 15 top ids for both bodies; legacy `original`, `tank` and `tshirt` are removed. `avatar-catalog.ts` is the single source of truth and exports the free/paid split for the shop work. The default avatar is `classic-short` hair with `school-sweatshirt`.
+- **Reason:** The front merged the modular avatar assets; some styles become paid unlockables in the next tasks.
+- **Verification:** Catalog spec written RED first, then GREEN.
+- **Next step:** BK-2 paid-style ownership.
+
+## 2026-11-24 — Paid avatar styles in the shop (#145, BK-2)
+
+- **Status:** in-progress
+- **Area / files:** `apps/api/prisma/schema.prisma`, `apps/api/prisma/migrations/20261124120000_add_avatar_style_shop_kind/`, `apps/api/src/users/` (`shop-avatar-access.ts`, `avatar-styles.*`, controller, module), `apps/api/src/shop/shop.service.ts`, `docs/profile-avatar.md`, `docs/shop.md`, `docs/equipment.md`
+- **Change:** New `AVATAR_STYLE` shop kind. Saving an avatar with a paid hair or top now requires a purchase of the matching style item in any classroom (`403` otherwise). New `GET /users/me/avatar/styles` lists every hair and top with `free`, `owned` and `shopItemCode`. Buying a style already owned in another classroom answers `409` without charging; styles stay non-equipable.
+- **Reason:** Paid styles must be earned in the shop, not selectable by editing the request.
+- **Verification:** DB-backed spec written RED first, then GREEN.
+- **Next step:** BK-3 seed catalog, BK-4 contract regeneration.
+
 ## 2026-11-24 — Ordered material modules (#142)
 
 - **Status:** completed (pending PR into `develop`)

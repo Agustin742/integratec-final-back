@@ -18,14 +18,19 @@ The committed [OpenAPI document](../apps/api/openapi.json) is the REST contract 
 
 `displayName` is separate from appearance and must contain 1–100 characters after ordinary surrounding-space trimming. Profile validation rejects C0/C1 controls (U+0000–001F and U+007F–009F), including tabs/newlines even at the edges, and Unicode line/paragraph separators (U+2028/U+2029) **before trim can erase them**. A name must contain at least one character other than Unicode whitespace, default-ignorable code points, combining marks or braille blank (U+2800). This rejects invisible-only names without imposing an ASCII/letters-only allowlist: accents, non-Latin scripts, punctuation, emoji, combining marks and joiners within visible names are preserved, not normalized or stripped. This is profile-specific; registration validation is unchanged. Email is read-only here. User IDs are never accepted as mutation fields; query parameters cannot change the acting user. Password hashes, sessions and avatar persistence metadata are never response fields.
 
-## Free base catalogue
+## Base catalogue and paid styles
 
-The user approved **free body, hairstyle and ordinary base clothing**, reserving accessories for future shop work. IDs match current frontend GLB filenames without extensions, scoped by body. The finite IDs, defaults and palette normalization below are implementation choices, not an approved visual design or proof of in-engine rendering.
+Bodies and the listed free styles require no purchase; other hair and top styles require a shop unlock. IDs match current frontend GLB filenames without extensions. The finite IDs, defaults and palette normalization below are implementation choices, not an approved visual design or proof of in-engine rendering.
 
 | `bodyId` | Compatible `hairId` | Compatible `topId` |
 | --- | --- | --- |
-| `male` | `afro`, `dreads` | `hoodie`, `tank` |
-| `female` | `afro`, `original` | `hoodie`, `tank`, `tshirt` |
+| `male`, `female` | All 23 hair ids below | All 15 top ids below |
+
+Hair ids: `afro`, `afro-with-headband`, `bob`, `box-braids`, `braid`, `bun`, `buzz-cut`, `classic-short`, `dreads`, `fringe`, `half-up`, `long-curls`, `long-straight`, `long-wavy`, `messy`, `middle-part`, `ponytail`, `short-curls`, `side-part`, `soft-mohawk`, `two-braids`, `two-pigtails`, `wavy`.
+
+Top ids: `basic-tshirt`, `denim-jacket`, `flannel-shirt`, `holiday-sweater`, `hoodie`, `national-team-jersey`, `school-polo`, `school-smock`, `school-sweatshirt`, `shirt-and-tie`, `sweater`, `tank-top`, `track-jacket`, `vest`, `winter-coat`.
+
+Free styles (the rest are shop unlockables, enforced separately): hair `afro`, `bob`, `bun`, `buzz-cut`, `classic-short`, `long-straight`, `middle-part`, `ponytail`, `short-curls`; tops `basic-tshirt`, `school-smock`, `school-sweatshirt`, `tank-top`. The catalog lives in `apps/api/src/users/avatar-catalog.ts`. The legacy ids `original`, `tank` and `tshirt` are no longer accepted.
 
 | Field | Allowed values |
 | --- | --- |
@@ -34,6 +39,10 @@ The user approved **free body, hairstyle and ordinary base clothing**, reserving
 
 Colors come from the frontend art-direction Character palette, accept either HEX letter case, and are returned/stored uppercase. IDs are case-sensitive. Arbitrary HEX, URLs, accessory fields, and uniforms are rejected. Uniform tint behavior has not been verified.
 
+### Style availability
+
+`GET /users/me/avatar/styles` returns `{ items: [{ styleType, styleId, free, owned, shopItemCode }] }` for every hair id followed by every top id. Free styles are always `owned` with `shopItemCode: null`; paid styles are `owned` after a purchase in any classroom, and `shopItemCode` names the shop item that sells them (or `null` when none is on sale yet). The front uses it to lock or unlock choices in the avatar editor.
+
 ### Complete snapshot, not partial merge
 
 Every avatar PATCH requires **all five fields**, including compatible hair and top when changing body. For example:
@@ -41,8 +50,8 @@ Every avatar PATCH requires **all five fields**, including compatible hair and t
 ```json
 {
   "bodyId": "female",
-  "hairId": "original",
-  "topId": "tshirt",
+  "hairId": "classic-short",
+  "topId": "basic-tshirt",
   "hairColor": "#AF6D63",
   "clothingColor": "#F4E6D2"
 }
@@ -57,25 +66,27 @@ An absent configuration row or empty JSON object yields this base response **wit
 ```json
 {
   "bodyId": "male",
-  "hairId": "afro",
-  "topId": "hoodie",
+  "hairId": "classic-short",
+  "topId": "school-sweatshirt",
   "hairColor": "#6C4D48",
   "clothingColor": "#5B4F96"
 }
 ```
 
-Valid existing appearance JSON is projected to these five fields only. Malformed or incompatible stored values also return the default avatar with `200`, plus the constant warning `Unsupported stored base appearance; using default avatar.` The warning contains no user IDs, raw JSON or credentials. Absent/empty values are normal defaults and do not warn. Neither GET nor a display-name PATCH creates, repairs or overwrites stored appearance; a name PATCH can succeed even with unsupported appearance. No migration or automatic read/name-update repair exists. A complete valid avatar PATCH intentionally replaces the stored base-only appearance, including unsupported legacy values; this explicit write returns the validated five-field snapshot.
+Reads project only these five fields. Invalid or missing fields in an object are replaced individually with their defaults; valid body, colors and unrelated styles survive. Unsupported legacy style IDs (`original`, `tank`, `tshirt`) use the free style defaults rather than granting an unlock. Non-object JSON falls back to the complete default. Unsupported values emit the constant warning `Unsupported stored base appearance; using default avatar.` without user IDs, raw JSON or credentials; absent/empty storage does not warn.
 
-### Future shop boundary
+Saved paid hair or clothing (including previously free `hoodie`) is displayed only when the user purchased that style in any classroom, including through a now-inactive item. Otherwise only that style becomes the free default. There is no grandfathering or entitlement grant. GET, display-name PATCH and shared member snapshots used for realtime join/reverification and appearance events use the same projection. Reads never rewrite stored appearance or advance its revision. A complete valid avatar PATCH explicitly replaces storage and still rejects unowned paid input with `403`.
 
-`AvatarConfiguration.appearance` stores the **base-only** configuration. Extra legacy keys are excluded by response projection; they are not an equipped-shop contract. Future equipped shop state requires separately modeled, validated storage and ownership checks. No keys, schema or shop APIs for that future state are assumed or implemented here.
+### Equipment boundary
+
+`AvatarConfiguration.appearance` stores the **base-only** configuration. Extra legacy keys are excluded by response projection; they are not equipped items. Classroom equipment uses separate storage and ownership checks; see [equipment](equipment.md).
 
 ## Rejections and ownership boundary
 
 - Missing, malformed, expired or revoked credentials: `401 UNAUTHENTICATED`. The merged `AuthModule` global `SessionAuthGuard` protects all three routes before DTO validation; `@CurrentUser('userId')` consumes its verified identity. UsersModule adds no second guard/session verification and changes no shared auth behavior.
 - Missing/invalid fields, unknown fields (including `userId`, email or accessories), unsupported palette values or incompatible options: `400 VALIDATION_FAILED`, with `error.details` entries containing `field` and `messages`. Rejected input does not change either user's data.
 - Unsupported stored appearance is a response fallback, not a rejected profile operation. Name updates use the verified identity directly without an appearance pre-read.
-- `AvatarAccessPort.assertCanUse(verifiedUserId, snapshot)` runs before avatar persistence. Its current adapter admits only compatible free base options. It does **not** simulate purchases or verify shop ownership. Future paid options require a persisted-ownership adapter and an explicitly extended contract; unknown choices remain denied until then. An adapter denial must prevent the write (`403 FORBIDDEN`).
+- `AvatarAccessPort.assertCanUse(verifiedUserId, snapshot)` runs before avatar persistence. The adapter (`ShopAvatarAccess`) first checks body compatibility (`400`), then requires ownership of every paid `hairId` or `topId`: the user must hold a `StudentPurchase` of an `AVATAR_STYLE` shop item whose `metadata.styleType`/`styleId` match, in **any** classroom, whether or not the item is still active. Free styles never need a purchase. A missing unlock or an adapter denial prevents the write (`403 FORBIDDEN`).
 
 Example validation envelope (synthetic correlation ID):
 

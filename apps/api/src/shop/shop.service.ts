@@ -80,6 +80,9 @@ function mapShopItemKind(raw: ShopItemKind | string): ShopItemKind {
     case ShopItemKind.PET_ACCESSORY:
     case 'pet_accessory':
       return ShopItemKind.PET_ACCESSORY;
+    case ShopItemKind.AVATAR_STYLE:
+    case 'avatar_style':
+      return ShopItemKind.AVATAR_STYLE;
     default:
       throw new Error(`Unsupported shop item kind: ${String(raw)}`);
   }
@@ -164,7 +167,7 @@ export class ShopService {
       { id: sort.direction },
     ];
 
-    const [total, rows] = await this.prisma.$transaction(
+    const [total, rows, stylePurchases] = await this.prisma.$transaction(
       [
         this.prisma.shopItem.count({ where }),
         this.prisma.shopItem.findMany({
@@ -177,7 +180,11 @@ export class ShopService {
               select: { priceOverride: true, isEnabled: true },
             },
             purchases: {
-              where: { classroomId, studentId: actorUserId },
+              // Avatar styles unlock the user's global avatar: a purchase anywhere counts.
+              where: {
+                studentId: actorUserId,
+                OR: [{ classroomId }, { shopItem: { kind: ShopItemKind.AVATAR_STYLE } }],
+              },
               select: { id: true },
             },
             classroomItems: {
@@ -186,13 +193,26 @@ export class ShopService {
             },
           },
         }),
+        this.prisma.studentPurchase.findMany({
+          where: { studentId: actorUserId, shopItem: { kind: ShopItemKind.AVATAR_STYLE } },
+          select: { shopItem: { select: { metadata: true } } },
+        }),
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
 
     const items: ShopCatalogItemDto[] = rows.map((row) => {
       const override = row.classroomOverrides[0];
-      const ownedByStudent = row.purchases.length > 0;
+      const metadata = toMetadataRecord(row.metadata);
+      const ownedByStudent =
+        row.purchases.length > 0 ||
+        (row.kind === ShopItemKind.AVATAR_STYLE &&
+          typeof metadata.styleType === 'string' &&
+          typeof metadata.styleId === 'string' &&
+          stylePurchases.some((purchase) => {
+            const owned = toMetadataRecord(purchase.shopItem.metadata);
+            return owned.styleType === metadata.styleType && owned.styleId === metadata.styleId;
+          }));
       const ownedByClassroom = row.classroomItems.length > 0;
       const isPurchasable =
         row.isImplemented &&
@@ -450,6 +470,20 @@ export class ShopService {
     return rows[0] ?? null;
   }
 
+  private async readStyleKey(
+    tx: Prisma.TransactionClient,
+    shopItemId: string,
+  ): Promise<{ styleType: string; styleId: string } | null> {
+    const row = await tx.shopItem.findUnique({
+      where: { id: shopItemId },
+      select: { metadata: true },
+    });
+    const { styleType, styleId } = toMetadataRecord(row?.metadata ?? null);
+    return typeof styleType === 'string' && typeof styleId === 'string'
+      ? { styleType, styleId }
+      : null;
+  }
+
   private async assertNotAlreadyOwned(
     tx: Prisma.TransactionClient,
     classroomId: string,
@@ -457,6 +491,15 @@ export class ShopService {
     shopItemId: string,
     kind: ShopItemKind,
   ): Promise<void> {
+    const styleKey =
+      kind === ShopItemKind.AVATAR_STYLE ? await this.readStyleKey(tx, shopItemId) : null;
+    if (styleKey) {
+      // Membership locks are per classroom; serialize the same style across classrooms.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`avatar-style:${studentId}:${styleKey.styleType}:${styleKey.styleId}`}, 0))
+      `;
+    }
+
     const existingStudentPurchase = await tx.studentPurchase.findUnique({
       where: {
         classroomId_studentId_shopItemId: {
@@ -469,6 +512,31 @@ export class ShopService {
     });
     if (existingStudentPurchase) {
       throw new ConflictException('Shop item already purchased by student');
+    }
+
+    if (kind === ShopItemKind.AVATAR_STYLE) {
+      // The unique key is per classroom and per item, but a style belongs to the user's global
+      // avatar: any item selling the same style, bought in any classroom, already unlocked it.
+      const unlocked = await tx.studentPurchase.findFirst({
+        where: {
+          studentId,
+          shopItem: {
+            kind: ShopItemKind.AVATAR_STYLE,
+            ...(styleKey
+              ? {
+                  AND: [
+                    { metadata: { path: ['styleType'], equals: styleKey.styleType } },
+                    { metadata: { path: ['styleId'], equals: styleKey.styleId } },
+                  ],
+                }
+              : { id: shopItemId }),
+          },
+        },
+        select: { id: true },
+      });
+      if (unlocked) {
+        throw new ConflictException('Avatar style already unlocked for this student');
+      }
     }
 
     if (kind === ShopItemKind.CLASSROOM_ITEM) {

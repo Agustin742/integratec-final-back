@@ -11,6 +11,7 @@ import {
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { AvatarDto } from './avatar.dto';
+import { AvatarStylesDto } from './avatar-styles.dto';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 import { UsersService } from './users.service';
 
@@ -53,11 +54,22 @@ export class UsersController {
     return this.users.updateProfile(userId, dto);
   }
 
+  @Get('avatar/styles')
+  @ApiOperation({
+    summary: 'List avatar style availability',
+    description:
+      'Every hair and top id with `free`, `owned` and the code of the shop item that sells it. Free styles are always owned. A paid style is owned once the user bought it in any classroom, even if the shop item was later deactivated.',
+  })
+  @ApiOkResponse({ type: AvatarStylesDto })
+  listAvatarStyles(@CurrentUser('userId') userId: string): Promise<AvatarStylesDto> {
+    return this.users.listAvatarStyles(userId);
+  }
+
   @Patch('avatar')
   @ApiOperation({
     summary: 'Replace own base avatar',
     description:
-      'Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, hair and ordinary tops are free. Accessories and uniforms are not supported.',
+      'Uses the global SessionAuthGuard identity with one session verification. All five fields required, not a partial merge. Replaces stored base-only appearance, including unsupported legacy values. Body, free hair and free tops need no purchase; paid hair and tops require a shop purchase made in any classroom. Accessories and uniforms are not supported.',
   })
   @ApiOkResponse({ type: AvatarDto })
   @ApiBadRequestResponse({
@@ -67,7 +79,8 @@ export class UsersController {
   })
   @ApiForbiddenResponse({
     type: ErrorEnvelopeDto,
-    description: 'Avatar access adapter denied use.',
+    description:
+      'FORBIDDEN when hairId or topId is a paid style the user has not unlocked in the shop, or the avatar access adapter denied use.',
   })
   updateAvatar(@CurrentUser('userId') userId: string, @Body() dto: AvatarDto): Promise<AvatarDto> {
     return this.users.updateAvatar(userId, dto);

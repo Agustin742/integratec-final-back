@@ -1,36 +1,37 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn } from 'class-validator';
+import { AVATAR_BODY_IDS, HAIR_IDS, TOP_IDS } from './avatar-catalog';
 
 export const HAIR_COLORS = ['#6C4D48', '#AF6D63', '#E5AD58', '#353849', '#C77DAA'];
 export const CLOTHING_COLORS = ['#5B4F96', '#75B7DA', '#F2C85C', '#EFA5AE', '#7EBA8B', '#F4E6D2'];
-export const BASE_OPTIONS: Record<string, { hairId: string[]; topId: string[] }> = {
-  male: { hairId: ['afro', 'dreads'], topId: ['hoodie', 'tank'] },
-  female: { hairId: ['afro', 'original'], topId: ['hoodie', 'tank', 'tshirt'] },
-};
+export const BASE_OPTIONS: Record<string, { hairId: readonly string[]; topId: readonly string[] }> =
+  Object.fromEntries(
+    AVATAR_BODY_IDS.map((bodyId) => [bodyId, { hairId: HAIR_IDS, topId: TOP_IDS }]),
+  );
 const uppercase = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.toUpperCase() : value;
 
 /** Complete base appearance snapshot, used for both requests and responses. */
 export class AvatarDto {
-  @ApiProperty({ enum: ['male', 'female'], example: 'male' })
-  @IsIn(['male', 'female'])
+  @ApiProperty({ enum: AVATAR_BODY_IDS, example: 'male' })
+  @IsIn(AVATAR_BODY_IDS)
   bodyId!: string;
 
   @ApiProperty({
-    enum: ['afro', 'dreads', 'original'],
-    example: 'afro',
-    description: 'male: afro/dreads; female: afro/original.',
+    enum: HAIR_IDS,
+    example: 'classic-short',
+    description: 'Allowed for both bodies. Some styles are unlocked through the shop.',
   })
-  @IsIn(['afro', 'dreads', 'original'])
+  @IsIn(HAIR_IDS)
   hairId!: string;
 
   @ApiProperty({
-    enum: ['hoodie', 'tank', 'tshirt'],
-    example: 'hoodie',
-    description: 'male: hoodie/tank; female: hoodie/tank/tshirt. Uniforms excluded.',
+    enum: TOP_IDS,
+    example: 'school-sweatshirt',
+    description: 'Allowed for both bodies. Some styles are unlocked through the shop.',
   })
-  @IsIn(['hoodie', 'tank', 'tshirt'])
+  @IsIn(TOP_IDS)
   topId!: string;
 
   @ApiProperty({
@@ -54,8 +55,8 @@ export class AvatarDto {
 
 export const DEFAULT_AVATAR: Readonly<AvatarDto> = {
   bodyId: 'male',
-  hairId: 'afro',
-  topId: 'hoodie',
+  hairId: 'classic-short',
+  topId: 'school-sweatshirt',
   hairColor: '#6C4D48',
   clothingColor: '#5B4F96',
 };

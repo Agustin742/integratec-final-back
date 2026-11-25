@@ -187,6 +187,100 @@ describe('ShopService (real PostgreSQL)', () => {
     });
   }
 
+  async function createStyleTwins() {
+    await prisma.classroomMembership.create({
+      data: {
+        classroomId: ids.otherClassroom,
+        userId: ids.student,
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+      },
+    });
+    const twins = [randomUUID(), randomUUID()];
+    await prisma.shopItem.createMany({
+      data: twins.map((id) => ({
+        id,
+        code: `style_${id}`,
+        name: 'Twin paid hair',
+        description: 'Synthetic style',
+        kind: ShopItemKind.AVATAR_STYLE,
+        defaultPrice: 60,
+        isActive: true,
+        isImplemented: true,
+        metadata: { styleType: 'hair', styleId: `paid_${ids.student}` },
+      })),
+    });
+    return twins;
+  }
+
+  it('reports same-style twins owned globally after buying a distinct item ID', async () => {
+    const [first, twin] = await createStyleTwins();
+    await fundStudent(ids.student, 200);
+    await shop.purchase(ids.student, ids.classroom, { shopItemId: first }, 'style-first');
+    for (const classroom of [ids.classroom, ids.otherClassroom]) {
+      const catalog = await shop.listItems(ids.student, classroom, {
+        page: 1,
+        pageSize: 100,
+        kind: ShopItemKind.AVATAR_STYLE,
+      });
+      expect(catalog.items.find((item) => item.id === twin)).toMatchObject({
+        ownedByStudent: true,
+        isPurchasable: false,
+      });
+    }
+    const otherCatalog = await shop.listItems(ids.otherStudent, ids.classroom, {
+      page: 1,
+      pageSize: 100,
+      kind: ShopItemKind.AVATAR_STYLE,
+    });
+    expect(otherCatalog.items.find((item) => item.id === twin)).toMatchObject({
+      ownedByStudent: false,
+      isPurchasable: true,
+    });
+  });
+
+  it('serializes concurrent same-style twins across classrooms without extra purchase or debit', async () => {
+    const twins = await createStyleTwins();
+    await fundStudent(ids.student, 200);
+    await ledger.credit({
+      classroomId: ids.otherClassroom,
+      studentId: ids.student,
+      amount: 200,
+      sourceType: 'submission_grade',
+      sourceId: randomUUID(),
+      reason: 'Synthetic test points',
+      actorId: ids.teacher,
+    });
+    const classrooms = [ids.classroom, ids.otherClassroom];
+    const results = await Promise.allSettled(
+      twins.map((shopItemId, index) =>
+        shop.purchase(ids.student, classrooms[index], { shopItemId }, `race-${index}`),
+      ),
+    );
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected?.status === 'rejected' && rejected.reason).toBeInstanceOf(ConflictException);
+    if (rejected?.status === 'rejected') expect(rejected.reason.getStatus()).toBe(409);
+    const winner = results.findIndex((result) => result.status === 'fulfilled');
+    const accepted = results[winner];
+    const replay = await shop.purchase(
+      ids.student,
+      classrooms[winner],
+      { shopItemId: twins[winner] },
+      `race-${winner}`,
+    );
+    expect(replay.replayed).toBe(true);
+    if (accepted.status === 'fulfilled') expect(replay.purchase).toEqual(accepted.value.purchase);
+    expect(await prisma.studentPurchase.count({ where: { studentId: ids.student } })).toBe(1);
+    const entries = await prisma.pointTransaction.findMany({ where: { studentId: ids.student } });
+    expect(entries).toHaveLength(3);
+    expect(entries.filter((entry) => entry.entryKind === PointEntryKind.DEBIT)).toHaveLength(1);
+    expect(entries.reduce((sum, entry) => sum + entry.amount, 0)).toBe(340);
+    expect(await ledger.getBalance(classrooms[1 - winner], ids.student)).toBe(200);
+    expect(await ledger.getBalance(classrooms[winner], ids.student)).toBe(140);
+    expect(await prisma.classroomItem.count({ where: { shopItemId: { in: twins } } })).toBe(0);
+  });
+
   it('atomically creates negative PointTransaction, StudentPurchase, and ClassroomItem for classroom_item', async () => {
     await fundStudent(ids.student, 200);
 

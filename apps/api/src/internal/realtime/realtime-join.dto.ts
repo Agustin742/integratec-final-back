@@ -47,7 +47,7 @@ export class EquippedItemPayloadDto {
   @ApiProperty({ format: 'uuid' })
   shopItemId!: string;
 
-  @ApiProperty({ maxLength: 80, example: 'cap_blue' })
+  @ApiProperty({ maxLength: 80, example: 'head_cap' })
   shopItemCode!: string;
 
   @ApiProperty({ maxLength: 120, example: 'Blue Classroom Cap' })
@@ -65,7 +65,7 @@ export class BaseAvatarPayloadDto {
   @ApiProperty({ example: 'afro' })
   hairId!: string;
 
-  @ApiProperty({ example: 'tshirt' })
+  @ApiProperty({ example: 'basic-tshirt' })
   topId!: string;
 
   @ApiProperty({ example: '#6C4D48' })
