@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { InvitationRole } from '@prisma/client';
 import type { ApiConfig } from '../config/api-config';
 import { API_CONFIG } from '../config/config.module';
 import { decryptSecret } from '../platform/crypto/secret-box';
@@ -49,11 +50,18 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
     try {
       const invitation = await this.prisma.invitation.findUnique({
         where: { id: payload.invitationId },
-        include: { classroom: { select: { name: true, deletedAt: true } } },
+        include: { classroom: { select: { name: true, deletedAt: true, adultMode: true } } },
       });
 
       if (!invitation || invitation.state === 'REVOKED' || invitation.classroom?.deletedAt) {
         return; // Canceled, revoked, or classroom deleted
+      }
+
+      const isParentInvitation =
+        invitation.role === InvitationRole.PARENT || payload.role === InvitationRole.PARENT;
+
+      if (isParentInvitation && invitation.classroom?.adultMode) {
+        return; // Parent invitations are disabled in adult education mode
       }
 
       // Decrypt only now, right before delivery; throws if the payload was tampered with.
@@ -67,15 +75,29 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
       const acceptUrl = `${this.config.invitationAcceptUrlBase}?token=${token}`;
       const expiresAtIso = invitation.expiresAt.toISOString();
 
+      const subject = isParentInvitation
+        ? `Guardian invitation for ${classroomName}`
+        : `Invitation to join ${classroomName}`;
+      const text = isParentInvitation
+        ? `You have been invited as a parent or guardian to follow a student's progress in the virtual classroom "${classroomName}". Use the following link to accept the invitation:\n\n${acceptUrl}\n\nThis link will expire on ${expiresAtIso}.`
+        : `You have been invited to join the virtual classroom "${classroomName}". Use the following link to accept the invitation:\n\n${acceptUrl}\n\nThis link will expire on ${expiresAtIso}.`;
+      const html = isParentInvitation
+        ? [
+            `<p>You have been invited as a parent or guardian to follow a student's progress in the virtual classroom <strong>${escapeHtml(classroomName)}</strong>.</p>`,
+            `<p><a href="${escapeHtml(acceptUrl)}">Accept the invitation</a></p>`,
+            `<p>This link will expire on ${escapeHtml(expiresAtIso)}.</p>`,
+          ].join('\n')
+        : [
+            `<p>You have been invited to join the virtual classroom <strong>${escapeHtml(classroomName)}</strong>.</p>`,
+            `<p><a href="${escapeHtml(acceptUrl)}">Accept the invitation</a></p>`,
+            `<p>This link will expire on ${escapeHtml(expiresAtIso)}.</p>`,
+          ].join('\n');
+
       await this.email.send({
         to: payload.targetEmail,
-        subject: `Invitation to join ${classroomName}`,
-        text: `You have been invited to join the virtual classroom "${classroomName}". Use the following link to accept the invitation:\n\n${acceptUrl}\n\nThis link will expire on ${expiresAtIso}.`,
-        html: [
-          `<p>You have been invited to join the virtual classroom <strong>${escapeHtml(classroomName)}</strong>.</p>`,
-          `<p><a href="${escapeHtml(acceptUrl)}">Accept the invitation</a></p>`,
-          `<p>This link will expire on ${escapeHtml(expiresAtIso)}.</p>`,
-        ].join('\n'),
+        subject,
+        text,
+        html,
         idempotencyKey: `classroom-invitation:${event.id}`,
       });
     } catch (error) {

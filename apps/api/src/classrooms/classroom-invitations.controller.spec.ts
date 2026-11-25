@@ -31,6 +31,8 @@ describe('Invitations & Join Codes Controllers (Unit)', () => {
       revokeJoinCode: vi.fn(),
       joinWithCode: vi.fn(),
       acceptEmailInvitation: vi.fn(),
+      listParentLinks: vi.fn(),
+      unlinkParentLink: vi.fn(),
     };
 
     classroomsController = new ClassroomsController(
@@ -133,6 +135,32 @@ describe('Invitations & Join Codes Controllers (Unit)', () => {
 
       expect(mockInvitationsService.joinWithCode).toHaveBeenCalledWith(ACTOR_USER_ID, dto);
       expect(res).toBe(expected);
+    });
+
+    it('delegates GET /classrooms/:id/parent-links to service', async () => {
+      const expected = { items: [] };
+      mockInvitationsService.listParentLinks.mockResolvedValue(expected);
+
+      const res = await classroomsController.listParentLinks(ACTOR_USER_ID, CLASSROOM_ID);
+
+      expect(mockInvitationsService.listParentLinks).toHaveBeenCalledWith(
+        ACTOR_USER_ID,
+        CLASSROOM_ID,
+      );
+      expect(res).toBe(expected);
+    });
+
+    it('delegates DELETE /classrooms/:id/parent-links/:linkId to service', async () => {
+      const linkId = randomUUID();
+      mockInvitationsService.unlinkParentLink.mockResolvedValue(undefined);
+
+      await classroomsController.unlinkParentLink(ACTOR_USER_ID, CLASSROOM_ID, linkId);
+
+      expect(mockInvitationsService.unlinkParentLink).toHaveBeenCalledWith(
+        ACTOR_USER_ID,
+        CLASSROOM_ID,
+        linkId,
+      );
     });
   });
 

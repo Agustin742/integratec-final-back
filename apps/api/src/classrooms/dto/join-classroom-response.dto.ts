@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ClassroomRole } from '@prisma/client';
+import { ClassroomRole, InvitationRole } from '@prisma/client';
 
 export class AssignedDeskDto {
   @ApiProperty({ description: 'Desk UUID' })
@@ -27,6 +27,59 @@ export class JoinClassroomResponseDto {
 
   @ApiProperty({
     description: 'True if the caller was already enrolled in this classroom (idempotent rejoin)',
+  })
+  alreadyMember!: boolean;
+}
+
+export class AcceptInvitationResponseDto {
+  @ApiProperty({ description: 'Classroom UUID' })
+  classroomId!: string;
+
+  @ApiProperty({
+    description: 'Created or existing classroom membership UUID (null for PARENT invitations)',
+    format: 'uuid',
+    nullable: true,
+  })
+  membershipId!: string | null;
+
+  @ApiProperty({
+    enum: [InvitationRole.STUDENT, InvitationRole.PARENT],
+    description: 'Role granted by the accepted invitation',
+  })
+  role!: 'STUDENT' | 'PARENT';
+
+  @ApiProperty({
+    type: AssignedDeskDto,
+    nullable: true,
+    description: 'Assigned desk for STUDENT invitations; null for PARENT invitations',
+  })
+  desk!: AssignedDeskDto | null;
+
+  @ApiProperty({
+    description:
+      '1-based index of the assigned desk for STUDENT invitations; null for PARENT invitations',
+    nullable: true,
+  })
+  deskIndex!: number | null;
+
+  @ApiProperty({
+    description: 'Linked student user UUID for PARENT invitations; null for STUDENT invitations',
+    format: 'uuid',
+    nullable: true,
+  })
+  childId!: string | null;
+
+  @ApiProperty({
+    description:
+      'Created or existing ParentLink UUID for PARENT invitations; null for STUDENT invitations',
+    format: 'uuid',
+    nullable: true,
+  })
+  parentLinkId!: string | null;
+
+  @ApiProperty({
+    description:
+      'True if the caller already held an active membership or parent link (idempotent retry)',
   })
   alreadyMember!: boolean;
 }

@@ -2,11 +2,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ClassroomRole,
   InvitationKind,
   InvitationRole,
   InvitationState,
@@ -27,6 +29,7 @@ import type { PrismaService } from '../prisma/prisma.service';
 import { CLASSROOM_INVITATION_CREATED_EVENT } from './classroom-invitation-events';
 import { ClassroomInvitationCreatedHandler } from './classroom-invitation-created.handler';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
+import { ClassroomDirectoryService } from './directory/directory.service';
 import { JoinCodeRateLimiter } from './join-code-rate-limiter.service';
 
 describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AUL-002)', () => {
@@ -152,6 +155,9 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
           where: { type: CLASSROOM_INVITATION_CREATED_EVENT },
         });
         await prisma.invitation.deleteMany({
+          where: { classroomId: { in: createdClassroomIds } },
+        });
+        await prisma.parentLink.deleteMany({
           where: { classroomId: { in: createdClassroomIds } },
         });
         await prisma.desk.deleteMany({
@@ -298,7 +304,7 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
         role: InvitationRole.TEACHER,
       }),
     ).rejects.toThrow(
-      new BadRequestException('Classroom invitations can only be issued for students'),
+      new BadRequestException('Classroom invitations can only be issued for students or parents'),
     );
     expect(await prisma.invitation.count({ where: { targetEmail: email } })).toBe(0);
   });
@@ -747,5 +753,395 @@ describe('Classroom Invitations & Join Codes PostgreSQL Integration Tests (HU-AU
       expect(error).toBeInstanceOf(HttpException);
       expect((error as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
     }
+  });
+
+  describe('Parent Invitations & Guardian Links (Corte 1)', () => {
+    const enrollStudent = async (classroomId: string, prefix: string) => {
+      const student = await createStudent(prefix);
+      await prisma.classroomMembership.create({
+        data: {
+          classroomId,
+          userId: student.id,
+          role: ClassroomRole.STUDENT,
+          state: MembershipState.ACTIVE,
+        },
+      });
+      return student;
+    };
+
+    const createParentUser = async (prefix: string) => {
+      const parent = await prisma.user.create({
+        data: {
+          email: `parent.${prefix}.${Date.now()}.${Math.random().toString(36).substring(2, 6)}@example.edu.ar`,
+          passwordHash: 'dummy-hash',
+          displayName: `Parent ${prefix}`,
+          registrationPath: RegistrationPath.INVITEE,
+        },
+      });
+      createdUserIds.push(parent.id);
+      return parent;
+    };
+
+    it('creates, lists, delivers guardian email, accepts PARENT invitation without membership/desk, and excludes parent from member directory (D12)', async () => {
+      const classroom = await createClassroom('parent-flow', 2);
+      const student = await enrollStudent(classroom.id, 'child-flow');
+      const parent = await createParentUser('flow');
+
+      // Student invitation rejects childId
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: `bad.student.${Date.now()}@example.edu.ar`,
+          role: InvitationRole.STUDENT,
+          childId: student.id,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Parent invitation requires childId
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: `missing.child.${Date.now()}@example.edu.ar`,
+          role: InvitationRole.PARENT,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      // Create valid PARENT invitation
+      const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+
+      expect(inv.role).toBe(InvitationRole.PARENT);
+      expect(inv.childId).toBe(student.id);
+      expect(inv.childDisplayName).toBe(student.displayName);
+
+      // List invitations includes childId and childDisplayName
+      const listed = await service.listInvitations(testTeacher.id, classroom.id, {
+        page: 1,
+        pageSize: 20,
+      });
+      const found = listed.items.find((item) => item.id === inv.id);
+      expect(found).toBeDefined();
+      expect(found?.childId).toBe(student.id);
+      expect(found?.childDisplayName).toBe(student.displayName);
+
+      // Duplicate pending parent invite for same (classroom, email, child) returns 409
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: parent.email,
+          role: InvitationRole.PARENT,
+          childId: student.id,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // Outbox handler delivers clear guardian copy using sealed token
+      const outboxEvent = await prisma.outboxEvent.findFirstOrThrow({
+        where: {
+          type: CLASSROOM_INVITATION_CREATED_EVENT,
+          payload: { path: ['invitationId'], equals: inv.id },
+        },
+      });
+      expect(JSON.stringify(outboxEvent.payload)).not.toContain(inv.token);
+
+      const emailPort = new InMemoryEmailAdapter();
+      const handler = new ClassroomInvitationCreatedHandler(
+        prisma as unknown as PrismaService,
+        new OutboxHandlerRegistry(),
+        emailPort,
+        dummyConfig,
+      );
+      await handler.handle({
+        id: outboxEvent.id,
+        type: outboxEvent.type,
+        payload: outboxEvent.payload,
+        occurredAt: outboxEvent.occurredAt,
+      });
+      expect(emailPort.sent).toHaveLength(1);
+      expect(emailPort.sent[0].subject).toContain('Guardian invitation');
+      expect(emailPort.sent[0].text).toContain(inv.token);
+
+      // Accept parent invitation
+      const accepted = await service.acceptEmailInvitation(parent.id, { token: inv.token });
+      expect(accepted).toEqual({
+        classroomId: classroom.id,
+        membershipId: null,
+        role: InvitationRole.PARENT,
+        desk: null,
+        deskIndex: null,
+        childId: student.id,
+        parentLinkId: expect.any(String),
+        alreadyMember: false,
+      });
+
+      // Verify NO ClassroomMembership and NO Desk were assigned to the parent
+      expect(
+        await prisma.classroomMembership.count({
+          where: { classroomId: classroom.id, userId: parent.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.desk.count({
+          where: { classroomId: classroom.id, membershipId: { not: null } },
+        }),
+      ).toBe(0);
+
+      // Verify idempotent retry
+      const retry = await service.acceptEmailInvitation(parent.id, { token: inv.token });
+      expect(retry.alreadyMember).toBe(true);
+      expect(retry.parentLinkId).toBe(accepted.parentLinkId);
+
+      // Verify GET /classrooms/:id/members (D12) never lists parents
+      const directory = new ClassroomDirectoryService(
+        prisma as unknown as PrismaService,
+        accessService,
+      );
+      const members = await directory.list(testTeacher.id, classroom.id, {
+        page: 1,
+        pageSize: 50,
+      });
+      expect(members.items.some((m) => m.userId === parent.id)).toBe(false);
+      expect(members.items.some((m) => m.userId === student.id)).toBe(true);
+    });
+
+    it('rejects adultMode, self-link, removed student, and 2-guardian cap without consuming invitation', async () => {
+      const classroom = await createClassroom('parent-guards', 2);
+      const student = await enrollStudent(classroom.id, 'child-guards');
+      const parent1 = await createParentUser('guards-1');
+      const parent2 = await createParentUser('guards-2');
+      const parent3 = await createParentUser('guards-3');
+
+      // Foreign/unknown child returns 404
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: parent1.email,
+          role: InvitationRole.PARENT,
+          childId: randomUUID(),
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Create invite for parent1; test self-link fails with 409 without consuming
+      const inv1 = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent1.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+      await expect(
+        service.acceptEmailInvitation(student.id, { token: inv1.token }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect((await prisma.invitation.findUniqueOrThrow({ where: { id: inv1.id } })).state).toBe(
+        InvitationState.PENDING,
+      );
+
+      // Toggle adultMode on: creating or accepting parent invite returns 409 without consuming
+      await prisma.classroom.update({ where: { id: classroom.id }, data: { adultMode: true } });
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: parent2.email,
+          role: InvitationRole.PARENT,
+          childId: student.id,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      await expect(
+        service.acceptEmailInvitation(parent1.id, { token: inv1.token }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect((await prisma.invitation.findUniqueOrThrow({ where: { id: inv1.id } })).state).toBe(
+        InvitationState.PENDING,
+      );
+
+      // Turn adultMode back off; link parent1 and parent2
+      await prisma.classroom.update({ where: { id: classroom.id }, data: { adultMode: false } });
+      await service.acceptEmailInvitation(parent1.id, { token: inv1.token });
+
+      const inv2 = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent2.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+      await service.acceptEmailInvitation(parent2.id, { token: inv2.token });
+
+      // 3rd parent creation is rejected with 409 (2-guardian cap)
+      await expect(
+        service.createEmailInvitation(testTeacher.id, classroom.id, {
+          email: parent3.email,
+          role: InvitationRole.PARENT,
+          childId: student.id,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // Remove student after issuing an invite to a different student: accepting fails with 409 without consuming
+      const studentB = await enrollStudent(classroom.id, 'child-removed');
+      const invB = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: `removed.child.parent.${Date.now()}@example.edu.ar`,
+        role: InvitationRole.PARENT,
+        childId: studentB.id,
+      });
+      await prisma.classroomMembership.updateMany({
+        where: { classroomId: classroom.id, userId: studentB.id },
+        data: { state: MembershipState.INACTIVE, deletedAt: new Date() },
+      });
+      await expect(
+        service.acceptEmailInvitation(parent3.id, { token: invB.token }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect((await prisma.invitation.findUniqueOrThrow({ where: { id: invB.id } })).state).toBe(
+        InvitationState.PENDING,
+      );
+    });
+
+    it('manages classroom parent links with staff auth (list, logical unlink, 403 for student/parent, 404 for outsider)', async () => {
+      const classroom = await createClassroom('parent-mgmt', 2);
+      const otherClassroom = await createClassroom('parent-mgmt-other', 2);
+      const student = await enrollStudent(classroom.id, 'child-mgmt');
+      const parent = await createParentUser('mgmt');
+      const outsider = await createParentUser('outsider');
+
+      const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+      const accepted = await service.acceptEmailInvitation(parent.id, { token: inv.token });
+      const linkId = accepted.parentLinkId!;
+
+      // Staff can list active links
+      const listed = await service.listParentLinks(testTeacher.id, classroom.id);
+      expect(listed.items).toHaveLength(1);
+      expect(listed.items[0]).toMatchObject({
+        id: linkId,
+        parentId: parent.id,
+        parentDisplayName: parent.displayName,
+        childId: student.id,
+        childDisplayName: student.displayName,
+        state: MembershipState.ACTIVE,
+      });
+
+      // Student and parent get 403 Forbidden; outsider gets 404 NotFound
+      await expect(service.listParentLinks(student.id, classroom.id)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.listParentLinks(parent.id, classroom.id)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      await expect(service.listParentLinks(outsider.id, classroom.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        service.unlinkParentLink(student.id, classroom.id, linkId),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.unlinkParentLink(outsider.id, classroom.id, linkId),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Link does not exist in otherClassroom -> 404
+      await expect(
+        service.unlinkParentLink(testTeacher.id, otherClassroom.id, linkId),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      // Staff unlinks logically (sets INACTIVE, preserves row)
+      await service.unlinkParentLink(testTeacher.id, classroom.id, linkId);
+      const dbLink = await prisma.parentLink.findUniqueOrThrow({ where: { id: linkId } });
+      expect(dbLink.state).toBe(MembershipState.INACTIVE);
+
+      // Active list is now empty; unlinking again is idempotent
+      expect((await service.listParentLinks(testTeacher.id, classroom.id)).items).toHaveLength(0);
+      await expect(
+        service.unlinkParentLink(testTeacher.id, classroom.id, linkId),
+      ).resolves.toBeUndefined();
+    });
+
+    it('MANDATORY CONCURRENCY: two concurrent acceptances of the same PARENT invitation (1 succeeds, 1 fails cleanly, zero 500s)', async () => {
+      const classroom = await createClassroom('parent-same-inv-race', 2);
+      const student = await enrollStudent(classroom.id, 'child-same-race');
+      const parentA = await createParentUser('same-race-a');
+      const parentB = await createParentUser('same-race-b');
+
+      const inv = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: `shared.parent.${Date.now()}@example.edu.ar`,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+
+      const results = await Promise.allSettled([
+        service.acceptEmailInvitation(parentA.id, { token: inv.token }),
+        service.acceptEmailInvitation(parentB.id, { token: inv.token }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      const reason = (rejected[0] as PromiseRejectedResult).reason;
+      expect(reason instanceof ConflictException || reason instanceof BadRequestException).toBe(
+        true,
+      );
+
+      const dbInv = await prisma.invitation.findUniqueOrThrow({ where: { id: inv.id } });
+      expect(dbInv.state).toBe(InvitationState.USED);
+      expect(dbInv.useCount).toBe(1);
+
+      const activeLinks = await prisma.parentLink.count({
+        where: { classroomId: classroom.id, childId: student.id, state: MembershipState.ACTIVE },
+      });
+      expect(activeLinks).toBe(1);
+    });
+
+    it('MANDATORY CONCURRENCY: two concurrent acceptances of distinct PARENT invitations with 1 existing guardian cap at exactly 2', async () => {
+      const classroom = await createClassroom('parent-cap-race', 2);
+      const student = await enrollStudent(classroom.id, 'child-cap-race');
+      const existingParent = await createParentUser('cap-existing');
+      const parent2 = await createParentUser('cap-race-2');
+      const parent3 = await createParentUser('cap-race-3');
+
+      // Seed 1 active guardian already linked
+      await prisma.parentLink.create({
+        data: {
+          parentId: existingParent.id,
+          childId: student.id,
+          classroomId: classroom.id,
+          state: MembershipState.ACTIVE,
+        },
+      });
+
+      // Issue 2 distinct pending parent invitations while count === 1 (< 2)
+      const inv2 = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent2.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+      const inv3 = await service.createEmailInvitation(testTeacher.id, classroom.id, {
+        email: parent3.email,
+        role: InvitationRole.PARENT,
+        childId: student.id,
+      });
+
+      const results = await Promise.allSettled([
+        service.acceptEmailInvitation(parent2.id, { token: inv2.token }),
+        service.acceptEmailInvitation(parent3.id, { token: inv3.token }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+
+      // DB must have exactly 2 active ParentLink rows
+      const activeLinks = await prisma.parentLink.count({
+        where: { classroomId: classroom.id, childId: student.id, state: MembershipState.ACTIVE },
+      });
+      expect(activeLinks).toBe(2);
+
+      // Exactly 1 of the two invitations was consumed; the losing invitation stays PENDING
+      const [dbInv2, dbInv3] = await Promise.all([
+        prisma.invitation.findUniqueOrThrow({ where: { id: inv2.id } }),
+        prisma.invitation.findUniqueOrThrow({ where: { id: inv3.id } }),
+      ]);
+      expect([dbInv2.state, dbInv3.state].sort()).toEqual([
+        InvitationState.PENDING,
+        InvitationState.USED,
+      ]);
+      expect(dbInv2.useCount + dbInv3.useCount).toBe(1);
+    });
   });
 });

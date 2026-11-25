@@ -30,8 +30,11 @@ describe('ClassroomInvitationsService', () => {
   let service: ClassroomInvitationsService;
   let mockPrisma: {
     $transaction: ReturnType<typeof vi.fn>;
+    $queryRaw: ReturnType<typeof vi.fn>;
+    classroom: Record<string, ReturnType<typeof vi.fn>>;
     invitation: Record<string, ReturnType<typeof vi.fn>>;
     classroomMembership: Record<string, ReturnType<typeof vi.fn>>;
+    parentLink: Record<string, ReturnType<typeof vi.fn>>;
     schoolMember: Record<string, ReturnType<typeof vi.fn>>;
     desk: Record<string, ReturnType<typeof vi.fn>>;
     joinCodeUsage: Record<string, ReturnType<typeof vi.fn>>;
@@ -94,11 +97,19 @@ describe('ClassroomInvitationsService', () => {
 
     mockPrisma = {
       $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: randomUUID() }]),
+      classroom: {
+        findUnique: vi.fn().mockResolvedValue({
+          deletedAt: null,
+          adultMode: false,
+          school: null,
+        }),
+      },
       invitation: {
         create: vi.fn(),
         findUnique: vi.fn(),
         findUniqueOrThrow: vi.fn(),
-        findFirst: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue(null),
         findMany: vi.fn(),
         count: vi.fn(),
         update: vi.fn(),
@@ -109,6 +120,15 @@ describe('ClassroomInvitationsService', () => {
         findFirst: vi.fn(),
         create: vi.fn(),
         update: vi.fn().mockImplementation(async ({ data }) => ({ id: randomUUID(), ...data })),
+      },
+      parentLink: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        count: vi.fn().mockResolvedValue(0),
+        create: vi.fn().mockImplementation(async ({ data }) => ({ id: randomUUID(), ...data })),
+        update: vi.fn().mockImplementation(async ({ where, data }) => ({ id: where.id, ...data })),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       schoolMember: {
         findFirst: vi.fn().mockResolvedValue(null),
@@ -231,7 +251,9 @@ describe('ClassroomInvitationsService', () => {
             role,
           }),
         ).rejects.toThrow(
-          new BadRequestException('Classroom invitations can only be issued for students'),
+          new BadRequestException(
+            'Classroom invitations can only be issued for students or parents',
+          ),
         );
         expect(mockPrisma.invitation.create).not.toHaveBeenCalled();
         expect(mockOutbox.record).not.toHaveBeenCalled();
@@ -1144,6 +1166,178 @@ describe('ClassroomInvitationsService', () => {
       await expect(service.acceptEmailInvitation(STUDENT_ID, { token })).rejects.toThrow(
         new NotFoundException('Invalid or expired invitation'),
       );
+    });
+  });
+
+  describe('Parent invitations & guardian links', () => {
+    const PARENT_ID = randomUUID();
+
+    it('rejects childId when issuing a STUDENT invitation', async () => {
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'student@example.edu.ar',
+          role: InvitationRole.STUDENT,
+          childId: STUDENT_ID,
+        }),
+      ).rejects.toThrow(new BadRequestException('childId is only allowed for parent invitations'));
+    });
+
+    it('requires childId when issuing a PARENT invitation', async () => {
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'parent@example.edu.ar',
+          role: InvitationRole.PARENT,
+        }),
+      ).rejects.toThrow(new BadRequestException('childId is required for parent invitations'));
+    });
+
+    it('rejects PARENT invitation creation when classroom adultMode is enabled', async () => {
+      mockAccessService.verifyClassroomAccess.mockResolvedValue({
+        classroom: { id: CLASSROOM_ID, schoolId: SCHOOL_ID, adultMode: true },
+        myRole: 'TEACHER',
+      });
+
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'parent@example.edu.ar',
+          role: InvitationRole.PARENT,
+          childId: STUDENT_ID,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('rejects PARENT invitation when student already has 2 active guardians', async () => {
+      mockPrisma.classroomMembership.findFirst.mockResolvedValue({ id: randomUUID() });
+      mockPrisma.parentLink.count.mockResolvedValue(2);
+
+      await expect(
+        service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          email: 'third-parent@example.edu.ar',
+          role: InvitationRole.PARENT,
+          childId: STUDENT_ID,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('creates a PARENT invitation with sealed token and returns childId and childDisplayName', async () => {
+      const invitationId = randomUUID();
+      mockPrisma.classroomMembership.findFirst.mockResolvedValue({ id: randomUUID() });
+      mockPrisma.parentLink.count.mockResolvedValue(0);
+      mockPrisma.invitation.findFirst.mockResolvedValue(null);
+      mockPrisma.invitation.create.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.EMAIL,
+        targetEmail: 'parent@example.edu.ar',
+        role: InvitationRole.PARENT,
+        childId: STUDENT_ID,
+        child: { displayName: 'Lucia Perez' },
+        maxUses: 1,
+        useCount: 0,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 86400000),
+        createdAt: new Date(),
+      });
+
+      const res = await service.createEmailInvitation(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+        email: 'Parent@Example.edu.ar',
+        role: InvitationRole.PARENT,
+        childId: STUDENT_ID,
+      });
+
+      expect(res.role).toBe(InvitationRole.PARENT);
+      expect(res.childId).toBe(STUDENT_ID);
+      expect(res.childDisplayName).toBe('Lucia Perez');
+      expect(res.token).toBeTruthy();
+      expect(mockOutbox.record).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts a PARENT invitation, creates ParentLink without ClassroomMembership or desk', async () => {
+      const invitationId = randomUUID();
+      const parentLinkId = randomUUID();
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: invitationId,
+        kind: InvitationKind.EMAIL,
+        role: InvitationRole.PARENT,
+        classroomId: CLASSROOM_ID,
+        childId: STUDENT_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 86400000),
+        classroom: { id: CLASSROOM_ID, adultMode: false, deletedAt: null, school: null },
+      });
+      mockPrisma.parentLink.create.mockResolvedValue({ id: parentLinkId });
+
+      const res = await service.acceptEmailInvitation(PARENT_ID, { token: 'valid-parent-token' });
+
+      expect(res).toEqual({
+        classroomId: CLASSROOM_ID,
+        membershipId: null,
+        role: InvitationRole.PARENT,
+        desk: null,
+        deskIndex: null,
+        childId: STUDENT_ID,
+        parentLinkId,
+        alreadyMember: false,
+      });
+      expect(mockPrisma.classroomMembership.create).not.toHaveBeenCalled();
+      expect(mockPrisma.desk.create).not.toHaveBeenCalled();
+      expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects self-link when student attempts to accept their own PARENT invitation', async () => {
+      mockPrisma.invitation.findUnique.mockResolvedValue({
+        id: randomUUID(),
+        kind: InvitationKind.EMAIL,
+        role: InvitationRole.PARENT,
+        classroomId: CLASSROOM_ID,
+        childId: STUDENT_ID,
+        state: InvitationState.PENDING,
+        expiresAt: new Date(Date.now() + 86400000),
+        classroom: { id: CLASSROOM_ID, adultMode: false, deletedAt: null, school: null },
+      });
+
+      await expect(
+        service.acceptEmailInvitation(STUDENT_ID, { token: 'self-link-token' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(mockPrisma.invitation.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('lists active parent links and unlinks logically by setting INACTIVE', async () => {
+      const linkId = randomUUID();
+      const now = new Date();
+      mockPrisma.parentLink.findMany.mockResolvedValue([
+        {
+          id: linkId,
+          parentId: PARENT_ID,
+          childId: STUDENT_ID,
+          state: MembershipState.ACTIVE,
+          createdAt: now,
+          parent: { displayName: 'Maria Guardian' },
+          child: { displayName: 'Lucia Perez' },
+        },
+      ]);
+
+      const list = await service.listParentLinks(ACTOR_TEACHER_ID, CLASSROOM_ID);
+      expect(list.items).toEqual([
+        {
+          id: linkId,
+          parentId: PARENT_ID,
+          parentDisplayName: 'Maria Guardian',
+          childId: STUDENT_ID,
+          childDisplayName: 'Lucia Perez',
+          state: MembershipState.ACTIVE,
+          createdAt: now,
+        },
+      ]);
+
+      mockPrisma.parentLink.findFirst.mockResolvedValue({
+        id: linkId,
+        state: MembershipState.ACTIVE,
+      });
+      await service.unlinkParentLink(ACTOR_TEACHER_ID, CLASSROOM_ID, linkId);
+      expect(mockPrisma.parentLink.updateMany).toHaveBeenCalledWith({
+        where: { id: linkId, classroomId: CLASSROOM_ID, state: MembershipState.ACTIVE },
+        data: { state: MembershipState.INACTIVE },
+      });
     });
   });
 });

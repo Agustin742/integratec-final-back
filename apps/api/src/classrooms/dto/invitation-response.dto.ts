@@ -14,6 +14,19 @@ export class ClassroomInvitationResponseDto {
   @ApiProperty({ enum: InvitationRole, description: 'Assigned role upon joining' })
   role!: InvitationRole;
 
+  @ApiPropertyOptional({
+    description: 'Linked student user UUID when role is PARENT, null otherwise',
+    format: 'uuid',
+    nullable: true,
+  })
+  childId!: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Linked student display name when role is PARENT, null otherwise',
+    nullable: true,
+  })
+  childDisplayName!: string | null;
+
   @ApiPropertyOptional({ description: 'Maximum allowed uses, null if unlimited', nullable: true })
   maxUses!: number | null;
 

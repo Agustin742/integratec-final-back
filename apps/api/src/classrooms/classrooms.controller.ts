@@ -16,6 +16,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -49,6 +50,7 @@ import { JoinClassroomWithCodeDto } from './dto/join-classroom.dto';
 import { JoinCodeResponseDto } from './dto/join-code-response.dto';
 import { CLASSROOM_SORT_OPTIONS, ListClassroomsQueryDto } from './dto/list-classrooms-query.dto';
 import { ListInvitationsQueryDto } from './dto/list-invitations-query.dto';
+import { ClassroomParentLinksResponseDto } from './dto/parent-link-response.dto';
 import { UpdateClassroomDto } from './dto/update-classroom.dto';
 
 @ApiTags('classrooms')
@@ -240,7 +242,7 @@ export class ClassroomsController {
   @ApiOperation({
     summary: 'Issue an email invitation to join a classroom',
     description:
-      'Issues a single-use email invitation for the specified classroom and schedules asynchronous email delivery via the transactional outbox. Restricted to teaching staff (School Owner/Admin or the classroom Teacher). Completely preserves non-disclosure (never reveals whether the email exists).',
+      'Issues a single-use email invitation (STUDENT or PARENT) for the specified classroom and schedules asynchronous email delivery via the transactional outbox. Parent invitations require childId of an active student, are rejected when adultMode is enabled, and enforce the maximum of 2 active guardians per student. Restricted to teaching staff (School Owner/Admin or the classroom Teacher). Completely preserves non-disclosure (never reveals whether the email exists).',
   })
   @ApiParam({
     name: 'id',
@@ -254,7 +256,7 @@ export class ClassroomsController {
   })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Validation failed on email or role.',
+    description: 'Validation failed on email, role, or childId.',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -266,7 +268,13 @@ export class ClassroomsController {
   })
   @ApiNotFoundResponse({
     type: ErrorEnvelopeDto,
-    description: 'Classroom does not exist or caller has no relationship with it.',
+    description:
+      'Classroom does not exist, caller has no relationship with it, or target student is not active in this classroom.',
+  })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Classroom is in adult education mode, student already has 2 active guardians, or a duplicate pending parent invitation already exists.',
   })
   async createInvitation(
     @CurrentUser('userId') actorUserId: string,
@@ -429,5 +437,80 @@ export class ClassroomsController {
     @Param('id') classroomId: string,
   ): Promise<{ success: boolean; message: string }> {
     return this.invitationsService.revokeJoinCode(actorUserId, classroomId);
+  }
+
+  @Get(':id/parent-links')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List active parent-child guardian links for a classroom',
+    description:
+      'Returns all active ParentLink records for the specified classroom. Restricted to classroom staff (School Owner/Admin or the classroom Teacher).',
+  })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Classroom UUID',
+  })
+  @ApiOkResponse({
+    type: ClassroomParentLinksResponseDto,
+    description: 'Active parent-child guardian links in the classroom.',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Missing, malformed, expired, or revoked access token.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Caller is a student or parent without classroom staff authority.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Classroom does not exist or caller has no relationship with it.',
+  })
+  async listParentLinks(
+    @CurrentUser('userId') actorUserId: string,
+    @Param('id') classroomId: string,
+  ): Promise<ClassroomParentLinksResponseDto> {
+    return this.invitationsService.listParentLinks(actorUserId, classroomId);
+  }
+
+  @Delete(':id/parent-links/:linkId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Logically unlink a guardian from a student in a classroom',
+    description:
+      'Marks the ParentLink as INACTIVE while preserving historical messages and records. Idempotent if already inactive. Restricted to classroom staff.',
+  })
+  @ApiParam({
+    name: 'id',
+    format: 'uuid',
+    description: 'Classroom UUID',
+  })
+  @ApiParam({
+    name: 'linkId',
+    format: 'uuid',
+    description: 'ParentLink UUID to deactivate',
+  })
+  @ApiNoContentResponse({
+    description: 'Parent link deactivated (or already inactive); no response body.',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Missing, malformed, expired, or revoked access token.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Caller is a student or parent without classroom staff authority.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Classroom or parent link does not exist in this classroom.',
+  })
+  async unlinkParentLink(
+    @CurrentUser('userId') actorUserId: string,
+    @Param('id') classroomId: string,
+    @Param('linkId') linkId: string,
+  ): Promise<void> {
+    return this.invitationsService.unlinkParentLink(actorUserId, classroomId, linkId);
   }
 }
