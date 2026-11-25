@@ -2,12 +2,14 @@
 
 ## 2026-11-25 — PR #151 compatible voice-call corrections
 
-- **Status:** in-progress.
-- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, call moderation tests, voice-call rules/docs; branch `fix/pr151-call-audit` based on Agustin's `d985a42`.
+- **Status:** blocked (corrections and automated suites pass; required differential proof failed in the temporary verifier script before scenarios, one-run limit exhausted).
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, call moderation tests, voice-call rules/docs; branch `fix/pr151-call-audit` based on Agustin's `d985a42`, integrated develop `4514e39` via `fa3b510`.
 - **Change:** With AI assistance directed by Alejo: retained private per-user forced-mute policy across replacement/rejoin and mute-all late arrivals (`121cb45`), preserving teacher unmute and allowed self-unmute. Recorded bounded voice-only P2P decision D21 (`b0dded1`) with client-dependent audio limits. Static comparison of frontend #145 confirms existing fields/events/close codes suffice; no wire or frontend changes. Agustin's original implementation and attribution preserved.
 - **Verification:** SDK regression RED: 3 intended failures/36 passes, exit1 before source fix; focused GREEN39/39; full realtime502/502 + contracts129/129, exit0. Worker reported initial native crash3221226505 before RED and an exact retry (process deviation from no-automatic-retry guidance, disclosed). No further retry authorized. Docs85/Prettier/whitespace passed. Independent/differential checks and develop integration pending; Docker daemon unavailable, so local DB suite not claimed.
 - **Reason:** Alejo authorized fixes to prepare PR #151 for teammate re-review, without breaking the paired frontend.
-- **Next step:** Integrate develop additively, verify shared behavior independently and run post-integration checks. No push, PR approval or PR merge authorized.
+- **Integration / final checks:** `fa3b510` resolves the tracker conflict by preserving both Agustin entries verbatim (19 additions/0 deletions vs prior HEAD, 36 additions/0 deletions vs develop). Post-integration Prisma generation, all workspace typechecks/builds, lint, format, codegen, docs85 and whitespace passed (all exit0). Baseline contract entrypoint/generated realtime types/OpenAPI diff exit0, no changes. Independent verification: focused48/48; integrated realtime502/502 + contracts129/129, all exit0, no new actionable defect found. Expected negative-case stderr/warnings retained.
+- **Missing proof:** Independent single-script baseline/candidate differential exited1 on temporary `probe.cjs:112` SyntaxError before any scenario; an earlier truncated heredoc warning is retained. No retry or migrated runner. Concurrent replacement/refreshed-role assertions reviewed statically only. Local API DB suite unavailable because Docker daemon is stopped; browser audio/NAT untested. Historical original-head CI is not a new-head CI pass.
+- **Next step:** A fresh explicit authorization is needed to correct and execute the failed temporary differential probe once more; otherwise approval readiness remains unverified. No push, PR approval or PR merge authorized. Risk: items2,3,4 (moderation/security, shared call lifecycle and concurrent admissions).
 
 ## 2026-11-24 — PR #146 audit corrections
 
