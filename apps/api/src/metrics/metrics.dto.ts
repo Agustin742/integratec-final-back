@@ -108,3 +108,41 @@ export class StudentMetricSummaryDto {
   })
   ungradedCount!: number;
 }
+
+/** Aggregated participation and grade progress totals for one student in one classroom. */
+export class StudentParticipationSummaryDto {
+  @ApiProperty({ description: 'Sum of connected seconds across all recorded UTC days.' })
+  connectedSeconds!: number;
+
+  @ApiProperty({
+    description: 'Sum of raw submission events across all recorded UTC days.',
+  })
+  submissionCount!: number;
+
+  @ApiProperty({ description: 'Sum of classroom chat messages sent across all recorded UTC days.' })
+  messageCount!: number;
+
+  @ApiProperty({
+    description: 'Number of graded submissions to published non-deleted activities.',
+  })
+  gradedCount!: number;
+
+  @ApiProperty({
+    description:
+      'Number of submitted but not yet graded submissions to published non-deleted activities.',
+  })
+  ungradedCount!: number;
+
+  @ApiProperty({
+    description: 'Number of published non-deleted activities without a submission yet.',
+  })
+  pendingCount!: number;
+
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'Mean percentage score (0-100, rounded to 2 decimals) across graded published activities with maxScore > 0, or null when none are graded.',
+  })
+  averageScorePercent!: number | null;
+}

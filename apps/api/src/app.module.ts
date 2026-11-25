@@ -19,6 +19,7 @@ import { ShopModule } from './shop/shop.module';
 import { GradesModule } from './grades/grades.module';
 import { MaterialsModule } from './materials/materials.module';
 import { EquipmentModule } from './equipment/equipment.module';
+import { FamilyModule } from './family/family.module';
 import { GamificationModule } from './gamification/gamification.module';
 
 @Module({
@@ -46,6 +47,7 @@ export class AppModule {
         GradesModule,
         MaterialsModule,
         EquipmentModule,
+        FamilyModule,
         GamificationModule,
         BotModule,
       ],
