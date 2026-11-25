@@ -35,6 +35,14 @@
 - **Reason:** The call room, moderation and 1:1 ringing (B2 to B4) need one shared, validated contract with the frontend.
 - **Verification:** Contract and state specs written RED first, then GREEN; `realtime:codegen:check`, typecheck and lint.
 - **Next step:** B2 call room implementation.
+## 2026-11-24 — Synced pet and tutor bot routines in the classroom room (#147)
+
+- **Status:** completed
+- **Area / files:** `packages/contracts/src/index.ts` (layout `props`, NPC ids/states/emotes, homes, `npc:interact`, tutor bot phrases), `packages/contracts/src/realtime/generated/Npc.ts`, `apps/realtime/src/rooms/classroom-state.ts`, `apps/realtime/src/rooms/classroom-room.ts`, `apps/realtime/src/npc/npc-routine.ts`, `apps/realtime/src/movement/step-avatar.ts`, related specs
+- **Change:** The classroom room now owns the pet and the tutor bot: it picks random reachable destinations, walks them calmly, pauses, plays emotes, sends them to rest at the pet bed or bot station, and recovers when they get stuck. NPC state is synced in `ClassroomState.npcs`; pressing E near an NPC (distance and cooldown checked on the server) triggers a reaction the whole room sees (pet greet/ask for pets, bot academic phrase). Floor props the front draws (kiosk, pet bed, bot station, report card stand, chat computer, flags, christmas tree, plants) are shared obstacles for avatars and NPCs. The routine only runs while the room has members.
+- **Reason:** Front #138 brings the pet and tutor bot to life; every member must see the same routine.
+- **Verification:** Specs written RED first per task (contracts layout, step-avatar, npc routine incl. 10 simulated minutes always on walkable floor, room and e2e interaction), lint, typecheck, `realtime:codegen:check`.
+- **Next step:** Open the PR to `develop` after #146 (chained from `feat/145-avatar-catalog-shop`).
 
 ## 2026-11-24 — Align contract examples with the modular catalog (#145, BK-4)
 

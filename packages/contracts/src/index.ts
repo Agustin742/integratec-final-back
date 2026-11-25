@@ -353,8 +353,30 @@ export interface ClassroomLayout {
   avatarRadius: number;
   /** Desks and other solid boxes an avatar cannot enter. */
   obstacles: readonly LayoutBox[];
+  /**
+   * Floor props the scene draws (shop kiosk, pet bed, bot station). They block avatars like desks
+   * but live apart from `obstacles`, whose order (teacher desk first, then student desks) the
+   * frontend relies on.
+   */
+  props: readonly PropObstacle[];
   /** Where new avatars appear; every point is walkable. */
   spawnPoints: readonly { x: number; z: number }[];
+}
+
+export type PropObstacleId =
+  | 'shopKiosk'
+  | 'petBed'
+  | 'botStation'
+  | 'reportCardStand'
+  | 'chatComputer'
+  | 'flagArgentina'
+  | 'flagIntegrar'
+  | 'christmasTree'
+  | 'plantsAndPots';
+
+/** Footprint of a floor prop: an axis-aligned box on the floor plane. */
+export interface PropObstacle extends LayoutBox {
+  id: PropObstacleId;
 }
 
 const desk = (
@@ -392,6 +414,30 @@ const BASE_ROWS = MIN_CLASSROOM_DESKS / DESKS_PER_ROW;
 const toCentimetres = (value: number): number => Math.round(value * 100) / 100;
 
 /**
+ * Footprints of the floor props, in world axes, from `front/docs/art/classroom-interactive.md` and
+ * `tutor-bot.md`. The kiosk (1.96 x 0.71 m) and the pet bed (1.04 x 0.80 m) stand against the front
+ * wall; the bot station (1.532 x 1.278 m) is rotated 90 degrees against the left wall, so its long
+ * side runs along z. Positions derive from the bounds, which never move on their front and left
+ * sides, so a grown room keeps the props where they are.
+ */
+function buildPropObstacles({ minX, minZ }: LayoutBox, teacherDesk: LayoutBox): PropObstacle[] {
+  return [
+    { id: 'shopKiosk', ...desk(4.8, minZ + 0.44, 0.98, 0.355) },
+    { id: 'petBed', ...desk(6.85, minZ + 0.62, 0.52, 0.4) },
+    { id: 'botStation', ...desk(minX + 1.05, 1.05, 0.639, 0.766) },
+    // Report card stand (0.78 x 0.48 m) on the front wall; chat computer (0.54 x 0.88 m) on the left.
+    { id: 'reportCardStand', ...desk(2.95, minZ + 0.32, 0.39, 0.24) },
+    { id: 'chatComputer', ...desk(minX + 0.38, -3.0, 0.27, 0.44) },
+    // Flags (0.42 m square) stand at the front corners of the teacher desk, 0.27 m outside its
+    // sides and level with its student-facing edge; the tree and the plants are floor decoration.
+    { id: 'flagArgentina', ...desk(teacherDesk.minX - 0.27, teacherDesk.maxZ, 0.21, 0.21) },
+    { id: 'flagIntegrar', ...desk(teacherDesk.maxX + 0.27, teacherDesk.maxZ, 0.21, 0.21) },
+    { id: 'christmasTree', ...desk(-4, minZ + 1.02, 0.56, 0.54) },
+    { id: 'plantsAndPots', ...desk(minX + 0.655, 2.52, 0.345, 0.3) },
+  ];
+}
+
+/**
  * Walkable surface shared by the server (collisions) and the frontend scene, built from the number
  * of student desks of a classroom (issues #79 and #22). The base room is 16 by 12 with the teacher
  * desk at the front (negative z) and the entrance at the back. Student desks go in rows of four,
@@ -417,10 +463,121 @@ export function buildClassroomLayout(deskCount: number): ClassroomLayout {
       0.4,
     ),
   );
+  const teacherDesk = desk(0, -4.4, 1.5, 0.4);
   return {
     bounds: { ...BASE_BOUNDS, maxZ },
     avatarRadius: 0.3,
-    obstacles: [desk(0, -4.4, 1.5, 0.4), ...studentDesks],
+    obstacles: [teacherDesk, ...studentDesks],
+    props: buildPropObstacles(BASE_BOUNDS, teacherDesk),
     spawnPoints: [-6, -4, -2, 0, 2, 4, 6].map((x) => ({ x, z: toCentimetres(maxZ - 1) })),
   };
 }
+
+/** Server-driven NPCs of the classroom: the pet (Michi) and the tutor bot. */
+export const NPC_IDS = ['pet', 'tutorBot'] as const;
+export type NpcId = (typeof NPC_IDS)[number];
+
+export const NpcState = {
+  idle: 'idle',
+  walking: 'walking',
+  emote: 'emote',
+  sleeping: 'sleeping',
+  reacting: 'reacting',
+} as const;
+
+export type NpcState = (typeof NpcState)[keyof typeof NpcState];
+
+/**
+ * Emote names per NPC, matching the clip names the frontend plays. The tutor bot's are its real
+ * clips (its idle is `IdleHover`, its sleep `Face_Sleeping`); the pet's clips are not shipped yet,
+ * so the frontend falls back to procedural motion.
+ */
+export const NPC_EMOTES = {
+  pet: ['Meow', 'AskForPets', 'Sleep', 'Walk'],
+  tutorBot: ['Wave', 'Think', 'Celebrate', 'Encourage', 'Talk'],
+} as const satisfies Record<NpcId, readonly string[]>;
+
+export const TUTOR_BOT_IDLE_CLIP = 'IdleHover';
+export const TUTOR_BOT_SLEEP_CLIP = 'Face_Sleeping';
+
+/** Client to server: the member pressed E next to an NPC. */
+export const NPC_INTERACT_MESSAGE = 'npc:interact';
+
+export const npcInteractSchema = z.strictObject({
+  npcId: z.enum(NPC_IDS),
+});
+
+export type NpcInteract = z.infer<typeof npcInteractSchema>;
+
+/** Farthest an avatar may stand from an NPC (layout units) and still interact with it. */
+export const NPC_INTERACT_MAX_DISTANCE = 1.8;
+
+/** Minimum time between two interactions of the same member. */
+export const NPC_INTERACT_COOLDOWN_MS = 4000;
+
+export interface NpcHome {
+  x: number;
+  z: number;
+  /** Facing angle in radians, `atan2(x, z)` convention. */
+  rotation: number;
+}
+
+/** Cushion of the pet bed relative to its centre (`docs/art/classroom-pet.md`). */
+const PET_CUSHION_OFFSET = { x: -0.12, z: -0.02 };
+/** How far in front of the station (towards +x) the tutor bot waits. */
+const TUTOR_BOT_STATION_CLEARANCE = 0.7;
+
+/**
+ * Where each NPC rests: the pet curls up on the bed cushion and the tutor bot waits on the floor in
+ * front of its station, facing +x like the station. Derived from the layout props, so it follows
+ * the room.
+ */
+export function deriveNpcHomes(layout: ClassroomLayout): Record<NpcId, NpcHome> {
+  const prop = (id: PropObstacleId): PropObstacle => {
+    const found = layout.props.find((p) => p.id === id);
+    if (!found) throw new Error(`classroom layout has no ${id} prop`);
+    return found;
+  };
+  const bed = prop('petBed');
+  const station = prop('botStation');
+  return {
+    pet: {
+      x: (bed.minX + bed.maxX) / 2 + PET_CUSHION_OFFSET.x,
+      z: (bed.minZ + bed.maxZ) / 2 + PET_CUSHION_OFFSET.z,
+      rotation: 0,
+    },
+    tutorBot: {
+      x: station.maxX + TUTOR_BOT_STATION_CLEARANCE,
+      z: (station.minZ + station.maxZ) / 2,
+      rotation: Math.PI / 2,
+    },
+  };
+}
+
+/**
+ * Short study and well-being phrases the tutor bot says when a member presses E. Clients receive
+ * only the index (`phraseId`) and show the text from this list, so keep the order stable and
+ * append new phrases at the end.
+ */
+export const TUTOR_BOT_PHRASES: readonly string[] = [
+  'Estudiar un ratito todos los días rinde más que una maratón la noche anterior.',
+  'Si algo no te sale, probá explicárselo a alguien: ahí descubrís qué te falta.',
+  'Antes de un examen, repasá tus resúmenes y dormí bien. El descanso también estudia.',
+  'Un error es una pista: fijate qué te enseña y seguí adelante.',
+  'Dividí una tarea grande en pasos chiquitos. Es más fácil empezar.',
+  'Preguntar no es de ingenuos: es de gente que quiere entender.',
+  'Anotá tus pendientes de la semana. Tener todo a la vista da tranquilidad.',
+  'Leer un poco cada día entrena la atención y suma vocabulario nuevo.',
+  'Hacé pausas cortas cuando estudies: unos minutos para estirarte y volvés con energía.',
+  'Si te trabás con un tema, pedí ayuda a tu docente o a un compañero. Nadie aprende solo.',
+  'Subrayar lo importante y escribirlo con tus palabras te ayuda a recordarlo.',
+  'Estás más preparado de lo que creés. Respirá hondo y confiá en lo que estudiaste.',
+  'Un buen lugar de estudio, sin distracciones, hace que el tiempo rinda el doble.',
+  'Hacer preguntas en clase ayuda a todo el grupo, no solo a vos.',
+  'Armá un horario simple para tus tareas y andá tildando lo que terminás.',
+  'Ayer no entendías y hoy sí: eso es aprender. Seguí así.',
+  'Tomar agua y comer algo rico también ayuda a concentrarte.',
+  'Antes de entregar una tarea, leela otra vez. Siempre aparece algo para mejorar.',
+  'Estudiar en grupo con respeto y buen humor puede ser muy divertido.',
+  'Cuando termines de estudiar, tomate un rato para jugar o descansar. Te lo ganaste.',
+];

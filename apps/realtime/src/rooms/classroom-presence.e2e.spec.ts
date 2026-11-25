@@ -3,6 +3,8 @@ import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import type { Room as SdkRoom } from '@colyseus/sdk';
 import {
   buildClassroomLayout,
+  deriveNpcHomes,
+  NPC_IDS,
   MIN_CLASSROOM_DESKS,
   CLASSROOM_ROOM_NAME,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
@@ -73,6 +75,27 @@ describe('ClassroomRoom presence (real Colyseus server + stub API)', () => {
     expect(spawnPoints).toContainEqual({ x: avatar.x, z: avatar.z });
     expect(avatar.x).toBeGreaterThan(bounds.minX);
     expect(avatar.x).toBeLessThan(bounds.maxX);
+  });
+
+  it('shows a joining client the pet and the tutor bot at their homes (#147)', async () => {
+    const room = await join(ada);
+    const npcs = () => (room.state as { npcs?: Map<string, Record<string, unknown>> }).npcs;
+    await waitUntil(() => npcs()?.size === NPC_IDS.length, 'npcs in client state');
+
+    const homes = deriveNpcHomes(LAYOUT);
+    for (const id of NPC_IDS) {
+      expect(npcs()?.get(id)).toMatchObject({
+        id,
+        x: Math.fround(homes[id].x),
+        z: Math.fround(homes[id].z),
+        state: 'idle',
+        emote: '',
+        reaction: '',
+        phraseId: -1,
+        reactionSeq: 0,
+        reactingSessionId: '',
+      });
+    }
   });
 
   it('shows the members already connected to a newcomer, and the newcomer to them', async () => {
