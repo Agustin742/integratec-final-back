@@ -194,6 +194,7 @@ describe('RoomDirectory', () => {
 
 describe('RoomDirectory class call status', () => {
   const statusRoom = () => room();
+  const owner = {};
 
   it('tells the classroom rooms of that classroom only, and tells a room registered later', () => {
     const directory = new RoomDirectory();
@@ -202,7 +203,7 @@ describe('RoomDirectory class call status', () => {
     directory.register(CLASSROOM, here);
     directory.register(FOREIGN, elsewhere);
 
-    directory.setClassCallStatus(CLASSROOM, { active: true, focusMode: true });
+    directory.setClassCallStatus(CLASSROOM, owner, { active: true, focusMode: true });
 
     expect(here.applyCallStatus).toHaveBeenLastCalledWith({ active: true, focusMode: true });
     expect(elsewhere.applyCallStatus).not.toHaveBeenCalled();
@@ -215,13 +216,33 @@ describe('RoomDirectory class call status', () => {
     const directory = new RoomDirectory();
     const here = statusRoom();
     directory.register(CLASSROOM, here);
-    directory.setClassCallStatus(CLASSROOM, { active: true, focusMode: true });
+    directory.setClassCallStatus(CLASSROOM, owner, { active: true, focusMode: true });
 
-    directory.clearClassCallStatus(CLASSROOM);
+    directory.clearClassCallStatus(CLASSROOM, owner);
 
     expect(here.applyCallStatus).toHaveBeenLastCalledWith({ active: false, focusMode: false });
     const late = statusRoom();
     directory.register(CLASSROOM, late);
     expect(late.applyCallStatus).not.toHaveBeenCalled();
+  });
+
+  it('ignores a clear from a call room that no longer owns the status', () => {
+    const directory = new RoomDirectory();
+    const here = statusRoom();
+    directory.register(CLASSROOM, here);
+    const oldCall = {};
+    const newCall = {};
+    directory.setClassCallStatus(CLASSROOM, oldCall, { active: true, focusMode: false });
+    directory.setClassCallStatus(CLASSROOM, newCall, { active: true, focusMode: true });
+    here.applyCallStatus.mockClear();
+
+    directory.clearClassCallStatus(CLASSROOM, oldCall);
+
+    expect(here.applyCallStatus).not.toHaveBeenCalled();
+    const late = statusRoom();
+    directory.register(CLASSROOM, late);
+    expect(late.applyCallStatus).toHaveBeenCalledWith({ active: true, focusMode: true });
+    directory.clearClassCallStatus(CLASSROOM, newCall);
+    expect(here.applyCallStatus).toHaveBeenCalledWith({ active: false, focusMode: false });
   });
 });

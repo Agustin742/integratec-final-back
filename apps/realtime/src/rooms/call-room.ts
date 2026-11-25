@@ -260,7 +260,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     this.options.directory?.unregisterCall(this.classroomId, this);
     if (this.classStatusPublished) {
       this.classStatusPublished = false;
-      this.options.directory?.clearClassCallStatus(this.classroomId);
+      this.options.directory?.clearClassCallStatus(this.classroomId, this);
     }
   }
 
@@ -271,7 +271,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   private publishClassStatus(): void {
     if (this.options.directory === undefined) return;
     this.classStatusPublished = true;
-    this.options.directory.setClassCallStatus(this.classroomId, {
+    this.options.directory.setClassCallStatus(this.classroomId, this, {
       active: true,
       focusMode: this.state.focusMode,
     });

@@ -83,7 +83,7 @@ export class RoomDirectory {
   /** Voice call rooms by classroom; they only need to be evictable. */
   private readonly callRooms = new Map<string, Set<EvictableRoom>>();
   /** The running class call of each classroom, so a late classroom room can be told about it. */
-  private readonly classCalls = new Map<string, ClassCallStatus>();
+  private readonly classCalls = new Map<string, { owner: object; status: ClassCallStatus }>();
 
   registerCall(classroomId: string, room: EvictableRoom): void {
     const set = this.callRooms.get(classroomId) ?? new Set<EvictableRoom>();
@@ -102,21 +102,26 @@ export class RoomDirectory {
     set.add(room);
     this.rooms.set(classroomId, set);
     // A room created while a class call is running (a second room, a restart of the room) joins it.
-    const status = this.classCalls.get(classroomId);
-    if (status !== undefined) room.applyCallStatus({ ...status });
+    const current = this.classCalls.get(classroomId);
+    if (current !== undefined) room.applyCallStatus({ ...current.status });
   }
 
   /**
    * Publishes the class call of one classroom to its live classroom rooms and remembers it for
    * rooms registered later. Called by the call room (single process; see the class comment).
    */
-  setClassCallStatus(classroomId: string, status: ClassCallStatus): void {
-    this.classCalls.set(classroomId, { ...status });
+  setClassCallStatus(classroomId: string, owner: object, status: ClassCallStatus): void {
+    this.classCalls.set(classroomId, { owner, status: { ...status } });
     for (const room of this.rooms.get(classroomId) ?? []) room.applyCallStatus({ ...status });
   }
 
-  /** The class call ended: the classroom is no longer in a call and focus mode is off. */
-  clearClassCallStatus(classroomId: string): void {
+  /**
+   * The class call ended: the classroom is no longer in a call and focus mode is off. A no-op unless
+   * `owner` is the call room that published the current status, so a call room disposed late cannot
+   * wipe the status of the call that replaced it.
+   */
+  clearClassCallStatus(classroomId: string, owner: object): void {
+    if (this.classCalls.get(classroomId)?.owner !== owner) return;
     this.classCalls.delete(classroomId);
     for (const room of this.rooms.get(classroomId) ?? []) {
       room.applyCallStatus({ active: false, focusMode: false });
