@@ -8,7 +8,7 @@
     "start:dev": "ts-node src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "codegen": "schema-codegen src/rooms/classroom-state.ts --ts --output ../../packages/contracts/src/realtime/generated"
+    "codegen": "schema-codegen src/rooms/classroom-state.ts src/rooms/call-state.ts --ts --output ../../packages/contracts/src/realtime/generated"
   },
   "dependencies": {
     "@aula/contracts": "workspace:*",

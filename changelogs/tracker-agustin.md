@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Voice call room contracts (#149, B1)
+
+- **Status:** in-progress
+- **Area / files:** `packages/contracts/src/index.ts`, `packages/contracts/src/realtime/call-contract.spec.ts`, `packages/contracts/src/realtime/generated/` (`CallState`, `CallParticipant`, `ClassroomState`), `apps/realtime/src/rooms/call-state.ts`, `apps/realtime/src/rooms/classroom-state.ts`, `apps/realtime/package.json`
+- **Change:** New contracts for avatar voice calls: call room name and participant cap (12), join options (classroom or direct), signaling/self/emote/moderation/end/decline message schemas, server event payloads, call close codes (4101, 4102), and the `CallState` schema. The classroom state gains `classCallActive` and `focusMode`. Codegen now covers both state files.
+- **Reason:** The call room, moderation and 1:1 ringing (B2 to B4) need one shared, validated contract with the frontend.
+- **Verification:** Contract and state specs written RED first, then GREEN; `realtime:codegen:check`, typecheck and lint.
+- **Next step:** B2 call room implementation.
+
 ## 2026-11-24 — Align contract examples with the modular catalog (#145, BK-4)
 
 - **Status:** completed
