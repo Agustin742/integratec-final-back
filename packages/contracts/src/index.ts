@@ -198,7 +198,15 @@ export interface ClassroomLayout {
 }
 
 export type PropObstacleId =
-  'shopKiosk' | 'petBed' | 'botStation' | 'reportCardStand' | 'chatComputer';
+  | 'shopKiosk'
+  | 'petBed'
+  | 'botStation'
+  | 'reportCardStand'
+  | 'chatComputer'
+  | 'flagArgentina'
+  | 'flagIntegrar'
+  | 'christmasTree'
+  | 'plantsAndPots';
 
 /** Footprint of a floor prop: an axis-aligned box on the floor plane. */
 export interface PropObstacle extends LayoutBox {
@@ -246,7 +254,7 @@ const toCentimetres = (value: number): number => Math.round(value * 100) / 100;
  * side runs along z. Positions derive from the bounds, which never move on their front and left
  * sides, so a grown room keeps the props where they are.
  */
-function buildPropObstacles({ minX, minZ }: LayoutBox): PropObstacle[] {
+function buildPropObstacles({ minX, minZ }: LayoutBox, teacherDesk: LayoutBox): PropObstacle[] {
   return [
     { id: 'shopKiosk', ...desk(4.8, minZ + 0.44, 0.98, 0.355) },
     { id: 'petBed', ...desk(6.85, minZ + 0.62, 0.52, 0.4) },
@@ -254,6 +262,12 @@ function buildPropObstacles({ minX, minZ }: LayoutBox): PropObstacle[] {
     // Report card stand (0.78 x 0.48 m) on the front wall; chat computer (0.54 x 0.88 m) on the left.
     { id: 'reportCardStand', ...desk(2.95, minZ + 0.32, 0.39, 0.24) },
     { id: 'chatComputer', ...desk(minX + 0.38, -3.0, 0.27, 0.44) },
+    // Flags (0.42 m square) stand at the front corners of the teacher desk, 0.27 m outside its
+    // sides and level with its student-facing edge; the tree and the plants are floor decoration.
+    { id: 'flagArgentina', ...desk(teacherDesk.minX - 0.27, teacherDesk.maxZ, 0.21, 0.21) },
+    { id: 'flagIntegrar', ...desk(teacherDesk.maxX + 0.27, teacherDesk.maxZ, 0.21, 0.21) },
+    { id: 'christmasTree', ...desk(-4, minZ + 1.02, 0.56, 0.54) },
+    { id: 'plantsAndPots', ...desk(minX + 0.655, 2.52, 0.345, 0.3) },
   ];
 }
 
@@ -283,11 +297,12 @@ export function buildClassroomLayout(deskCount: number): ClassroomLayout {
       0.4,
     ),
   );
+  const teacherDesk = desk(0, -4.4, 1.5, 0.4);
   return {
     bounds: { ...BASE_BOUNDS, maxZ },
     avatarRadius: 0.3,
-    obstacles: [desk(0, -4.4, 1.5, 0.4), ...studentDesks],
-    props: buildPropObstacles(BASE_BOUNDS),
+    obstacles: [teacherDesk, ...studentDesks],
+    props: buildPropObstacles(BASE_BOUNDS, teacherDesk),
     spawnPoints: [-6, -4, -2, 0, 2, 4, 6].map((x) => ({ x, z: toCentimetres(maxZ - 1) })),
   };
 }

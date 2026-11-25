@@ -163,6 +163,10 @@ describe('prop obstacles', () => {
       'botStation',
       'reportCardStand',
       'chatComputer',
+      'flagArgentina',
+      'flagIntegrar',
+      'christmasTree',
+      'plantsAndPots',
     ]);
     expect(layout.obstacles).toEqual(LEGACY_LAYOUT.obstacles);
   });
@@ -189,6 +193,12 @@ describe('prop obstacles', () => {
     expectBox(find(layout, 'reportCardStand') as LayoutBox, box(2.95, minZ + 0.32, 0.39, 0.24));
     // 0.54 x 0.88 m at (minX + 0.38, -3.0)
     expectBox(find(layout, 'chatComputer') as LayoutBox, box(minX + 0.38, -3.0, 0.27, 0.44));
+    // Flags (0.42 x 0.42 m) at the teacher desk front corners: x -1.98..-1.56 and 1.56..1.98.
+    expectBox(find(layout, 'flagArgentina') as LayoutBox, box(-1.77, -4.0, 0.21, 0.21));
+    expectBox(find(layout, 'flagIntegrar') as LayoutBox, box(1.77, -4.0, 0.21, 0.21));
+    // Christmas tree 1.12 x 1.08 m, plants and pots 0.69 x 0.6 m
+    expectBox(find(layout, 'christmasTree') as LayoutBox, box(-4, -4.98, 0.56, 0.54));
+    expectBox(find(layout, 'plantsAndPots') as LayoutBox, box(minX + 0.655, 2.52, 0.345, 0.3));
   });
 
   it('stays clear of the walls, the desks and each other', () => {

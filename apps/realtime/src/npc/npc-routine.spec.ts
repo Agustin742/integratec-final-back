@@ -158,10 +158,14 @@ describe('stepNpc', () => {
         if (rt.state !== 'emote') expect(rt.emote).toBe('');
       });
 
-      for (const run of runs.filter((r) => r.state === 'emote')) {
+      // The last run may be cut short by the end of the simulation, so only complete runs count.
+      const lastIndex = runs.length - 1;
+      for (const [index, run] of runs.entries()) {
+        if (run.state !== 'emote') continue;
         seen.add(run.emote);
         expect(ALLOWED_EMOTES[id]).toContain(run.emote);
         expect(NPC_EMOTES[id] as readonly string[]).toContain(run.emote);
+        if (index === lastIndex) continue;
         expect(run.length).toBeCloseTo(NPC_EMOTE_DURATION_S[run.emote], 1);
       }
       expect(seen.size).toBeGreaterThan(0);
