@@ -154,6 +154,8 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
       displayName: 'rt-member',
       appearanceRevision: 0,
       deskCount: 0,
+      tutorBotSkin: 'none',
+      tutorBotSkinRevision: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
         items: {
@@ -294,6 +296,8 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
           'displayName',
           'role',
           'sessionId',
+          'tutorBotSkin',
+          'tutorBotSkinRevision',
           'userId',
         ]);
         expect(JSON.stringify(res.body)).not.toContain('@example.com');

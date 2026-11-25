@@ -5428,6 +5428,20 @@
         },
         "required": ["name"]
       },
+      "TutorBotSkin": {
+        "type": "string",
+        "enum": [
+          "none",
+          "boca",
+          "seleccion",
+          "folklore",
+          "guardapolvo",
+          "scientist",
+          "graduate",
+          "gamer"
+        ],
+        "description": "Skin of the classroom tutor bot chosen by its staff"
+      },
       "ClassroomPetSummaryDto": {
         "type": "object",
         "properties": {
@@ -5510,6 +5524,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -5579,6 +5598,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -5638,6 +5658,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -5696,6 +5721,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -5796,6 +5822,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -5871,6 +5902,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -5915,6 +5947,11 @@
             "type": "boolean",
             "example": false,
             "description": "Whether interactive classroom games are disabled"
+          },
+          "tutorBotSkin": {
+            "example": "guardapolvo",
+            "description": "Skin of the classroom tutor bot, free to change; `none` removes it. Pushed to the live room",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
           }
         }
       },

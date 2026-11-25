@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { TUTOR_BOT_SKINS, type TutorBotSkin } from '@aula/contracts';
 import { VisibleText } from '../../http/visible-text';
 
 export class UpdateClassroomDto {
@@ -60,4 +61,15 @@ export class UpdateClassroomDto {
   @IsOptional()
   @IsBoolean({ message: 'gamesDisabled must be a boolean' })
   gamesDisabled?: boolean;
+
+  @ApiPropertyOptional({
+    enum: TUTOR_BOT_SKINS,
+    enumName: 'TutorBotSkin',
+    example: 'guardapolvo',
+    description:
+      'Skin of the classroom tutor bot, free to change; `none` removes it. Pushed to the live room',
+  })
+  @IsOptional()
+  @IsIn(TUTOR_BOT_SKINS, { message: `tutorBotSkin must be one of: ${TUTOR_BOT_SKINS.join(', ')}` })
+  tutorBotSkin?: TutorBotSkin;
 }

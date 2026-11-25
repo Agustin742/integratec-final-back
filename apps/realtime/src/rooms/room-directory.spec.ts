@@ -10,6 +10,7 @@ const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
   applyAppearance: vi.fn().mockReturnValue(result > 0),
   applyDeskCount: vi.fn(),
+  applyTutorBotSkin: vi.fn(),
   broadcastChatMessage: vi.fn(),
   broadcastChatMessageHidden: vi.fn(),
 });
@@ -135,6 +136,19 @@ describe('RoomDirectory', () => {
     expect(a.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
     expect(twin.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
     expect(other.applyDeskCount).not.toHaveBeenCalled();
+  });
+
+  it('applies a tutor bot skin to the rooms of that classroom only (#154)', () => {
+    const directory = new RoomDirectory();
+    const a = room();
+    const other = room();
+    directory.register(CLASSROOM, a);
+    directory.register(FOREIGN, other);
+
+    directory.applyTutorBotSkin(CLASSROOM, 'boca', 2);
+
+    expect(a.applyTutorBotSkin).toHaveBeenCalledExactlyOnceWith('boca', 2);
+    expect(other.applyTutorBotSkin).not.toHaveBeenCalled();
   });
 
   it('applies a desk count to nothing for an unknown classroom', () => {

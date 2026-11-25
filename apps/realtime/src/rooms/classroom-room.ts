@@ -28,6 +28,7 @@ import {
   type NpcHome,
   type NpcId,
   type NpcInteract,
+  type TutorBotSkin,
   type ChatMessageHiddenPayload,
   type ChatMessagePayload,
 } from '@aula/contracts';
@@ -157,6 +158,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   private readonly npcRuntimes = new Map<NpcId, NpcRuntime>();
   /** When each member last made each NPC react (`userId:npcId`), for the per-member cooldown. */
   private readonly npcInteractedAt = new Map<string, number>();
+  /** Revision of the synced tutor bot skin; server-only ordering token (#154). */
+  private tutorBotSkinRevision = 0;
   /** Last phrase the tutor bot said, so it never repeats it back to back. */
   private lastPhraseId = -1;
   private readonly connectedTime = new ConnectedTimeTracker();
@@ -235,6 +238,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       auth.role = current.role;
       auth.displayName = current.displayName;
       auth.deskCount = current.deskCount;
+      auth.tutorBotSkin = current.tutorBotSkin;
+      auth.tutorBotSkinRevision = current.tutorBotSkinRevision;
       if (current.appearanceRevision >= admission.appearanceRevision) {
         admission.appearance = current.appearance;
         admission.appearanceRevision = current.appearanceRevision;
@@ -263,6 +268,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     this.authByConnection.set(client.sessionId, auth);
     // Before the avatar is placed, so a newcomer spawns in the layout the classroom has now.
     this.applyDeskCount(auth.deskCount);
+    this.applyTutorBotSkin(auth.tutorBotSkin, auth.tutorBotSkinRevision);
     if (attached.first) {
       this.addAvatar(auth);
     } else {
@@ -328,6 +334,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       auth.displayName = current.displayName;
       auth.deskCount = current.deskCount;
       this.applyDeskCount(current.deskCount);
+      auth.tutorBotSkin = current.tutorBotSkin;
+      auth.tutorBotSkinRevision = current.tutorBotSkinRevision;
+      this.applyTutorBotSkin(current.tutorBotSkin, current.tutorBotSkinRevision);
       auth.appearance = current.appearance;
       auth.appearanceRevision = current.appearanceRevision;
       const avatar = this.state.avatars.get(userId);
@@ -453,6 +462,17 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       avatar.z = spawn.z;
       placed.push(avatar);
     }
+  }
+
+  /**
+   * Syncs the classroom's tutor bot skin (#154). Called with each verified identity (admission,
+   * reconnection) and from the API push after staff change it, through the room directory. An
+   * older revision is a stale delivery or re-verification and is ignored.
+   */
+  applyTutorBotSkin(skin: TutorBotSkin, revision: number): void {
+    if (revision < this.tutorBotSkinRevision) return;
+    this.tutorBotSkinRevision = revision;
+    if (this.state.tutorBotSkin !== skin) this.state.tutorBotSkin = skin;
   }
 
   /** Puts the pet and the tutor bot idle at the homes of the current layout (#147). */

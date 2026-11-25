@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Tutor bot skin per classroom, synced to the room (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (schema, migration `20261125010000_add_classroom_tutor_bot_skin`), `apps/api/src/classrooms/`, `apps/api/src/platform/realtime/`, `apps/api/src/internal/realtime/`, `apps/realtime/src/`, `packages/contracts/`, `apps/api/openapi.json`, `docs/`, `rules/`
+- **Change:** Classroom staff set `tutorBotSkin` through `PATCH /classrooms/:id`; classroom responses expose it and the room syncs it as `ClassroomState.tutorBotSkin`, from join verification for new rooms and from an outbox push for live ones, ordered by a per-classroom revision.
+- **Reason:** The whole classroom must see the same tutor bot skin, including late joiners.
+- **Verification:** Specs written RED first; touched specs without a database, lint, typecheck and Prettier pass. DB-backed specs (join verification, reverification, context transaction, classrooms integration) were not run and the migration was not applied.
+- **Next step:** Deploy API and realtime together after the migration. Front regenerates API and realtime types. Run the DB-backed specs in CI.
+
 ## 2026-11-25 — Desk decor shop items and per-desk visibility (#154)
 
 - **Status:** completed

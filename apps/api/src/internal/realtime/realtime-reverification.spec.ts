@@ -132,6 +132,8 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       displayName: 'rv-teacher',
       appearanceRevision: 0,
       deskCount: 0,
+      tutorBotSkin: 'none',
+      tutorBotSkinRevision: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
         items: {
@@ -215,6 +217,8 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
         'displayName',
         'role',
         'sessionId',
+        'tutorBotSkin',
+        'tutorBotSkinRevision',
         'userId',
       ]);
       expect(JSON.stringify(res.body)).not.toContain('@example.com');

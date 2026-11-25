@@ -70,6 +70,9 @@ export interface StubUser {
   appearanceRevision: number;
   /** Desks of the classroom served on join and reverification (#79). */
   deskCount: number;
+  /** Tutor bot skin of the classroom and its ordering token (#154); default 'none', 0. */
+  tutorBotSkin?: string;
+  tutorBotSkinRevision?: number;
   /** Appearance served on join and reverification; mutate it to simulate a change. */
   appearance: StubAppearance;
   /** Classrooms the user can currently access; mutate it to simulate access loss. */
@@ -136,6 +139,8 @@ export async function startStubApi(users: StubUser[]): Promise<StubApi> {
     appearanceRevision: user.appearanceRevision,
     appearance: user.appearance,
     deskCount: user.deskCount,
+    tutorBotSkin: user.tutorBotSkin ?? 'none',
+    tutorBotSkinRevision: user.tutorBotSkinRevision ?? 0,
   });
 
   stub.server = createServer((req, res) => {

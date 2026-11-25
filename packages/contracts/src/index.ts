@@ -185,6 +185,29 @@ export const memberAppearanceSchema = z
   );
 export type MemberAppearance = z.infer<typeof memberAppearanceSchema>;
 
+/**
+ * Skins of the tutor bot a classroom's staff can choose (#154). Each value but `none` matches a
+ * frontend model `public/models/bot/skins/skin-<id>.glb`.
+ */
+export const TUTOR_BOT_SKINS = [
+  'none',
+  'boca',
+  'seleccion',
+  'folklore',
+  'guardapolvo',
+  'scientist',
+  'graduate',
+  'gamer',
+] as const;
+export type TutorBotSkin = (typeof TUTOR_BOT_SKINS)[number];
+
+export const DEFAULT_TUTOR_BOT_SKIN: TutorBotSkin = 'none';
+
+/** Narrows a stored value; one this build does not know reads as no skin. */
+export function toTutorBotSkin(value: string): TutorBotSkin {
+  return TUTOR_BOT_SKINS.find((skin) => skin === value) ?? DEFAULT_TUTOR_BOT_SKIN;
+}
+
 /** Axis-aligned box on the floor plane (x, z), in layout units. */
 export interface LayoutBox {
   minX: number;

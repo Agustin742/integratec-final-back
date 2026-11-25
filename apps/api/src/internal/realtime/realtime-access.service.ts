@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { toTutorBotSkin } from '@aula/contracts';
 import { AccessVerificationService } from '../../access/access-verification.service';
 import { SessionVerifier } from '../../auth/session-verifier.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -51,9 +52,13 @@ export class RealtimeAccessService {
     if (myRole === 'PARENT') {
       throw new ForbiddenException('Live classroom access is not available for this role');
     }
-    const [{ displayName, appearanceRevision, appearance }, deskCount] = await Promise.all([
+    const [{ displayName, appearanceRevision, appearance }, deskCount, skin] = await Promise.all([
       memberAppearanceFor(this.prisma, userId, classroom.id, this.unsupportedAppearanceOptions()),
       this.prisma.desk.count({ where: { classroomId: classroom.id } }),
+      this.prisma.classroom.findUniqueOrThrow({
+        where: { id: classroom.id },
+        select: { tutorBotSkin: true, tutorBotSkinRevision: true },
+      }),
     ]);
     return {
       userId,
@@ -64,6 +69,8 @@ export class RealtimeAccessService {
       appearance,
       appearanceRevision,
       deskCount,
+      tutorBotSkin: toTutorBotSkin(skin.tutorBotSkin),
+      tutorBotSkinRevision: skin.tutorBotSkinRevision,
     };
   }
 

@@ -1,3 +1,4 @@
+import { DEFAULT_TUTOR_BOT_SKIN, TUTOR_BOT_SKINS, toTutorBotSkin } from './index';
 import { describe, it, expect } from 'vitest';
 import {
   CHAT_MESSAGE_EVENT,
@@ -184,5 +185,26 @@ describe('NPC contract (#147)', () => {
       expect(phrase.length).toBeLessThanOrEqual(90);
       expect(phrase).not.toMatch(/\p{Extended_Pictographic}/u);
     }
+  });
+});
+
+describe('tutor bot skins (#154)', () => {
+  it('pins the skins the front ships, with none first and as the default', () => {
+    expect(TUTOR_BOT_SKINS).toEqual([
+      'none',
+      'boca',
+      'seleccion',
+      'folklore',
+      'guardapolvo',
+      'scientist',
+      'graduate',
+      'gamer',
+    ]);
+    expect(DEFAULT_TUTOR_BOT_SKIN).toBe('none');
+  });
+
+  it('reads a stored value, falling back to the default for an unknown one', () => {
+    expect(toTutorBotSkin('boca')).toBe('boca');
+    expect(toTutorBotSkin('river')).toBe('none');
   });
 });

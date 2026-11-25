@@ -16,6 +16,8 @@ const IDENTITY = {
   appearanceRevision: 1,
   appearance: makeStubAppearance(),
   deskCount: 12,
+  tutorBotSkin: 'none',
+  tutorBotSkinRevision: 0,
 };
 
 /**
@@ -105,6 +107,12 @@ describe('ApiJoinVerifier', () => {
     ['a missing appearance revision', json(200, { ...IDENTITY, appearanceRevision: undefined })],
     ['a negative appearance revision', json(200, { ...IDENTITY, appearanceRevision: -1 })],
     ['a missing desk count', json(200, { ...IDENTITY, deskCount: undefined })],
+    ['a missing tutor bot skin', json(200, { ...IDENTITY, tutorBotSkin: undefined })],
+    ['an unknown tutor bot skin', json(200, { ...IDENTITY, tutorBotSkin: 'river' })],
+    [
+      'a missing tutor bot skin revision',
+      json(200, { ...IDENTITY, tutorBotSkinRevision: undefined }),
+    ],
     ['a negative desk count', json(200, { ...IDENTITY, deskCount: -1 })],
     ['a fractional desk count', json(200, { ...IDENTITY, deskCount: 12.5 })],
     ['a string desk count', json(200, { ...IDENTITY, deskCount: '12' })],

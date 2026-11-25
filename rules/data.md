@@ -17,7 +17,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | AvatarConfiguration | Persistent avatar appearance | One per user |
 | School | Isolation unit of the school path; persisted IANA time zone (default `America/Argentina/Buenos_Aires`, D10) | One Owner; many members and classrooms |
 | SchoolMember | Membership with school role (Owner, Admin, Teacher) and state | Joins User and School |
-| Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
+| Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state; tutor bot skin (a `TUTOR_BOT_SKINS` value, default `none`) with a monotonic revision | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
 | Enrollment | A student's membership in a classroom, and state | Joins User and Classroom |
 | ParentLink | Link from a parent to one child, within a classroom context | Joins parent User and child User; a parent has many links |
 | Invitation | Two mechanisms (D7). Email invitation: hashed secret, target email, target (school or classroom), role, expiry, state. Classroom join code: classroom, `Student` role only, hashed secret, expiry, optional maximum uses, use count, state | Belongs to a School or Classroom; has a creator; each join code use is recorded (who and when) |
