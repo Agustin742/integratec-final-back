@@ -3482,6 +3482,32 @@
         "tags": ["family"]
       }
     },
+    "/me/family-threads": {
+      "get": {
+        "description": "Returns all active parent-child messaging threads across live, non-adult-mode classrooms where the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or `SCHOOL_ADMIN`), including the latest visible message preview. Ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Returns `{ items: [] }` without error for students, parents, or users without staff classrooms.",
+        "operationId": "FamilyController_listMyFamilyThreads",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Active family messaging threads for the authenticated staff user.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StaffFamilyThreadsResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List active parent-teacher messaging threads for staff classrooms",
+        "tags": ["family"]
+      }
+    },
     "/parent-links/{linkId}/messages": {
       "get": {
         "description": "Returns paginated visible messages for one active parent-child link, ordered chronologically (`createdAt ASC, id ASC`) for natural conversation reading. Accessible only to the linked parent and classroom staff (teacher, school admin, or school owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
@@ -7650,6 +7676,73 @@
           }
         },
         "required": ["link", "items", "page", "pageSize", "total", "metrics"]
+      },
+      "StaffFamilyThreadDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "ParentLink UUID." },
+          "classroomId": { "type": "string", "format": "uuid", "description": "Classroom UUID." },
+          "classroomName": { "type": "string", "description": "Classroom display name." },
+          "parentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Linked parent user UUID."
+          },
+          "parentDisplayName": {
+            "type": "string",
+            "description": "Current display name of the linked parent."
+          },
+          "childId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Linked student user UUID."
+          },
+          "childDisplayName": {
+            "type": "string",
+            "description": "Current display name of the linked student."
+          },
+          "lastMessageBody": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000,
+            "description": "Latest visible message body in this thread, or null if no messages exist yet."
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "UTC ISO-8601 timestamp of the latest visible message, or null if none."
+          },
+          "lastMessageAuthorRole": {
+            "type": "string",
+            "enum": ["PARENT", "STAFF"],
+            "nullable": true,
+            "description": "Role of the author of the latest visible message (`PARENT` or `STAFF`), or null if none."
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "classroomName",
+          "parentId",
+          "parentDisplayName",
+          "childId",
+          "childDisplayName",
+          "lastMessageBody",
+          "lastMessageAt",
+          "lastMessageAuthorRole"
+        ]
+      },
+      "StaffFamilyThreadsResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Active family threads ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Empty when the authenticated user has no staff classrooms.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/StaffFamilyThreadDto" }
+          }
+        },
+        "required": ["items"]
       },
       "ParentLinkMessageDto": {
         "type": "object",

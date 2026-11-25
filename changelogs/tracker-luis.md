@@ -1,5 +1,18 @@
 # Tracker — Luis
 
+## 2026-11-25 — Staff Family Threads Endpoint (`GET /me/family-threads`, `feat/parent-invitations`)
+
+- **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)
+- **Area / files:** `apps/api/src/family/family-messages.dto.ts`, `apps/api/src/family/family-messages.service.ts`, `apps/api/src/family/family.service.ts`, `apps/api/src/family/family.controller.ts`, `apps/api/src/family/family-messages.service.spec.ts`, `apps/api/src/family/family.service.spec.ts`, `apps/api/src/family/family.http.integration.spec.ts`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented `GET /me/family-threads` for staff (teachers, school owners, and school admins) without any Prisma schema migration:
+  1. Added `StaffFamilyThreadDto` and `StaffFamilyThreadsResponseDto` to `family-messages.dto.ts`.
+  2. Added `FamilyMessagesService.listMyFamilyThreads`: resolves all live, non-deleted, non-`adultMode` classrooms where the caller holds a staff role (`independentTeacherId`, active `TEACHER` `ClassroomMembership` with live school membership if school-owned, or active `OWNER`/`ADMIN` `SchoolMember`); returns `{ items: [] }` immediately when the caller has no staff classrooms (zero errors for students/parents); fetches active `ParentLink` rows for those classrooms whose child still holds an `ACTIVE` non-deleted `STUDENT` membership in that exact classroom along with the latest visible (`hiddenAt: null`) message preview; sorts deterministically by `lastMessageAt DESC NULLS LAST`, `createdAt ASC`, `id ASC`; maps `lastMessageAuthorRole` (`'PARENT' | 'STAFF' | null`).
+  3. Refactored `FamilyController` prefix to `@Controller('me')` preserving `GET /me/parent-links` and `GET /me/parent-links/:linkId/report-card` while adding `GET /me/family-threads` under `@ApiTags('family')` and `SessionAuthGuard`.
+  4. Added unit tests in `family-messages.service.spec.ts`, updated controller delegation test in `family.service.spec.ts`, added HTTP integration coverage in `family.http.integration.spec.ts`, and re-exported `apps/api/openapi.json`.
+- **Reason:** Enable classroom staff to discover and preview all active parent-teacher messaging threads across their classrooms.
+- **Validation:** `openapi:export`, targeted Vitest suites passed **39/39 across 3 files (`0` skipped)**: `family-messages.service.spec.ts` (15/15), `family.service.spec.ts` (10/10), `openapi.spec.ts` (14/14). `pnpm lint` (0 errors, 1 pre-existing warning in `openapi.spec.ts:559`), `pnpm typecheck` (all 3 workspaces), `pnpm format:check`, `python scripts/ci/check_docs.py` (84 files), and `git diff --check develop` passed. PostgreSQL HTTP integration suite (`family.http.integration.spec.ts`) is ready to run unsandboxed against PostgreSQL by the coordinator.
+- **Next step:** Run PostgreSQL HTTP integration suite (`family.http.integration.spec.ts`) against local PostgreSQL, review, and commit on `feat/parent-invitations`.
+
 ## 2026-11-25 — Corte 3: Private Parent ↔ Teacher Messaging (`feat/parent-invitations`)
 
 - **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)
