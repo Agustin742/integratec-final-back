@@ -1,6 +1,7 @@
 import {
   AVATAR_SPEED_UNITS_PER_SECOND,
   buildClassroomLayout,
+  deriveNpcHomes,
   MIN_CLASSROOM_DESKS,
   type LayoutBox,
 } from '@aula/contracts';
@@ -88,7 +89,8 @@ describe('stepAvatar', () => {
     const west = run({ x: -7, z: 5.5 }, { x: -1, z: 0 }, 40).position;
     expect(west.x).toBeCloseTo(bounds.minX + avatarRadius, 6);
 
-    const north = run({ x: 7, z: -5 }, { x: 0, z: -1 }, 40).position;
+    // x = 3 is clear of the kiosk, the pet bed and the desk columns.
+    const north = run({ x: 3, z: -5 }, { x: 0, z: -1 }, 40).position;
     expect(north.z).toBeCloseTo(bounds.minZ + avatarRadius, 6);
   });
 
@@ -132,5 +134,29 @@ describe('stepAvatar', () => {
       position = stepAvatar(LAYOUT, position, { x: random(), z: random() }, DT);
       expect(isWalkable(LAYOUT, position.x, position.z)).toBe(true);
     }
+  });
+});
+
+describe('prop obstacles', () => {
+  it('blocks avatar centres inside the inflated footprint of every prop', () => {
+    for (const prop of LAYOUT.props) {
+      const x = (prop.minX + prop.maxX) / 2;
+      const z = (prop.minZ + prop.maxZ) / 2;
+      expect(isWalkable(LAYOUT, x, z)).toBe(false);
+    }
+    // 0.1 m in front of the kiosk face: inside the avatar radius.
+    expect(isWalkable(LAYOUT, 4.8, -4.99)).toBe(false);
+    expect(isWalkable(LAYOUT, 4.8, -4.8)).toBe(true);
+  });
+
+  it('stops an avatar walking into the shop kiosk', () => {
+    const { position } = run({ x: 4.8, z: -3.2 }, { x: 0, z: -1 }, 80);
+    const kiosk = LAYOUT.props.find((p) => p.id === 'shopKiosk');
+    expect(position.z).toBeGreaterThanOrEqual((kiosk?.maxZ ?? 0) + avatarRadius - 1e-9);
+  });
+
+  it('keeps the tutor bot home walkable', () => {
+    const { tutorBot } = deriveNpcHomes(LAYOUT);
+    expect(isWalkable(LAYOUT, tutorBot.x, tutorBot.z)).toBe(true);
   });
 });

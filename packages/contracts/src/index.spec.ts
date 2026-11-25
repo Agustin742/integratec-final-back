@@ -7,6 +7,14 @@ import {
   memberAppearanceSchema,
   type MemberAppearance,
   type HealthStatus,
+  NPC_EMOTES,
+  NPC_IDS,
+  NPC_INTERACT_COOLDOWN_MS,
+  NPC_INTERACT_MAX_DISTANCE,
+  NPC_INTERACT_MESSAGE,
+  NpcState,
+  npcInteractSchema,
+  TUTOR_BOT_PHRASES,
 } from './index';
 
 describe('@aula/contracts smoke test', () => {
@@ -127,5 +135,43 @@ describe('memberAppearanceSchema (#114)', () => {
     const { head, ...partial } = appearance.items;
     expect(head).toBeTruthy();
     expect(memberAppearanceSchema.safeParse({ ...appearance, items: partial }).success).toBe(false);
+  });
+});
+
+describe('NPC contract (#147)', () => {
+  it('names the two NPCs and the state set', () => {
+    expect(NPC_IDS).toEqual(['pet', 'tutorBot']);
+    expect(Object.values(NpcState)).toEqual(['idle', 'walking', 'emote', 'sleeping', 'reacting']);
+  });
+
+  it('lists the emotes each NPC can play', () => {
+    expect(NPC_EMOTES.tutorBot).toEqual(['Wave', 'Think', 'Celebrate', 'Encourage', 'Talk']);
+    expect(NPC_EMOTES.pet).toEqual(['Meow', 'AskForPets', 'Sleep', 'Walk']);
+  });
+
+  it('validates the interact message and rejects unknown NPCs and extra fields', () => {
+    expect(NPC_INTERACT_MESSAGE).toBe('npc:interact');
+    expect(npcInteractSchema.safeParse({ npcId: 'pet' }).success).toBe(true);
+    expect(npcInteractSchema.safeParse({ npcId: 'tutorBot' }).success).toBe(true);
+    expect(npcInteractSchema.safeParse({ npcId: 'dog' }).success).toBe(false);
+    expect(npcInteractSchema.safeParse({}).success).toBe(false);
+    expect(npcInteractSchema.safeParse({ npcId: 'pet', x: 1 }).success).toBe(false);
+  });
+
+  it('bounds the interaction distance and cooldown', () => {
+    expect(NPC_INTERACT_MAX_DISTANCE).toBeCloseTo(1.8, 10);
+    expect(NPC_INTERACT_COOLDOWN_MS).toBe(4000);
+  });
+
+  it('ships short, unique, emoji-free tutor bot phrases', () => {
+    expect(TUTOR_BOT_PHRASES.length).toBeGreaterThanOrEqual(18);
+    expect(TUTOR_BOT_PHRASES.length).toBeLessThanOrEqual(30);
+    expect(new Set(TUTOR_BOT_PHRASES).size).toBe(TUTOR_BOT_PHRASES.length);
+    for (const phrase of TUTOR_BOT_PHRASES) {
+      expect(phrase.trim()).toBe(phrase);
+      expect(phrase.length).toBeGreaterThan(10);
+      expect(phrase.length).toBeLessThanOrEqual(90);
+      expect(phrase).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
   });
 });

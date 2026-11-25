@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildClassroomLayout,
   CLASSROOM_DESK_ROW_SPACING,
+  deriveNpcHomes,
   MAX_CLASSROOM_DESKS,
   MIN_CLASSROOM_DESKS,
   type ClassroomLayout,
@@ -16,7 +17,7 @@ const box = (cx: number, cz: number, hw: number, hd: number): LayoutBox => ({
 });
 
 /** The fixed layout that shipped before per-classroom layouts (#79), inlined on purpose. */
-const LEGACY_LAYOUT: ClassroomLayout = {
+const LEGACY_LAYOUT: Omit<ClassroomLayout, 'props'> = {
   bounds: { minX: -8, maxX: 8, minZ: -6, maxZ: 6 },
   avatarRadius: 0.3,
   obstacles: [
@@ -49,7 +50,7 @@ describe('buildClassroomLayout', () => {
     expect(layout.avatarRadius).toBe(LEGACY_LAYOUT.avatarRadius);
     expect(layout.spawnPoints).toEqual(LEGACY_LAYOUT.spawnPoints);
     expect(layout.obstacles).toEqual(LEGACY_LAYOUT.obstacles);
-    expect(layout).toEqual(LEGACY_LAYOUT);
+    expect({ ...layout, props: undefined }).toEqual({ ...LEGACY_LAYOUT, props: undefined });
   });
 
   it('adds a fourth row with the 13th desk and grows the room towards the back', () => {
@@ -100,7 +101,7 @@ describe('buildClassroomLayout', () => {
     ['Infinity', Number.POSITIVE_INFINITY],
     ['-Infinity', Number.NEGATIVE_INFINITY],
   ])('treats %s as 12 desks', (_label, count) => {
-    expect(buildClassroomLayout(count)).toEqual(LEGACY_LAYOUT);
+    expect(buildClassroomLayout(count)).toEqual(buildClassroomLayout(12));
   });
 
   it('floors a fractional count above the minimum', () => {
@@ -148,5 +149,79 @@ describe('MAX_CLASSROOM_DESKS (#79)', () => {
     for (const spawn of layout.spawnPoints) {
       expect(spawn.z).toBeLessThan(layout.bounds.maxZ);
     }
+  });
+});
+
+describe('prop obstacles', () => {
+  const find = (layout: ClassroomLayout, id: string) => layout.props.find((p) => p.id === id);
+
+  it('declares the shop kiosk, pet bed and bot station without touching the desk obstacles', () => {
+    const layout = buildClassroomLayout(12);
+    expect(layout.props.map((p) => p.id)).toEqual(['shopKiosk', 'petBed', 'botStation']);
+    expect(layout.obstacles).toEqual(LEGACY_LAYOUT.obstacles);
+  });
+
+  it('derives the footprints from the front docs and the room bounds', () => {
+    const layout = buildClassroomLayout(12);
+    const { minX, minZ } = layout.bounds;
+    const kiosk = find(layout, 'shopKiosk') as LayoutBox;
+    const bed = find(layout, 'petBed') as LayoutBox;
+    const station = find(layout, 'botStation') as LayoutBox;
+    const expectBox = (actual: LayoutBox, expected: LayoutBox) => {
+      expect(actual.minX).toBeCloseTo(expected.minX, 9);
+      expect(actual.maxX).toBeCloseTo(expected.maxX, 9);
+      expect(actual.minZ).toBeCloseTo(expected.minZ, 9);
+      expect(actual.maxZ).toBeCloseTo(expected.maxZ, 9);
+    };
+    // 1.96 x 0.71 m at (4.8, minZ + 0.44)
+    expectBox(kiosk, box(4.8, minZ + 0.44, 0.98, 0.355));
+    // 1.04 x 0.80 m at (6.85, minZ + 0.62)
+    expectBox(bed, box(6.85, minZ + 0.62, 0.52, 0.4));
+    // 1.532 x 1.278 m rotated 90 degrees: 1.278 along x, 1.532 along z, at (minX + 1.05, 1.05)
+    expectBox(station, box(minX + 1.05, 1.05, 0.639, 0.766));
+  });
+
+  it('stays clear of the walls, the desks and each other', () => {
+    for (const desks of [12, 13, 40]) {
+      const layout = buildClassroomLayout(desks);
+      for (const prop of layout.props) {
+        expect(inside(layout.bounds, prop)).toBe(true);
+        for (const obstacle of layout.obstacles) expect(overlaps(prop, obstacle)).toBe(false);
+      }
+      layout.props.forEach((a, i) =>
+        layout.props.slice(i + 1).forEach((b) => expect(overlaps(a, b)).toBe(false)),
+      );
+    }
+  });
+
+  it('keeps the props at the same place when the room grows towards the back', () => {
+    expect(buildClassroomLayout(40).props).toEqual(buildClassroomLayout(12).props);
+  });
+});
+
+describe('deriveNpcHomes', () => {
+  it('puts the pet on the bed cushion and the bot in front of its station', () => {
+    const layout = buildClassroomLayout(12);
+    const homes = deriveNpcHomes(layout);
+    const bed = layout.props.find((p) => p.id === 'petBed') as LayoutBox;
+    const station = layout.props.find((p) => p.id === 'botStation') as LayoutBox;
+    expect(homes.pet.x).toBeGreaterThan(bed.minX);
+    expect(homes.pet.x).toBeLessThan(bed.maxX);
+    expect(homes.pet.z).toBeGreaterThan(bed.minZ);
+    expect(homes.pet.z).toBeLessThan(bed.maxZ);
+    expect(homes.tutorBot.x).toBeCloseTo(station.maxX + 0.7, 9);
+    expect(homes.tutorBot.z).toBeCloseTo((station.minZ + station.maxZ) / 2, 9);
+    expect(homes.tutorBot.rotation).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it('follows the props of the layout it receives', () => {
+    const layout = buildClassroomLayout(12);
+    const shifted = {
+      ...layout,
+      props: layout.props.map((p) =>
+        p.id === 'petBed' ? { ...p, minZ: p.minZ + 1, maxZ: p.maxZ + 1 } : p,
+      ),
+    };
+    expect(deriveNpcHomes(shifted).pet.z).toBeCloseTo(deriveNpcHomes(layout).pet.z + 1, 9);
   });
 });
