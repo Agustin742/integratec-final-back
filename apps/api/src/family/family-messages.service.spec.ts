@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -49,8 +50,15 @@ function makeLinkRow(overrides?: { adultMode?: boolean }) {
 
 describe('FamilyMessagesService (unit)', () => {
   let prisma: {
+    classroom: {
+      findMany: ReturnType<typeof vi.fn>;
+    };
+    classroomMembership: {
+      findMany: ReturnType<typeof vi.fn>;
+    };
     parentLink: {
       findFirst: ReturnType<typeof vi.fn>;
+      findMany: ReturnType<typeof vi.fn>;
     };
     message: {
       count: ReturnType<typeof vi.fn>;
@@ -66,8 +74,15 @@ describe('FamilyMessagesService (unit)', () => {
 
   beforeEach(() => {
     prisma = {
+      classroom: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      classroomMembership: {
+        findMany: vi.fn().mockResolvedValue([]),
+      },
       parentLink: {
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       message: {
         count: vi.fn().mockResolvedValue(0),
@@ -329,6 +344,331 @@ describe('FamilyMessagesService (unit)', () => {
       NotFoundException,
     );
     expect(prisma.message.create).not.toHaveBeenCalled();
+  });
+
+  describe('listMyFamilyThreads', () => {
+    const link2Id = '00000000-0000-4000-8000-000000000032';
+    const link3Id = '00000000-0000-4000-8000-000000000033';
+    const link4Id = '00000000-0000-4000-8000-000000000034';
+    const classroom2Id = '00000000-0000-4000-8000-000000000012';
+    const child2Id = '00000000-0000-4000-8000-000000000008';
+
+    it.each([
+      { label: 'Teacher', actorId: teacherId },
+      { label: 'School Owner', actorId: schoolOwnerId },
+      { label: 'School Admin', actorId: schoolAdminId },
+    ])(
+      'returns active family threads for $label ordered by lastMessageAt DESC NULLS LAST, createdAt ASC, id ASC',
+      async ({ actorId }) => {
+        prisma.classroom.findMany.mockResolvedValueOnce([
+          { id: classroomId },
+          { id: classroom2Id },
+        ]);
+        prisma.parentLink.findMany.mockResolvedValueOnce([
+          {
+            id: link3Id,
+            classroomId,
+            parentId: foreignParentId,
+            childId: child2Id,
+            createdAt: new Date('2026-11-22T10:00:00.000Z'),
+            classroom: {
+              id: classroomId,
+              name: 'Physics A',
+              adultMode: false,
+              deletedAt: null,
+              schoolId,
+              school: { deletedAt: null },
+            },
+            parent: { id: foreignParentId, displayName: 'Parent Bruno' },
+            child: { id: child2Id, displayName: 'Student Lucas' },
+            messages: [],
+          },
+          {
+            id: linkId,
+            classroomId,
+            parentId,
+            childId,
+            createdAt: new Date('2026-11-20T10:00:00.000Z'),
+            classroom: {
+              id: classroomId,
+              name: 'Physics A',
+              adultMode: false,
+              deletedAt: null,
+              schoolId,
+              school: { deletedAt: null },
+            },
+            parent: { id: parentId, displayName: 'Parent Ana' },
+            child: { id: childId, displayName: 'Student Sofia' },
+            messages: [
+              {
+                body: 'Hello teacher',
+                createdAt: msg1CreatedAt,
+                authorId: parentId,
+              },
+            ],
+          },
+          {
+            id: link2Id,
+            classroomId: classroom2Id,
+            parentId: foreignParentId,
+            childId: child2Id,
+            createdAt: new Date('2026-11-21T10:00:00.000Z'),
+            classroom: {
+              id: classroom2Id,
+              name: 'Chemistry B',
+              adultMode: false,
+              deletedAt: null,
+              schoolId,
+              school: { deletedAt: null },
+            },
+            parent: { id: foreignParentId, displayName: 'Parent Bruno' },
+            child: { id: child2Id, displayName: 'Student Lucas' },
+            messages: [
+              {
+                body: 'Latest reply from staff',
+                createdAt: msg2CreatedAt,
+                authorId: actorId,
+              },
+            ],
+          },
+          {
+            id: link4Id,
+            classroomId: classroom2Id,
+            parentId,
+            childId,
+            createdAt: new Date('2026-11-21T10:00:00.000Z'),
+            classroom: {
+              id: classroom2Id,
+              name: 'Chemistry B',
+              adultMode: false,
+              deletedAt: null,
+              schoolId,
+              school: { deletedAt: null },
+            },
+            parent: { id: parentId, displayName: 'Parent Ana' },
+            child: { id: childId, displayName: 'Student Sofia' },
+            messages: [],
+          },
+        ]);
+        prisma.classroomMembership.findMany.mockResolvedValueOnce([
+          { classroomId, userId: childId },
+          { classroomId, userId: child2Id },
+          { classroomId: classroom2Id, userId: childId },
+          { classroomId: classroom2Id, userId: child2Id },
+        ]);
+
+        const res = await service.listMyFamilyThreads(actorId);
+
+        expect(prisma.classroom.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              deletedAt: null,
+              adultMode: false,
+              AND: [{ OR: [{ schoolId: null }, { school: { deletedAt: null } }] }],
+              OR: [
+                {
+                  school: {
+                    members: {
+                      some: {
+                        userId: actorId,
+                        state: MembershipState.ACTIVE,
+                        role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
+                      },
+                    },
+                  },
+                },
+                { independentTeacherId: actorId },
+                {
+                  memberships: {
+                    some: {
+                      userId: actorId,
+                      role: ClassroomRole.TEACHER,
+                      state: MembershipState.ACTIVE,
+                      deletedAt: null,
+                    },
+                  },
+                  OR: [
+                    { schoolId: null },
+                    {
+                      school: {
+                        members: { some: { userId: actorId, state: MembershipState.ACTIVE } },
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+            select: { id: true },
+          }),
+        );
+        expect(prisma.parentLink.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              classroomId: { in: [classroomId, classroom2Id] },
+              state: MembershipState.ACTIVE,
+              classroom: {
+                deletedAt: null,
+                adultMode: false,
+                OR: [{ schoolId: null }, { school: { deletedAt: null } }],
+              },
+            },
+          }),
+        );
+        expect(res).toEqual({
+          items: [
+            {
+              id: link2Id,
+              classroomId: classroom2Id,
+              classroomName: 'Chemistry B',
+              parentId: foreignParentId,
+              parentDisplayName: 'Parent Bruno',
+              childId: child2Id,
+              childDisplayName: 'Student Lucas',
+              lastMessageBody: 'Latest reply from staff',
+              lastMessageAt: msg2CreatedAt.toISOString(),
+              lastMessageAuthorRole: 'STAFF',
+            },
+            {
+              id: linkId,
+              classroomId,
+              classroomName: 'Physics A',
+              parentId,
+              parentDisplayName: 'Parent Ana',
+              childId,
+              childDisplayName: 'Student Sofia',
+              lastMessageBody: 'Hello teacher',
+              lastMessageAt: msg1CreatedAt.toISOString(),
+              lastMessageAuthorRole: 'PARENT',
+            },
+            {
+              id: link4Id,
+              classroomId: classroom2Id,
+              classroomName: 'Chemistry B',
+              parentId,
+              parentDisplayName: 'Parent Ana',
+              childId,
+              childDisplayName: 'Student Sofia',
+              lastMessageBody: null,
+              lastMessageAt: null,
+              lastMessageAuthorRole: null,
+            },
+            {
+              id: link3Id,
+              classroomId,
+              classroomName: 'Physics A',
+              parentId: foreignParentId,
+              parentDisplayName: 'Parent Bruno',
+              childId: child2Id,
+              childDisplayName: 'Student Lucas',
+              lastMessageBody: null,
+              lastMessageAt: null,
+              lastMessageAuthorRole: null,
+            },
+          ],
+        });
+      },
+    );
+
+    it('excludes adultMode classrooms, deleted classrooms/schools, inactive links, and removed students', async () => {
+      prisma.classroom.findMany.mockResolvedValueOnce([{ id: classroomId }]);
+      prisma.parentLink.findMany.mockResolvedValueOnce([
+        // Live active link with active student -> kept
+        {
+          id: linkId,
+          classroomId,
+          parentId,
+          childId,
+          createdAt: linkCreatedAt,
+          classroom: {
+            id: classroomId,
+            name: 'Physics A',
+            adultMode: false,
+            deletedAt: null,
+            schoolId,
+            school: { deletedAt: null },
+          },
+          parent: { id: parentId, displayName: 'Parent Ana' },
+          child: { id: childId, displayName: 'Student Sofia' },
+          messages: [],
+        },
+        // adultMode: true -> defensively excluded
+        {
+          id: link2Id,
+          classroomId: classroom2Id,
+          parentId,
+          childId,
+          createdAt: linkCreatedAt,
+          classroom: {
+            id: classroom2Id,
+            name: 'Adult Night',
+            adultMode: true,
+            deletedAt: null,
+            schoolId: null,
+            school: null,
+          },
+          parent: { id: parentId, displayName: 'Parent Ana' },
+          child: { id: childId, displayName: 'Student Sofia' },
+          messages: [],
+        },
+        // Deleted classroom -> defensively excluded
+        {
+          id: link3Id,
+          classroomId: classroom2Id,
+          parentId,
+          childId,
+          createdAt: linkCreatedAt,
+          classroom: {
+            id: classroom2Id,
+            name: 'Deleted Class',
+            adultMode: false,
+            deletedAt: new Date(),
+            schoolId: null,
+            school: null,
+          },
+          parent: { id: parentId, displayName: 'Parent Ana' },
+          child: { id: childId, displayName: 'Student Sofia' },
+          messages: [],
+        },
+        // Removed student (child2Id not in activeMemberships) -> excluded
+        {
+          id: link4Id,
+          classroomId,
+          parentId: foreignParentId,
+          childId: child2Id,
+          createdAt: linkCreatedAt,
+          classroom: {
+            id: classroomId,
+            name: 'Physics A',
+            adultMode: false,
+            deletedAt: null,
+            schoolId,
+            school: { deletedAt: null },
+          },
+          parent: { id: foreignParentId, displayName: 'Parent Bruno' },
+          child: { id: child2Id, displayName: 'Former Student' },
+          messages: [],
+        },
+      ]);
+      // Only (classroomId, childId) has an active STUDENT membership
+      prisma.classroomMembership.findMany.mockResolvedValueOnce([{ classroomId, userId: childId }]);
+
+      const res = await service.listMyFamilyThreads(teacherId);
+      expect(res.items.map((item) => item.id)).toEqual([linkId]);
+    });
+
+    it('returns { items: [] } for students, parents without staff classrooms, and invalid UUIDs', async () => {
+      await expect(service.listMyFamilyThreads('not-a-uuid')).resolves.toEqual({ items: [] });
+      expect(prisma.classroom.findMany).not.toHaveBeenCalled();
+
+      prisma.classroom.findMany.mockResolvedValueOnce([]);
+      await expect(service.listMyFamilyThreads(childId)).resolves.toEqual({ items: [] });
+
+      prisma.classroom.findMany.mockResolvedValueOnce([]);
+      await expect(service.listMyFamilyThreads(parentId)).resolves.toEqual({ items: [] });
+
+      expect(prisma.parentLink.findMany).not.toHaveBeenCalled();
+      expect(prisma.classroomMembership.findMany).not.toHaveBeenCalled();
+    });
   });
 });
 

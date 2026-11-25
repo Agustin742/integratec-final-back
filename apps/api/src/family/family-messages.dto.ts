@@ -137,3 +137,62 @@ export class ParentLinkMessagesResponseDto {
   })
   total!: number;
 }
+
+/** One active parent-child messaging thread visible to classroom staff (`GET /me/family-threads`). */
+export class StaffFamilyThreadDto {
+  @ApiProperty({ format: 'uuid', description: 'ParentLink UUID.' })
+  id!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'Classroom UUID.' })
+  classroomId!: string;
+
+  @ApiProperty({ description: 'Classroom display name.' })
+  classroomName!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'Linked parent user UUID.' })
+  parentId!: string;
+
+  @ApiProperty({ description: 'Current display name of the linked parent.' })
+  parentDisplayName!: string;
+
+  @ApiProperty({ format: 'uuid', description: 'Linked student user UUID.' })
+  childId!: string;
+
+  @ApiProperty({ description: 'Current display name of the linked student.' })
+  childDisplayName!: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    maxLength: PARENT_LINK_MESSAGE_MAX_BODY_LENGTH,
+    description: 'Latest visible message body in this thread, or null if no messages exist yet.',
+  })
+  lastMessageBody!: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'UTC ISO-8601 timestamp of the latest visible message, or null if none.',
+  })
+  lastMessageAt!: string | null;
+
+  @ApiProperty({
+    enum: ['PARENT', 'STAFF'],
+    nullable: true,
+    description:
+      'Role of the author of the latest visible message (`PARENT` or `STAFF`), or null if none.',
+  })
+  lastMessageAuthorRole!: ParentLinkMessageAuthorRole | null;
+}
+
+/** Active family messaging threads across all classrooms where the caller holds a staff role. */
+export class StaffFamilyThreadsResponseDto {
+  @ApiProperty({
+    type: [StaffFamilyThreadDto],
+    description:
+      'Active family threads ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, ' +
+      'then `id ASC`. Empty when the authenticated user has no staff classrooms.',
+  })
+  items!: StaffFamilyThreadDto[];
+}

@@ -5,6 +5,7 @@ import type { ListReportCardQueryDto } from '../metrics/metrics.dto';
 import { MetricsService } from '../metrics/metrics.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { FamilyController } from './family.controller';
+import type { FamilyMessagesService } from './family-messages.service';
 import { FamilyService } from './family.service';
 
 const parentId = '00000000-0000-4000-8000-000000000001';
@@ -382,18 +383,27 @@ describe('MetricsService.readStudentActivitySummary (unit)', () => {
 });
 
 describe('FamilyController (unit adapter delegation)', () => {
-  it('delegates listMyParentLinks and getChildReportCard to FamilyService', async () => {
-    const stub = {
+  it('delegates listMyParentLinks, getChildReportCard, and listMyFamilyThreads to services', async () => {
+    const familyStub = {
       listMyParentLinks: vi.fn().mockResolvedValue({ items: [] }),
       getChildReportCard: vi.fn().mockResolvedValue({ items: [], total: 0 }),
     };
-    const controller = new FamilyController(stub as unknown as FamilyService);
+    const familyMessagesStub = {
+      listMyFamilyThreads: vi.fn().mockResolvedValue({ items: [] }),
+    };
+    const controller = new FamilyController(
+      familyStub as unknown as FamilyService,
+      familyMessagesStub as unknown as FamilyMessagesService,
+    );
     const query: ListReportCardQueryDto = { page: 2, pageSize: 10 };
 
     await controller.listMyParentLinks(parentId);
-    expect(stub.listMyParentLinks).toHaveBeenCalledWith(parentId);
+    expect(familyStub.listMyParentLinks).toHaveBeenCalledWith(parentId);
 
     await controller.getChildReportCard(parentId, link1Id, query);
-    expect(stub.getChildReportCard).toHaveBeenCalledWith(parentId, link1Id, query);
+    expect(familyStub.getChildReportCard).toHaveBeenCalledWith(parentId, link1Id, query);
+
+    await controller.listMyFamilyThreads(parentId);
+    expect(familyMessagesStub.listMyFamilyThreads).toHaveBeenCalledWith(parentId);
   });
 });

@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { MembershipState, type Prisma } from '@prisma/client';
+import { ClassroomRole, MembershipState, type Prisma, SchoolRole } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { toIsoString } from '../http/iso-string';
 import { RequestValidationException } from '../http/validation';
@@ -13,6 +13,8 @@ import {
   type ParentLinkMessageAuthorRole,
   type ParentLinkMessageDto,
   type ParentLinkMessagesResponseDto,
+  type StaffFamilyThreadDto,
+  type StaffFamilyThreadsResponseDto,
   UNSAFE_PARENT_MESSAGE_CONTROL_CHARS,
 } from './family-messages.dto';
 import { FAMILY_LINK_SELECT, isClassroomLive, toFamilyLinkDto } from './family.service';
@@ -24,6 +26,50 @@ const PARENT_LINK_MESSAGE_THREAD_SELECT = {
 
 type ParentLinkMessageThreadRow = Prisma.ParentLinkGetPayload<{
   select: typeof PARENT_LINK_MESSAGE_THREAD_SELECT;
+}>;
+
+const STAFF_FAMILY_THREAD_SELECT = {
+  id: true,
+  classroomId: true,
+  parentId: true,
+  childId: true,
+  createdAt: true,
+  classroom: {
+    select: {
+      id: true,
+      name: true,
+      adultMode: true,
+      deletedAt: true,
+      schoolId: true,
+      school: { select: { deletedAt: true } },
+    },
+  },
+  parent: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  child: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  messages: {
+    where: { hiddenAt: null },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 1,
+    select: {
+      body: true,
+      createdAt: true,
+      authorId: true,
+    },
+  },
+} satisfies Prisma.ParentLinkSelect;
+
+type StaffFamilyThreadRow = Prisma.ParentLinkGetPayload<{
+  select: typeof STAFF_FAMILY_THREAD_SELECT;
 }>;
 
 const MESSAGE_SELECT = {
@@ -77,6 +123,39 @@ function toParentLinkMessageDto(row: ParentLinkMessageRow, parentId: string): Pa
   };
 }
 
+function toStaffFamilyThreadDto(row: StaffFamilyThreadRow): StaffFamilyThreadDto {
+  const lastMessage = row.messages[0] ?? null;
+  return {
+    id: row.id,
+    classroomId: row.classroom.id,
+    classroomName: row.classroom.name,
+    parentId: row.parent.id,
+    parentDisplayName: row.parent.displayName,
+    childId: row.child.id,
+    childDisplayName: row.child.displayName,
+    lastMessageBody: lastMessage ? lastMessage.body : null,
+    lastMessageAt: lastMessage ? toIsoString(lastMessage.createdAt) : null,
+    lastMessageAuthorRole: lastMessage
+      ? lastMessage.authorId === row.parentId
+        ? 'PARENT'
+        : 'STAFF'
+      : null,
+  };
+}
+
+function compareStaffFamilyThreads(a: StaffFamilyThreadRow, b: StaffFamilyThreadRow): number {
+  const aLast = a.messages[0]?.createdAt.getTime() ?? null;
+  const bLast = b.messages[0]?.createdAt.getTime() ?? null;
+  if (aLast !== bLast) {
+    if (aLast === null) return 1;
+    if (bLast === null) return -1;
+    return bLast - aLast;
+  }
+  const createdDiff = a.createdAt.getTime() - b.createdAt.getTime();
+  if (createdDiff !== 0) return createdDiff;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
 /**
  * Private Parent <-> Teacher messaging bound to an active `ParentLink` (`Message.parentLinkId`).
  * Enforces strict 404 anti-enumeration for non-participants (including the linked child, foreign
@@ -88,6 +167,108 @@ export class FamilyMessagesService {
     private readonly prisma: PrismaService,
     private readonly access: AccessVerificationService,
   ) {}
+
+  /**
+   * Lists active parent-child messaging threads across every non-adult-mode live classroom where
+   * the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or `SCHOOL_ADMIN`).
+   * Returns `{ items: [] }` without error for students, parents, or users without staff classrooms.
+   */
+  async listMyFamilyThreads(actorUserId: string): Promise<StaffFamilyThreadsResponseDto> {
+    if (!UUID_PATTERN.test(actorUserId)) {
+      return { items: [] };
+    }
+
+    const staffClassrooms = await this.prisma.classroom.findMany({
+      where: {
+        deletedAt: null,
+        adultMode: false,
+        AND: [{ OR: [{ schoolId: null }, { school: { deletedAt: null } }] }],
+        OR: [
+          {
+            school: {
+              members: {
+                some: {
+                  userId: actorUserId,
+                  state: MembershipState.ACTIVE,
+                  role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
+                },
+              },
+            },
+          },
+          { independentTeacherId: actorUserId },
+          {
+            memberships: {
+              some: {
+                userId: actorUserId,
+                role: ClassroomRole.TEACHER,
+                state: MembershipState.ACTIVE,
+                deletedAt: null,
+              },
+            },
+            OR: [
+              { schoolId: null },
+              {
+                school: {
+                  members: { some: { userId: actorUserId, state: MembershipState.ACTIVE } },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (staffClassrooms.length === 0) {
+      return { items: [] };
+    }
+
+    const staffClassroomIds = staffClassrooms.map((classroom) => classroom.id);
+    const links = await this.prisma.parentLink.findMany({
+      where: {
+        classroomId: { in: staffClassroomIds },
+        state: MembershipState.ACTIVE,
+        classroom: {
+          deletedAt: null,
+          adultMode: false,
+          OR: [{ schoolId: null }, { school: { deletedAt: null } }],
+        },
+      },
+      select: STAFF_FAMILY_THREAD_SELECT,
+    });
+
+    const liveLinks = links.filter(
+      (row) => !row.classroom.adultMode && isClassroomLive(row.classroom),
+    );
+    if (liveLinks.length === 0) {
+      return { items: [] };
+    }
+
+    const activeMemberships = await this.prisma.classroomMembership.findMany({
+      where: {
+        role: ClassroomRole.STUDENT,
+        state: MembershipState.ACTIVE,
+        deletedAt: null,
+        OR: liveLinks.map((row) => ({
+          classroomId: row.classroomId,
+          userId: row.childId,
+        })),
+      },
+      select: { classroomId: true, userId: true },
+    });
+
+    const activePairKeys = new Set(
+      activeMemberships.map((membership) => `${membership.classroomId}:${membership.userId}`),
+    );
+
+    const activeLinks = liveLinks
+      .filter((row) => activePairKeys.has(`${row.classroomId}:${row.childId}`))
+      .sort(compareStaffFamilyThreads);
+
+    return {
+      items: activeLinks.map(toStaffFamilyThreadDto),
+    };
+  }
 
   async listMessages(
     actorUserId: string,

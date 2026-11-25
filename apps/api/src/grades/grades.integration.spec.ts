@@ -254,7 +254,12 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
         payload: { path: ['resourceId'], equals: storedGrades[0].id },
       },
     });
-    expect(events).toHaveLength(1);
+    // One grade_posted notification for the student and one for the active linked parent (no duplicates).
+    expect(events).toHaveLength(2);
+    const recipients = events
+      .map((event) => (event.payload as { recipientId: string }).recipientId)
+      .sort();
+    expect(recipients).toEqual([ids.parent, ids.student].sort());
   });
 
   it('serializes concurrent Promise.all PATCH regrades with the same version cleanly', async () => {

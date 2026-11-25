@@ -13,6 +13,8 @@ import {
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { ListReportCardQueryDto } from '../metrics/metrics.dto';
+import { StaffFamilyThreadsResponseDto } from './family-messages.dto';
+import { FamilyMessagesService } from './family-messages.service';
 import { FamilyLinksResponseDto, FamilyReportCardResponseDto } from './family.dto';
 import { FamilyService } from './family.service';
 
@@ -22,11 +24,14 @@ import { FamilyService } from './family.service';
   type: ErrorEnvelopeDto,
   description: 'Missing, malformed, expired, or revoked access token.',
 })
-@Controller('me/parent-links')
+@Controller('me')
 export class FamilyController {
-  constructor(private readonly family: FamilyService) {}
+  constructor(
+    private readonly family: FamilyService,
+    private readonly familyMessages: FamilyMessagesService,
+  ) {}
 
-  @Get()
+  @Get('parent-links')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'List active parent-child links for the authenticated user',
@@ -44,7 +49,7 @@ export class FamilyController {
     return this.family.listMyParentLinks(actorUserId);
   }
 
-  @Get(':linkId/report-card')
+  @Get('parent-links/:linkId/report-card')
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'linkId', description: 'ParentLink UUID', format: 'uuid' })
   @ApiOperation({
@@ -77,5 +82,26 @@ export class FamilyController {
     @Query() query: ListReportCardQueryDto,
   ): Promise<FamilyReportCardResponseDto> {
     return this.family.getChildReportCard(actorUserId, linkId, query);
+  }
+
+  @Get('family-threads')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'List active parent-teacher messaging threads for staff classrooms',
+    description:
+      'Returns all active parent-child messaging threads across live, non-adult-mode classrooms ' +
+      'where the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or ' +
+      '`SCHOOL_ADMIN`), including the latest visible message preview. Ordered by ' +
+      '`lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Returns `{ items: [] }` ' +
+      'without error for students, parents, or users without staff classrooms.',
+  })
+  @ApiOkResponse({
+    type: StaffFamilyThreadsResponseDto,
+    description: 'Active family messaging threads for the authenticated staff user.',
+  })
+  listMyFamilyThreads(
+    @CurrentUser('userId') actorUserId: string,
+  ): Promise<StaffFamilyThreadsResponseDto> {
+    return this.familyMessages.listMyFamilyThreads(actorUserId);
   }
 }

@@ -49,7 +49,11 @@ export function toFamilyLinkDto(row: FamilyLinkRow): FamilyLinkDto {
   };
 }
 
-export function isClassroomLive(classroom: FamilyLinkRow['classroom']): boolean {
+export function isClassroomLive(classroom: {
+  schoolId: string | null;
+  deletedAt: Date | null;
+  school: { deletedAt: Date | null } | null;
+}): boolean {
   if (classroom.deletedAt !== null) return false;
   if (
     classroom.schoolId !== null &&

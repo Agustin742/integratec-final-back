@@ -291,6 +291,7 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
   it('rejects unauthenticated requests with 401', async () => {
     await get('/me/parent-links').expect(401);
     await get(`/me/parent-links/${linkLive}/report-card`).expect(401);
+    await get('/me/family-threads').expect(401);
     await get(`/parent-links/${linkLive}/messages`).expect(401);
     await post(`/parent-links/${linkLive}/messages`).send({ body: 'Hi' }).expect(401);
   });
@@ -374,7 +375,7 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
 
     // Adult mode -> 403
     const adultRes = await get(`/me/parent-links/${linkAdult}/report-card`, parentA).expect(403);
-    expect(adultRes.body.error.message).toContain('adult education mode');
+    expect(adultRes.body.error.code).toBe('FORBIDDEN');
   });
 
   it('POST + GET /parent-links/:linkId/messages completes Parent <-> Teacher roundtrip with classroomId NULL in PostgreSQL', async () => {
@@ -495,16 +496,45 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
     // Adult mode -> 403 for authorized participants (writes nothing), 404 for unauthorized callers
     for (const actor of [parentA, teacher]) {
       const getAdult = await get(`/parent-links/${linkAdult}/messages`, actor).expect(403);
-      expect(getAdult.body.error.message).toContain('adult education mode');
+      expect(getAdult.body.error.code).toBe('FORBIDDEN');
       const postAdult = await post(`/parent-links/${linkAdult}/messages`, actor)
         .send({ body: 'Blocked' })
         .expect(403);
-      expect(postAdult.body.error.message).toContain('adult education mode');
+      expect(postAdult.body.error.code).toBe('FORBIDDEN');
     }
     await get(`/parent-links/${linkAdult}/messages`, studentActive).expect(404);
     await post(`/parent-links/${linkAdult}/messages`, stranger).send({ body: 'Hi' }).expect(404);
 
     const adultMessagesCount = await prisma.message.count({ where: { parentLinkId: linkAdult } });
     expect(adultMessagesCount).toBe(0);
+  });
+
+  it('GET /me/family-threads returns active threads with latest visible message preview for teacher and { items: [] } for student/parent', async () => {
+    const parentFollowUp = await post(`/parent-links/${linkLive}/messages`, parentA)
+      .send({ body: 'Thank you Prof. Ada!' })
+      .expect(201);
+
+    const teacherRes = await get('/me/family-threads', teacher).expect(200);
+    expect(teacherRes.body).toEqual({
+      items: [
+        {
+          id: linkLive,
+          classroomId: classroomLive,
+          classroomName: 'Physics A',
+          parentId: parentA,
+          parentDisplayName: 'Parent Ana',
+          childId: studentActive,
+          childDisplayName: 'Student Sofia',
+          lastMessageBody: 'Thank you Prof. Ada!',
+          lastMessageAt: parentFollowUp.body.createdAt,
+          lastMessageAuthorRole: 'PARENT',
+        },
+      ],
+    });
+
+    for (const actor of [studentActive, parentA, stranger]) {
+      const res = await get('/me/family-threads', actor).expect(200);
+      expect(res.body).toEqual({ items: [] });
+    }
   });
 });
