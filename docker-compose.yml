@@ -116,7 +116,7 @@ services:
       STORAGE_SIGNED_URL_TTL: ${STORAGE_SIGNED_URL_TTL:-5m}
       AI_PROVIDER_API_KEY: ${AI_PROVIDER_API_KEY:-}
       AI_PROVIDER_BASE_URL: ${AI_PROVIDER_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai}
-      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-3.5-flash-lite}
       AI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-gemini-embedding-001}
       AI_EMBEDDING_DIMENSION: ${AI_EMBEDDING_DIMENSION:-768}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}

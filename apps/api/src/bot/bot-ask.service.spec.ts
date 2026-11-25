@@ -190,6 +190,7 @@ describe('BotAskService', () => {
                 id: 'call_1',
                 name: 'search_allowed_material',
                 argumentsJson: JSON.stringify({ query: 'where does photosynthesis occur' }),
+                providerContext: { signature: 'synthetic-signature' },
               },
             ],
             usage: { promptTokens: 50, completionTokens: 15 },
@@ -219,6 +220,15 @@ describe('BotAskService', () => {
     expect(ctx.logs).toHaveLength(1);
     expect(ctx.logs[0]).not.toContain('SECRET_STUDENT_QUESTION_TEXT');
     expect(ctx.logs[0]).not.toContain('chlorophyll');
+    expect(ctx.logs[0]).not.toContain('synthetic-signature');
+    // The request array is shared across turns, so the last call holds the whole loop.
+    const replayed = vi.mocked(ctx.chatModel.chatCompletion).mock.calls.at(-1)![0].messages;
+    expect(replayed.find((message) => message.role === 'assistant')?.toolCalls).toEqual([
+      expect.objectContaining({
+        id: 'call_1',
+        providerContext: { signature: 'synthetic-signature' },
+      }),
+    ]);
     expect(JSON.parse(ctx.logs[0]!)).toMatchObject({
       event: 'bot_ask',
       userId: actorId,
