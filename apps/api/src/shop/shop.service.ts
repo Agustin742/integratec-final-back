@@ -167,7 +167,7 @@ export class ShopService {
       { id: sort.direction },
     ];
 
-    const [total, rows] = await this.prisma.$transaction(
+    const [total, rows, stylePurchases] = await this.prisma.$transaction(
       [
         this.prisma.shopItem.count({ where }),
         this.prisma.shopItem.findMany({
@@ -193,13 +193,26 @@ export class ShopService {
             },
           },
         }),
+        this.prisma.studentPurchase.findMany({
+          where: { studentId: actorUserId, shopItem: { kind: ShopItemKind.AVATAR_STYLE } },
+          select: { shopItem: { select: { metadata: true } } },
+        }),
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
 
     const items: ShopCatalogItemDto[] = rows.map((row) => {
       const override = row.classroomOverrides[0];
-      const ownedByStudent = row.purchases.length > 0;
+      const metadata = toMetadataRecord(row.metadata);
+      const ownedByStudent =
+        row.purchases.length > 0 ||
+        (row.kind === ShopItemKind.AVATAR_STYLE &&
+          typeof metadata.styleType === 'string' &&
+          typeof metadata.styleId === 'string' &&
+          stylePurchases.some((purchase) => {
+            const owned = toMetadataRecord(purchase.shopItem.metadata);
+            return owned.styleType === metadata.styleType && owned.styleId === metadata.styleId;
+          }));
       const ownedByClassroom = row.classroomItems.length > 0;
       const isPurchasable =
         row.isImplemented &&
