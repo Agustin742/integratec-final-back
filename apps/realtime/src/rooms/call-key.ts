@@ -4,7 +4,9 @@ import type { ClassroomRole } from '../join/join-verifier';
 /** Roles that may start and moderate a classroom call (teacher-level authority). */
 const MODERATOR_ROLES: readonly ClassroomRole[] = ['OWNER', 'ADMIN', 'TEACHER'];
 
-export const isCallModerator = (role: ClassroomRole): boolean => MODERATOR_ROLES.includes(role);
+/** Takes a plain string too: the role stored in synchronized call state is a string. */
+export const isCallModerator = (role: string): boolean =>
+  MODERATOR_ROLES.includes(role as ClassroomRole);
 
 /** A direct call is a pair; a classroom call takes up to the configured maximum. */
 export const callCapacity = (kind: CallKind, maxParticipants: number): number =>

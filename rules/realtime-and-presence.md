@@ -40,6 +40,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Messages **MUST NOT** carry authority: roles, permissions, and user identity come from the authenticated session, never from the payload.
 - Clients **SHOULD** send intents (for example movement input) and receive authoritative state; they **MUST NOT** set other users' state.
 - Per-connection rate limits **MUST** exist to bound abuse: at most **30 messages per second** per connection, with the excess dropped silently and without side effects (approved by Agustin on 2026-11-10).
+- Call signaling (`call:signal`) has its own limit of **150 messages per second** per connection, because joining a mesh call bursts ICE candidates to each peer; call state messages (`call:self`, `call:emote`, `call:moderate`, `call:end`) are limited to 20 per second.
 - The presence list shows who is online in the same classroom; users of other classrooms or schools **MUST NOT** appear.
 
 ## Classroom controls and broadcasts

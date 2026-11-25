@@ -2,11 +2,17 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import type { Room as SdkRoom } from '@colyseus/sdk';
 import {
+  AVATAR_INPUT_MESSAGE,
   CALL_EMOTE_MESSAGE,
+  CALL_END_MESSAGE,
+  CALL_ENDED_EVENT,
+  CALL_MODERATE_MESSAGE,
   CALL_ROOM_NAME,
   CALL_SELF_MESSAGE,
   CALL_SIGNAL_MESSAGE,
   CLOSE_CODE_ACCESS_REVOKED,
+  CLASSROOM_ROOM_NAME,
+  CLOSE_CODE_CALL_ENDED,
   CLOSE_CODE_CALL_FULL,
   CLOSE_REASON_CALL_NOT_STARTED,
   CLOSE_CODE_CALL_REPLACED,
@@ -23,6 +29,7 @@ import {
 } from '../testing/stub-api';
 import { sleep, waitUntil } from '../testing/wait-until';
 import type { CallRoom } from './call-room';
+import type { ClassroomRoom } from './classroom-room';
 
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const FOREIGN = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
@@ -301,6 +308,215 @@ describe('CallRoom (real Colyseus server + stub API)', () => {
       student.send('call:unknown', { anything: 1 });
       await sleep(80);
       expect(serverRoom(host).state.participants.size).toBe(2);
+    });
+  });
+
+  describe('moderation', () => {
+    const moderate = (room: SdkRoom, message: object) => room.send(CALL_MODERATE_MESSAGE, message);
+
+    it('lets a teacher mute everyone but moderators, and mute or unmute one student', async () => {
+      const host = await join(teacher);
+      const student = await join(ada);
+      const other = await join(bob);
+      const mine = () => participantOf(host, student)!;
+
+      moderate(host, { action: 'mute-all' });
+      await waitUntil(() => mine().forcedMuted && participantOf(host, other)!.forcedMuted, 'all');
+      expect(participantOf(host, host)!.forcedMuted).toBe(false);
+
+      moderate(host, { action: 'unmute', targetUserId: ada.userId });
+      await waitUntil(() => !mine().forcedMuted, 'ada unmuted');
+      expect(participantOf(host, other)!.forcedMuted).toBe(true);
+
+      moderate(host, { action: 'mute', targetUserId: ada.userId });
+      await waitUntil(() => mine().forcedMuted, 'ada muted');
+    });
+
+    it('silently ignores moderation sent by a student', async () => {
+      const host = await join(teacher);
+      const student = await join(ada);
+      const other = await join(bob);
+
+      moderate(student, { action: 'mute-all' });
+      moderate(student, { action: 'mute', targetUserId: bob.userId });
+      moderate(student, { action: 'focus-mode', value: true });
+      moderate(student, { action: 'allow-self-unmute', value: false });
+      student.send(CALL_END_MESSAGE, {});
+      await sleep(120);
+
+      expect(participantOf(host, other)!.forcedMuted).toBe(false);
+      expect(serverRoom(host).state).toMatchObject({ focusMode: false, allowSelfUnmute: true });
+      expect(serverRoom(host).state.participants.size).toBe(3);
+    });
+
+    it('holds a forced mute until self unmute is allowed, then a self unmute clears it', async () => {
+      const host = await join(teacher);
+      const student = await join(ada);
+      const mine = () => participantOf(host, student)!;
+      moderate(host, { action: 'allow-self-unmute', value: false });
+      moderate(host, { action: 'mute-all' });
+      await waitUntil(() => mine().forcedMuted && !serverRoom(host).state.allowSelfUnmute, 'set');
+      student.send(CALL_SELF_MESSAGE, { muted: true });
+      await waitUntil(() => mine().selfMuted, 'self muted');
+
+      student.send(CALL_SELF_MESSAGE, { muted: false });
+      await sleep(80);
+      expect(mine()).toMatchObject({ selfMuted: true, forcedMuted: true });
+
+      moderate(host, { action: 'allow-self-unmute', value: true });
+      await waitUntil(() => serverRoom(host).state.allowSelfUnmute, 'allowed');
+      student.send(CALL_SELF_MESSAGE, { muted: false });
+      await waitUntil(() => !mine().selfMuted && !mine().forcedMuted, 'self unmuted');
+    });
+
+    it('rejects moderation in a direct call', async () => {
+      const first = await join(teacher, directTo(ada));
+      const second = await join(ada, directTo(teacher));
+
+      moderate(first, { action: 'mute', targetUserId: ada.userId });
+      moderate(first, { action: 'focus-mode', value: true });
+      await sleep(120);
+
+      expect(participantOf(first, second)!.forcedMuted).toBe(false);
+      expect(serverRoom(first).state.focusMode).toBe(false);
+    });
+  });
+
+  describe('ending a call', () => {
+    const track = (room: SdkRoom) => {
+      const seen: { code?: number; reason?: unknown } = {};
+      room.onMessage(CALL_ENDED_EVENT, (payload) => (seen.reason = payload));
+      room.onLeave((code) => (seen.code = code));
+      return seen;
+    };
+
+    it('lets a teacher end the class call for everyone with code 4102', async () => {
+      const host = await join(teacher);
+      const student = await join(ada);
+      const hostSeen = track(host);
+      const studentSeen = track(student);
+
+      host.send(CALL_END_MESSAGE, {});
+
+      await waitUntil(() => studentSeen.code !== undefined && hostSeen.code !== undefined, 'ended');
+      expect(studentSeen).toEqual({
+        code: CLOSE_CODE_CALL_ENDED,
+        reason: { reason: 'moderator_ended' },
+      });
+      expect(hostSeen.code).toBe(CLOSE_CODE_CALL_ENDED);
+      // The room is gone, so a student cannot rejoin it.
+      expect(await refusal(ada)).toMatchObject({ code: 403 });
+    });
+
+    it('ends a direct call for the other peer when one leaves', async () => {
+      const first = await join(ada, directTo(bob));
+      const second = await join(bob, directTo(ada));
+      const seen = track(second);
+
+      await first.leave();
+
+      await waitUntil(() => seen.code !== undefined, 'peer notified');
+      expect(seen).toEqual({ code: CLOSE_CODE_CALL_ENDED, reason: { reason: 'peer_left' } });
+    });
+
+    it('does not end a direct call when a peer reconnects over the old connection', async () => {
+      const first = await join(ada, directTo(bob));
+      const second = await join(bob, directTo(ada));
+      const seen = track(second);
+
+      await join(ada, directTo(bob));
+      await sleep(150);
+
+      expect(seen.code).toBeUndefined();
+      expect(serverRoom(second).state.participants.size).toBe(2);
+      expect(first.roomId).toBe(second.roomId);
+    });
+  });
+
+  describe('classroom room integration', () => {
+    const joinClassroom = async (user: StubUser): Promise<SdkRoom> => {
+      colyseus.sdk.auth.token = user.token;
+      return colyseus.sdk.joinOrCreate(CLASSROOM_ROOM_NAME, { classroomId: CLASSROOM });
+    };
+    const classroomOf = (room: SdkRoom): ClassroomRoom =>
+      colyseus.getRoomById(room.roomId) as unknown as ClassroomRoom;
+
+    it('flags the classroom while its call exists and resets focus when the call ends', async () => {
+      const student = await joinClassroom(ada);
+      const world = classroomOf(student);
+      expect(world.state).toMatchObject({ classCallActive: false, focusMode: false });
+
+      const host = await join(teacher);
+      await waitUntil(() => world.state.classCallActive, 'call flagged');
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: true });
+      await waitUntil(() => world.state.focusMode, 'focus mirrored');
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: false });
+      await waitUntil(() => !world.state.focusMode, 'focus cleared');
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: true });
+      await waitUntil(() => world.state.focusMode, 'focus again');
+
+      host.send(CALL_END_MESSAGE, {});
+
+      await waitUntil(() => !world.state.classCallActive, 'call unflagged');
+      expect(world.state.focusMode).toBe(false);
+    });
+
+    it('blocks student movement in focus mode but not the teacher, and resumes afterwards', async () => {
+      const studentWorld = await joinClassroom(ada);
+      const teacherWorld = await joinClassroom(teacher);
+      const world = classroomOf(studentWorld);
+      const adaAvatar = () => world.state.avatars.get(ada.userId)!;
+      const teacherAvatar = () => world.state.avatars.get(teacher.userId)!;
+      const host = await join(teacher);
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: true });
+      await waitUntil(() => world.state.focusMode, 'focus on');
+      const adaStart = { x: adaAvatar().x, z: adaAvatar().z };
+      const teacherStartZ = teacherAvatar().z;
+
+      studentWorld.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
+      teacherWorld.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
+
+      await waitUntil(() => teacherStartZ - teacherAvatar().z > 0.3, 'teacher moves');
+      expect({ x: adaAvatar().x, z: adaAvatar().z }).toEqual(adaStart);
+      teacherWorld.send(AVATAR_INPUT_MESSAGE, { x: 0, z: 0 });
+
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: false });
+      await waitUntil(() => !world.state.focusMode, 'focus off');
+      studentWorld.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
+      await waitUntil(() => adaStart.z - adaAvatar().z > 0.3, 'student moves again');
+    });
+
+    it('stops a student who was already walking when focus mode starts', async () => {
+      const studentWorld = await joinClassroom(ada);
+      const world = classroomOf(studentWorld);
+      const host = await join(teacher);
+      studentWorld.send(AVATAR_INPUT_MESSAGE, { x: 0, z: -1 });
+      const startZ = world.state.avatars.get(ada.userId)!.z;
+      await waitUntil(() => startZ - world.state.avatars.get(ada.userId)!.z > 0.2, 'walking');
+
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: true });
+      await waitUntil(() => world.state.focusMode, 'focus on');
+      await sleep(100);
+      const frozenZ = world.state.avatars.get(ada.userId)!.z;
+      await sleep(200);
+
+      expect(world.state.avatars.get(ada.userId)!.z).toBe(frozenZ);
+    });
+
+    it('clears focus mode when the last moderator leaves but keeps the call alive', async () => {
+      const studentWorld = await joinClassroom(ada);
+      const world = classroomOf(studentWorld);
+      const host = await join(teacher);
+      const student = await join(ada);
+      host.send(CALL_MODERATE_MESSAGE, { action: 'focus-mode', value: true });
+      await waitUntil(() => world.state.focusMode, 'focus on');
+
+      await host.leave();
+
+      await waitUntil(() => !world.state.focusMode, 'focus released');
+      expect(world.state.classCallActive).toBe(true);
+      expect(serverRoom(student).state.focusMode).toBe(false);
+      expect(serverRoom(student).state.participants.size).toBe(1);
     });
   });
 });

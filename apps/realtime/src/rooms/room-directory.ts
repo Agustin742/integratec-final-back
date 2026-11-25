@@ -41,9 +41,24 @@ export interface DeskCountApplicableRoom {
   applyDeskCount(deskCount: number): void;
 }
 
+/** Whether the classroom has a class voice call, and whether its teacher locked the world (#149). */
+export interface ClassCallStatus {
+  active: boolean;
+  focusMode: boolean;
+}
+
+/** What a classroom room offers the directory when its class call starts, changes or ends. */
+export interface CallStatusApplicableRoom {
+  applyCallStatus(status: ClassCallStatus): void;
+}
+
 /** The full set of room capabilities the internal routes use through the directory. */
 export interface DirectoryRoom
-  extends AppearanceApplicableRoom, DeskCountApplicableRoom, ClassroomRoomHandle {}
+  extends
+    AppearanceApplicableRoom,
+    DeskCountApplicableRoom,
+    CallStatusApplicableRoom,
+    ClassroomRoomHandle {}
 
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
 export interface RoomDirectoryLike {
@@ -67,6 +82,8 @@ export class RoomDirectory {
   private readonly rooms = new Map<string, Set<DirectoryRoom>>();
   /** Voice call rooms by classroom; they only need to be evictable. */
   private readonly callRooms = new Map<string, Set<EvictableRoom>>();
+  /** The running class call of each classroom, so a late classroom room can be told about it. */
+  private readonly classCalls = new Map<string, ClassCallStatus>();
 
   registerCall(classroomId: string, room: EvictableRoom): void {
     const set = this.callRooms.get(classroomId) ?? new Set<EvictableRoom>();
@@ -84,6 +101,26 @@ export class RoomDirectory {
     const set = this.rooms.get(classroomId) ?? new Set<DirectoryRoom>();
     set.add(room);
     this.rooms.set(classroomId, set);
+    // A room created while a class call is running (a second room, a restart of the room) joins it.
+    const status = this.classCalls.get(classroomId);
+    if (status !== undefined) room.applyCallStatus({ ...status });
+  }
+
+  /**
+   * Publishes the class call of one classroom to its live classroom rooms and remembers it for
+   * rooms registered later. Called by the call room (single process; see the class comment).
+   */
+  setClassCallStatus(classroomId: string, status: ClassCallStatus): void {
+    this.classCalls.set(classroomId, { ...status });
+    for (const room of this.rooms.get(classroomId) ?? []) room.applyCallStatus({ ...status });
+  }
+
+  /** The class call ended: the classroom is no longer in a call and focus mode is off. */
+  clearClassCallStatus(classroomId: string): void {
+    this.classCalls.delete(classroomId);
+    for (const room of this.rooms.get(classroomId) ?? []) {
+      room.applyCallStatus({ active: false, focusMode: false });
+    }
   }
 
   unregister(classroomId: string, room: DirectoryRoom): void {

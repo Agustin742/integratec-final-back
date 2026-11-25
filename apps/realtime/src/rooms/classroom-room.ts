@@ -44,7 +44,10 @@ import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
 import { applyAppearanceToState } from './appearance-state';
 import { Avatar, ClassroomState } from './classroom-state';
-import type { DirectoryRoom, RoomDirectory } from './room-directory';
+import type { ClassCallStatus, DirectoryRoom, RoomDirectory } from './room-directory';
+
+/** Role whose movement focus mode freezes. */
+const STUDENT_ROLE = 'STUDENT';
 
 function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
   applyAppearanceToState(avatar.appearance, appearance);
@@ -392,6 +395,20 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     }
   }
 
+  /**
+   * Mirrors the class voice call into the synchronized state (#149). While focus mode is on, avatar
+   * input from students is ignored (see {@link onAvatarInput}); students already walking when it
+   * starts are stopped so they do not keep drifting. Moderators are never affected.
+   */
+  applyCallStatus(status: ClassCallStatus): void {
+    this.state.classCallActive = status.active;
+    this.state.focusMode = status.focusMode;
+    if (!status.focusMode) return;
+    for (const userId of [...this.intents.keys()]) {
+      if (this.state.avatars.get(userId)?.role === STUDENT_ROLE) this.intents.delete(userId);
+    }
+  }
+
   broadcastChatMessage(payload: ChatMessagePayload): void {
     this.broadcast(CHAT_MESSAGE_EVENT, payload);
   }
@@ -453,6 +470,13 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     if (!this.userConnections.isLive(client.sessionId)) return;
     // Over the limit: dropped silently, with no effect on the avatar.
     if (!limiter.tryConsume(this.now())) return;
+    // Focus mode (teacher class call): students stay put; the role is the verified one.
+    if (
+      this.state.focusMode &&
+      this.authByConnection.get(client.sessionId)?.role === STUDENT_ROLE
+    ) {
+      return;
+    }
     if (input.x === 0 && input.z === 0) {
       this.intents.delete(userId);
     } else {

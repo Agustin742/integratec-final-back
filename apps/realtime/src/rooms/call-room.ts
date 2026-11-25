@@ -1,22 +1,32 @@
 import {
   CALL_EMOTE_MESSAGE,
+  CALL_END_MESSAGE,
+  CALL_ENDED_EVENT,
   CALL_MAX_PARTICIPANTS,
+  CALL_MODERATE_MESSAGE,
   CALL_SELF_MESSAGE,
   CALL_SIGNAL_MESSAGE,
   CLOSE_CODE_ACCESS_REVOKED,
+  CLOSE_CODE_CALL_ENDED,
   CLOSE_CODE_CALL_FULL,
   CLOSE_CODE_CALL_REPLACED,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
   CLOSE_REASON_ACCESS_REVOKED,
+  CLOSE_REASON_CALL_ENDED,
   CLOSE_REASON_CALL_FULL,
   CLOSE_REASON_CALL_NOT_STARTED,
   CLOSE_REASON_CALL_REPLACED,
   CLOSE_REASON_VERIFICATION_UNAVAILABLE,
   callEmoteSchema,
+  callEndSchema,
+  callModerateSchema,
   callSelfSchema,
   callSignalSchema,
   type CallEmoteMessage,
+  type CallEndedPayload,
+  type CallEndedReason,
   type CallKind,
+  type CallModerate,
   type CallSelf,
   type CallSignal,
   type CallSignalRelay,
@@ -35,7 +45,8 @@ import { JoinDeniedError, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
 import { applyAppearanceToState } from './appearance-state';
 import { authenticateCallJoin, type CallAuth } from './authenticate-call-join';
-import { callCapacity } from './call-key';
+import { callCapacity, isCallModerator } from './call-key';
+import { applyCallModeration, hasCallModerator } from './call-moderation';
 import { CallParticipant, CallState } from './call-state';
 import type { EvictableRoom, RoomDirectory } from './room-directory';
 
@@ -91,6 +102,10 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   private readonly limiters = new Map<string, Limiters>();
   private readonly authBySession = new Map<string, CallAuth>();
   private readonly pendingAdmissions = new Map<string, PendingAdmission>();
+  /** Set once the call is being closed on purpose, so the leaves it causes end nothing else. */
+  private ending = false;
+  /** Whether this room told the classroom rooms about its class call (and so must retract it). */
+  private classStatusPublished = false;
 
   /** Payloads are validated by Colyseus against the shared contract schemas before any handler. */
   messages = {
@@ -101,6 +116,10 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     ),
     [CALL_SELF_MESSAGE]: validate(callSelfSchema, (client, self) => this.onSelf(client, self)),
     [CALL_EMOTE_MESSAGE]: validate(callEmoteSchema, (client, emote) => this.onEmote(client, emote)),
+    [CALL_MODERATE_MESSAGE]: validate(callModerateSchema, (client, action) =>
+      this.onModerate(client, action),
+    ),
+    [CALL_END_MESSAGE]: validate(callEndSchema, (client) => this.onEnd(client)),
   };
 
   /**
@@ -130,6 +149,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     this.state.hostUserId = callerUserId;
     this.state.allowSelfUnmute = true;
     this.options.directory?.registerCall(classroomId, this);
+    if (kind === 'classroom') this.publishClassStatus();
   }
 
   /**
@@ -197,8 +217,15 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     this.state.participants.set(client.sessionId, this.newParticipant(auth, current.appearance));
   }
 
+  /**
+   * A participant left. Connections replaced or evicted were already removed, so only a leave of
+   * someone still in the room counts as a departure (see {@link afterDeparture}).
+   */
   onLeave(client: Client): void {
+    if (this.ending) return;
+    const departed = this.state.participants.get(client.sessionId);
     this.removeParticipant(client.sessionId);
+    if (departed !== undefined) this.afterDeparture(departed.role);
   }
 
   /**
@@ -219,8 +246,10 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     for (const [connectionId, auth] of [...this.authBySession]) {
       if (!matches(auth.userId, auth.authSessionId)) continue;
       const client = this.clients.getById(connectionId);
+      const departed = this.state.participants.get(connectionId);
       this.removeParticipant(connectionId);
       client?.leave(CLOSE_CODE_ACCESS_REVOKED, CLOSE_REASON_ACCESS_REVOKED);
+      if (departed !== undefined) this.afterDeparture(departed.role);
       evicted += 1;
     }
     return evicted;
@@ -229,6 +258,79 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   onDispose(): void {
     for (const admission of this.pendingAdmissions.values()) admission.revoked = true;
     this.options.directory?.unregisterCall(this.classroomId, this);
+    if (this.classStatusPublished) {
+      this.classStatusPublished = false;
+      this.options.directory?.clearClassCallStatus(this.classroomId);
+    }
+  }
+
+  /**
+   * Tells the classroom rooms that this class call exists and whether focus mode is on. Silent
+   * when there is no directory (rooms built without one, as in unit tests).
+   */
+  private publishClassStatus(): void {
+    if (this.options.directory === undefined) return;
+    this.classStatusPublished = true;
+    this.options.directory.setClassCallStatus(this.classroomId, {
+      active: true,
+      focusMode: this.state.focusMode,
+    });
+  }
+
+  /**
+   * What a departure changes. A direct call is a pair, so the other peer is told `peer_left` and the
+   * call closes. A classroom call survives anyone leaving, including its host (`hostUserId` only
+   * records who started it), but when the last moderator is gone nobody can lift focus mode, so it is
+   * cleared rather than leaving students locked out of the world.
+   */
+  private afterDeparture(role: string): void {
+    if (this.kind === 'direct') {
+      if (this.state.participants.size > 0) this.endCall('peer_left');
+      return;
+    }
+    if (this.state.focusMode && isCallModerator(role) && !hasCallModerator(this.state)) {
+      this.state.focusMode = false;
+      this.publishClassStatus();
+    }
+  }
+
+  /**
+   * Announces the end to everyone and closes the room: `call:ended` first, then every connection
+   * is closed with 4102 so a client can tell this from a network drop.
+   */
+  private endCall(reason: CallEndedReason): void {
+    if (this.ending) return;
+    this.ending = true;
+    const payload: CallEndedPayload = { reason };
+    this.broadcast(CALL_ENDED_EVENT, payload);
+    for (const client of [...this.clients]) {
+      client.leave(CLOSE_CODE_CALL_ENDED, CLOSE_REASON_CALL_ENDED);
+    }
+    void this.disconnect();
+  }
+
+  /** The verified role of a connection that is a participant; undefined otherwise. */
+  private moderatorOf(client: Client): boolean {
+    return (
+      this.state.participants.has(client.sessionId) &&
+      isCallModerator(this.authBySession.get(client.sessionId)?.role ?? '')
+    );
+  }
+
+  /** Classroom calls only, moderators only; anything else is dropped without a reply. */
+  private onModerate(client: Client, action: CallModerate): void {
+    if (!this.allow(client, 'state') || this.kind !== 'classroom' || !this.moderatorOf(client)) {
+      return;
+    }
+    applyCallModeration(this.state, action);
+    if (action.action === 'focus-mode') this.publishClassStatus();
+  }
+
+  private onEnd(client: Client): void {
+    if (!this.allow(client, 'state') || this.kind !== 'classroom' || !this.moderatorOf(client)) {
+      return;
+    }
+    this.endCall('moderator_ended');
   }
 
   /**
@@ -248,9 +350,13 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     const participant = this.state.participants.get(client.sessionId);
     if (participant === undefined) return;
     if (self.muted !== undefined) {
-      // Hook for moderation: a forced mute holds unless the moderator allows self unmuting.
+      // A forced mute holds unless the moderator allows self unmuting; when allowed, the student's
+      // own unmute lifts it, so the forced flag never outlives the permission to open the mic.
       const blocked = !self.muted && participant.forcedMuted && !this.state.allowSelfUnmute;
-      if (!blocked) participant.selfMuted = self.muted;
+      if (!blocked) {
+        participant.selfMuted = self.muted;
+        if (!self.muted) participant.forcedMuted = false;
+      }
     }
     if (self.speaking !== undefined) {
       participant.speaking = self.speaking && !participant.selfMuted && !participant.forcedMuted;

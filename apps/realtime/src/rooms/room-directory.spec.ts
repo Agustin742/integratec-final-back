@@ -10,6 +10,7 @@ const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
   applyAppearance: vi.fn().mockReturnValue(result > 0),
   applyDeskCount: vi.fn(),
+  applyCallStatus: vi.fn(),
   broadcastChatMessage: vi.fn(),
   broadcastChatMessageHidden: vi.fn(),
 });
@@ -188,5 +189,39 @@ describe('RoomDirectory', () => {
     expect(first.broadcastChatMessageHidden).toHaveBeenCalledExactlyOnceWith(hidden.payload);
     expect(second.broadcastChatMessageHidden).toHaveBeenCalledExactlyOnceWith(hidden.payload);
     expect(foreign.broadcastChatMessageHidden).not.toHaveBeenCalled();
+  });
+});
+
+describe('RoomDirectory class call status', () => {
+  const statusRoom = () => room();
+
+  it('tells the classroom rooms of that classroom only, and tells a room registered later', () => {
+    const directory = new RoomDirectory();
+    const here = statusRoom();
+    const elsewhere = statusRoom();
+    directory.register(CLASSROOM, here);
+    directory.register(FOREIGN, elsewhere);
+
+    directory.setClassCallStatus(CLASSROOM, { active: true, focusMode: true });
+
+    expect(here.applyCallStatus).toHaveBeenLastCalledWith({ active: true, focusMode: true });
+    expect(elsewhere.applyCallStatus).not.toHaveBeenCalled();
+    const late = statusRoom();
+    directory.register(CLASSROOM, late);
+    expect(late.applyCallStatus).toHaveBeenCalledWith({ active: true, focusMode: true });
+  });
+
+  it('resets the rooms when the call is cleared and stops replaying it', () => {
+    const directory = new RoomDirectory();
+    const here = statusRoom();
+    directory.register(CLASSROOM, here);
+    directory.setClassCallStatus(CLASSROOM, { active: true, focusMode: true });
+
+    directory.clearClassCallStatus(CLASSROOM);
+
+    expect(here.applyCallStatus).toHaveBeenLastCalledWith({ active: false, focusMode: false });
+    const late = statusRoom();
+    directory.register(CLASSROOM, late);
+    expect(late.applyCallStatus).not.toHaveBeenCalled();
   });
 });

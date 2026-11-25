@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Teacher call moderation and focus mode (#149, B3)
+
+- **Status:** in-progress
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `call-moderation.ts`, `call-key.ts`, `room-directory.ts`, `classroom-room.ts`, `rules/realtime-and-presence.md`
+- **Change:** Moderators (OWNER, ADMIN, TEACHER) of a classroom call can mute all, mute or unmute one student, allow or deny self unmute, toggle focus mode and end the call (`call:ended`, then close code 4102). Anyone else is ignored silently, and direct calls reject moderation. The room directory mirrors the class call into the classroom room (`classCallActive`, `focusMode`); while focus mode is on, the classroom room ignores student movement. If the last moderator leaves, focus mode is cleared and the call stays alive. When a peer leaves a direct call, the other gets `call:ended` (`peer_left`) and the call closes.
+- **Reason:** The teacher needs control of a class call, and focus mode must hold on the server, not only in the client.
+- **Verification:** Specs written RED first, then GREEN; typecheck, lint and prettier.
+- **Next step:** B4 one-to-one calls.
+
 ## 2026-11-25 — Voice call room core (#149, B2)
 
 - **Status:** in-progress
