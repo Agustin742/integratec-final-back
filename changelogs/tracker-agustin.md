@@ -2,7 +2,7 @@
 
 ## 2026-11-25 — Voice calls, direct call ringing and docs (#149, B4)
 
-- **Status:** completed
+- **Status:** completed (pending CI and merge of the PR)
 - **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `room-directory.ts`, `classroom-room.ts`, `app.config.ts`, `index.ts`, `config/realtime-config.ts`, `packages/contracts/src/index.ts`, `docs/voice-calls.md`, `README.md`, `docker-compose.yml`, `apps/realtime/.env.example`
 - **Change:** A direct call now rings the peer: the first participant is the caller and every live classroom connection of the peer gets `call:incoming`. No classroom connection ends the call as `unavailable`; no answer within `CALL_RING_TIMEOUT_SECONDS` (default 30) ends it as `timeout`. The callee can `call:decline` over the classroom room (rate limited, only for a ringing call addressed to them), which ends the call and sends the caller `call:declined`. Whenever a ring ends the callee's classroom connections get `call:ring-canceled` so other tabs stop ringing. New `docs/voice-calls.md` documents the whole feature (P2P mesh, STUN only, call keys, moderation, ringing, limits, single-process assumption). No HTTP or database change, so no OpenAPI export.
 - **Reason:** Direct calls need a way to reach a user who is not in a call yet; the classroom connection is the only channel they have.
