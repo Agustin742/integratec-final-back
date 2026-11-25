@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RegistrationPath } from '@aula/contracts';
+import { TokenPairResponseDto } from './token-pair-response.dto';
 
 export class SchoolSummaryDto {
   @ApiProperty({
@@ -64,4 +65,11 @@ export class RegisterResponseDto {
     description: 'Account creation instant in UTC (ISO 8601)',
   })
   createdAt!: string;
+
+  @ApiPropertyOptional({
+    type: TokenPairResponseDto,
+    description:
+      'Authenticated session issued immediately when path is INVITEE; omitted for SCHOOL and INDEPENDENT_TEACHER.',
+  })
+  session?: TokenPairResponseDto;
 }

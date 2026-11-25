@@ -13,6 +13,7 @@ import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShopPurchaseRateLimiter } from '../shop/shop-purchase-rate-limiter.service';
 import { FREE_HAIR_IDS, FREE_TOP_IDS, HAIR_IDS, TOP_IDS } from './avatar-catalog';
+import { memberAppearanceFor } from './member-appearance';
 
 // Real PostgreSQL and root AppModule; only session token verification is stubbed.
 const databaseUrl = loadIsolatedTestDatabaseUrl();
@@ -277,10 +278,52 @@ describe('Paid avatar styles (#145)', () => {
     await saveAvatar(ids.otherStudent, saved).expect(403);
   });
 
+  it('preserves purchased hair beside legacy clothing across profile and member reads', async () => {
+    await buy(ids.classroomA, ids.student, ids.dreads).expect(201);
+    await prisma.shopItem.update({ where: { id: ids.dreads }, data: { isActive: false } });
+    const saved = {
+      ...FREE_LOOK,
+      bodyId: 'female',
+      hairId: 'dreads',
+      topId: 'tank',
+      hairColor: '#AF6D63',
+      clothingColor: '#F4E6D2',
+    };
+    await prisma.avatarConfiguration.create({ data: { userId: ids.student, appearance: saved } });
+    const expected = { ...saved, topId: FREE_LOOK.topId };
+    expect(
+      (await request(app.getHttpServer()).get('/users/me').set(as(ids.student)).expect(200)).body
+        .avatar,
+    ).toEqual(expected);
+    expect(
+      (
+        await request(app.getHttpServer())
+          .patch('/users/me/profile')
+          .set(as(ids.student))
+          .send({ displayName: 'Preserved' })
+          .expect(200)
+      ).body.avatar,
+    ).toEqual(expected);
+    for (const classroomId of [ids.classroomA, ids.classroomB]) {
+      expect(
+        (await memberAppearanceFor(prisma, ids.student, classroomId)).appearance.baseAvatar,
+      ).toEqual(expected);
+    }
+    expect(await storedAppearance(ids.student)).toEqual(saved);
+  });
+
   it('keeps the unlock when the shop item is later deactivated', async () => {
     await buy(ids.classroomA, ids.student, ids.hoodie).expect(201);
     await prisma.shopItem.update({ where: { id: ids.hoodie }, data: { isActive: false } });
-    await saveAvatar(ids.student, { ...FREE_LOOK, topId: 'hoodie' }).expect(200);
+    const expected = { ...FREE_LOOK, topId: 'hoodie' };
+    await saveAvatar(ids.student, expected).expect(200);
+    expect(
+      (await request(app.getHttpServer()).get('/users/me').set(as(ids.student)).expect(200)).body
+        .avatar,
+    ).toEqual(expected);
+    expect(
+      (await memberAppearanceFor(prisma, ids.student, ids.classroomB)).appearance.baseAvatar,
+    ).toEqual(expected);
   });
 
   it('does not unlock a style through a non-style item or a different style id', async () => {

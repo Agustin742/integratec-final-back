@@ -18,9 +18,9 @@ The committed [OpenAPI document](../apps/api/openapi.json) is the REST contract 
 
 `displayName` is separate from appearance and must contain 1–100 characters after ordinary surrounding-space trimming. Profile validation rejects C0/C1 controls (U+0000–001F and U+007F–009F), including tabs/newlines even at the edges, and Unicode line/paragraph separators (U+2028/U+2029) **before trim can erase them**. A name must contain at least one character other than Unicode whitespace, default-ignorable code points, combining marks or braille blank (U+2800). This rejects invisible-only names without imposing an ASCII/letters-only allowlist: accents, non-Latin scripts, punctuation, emoji, combining marks and joiners within visible names are preserved, not normalized or stripped. This is profile-specific; registration validation is unchanged. Email is read-only here. User IDs are never accepted as mutation fields; query parameters cannot change the acting user. Password hashes, sessions and avatar persistence metadata are never response fields.
 
-## Free base catalogue
+## Base catalogue and paid styles
 
-The user approved **free body, hairstyle and ordinary base clothing**, reserving accessories for future shop work. IDs match current frontend GLB filenames without extensions, scoped by body. The finite IDs, defaults and palette normalization below are implementation choices, not an approved visual design or proof of in-engine rendering.
+Bodies and the listed free styles require no purchase; other hair and top styles require a shop unlock. IDs match current frontend GLB filenames without extensions. The finite IDs, defaults and palette normalization below are implementation choices, not an approved visual design or proof of in-engine rendering.
 
 | `bodyId` | Compatible `hairId` | Compatible `topId` |
 | --- | --- | --- |
@@ -66,18 +66,20 @@ An absent configuration row or empty JSON object yields this base response **wit
 ```json
 {
   "bodyId": "male",
-  "hairId": "afro",
-  "topId": "hoodie",
+  "hairId": "classic-short",
+  "topId": "school-sweatshirt",
   "hairColor": "#6C4D48",
   "clothingColor": "#5B4F96"
 }
 ```
 
-Valid existing appearance JSON is projected to these five fields only. Malformed or incompatible stored values also return the default avatar with `200`, plus the constant warning `Unsupported stored base appearance; using default avatar.` The warning contains no user IDs, raw JSON or credentials. Absent/empty values are normal defaults and do not warn. Neither GET nor a display-name PATCH creates, repairs or overwrites stored appearance; a name PATCH can succeed even with unsupported appearance. No migration or automatic read/name-update repair exists. A complete valid avatar PATCH intentionally replaces the stored base-only appearance, including unsupported legacy values; this explicit write returns the validated five-field snapshot.
+Reads project only these five fields. Invalid or missing fields in an object are replaced individually with their defaults; valid body, colors and unrelated styles survive. Unsupported legacy style IDs (`original`, `tank`, `tshirt`) use the free style defaults rather than granting an unlock. Non-object JSON falls back to the complete default. Unsupported values emit the constant warning `Unsupported stored base appearance; using default avatar.` without user IDs, raw JSON or credentials; absent/empty storage does not warn.
 
-### Future shop boundary
+Saved paid hair or clothing (including previously free `hoodie`) is displayed only when the user purchased that style in any classroom, including through a now-inactive item. Otherwise only that style becomes the free default. There is no grandfathering or entitlement grant. GET, display-name PATCH and shared member snapshots used for realtime join/reverification and appearance events use the same projection. Reads never rewrite stored appearance or advance its revision. A complete valid avatar PATCH explicitly replaces storage and still rejects unowned paid input with `403`.
 
-`AvatarConfiguration.appearance` stores the **base-only** configuration. Extra legacy keys are excluded by response projection; they are not an equipped-shop contract. Future equipped shop state requires separately modeled, validated storage and ownership checks. No keys, schema or shop APIs for that future state are assumed or implemented here.
+### Equipment boundary
+
+`AvatarConfiguration.appearance` stores the **base-only** configuration. Extra legacy keys are excluded by response projection; they are not equipped items. Classroom equipment uses separate storage and ownership checks; see [equipment](equipment.md).
 
 ## Rejections and ownership boundary
 

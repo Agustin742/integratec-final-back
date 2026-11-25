@@ -5,7 +5,7 @@ import type { Prisma } from '@prisma/client';
 import type { AppearanceSlotName } from '@aula/contracts';
 import { SLOT_NAME_BY_ENUM } from '../equipment/equipment.dto';
 import type { EquippedItemPayloadDto } from '../internal/realtime/realtime-join.dto';
-import { compatibilityErrors } from './avatar-access.port';
+import { isFreeAvatarStyle } from './avatar-catalog';
 import { AvatarDto, avatarSnapshot, DEFAULT_AVATAR } from './avatar.dto';
 
 /**
@@ -14,11 +14,11 @@ import { AvatarDto, avatarSnapshot, DEFAULT_AVATAR } from './avatar.dto';
  * the caller's transaction client, so a snapshot can be read inside the transaction that caused
  * the change it describes.
  */
-export type AppearanceReader = Pick<Prisma.TransactionClient, 'user' | 'equippedItem'>;
+export type AppearanceReader = Pick<Prisma.TransactionClient, 'user' | 'equippedItem' | 'shopItem'>;
 
 export interface ReadBaseAppearanceOptions {
   /**
-   * Called when the stored JSON is unsupported and the default avatar is used instead; the
+   * Called when unsupported stored JSON needs field-wise defaults; the
    * caller decides how to log it, keeping `UsersService.readAppearance`'s privacy-safe warning.
    */
   onUnsupported?: () => void;
@@ -38,9 +38,9 @@ export async function advanceAppearanceRevision(
 }
 
 /**
- * Reads the stored base-avatar JSON with the exact `UsersService.readAppearance` semantics: absent
- * or empty storage yields the default avatar, unsupported values fall back to the default avatar
- * through the caller's `onUnsupported`, and valid storage is projected to the five public fields.
+ * Projects stored JSON to five validated fields, replacing only invalid fields with defaults.
+ * Absent/empty storage uses defaults silently; other unsupported values notify the caller.
+ * Ownership filtering belongs to readableBaseAppearance, not this structural projection.
  */
 export function readBaseAppearance(
   value: Prisma.JsonValue | undefined,
@@ -60,11 +60,40 @@ export function readBaseAppearance(
     return { ...DEFAULT_AVATAR };
   }
   const appearance = plainToInstance(AvatarDto, avatarSnapshot(value as unknown as AvatarDto));
-  if (validateSync(appearance).length || compatibilityErrors(appearance).length) {
-    options.onUnsupported?.();
-    return { ...DEFAULT_AVATAR };
+  const errors = validateSync(appearance);
+  if (errors.length) options.onUnsupported?.();
+  for (const error of errors) {
+    const field = error.property as keyof AvatarDto;
+    appearance[field] = DEFAULT_AVATAR[field];
   }
   return avatarSnapshot(appearance);
+}
+
+/** Read-only ownership projection, using the caller's transaction for event snapshots. */
+export async function readableBaseAppearance(
+  client: Pick<AppearanceReader, 'shopItem'>,
+  userId: string,
+  value: Prisma.JsonValue | undefined,
+  options: ReadBaseAppearanceOptions = {},
+): Promise<AvatarDto> {
+  const appearance = readBaseAppearance(value, options);
+  const wanted = [
+    { type: 'hair' as const, field: 'hairId' as const },
+    { type: 'top' as const, field: 'topId' as const },
+  ].filter(({ type, field }) => !isFreeAvatarStyle(type, appearance[field]));
+  if (!wanted.length) return appearance;
+  const owned = await client.shopItem.findMany({
+    where: { kind: 'AVATAR_STYLE', purchases: { some: { studentId: userId } } },
+    select: { metadata: true },
+  });
+  for (const { type, field } of wanted) {
+    const hasPurchase = owned.some(({ metadata }) => {
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+      return metadata.styleType === type && metadata.styleId === appearance[field];
+    });
+    if (!hasPurchase) appearance[field] = DEFAULT_AVATAR[field];
+  }
+  return appearance;
 }
 
 /** All four slots are always present, null when nothing is equipped. */
@@ -133,7 +162,12 @@ export async function memberAppearanceFor(
     displayName: user.displayName,
     appearanceRevision: user.appearanceRevision,
     appearance: {
-      baseAvatar: readBaseAppearance(user.avatarConfig?.appearance, options),
+      baseAvatar: await readableBaseAppearance(
+        client,
+        userId,
+        user.avatarConfig?.appearance,
+        options,
+      ),
       items: await equippedItemsFor(client, userId, classroomId),
     },
   };

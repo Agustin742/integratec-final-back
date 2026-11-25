@@ -410,4 +410,47 @@ describe('AccessVerificationService PostgreSQL Integration Tests (HU-AUL-005)', 
       ).rejects.toThrow(NotFoundException);
     });
   });
+
+  describe('Invitee standalone registration classroom creation guard', () => {
+    it('throws 403 Forbidden when an INVITEE without school memberships attempts to create a classroom', async () => {
+      const invitee = await prisma.user.create({
+        data: {
+          email: `invitee.guard.${Date.now()}@example.com`,
+          passwordHash: 'hash',
+          displayName: 'Invitee No School',
+          registrationPath: 'INVITEE',
+        },
+      });
+      createdUserIds.push(invitee.id);
+
+      await expect(service.resolveClassroomCreationTarget(invitee.id)).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('allows an INVITEE who later holds an active SchoolMember TEACHER role to create a classroom', async () => {
+      const invitedTeacher = await prisma.user.create({
+        data: {
+          email: `invitee.teacher.${Date.now()}@example.com`,
+          passwordHash: 'hash',
+          displayName: 'Invited School Teacher',
+          registrationPath: 'INVITEE',
+        },
+      });
+      createdUserIds.push(invitedTeacher.id);
+
+      await prisma.schoolMember.create({
+        data: {
+          schoolId: school.id,
+          userId: invitedTeacher.id,
+          role: SchoolRole.TEACHER,
+          state: MembershipState.ACTIVE,
+        },
+      });
+
+      const target = await service.resolveClassroomCreationTarget(invitedTeacher.id);
+      expect(target.schoolId).toBe(school.id);
+      expect(target.myRole).toBe('TEACHER');
+    });
+  });
 });

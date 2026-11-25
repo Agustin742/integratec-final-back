@@ -494,6 +494,11 @@ export class AccessVerificationService {
     if (await this.hasLearnerRelation(actorUserId)) {
       throw new ForbiddenException('Students and parents cannot create classrooms');
     }
+    if (user.registrationPath === RegistrationPath.INVITEE) {
+      throw new ForbiddenException(
+        'Invited accounts cannot create classrooms without school authorization',
+      );
+    }
     throw new NotFoundException('School not found');
   }
 

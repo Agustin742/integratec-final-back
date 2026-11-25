@@ -141,6 +141,28 @@ describe('Own profile and base avatar (#20)', () => {
     await app?.close();
   });
 
+  it.each([
+    { ...alternate, hairId: 'original' },
+    { ...alternate, topId: 'hoodie' },
+    { ...alternate, hairId: 'dreads', topId: 'winter-coat' },
+  ])('normalizes saved styles field-wise without changing storage: %j', async (appearance) => {
+    await prisma.avatarConfiguration.create({ data: { userId: ids[0], appearance } });
+    const expected = {
+      ...alternate,
+      hairId: ['original', 'dreads'].includes(appearance.hairId) ? base.hairId : appearance.hairId,
+      topId: ['hoodie', 'winter-coat'].includes(appearance.topId) ? base.topId : appearance.topId,
+    };
+    expect((await me()).body.avatar).toEqual(expected);
+    expect(
+      (await patch('profile', { displayName: 'Normalized reader' }).expect(200)).body.avatar,
+    ).toEqual(expected);
+    expect(
+      (await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId: ids[0] } }))
+        .appearance,
+    ).toEqual(appearance);
+    if (appearance.topId === 'hoodie') await patch('avatar', appearance).expect(403);
+  });
+
   it('returns only the caller safe profile and default appearance', async () => {
     expect((await me()).body).toEqual({
       id: ids[0],

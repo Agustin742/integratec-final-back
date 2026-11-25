@@ -179,7 +179,7 @@ describe('ShopService (unit)', () => {
       },
       studentPurchase: {
         count: vi.fn(),
-        findMany: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
       },
     };
     access = {

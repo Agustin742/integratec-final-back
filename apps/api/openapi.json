@@ -20,7 +20,7 @@
     },
     "/auth/register": {
       "post": {
-        "description": "Creates a user account, baseline avatar configuration, and the initial organizational structure atomically.",
+        "description": "Creates a user account and baseline avatar configuration atomically with its initial organizational structure (SCHOOL or INDEPENDENT_TEACHER), or issues an initial authenticated session with zero school/classroom roles for INVITEE accounts.",
         "operationId": "AuthController_register",
         "parameters": [],
         "requestBody": {
@@ -51,7 +51,7 @@
             }
           }
         },
-        "summary": "Register account and select organizational path",
+        "summary": "Register account and select onboarding path",
         "tags": ["auth"]
       }
     },
@@ -5035,9 +5035,9 @@
           },
           "path": {
             "type": "string",
-            "enum": ["INDEPENDENT_TEACHER", "SCHOOL"],
+            "enum": ["INDEPENDENT_TEACHER", "SCHOOL", "INVITEE"],
             "example": "INDEPENDENT_TEACHER",
-            "description": "Organizational path chosen during registration"
+            "description": "Registration path: INDEPENDENT_TEACHER, SCHOOL, or INVITEE (standalone account with no school/workspace until joining via invitation or code)"
           },
           "schoolName": {
             "type": "string",
@@ -5074,6 +5074,33 @@
         },
         "required": ["id", "name", "slug", "timeZone"]
       },
+      "TokenPairResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4ifQ.signature",
+            "description": "Short-lived JWT (HS256). Send it as `Authorization: Bearer <accessToken>`."
+          },
+          "refreshToken": {
+            "type": "string",
+            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
+            "description": "Opaque refresh token. Stored server-side only as a SHA-256 digest; keep it secret."
+          },
+          "tokenType": {
+            "type": "string",
+            "example": "Bearer",
+            "enum": ["Bearer"],
+            "description": "Authorization scheme."
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 900,
+            "description": "Access token lifetime in seconds."
+          }
+        },
+        "required": ["accessToken", "refreshToken", "tokenType", "expiresIn"]
+      },
       "RegisterResponseDto": {
         "type": "object",
         "properties": {
@@ -5094,7 +5121,7 @@
           },
           "path": {
             "type": "string",
-            "enum": ["INDEPENDENT_TEACHER", "SCHOOL"],
+            "enum": ["INDEPENDENT_TEACHER", "SCHOOL", "INVITEE"],
             "example": "INDEPENDENT_TEACHER",
             "description": "Organizational path chosen during registration"
           },
@@ -5106,6 +5133,10 @@
             "type": "string",
             "example": "2026-11-05T20:00:00.000Z",
             "description": "Account creation instant in UTC (ISO 8601)"
+          },
+          "session": {
+            "description": "Authenticated session issued immediately when path is INVITEE; omitted for SCHOOL and INDEPENDENT_TEACHER.",
+            "allOf": [{ "$ref": "#/components/schemas/TokenPairResponseDto" }]
           }
         },
         "required": ["id", "email", "displayName", "path", "createdAt"]
@@ -5185,33 +5216,6 @@
           }
         },
         "required": ["email", "password"]
-      },
-      "TokenPairResponseDto": {
-        "type": "object",
-        "properties": {
-          "accessToken": {
-            "type": "string",
-            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIuLi4ifQ.signature",
-            "description": "Short-lived JWT (HS256). Send it as `Authorization: Bearer <accessToken>`."
-          },
-          "refreshToken": {
-            "type": "string",
-            "example": "q3VZk0mH1xk4oQe2l7Yw5r8m9uJcT6bNf0aXsD1pLhE",
-            "description": "Opaque refresh token. Stored server-side only as a SHA-256 digest; keep it secret."
-          },
-          "tokenType": {
-            "type": "string",
-            "example": "Bearer",
-            "enum": ["Bearer"],
-            "description": "Authorization scheme."
-          },
-          "expiresIn": {
-            "type": "number",
-            "example": 900,
-            "description": "Access token lifetime in seconds."
-          }
-        },
-        "required": ["accessToken", "refreshToken", "tokenType", "expiresIn"]
       },
       "RefreshRequestDto": {
         "type": "object",

@@ -10,7 +10,7 @@ import { AvatarStylesService } from './avatar-styles.service';
 import {
   advanceAppearanceRevision,
   memberAppearanceFor,
-  readBaseAppearance,
+  readableBaseAppearance,
 } from './member-appearance';
 import { OwnProfileDto, UpdateProfileDto } from './profile.dto';
 
@@ -113,17 +113,19 @@ export class UsersService {
     }
   }
 
-  private toProfile(user: ProfileRecord): OwnProfileDto {
+  private async toProfile(user: ProfileRecord): Promise<OwnProfileDto> {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      avatar: this.readAppearance(user.avatarConfig?.appearance),
+      avatar: await this.readAppearance(user.id, user.avatarConfig?.appearance),
     };
   }
 
-  private readAppearance(value: Prisma.JsonValue | undefined): AvatarDto {
-    return readBaseAppearance(value, { onUnsupported: () => this.unsupportedAppearance() });
+  private readAppearance(userId: string, value: Prisma.JsonValue | undefined): Promise<AvatarDto> {
+    return readableBaseAppearance(this.prisma, userId, value, {
+      onUnsupported: () => this.unsupportedAppearance(),
+    });
   }
 
   private unsupportedAppearance(): void {
