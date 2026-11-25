@@ -171,6 +171,51 @@ describe('OpenAiCompatibleAiAdapter', () => {
     });
   });
 
+  it('round-trips per-call provider context unchanged on the exact tool call', async () => {
+    const extraContent = { google: { thought_signature: 'synthetic-signature' } };
+    const wireCalls = [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'search_allowed_material', arguments: '{"query":"atp"}' },
+        extra_content: extraContent,
+      },
+      // With parallel calls Gemini signs only the first one.
+      {
+        id: 'call_2',
+        type: 'function',
+        function: { name: 'list_my_pending_activities', arguments: '{}' },
+      },
+    ];
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({ choices: [{ message: { content: null, tool_calls: wireCalls } }] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'Done' } }] }));
+    const adapter = new OpenAiCompatibleAiAdapter(
+      authTestConfig({ aiProviderApiKey: 'synthetic-key' }),
+      { fetchFn: fetchMock },
+    );
+
+    const first = await adapter.chatCompletion({ messages: [{ role: 'user', content: 'hi' }] });
+    expect(first.toolCalls[0]?.providerContext).toEqual(extraContent);
+    expect(first.toolCalls[1]).not.toHaveProperty('providerContext');
+
+    await adapter.chatCompletion({
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: null, toolCalls: first.toolCalls },
+        { role: 'tool', toolCallId: 'call_1', content: '{}' },
+        { role: 'tool', toolCallId: 'call_2', content: '{}' },
+      ],
+    });
+    const sent = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)) as {
+      messages: Array<{ tool_calls?: unknown }>;
+    };
+    expect(sent.messages[1]?.tool_calls).toStrictEqual(wireCalls);
+  });
+
   it('retries transient 503 errors up to aiMaxRetries and never retries 401 or echoes secrets', async () => {
     const fetchMock = vi
       .fn<typeof fetch>()

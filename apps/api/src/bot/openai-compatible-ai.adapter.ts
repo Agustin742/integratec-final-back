@@ -36,6 +36,7 @@ interface RawChatCompletionResponse {
         id?: unknown;
         type?: unknown;
         function?: { name?: unknown; arguments?: unknown };
+        extra_content?: unknown;
       }>;
     };
   }>;
@@ -83,6 +84,8 @@ function toWireMessages(messages: readonly ChatMessage[]) {
           id: call.id,
           type: 'function',
           function: { name: call.name, arguments: call.argumentsJson },
+          // Gemini 3 thought signatures: rejected with 400 unless echoed on the same call.
+          ...(call.providerContext === undefined ? {} : { extra_content: call.providerContext }),
         })),
       };
     }
@@ -155,6 +158,9 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
           id: rawCall.id,
           name: rawCall.function.name,
           argumentsJson: rawCall.function.arguments,
+          ...(rawCall.extra_content === undefined
+            ? {}
+            : { providerContext: rawCall.extra_content }),
         });
       }
     }
