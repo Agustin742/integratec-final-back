@@ -348,6 +348,74 @@ describe('CallRoom (real Colyseus server + stub API)', () => {
       await waitUntil(() => mine().forcedMuted, 'ada muted');
     });
 
+    it.each(['mute', 'mute-all'] as const)(
+      'preserves %s through replacement and leave/rejoin while self unmute is forbidden',
+      async (action) => {
+        const host = await join(teacher);
+        let student = await join(ada);
+        moderate(host, { action: 'allow-self-unmute', value: false });
+        moderate(host, action === 'mute' ? { action, targetUserId: ada.userId } : { action });
+        await waitUntil(() => participantOf(host, student)!.forcedMuted, 'forced mute applied');
+
+        student = await join(ada);
+        expect(participantOf(host, student)!.forcedMuted).toBe(true);
+        student.send(CALL_SELF_MESSAGE, { muted: false, speaking: true });
+        await sleep(80);
+        expect(participantOf(host, student)).toMatchObject({ forcedMuted: true, speaking: false });
+
+        await student.leave();
+        await waitUntil(() => serverRoom(host).state.participants.size === 1, 'student left');
+        student = await join(ada);
+        expect(participantOf(host, student)!.forcedMuted).toBe(true);
+        student.send(CALL_SELF_MESSAGE, { muted: false, speaking: true });
+        await sleep(80);
+        expect(participantOf(host, student)).toMatchObject({ forcedMuted: true, speaking: false });
+      },
+    );
+
+    it('applies mute-all to new arrivals and retains explicit unmute until another mute-all', async () => {
+      const host = await join(teacher);
+      moderate(host, { action: 'allow-self-unmute', value: false });
+      moderate(host, { action: 'mute-all' });
+      await waitUntil(() => !serverRoom(host).state.allowSelfUnmute, 'moderation processed');
+      let student = await join(ada);
+      expect(participantOf(host, student)!.forcedMuted).toBe(true);
+      expect(participantOf(host, host)!.forcedMuted).toBe(false);
+      moderate(host, { action: 'unmute', targetUserId: ada.userId });
+      await waitUntil(() => !participantOf(host, student)!.forcedMuted, 'teacher unmuted');
+      student = await join(ada);
+      expect(participantOf(host, student)!.forcedMuted).toBe(false);
+      moderate(host, { action: 'mute-all' });
+      await waitUntil(() => participantOf(host, student)!.forcedMuted, 'mute-all reapplied');
+      await student.leave();
+      await waitUntil(() => serverRoom(host).state.participants.size === 1, 'student absent');
+      moderate(host, { action: 'unmute', targetUserId: ada.userId });
+      // The next command is an ordered acknowledgement that the absent-user unmute was processed.
+      moderate(host, { action: 'focus-mode', value: true });
+      await waitUntil(() => serverRoom(host).state.focusMode, 'commands processed');
+      student = await join(ada);
+      expect(participantOf(host, student)!.forcedMuted).toBe(false);
+      const newcomer = await join(bob);
+      expect(participantOf(host, newcomer)!.forcedMuted).toBe(true);
+    });
+
+    it('retains an allowed self-unmute across replacement and rejoin after mute-all', async () => {
+      const host = await join(teacher);
+      let student = await join(ada);
+      moderate(host, { action: 'mute-all' });
+      await waitUntil(() => participantOf(host, student)!.forcedMuted, 'muted');
+      student.send(CALL_SELF_MESSAGE, { muted: false });
+      await waitUntil(() => !participantOf(host, student)!.forcedMuted, 'self unmuted');
+      moderate(host, { action: 'allow-self-unmute', value: false });
+      await waitUntil(() => !serverRoom(host).state.allowSelfUnmute, 'permission changed');
+      student = await join(ada);
+      expect(participantOf(host, student)!.forcedMuted).toBe(false);
+      await student.leave();
+      await waitUntil(() => serverRoom(host).state.participants.size === 1, 'student left');
+      student = await join(ada);
+      expect(participantOf(host, student)!.forcedMuted).toBe(false);
+    });
+
     it('silently ignores moderation sent by a student', async () => {
       const host = await join(teacher);
       const student = await join(ada);

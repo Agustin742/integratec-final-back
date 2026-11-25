@@ -121,6 +121,9 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   private readonly limiters = new Map<string, Limiters>();
   private readonly authBySession = new Map<string, CallAuth>();
   private readonly pendingAdmissions = new Map<string, PendingAdmission>();
+  /** Room-lifetime moderation: one entry per verified admitted student, never arbitrary targets. */
+  private readonly forcedMuteByUser = new Map<string, boolean>();
+  private muteNewArrivals = false;
   /** Set once the call is being closed on purpose, so the leaves it causes end nothing else. */
   private ending = false;
   /** Whether this room told the classroom rooms about its class call (and so must retract it). */
@@ -278,6 +281,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   }
 
   onDispose(): void {
+    this.forcedMuteByUser.clear();
     for (const admission of this.pendingAdmissions.values()) admission.revoked = true;
     this.stopRinging('caller_left');
     this.options.directory?.unregisterCall(this.classroomId, this);
@@ -411,6 +415,15 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     if (!this.allow(client, 'state') || this.kind !== 'classroom' || !this.moderatorOf(client)) {
       return;
     }
+    if (action.action === 'mute-all') {
+      this.muteNewArrivals = true;
+      for (const userId of this.forcedMuteByUser.keys()) this.forcedMuteByUser.set(userId, true);
+    } else if (
+      (action.action === 'mute' || action.action === 'unmute') &&
+      this.forcedMuteByUser.has(action.targetUserId)
+    ) {
+      this.forcedMuteByUser.set(action.targetUserId, action.action === 'mute');
+    }
     applyCallModeration(this.state, action);
     if (action.action === 'focus-mode') this.publishClassStatus();
   }
@@ -444,7 +457,12 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
       const blocked = !self.muted && participant.forcedMuted && !this.state.allowSelfUnmute;
       if (!blocked) {
         participant.selfMuted = self.muted;
-        if (!self.muted) participant.forcedMuted = false;
+        if (!self.muted) {
+          participant.forcedMuted = false;
+          if (this.kind === 'classroom' && !isCallModerator(participant.role)) {
+            this.forcedMuteByUser.set(participant.userId, false);
+          }
+        }
       }
     }
     if (self.speaking !== undefined) {
@@ -485,6 +503,15 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
     participant.userId = auth.userId;
     participant.displayName = auth.displayName;
     participant.role = auth.role;
+    if (this.kind === 'classroom') {
+      if (isCallModerator(auth.role)) {
+        // A refreshed moderator role supersedes any restriction from an earlier student join.
+        this.forcedMuteByUser.delete(auth.userId);
+      } else {
+        participant.forcedMuted = this.forcedMuteByUser.get(auth.userId) ?? this.muteNewArrivals;
+        this.forcedMuteByUser.set(auth.userId, participant.forcedMuted);
+      }
+    }
     applyAppearanceToState(participant.appearance, appearance);
     return participant;
   }
