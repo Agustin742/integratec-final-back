@@ -96,7 +96,7 @@ export async function readableBaseAppearance(
   return appearance;
 }
 
-/** All four slots are always present, null when nothing is equipped. */
+/** Every slot is always present, null when nothing is equipped. */
 export async function equippedItemsFor(
   client: AppearanceReader,
   userId: string,
@@ -114,6 +114,9 @@ export async function equippedItemsFor(
     face: null,
     back: null,
     desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
   };
   for (const row of equipped) {
     const slot = SLOT_NAME_BY_ENUM[row.slot];

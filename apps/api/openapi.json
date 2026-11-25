@@ -3173,7 +3173,7 @@
     },
     "/classrooms/{id}/me/equipment": {
       "get": {
-        "description": "Returns one equipped purchase per slot (head, face, back, desk_decor) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.",
+        "description": "Returns one equipped purchase per slot (head, face, back, desk_decor, hand, neck, ears) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.",
         "operationId": "EquipmentController_getEquipment",
         "parameters": [
           {
@@ -6992,7 +6992,10 @@
           }
         }
       },
-      "EquippedSlotName": { "type": "string", "enum": ["head", "face", "back", "desk_decor"] },
+      "EquippedSlotName": {
+        "type": "string",
+        "enum": ["head", "face", "back", "desk_decor", "hand", "neck", "ears"]
+      },
       "EquippedSlotDto": {
         "type": "object",
         "properties": {
@@ -7015,7 +7018,15 @@
               "$ref": "#/components/schemas/EquippedSlotDto",
               "nullable": true
             },
-            "example": { "head": null, "face": null, "back": null, "desk_decor": null },
+            "example": {
+              "head": null,
+              "face": null,
+              "back": null,
+              "desk_decor": null,
+              "hand": null,
+              "neck": null,
+              "ears": null
+            },
             "description": "Equipped purchase per slot; null when the slot is empty."
           }
         },

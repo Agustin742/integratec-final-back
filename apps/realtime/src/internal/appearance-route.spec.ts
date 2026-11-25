@@ -28,6 +28,9 @@ const APPEARANCE = {
     face: null,
     back: null,
     desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
   },
 } as const;
 

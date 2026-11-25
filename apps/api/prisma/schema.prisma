@@ -115,6 +115,9 @@ enum EquippedSlot {
   FACE       @map("face")
   BACK       @map("back")
   DESK_DECOR @map("desk_decor")
+  HAND       @map("hand")
+  NECK       @map("neck")
+  EARS       @map("ears")
 
   @@map("equipped_slot")
 }

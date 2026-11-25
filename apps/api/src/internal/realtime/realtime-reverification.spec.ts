@@ -134,7 +134,15 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
       deskCount: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
-        items: { head: null, face: null, back: null, desk_decor: null },
+        items: {
+          head: null,
+          face: null,
+          back: null,
+          desk_decor: null,
+          hand: null,
+          neck: null,
+          ears: null,
+        },
       },
     });
   });
@@ -193,6 +201,9 @@ describe('POST /internal/realtime/access-reverification (#25)', () => {
             kind: 'AVATAR_ACCESSORY',
           },
           desk_decor: null,
+          hand: null,
+          neck: null,
+          ears: null,
         },
       });
       // The only non-appearance field is an internal ordering token; no private data rides along.

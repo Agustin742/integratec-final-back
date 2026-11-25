@@ -32,7 +32,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
 | ClassroomItem | Classroom-wide item unlocked after purchasing a `classroom_item`, with state (`unlocked`, `active`, `disabled`) | Belongs to a classroom; references a ShopItem and its originating StudentPurchase |
 | StudentPurchase | Immutable student purchase record storing `pricePaid`, `idempotencyKey`, and debit transaction link | Belongs to a classroom and student; references a ShopItem and PointTransaction |
-| EquippedItem | Equipped purchase in one slot (`head`, `face`, `back`, `desk_decor` derived from `ShopItem.metadata.slot`) | Belongs to a classroom and student; references a ShopItem; unique per (classroom, student, slot) |
+| EquippedItem | Equipped purchase in one slot (`head`, `face`, `back`, `desk_decor`, `hand`, `neck`, `ears` derived from `ShopItem.metadata.slot`) | Belongs to a classroom and student; references a ShopItem; unique per (classroom, student, slot) |
 | Pet / PetAccessory | The classroom's single pet and the accessories it owns or has equipped | Pet belongs to a classroom |
 | Streak | Current and best streak per student, with last qualifying day | Belongs to a student |
 | Announcement | Bulletin-board notice | Belongs to a classroom; has an author |

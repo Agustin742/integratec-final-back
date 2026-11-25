@@ -91,11 +91,22 @@ describe('memberAppearanceSchema (#114)', () => {
       face: null,
       back: null,
       desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
     },
   };
 
-  it('names the four equipment slots', () => {
-    expect(APPEARANCE_SLOT_NAMES).toEqual(['head', 'face', 'back', 'desk_decor']);
+  it('names the seven equipment slots', () => {
+    expect(APPEARANCE_SLOT_NAMES).toEqual([
+      'head',
+      'face',
+      'back',
+      'desk_decor',
+      'hand',
+      'neck',
+      'ears',
+    ]);
   });
 
   it('accepts a valid member appearance', () => {

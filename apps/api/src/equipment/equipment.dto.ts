@@ -4,7 +4,15 @@ import { IsOptional, IsUUID } from 'class-validator';
 import { NotFoundException } from '@nestjs/common';
 
 /** URL slot names accepted by the equipment endpoints. */
-export const EQUIPPED_SLOT_NAMES = ['head', 'face', 'back', 'desk_decor'] as const;
+export const EQUIPPED_SLOT_NAMES = [
+  'head',
+  'face',
+  'back',
+  'desk_decor',
+  'hand',
+  'neck',
+  'ears',
+] as const;
 export type EquippedSlotName = (typeof EQUIPPED_SLOT_NAMES)[number];
 
 export const SLOT_NAME_BY_ENUM: Record<EquippedSlot, EquippedSlotName> = {
@@ -12,6 +20,9 @@ export const SLOT_NAME_BY_ENUM: Record<EquippedSlot, EquippedSlotName> = {
   [EquippedSlot.FACE]: 'face',
   [EquippedSlot.BACK]: 'back',
   [EquippedSlot.DESK_DECOR]: 'desk_decor',
+  [EquippedSlot.HAND]: 'hand',
+  [EquippedSlot.NECK]: 'neck',
+  [EquippedSlot.EARS]: 'ears',
 };
 
 export const SLOT_ENUM_BY_NAME: Record<EquippedSlotName, EquippedSlot> = {
@@ -19,6 +30,9 @@ export const SLOT_ENUM_BY_NAME: Record<EquippedSlotName, EquippedSlot> = {
   face: EquippedSlot.FACE,
   back: EquippedSlot.BACK,
   desk_decor: EquippedSlot.DESK_DECOR,
+  hand: EquippedSlot.HAND,
+  neck: EquippedSlot.NECK,
+  ears: EquippedSlot.EARS,
 };
 
 /**
@@ -77,7 +91,15 @@ export class EquipmentStateDto {
   @ApiProperty({
     type: 'object',
     additionalProperties: { $ref: getSchemaPath(EquippedSlotDto), nullable: true },
-    example: { head: null, face: null, back: null, desk_decor: null },
+    example: {
+      head: null,
+      face: null,
+      back: null,
+      desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
+    },
     description: 'Equipped purchase per slot; null when the slot is empty.',
   })
   slots!: Record<EquippedSlotName, EquippedSlotDto | null>;

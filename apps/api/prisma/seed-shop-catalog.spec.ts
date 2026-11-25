@@ -30,6 +30,25 @@ const EXPECTED_ACCESSORIES: ReadonlyArray<[string, string, number]> = [
   ['back_guitar', '#AF7B52', 200],
   ['back_superhero_cape', '#E66861', 220],
   ['back_wings', '#FFF9EB', 250],
+  ['hand_pencil', '#F7D86B', 80],
+  ['hand_book', '#5B4F96', 90],
+  ['hand_ruler', '#A9E7F4', 80],
+  ['hand_mug', '#E66861', 100],
+  ['hand_phone', '#353849', 150],
+  ['hand_mate', '#AF7B52', 130],
+  ['hand_magnifying_glass', '#75B7DA', 120],
+  ['hand_paintbrush', '#C77DAA', 100],
+  ['hand_tablet', '#62CFC7', 180],
+  ['hand_trophy', '#F7D86B', 250],
+  ['neck_scarf', '#E66861', 110],
+  ['neck_necklace', '#B5A7D6', 130],
+  ['neck_bow_tie', '#5B4F96', 90],
+  ['neck_lanyard_badge', '#62CFC7', 80],
+  ['neck_bandana', '#7EBA8B', 90],
+  ['neck_achievement_medal', '#F7D86B', 220],
+  ['ears_earrings', '#F5B5AB', 100],
+  ['ears_star_earrings', '#F7D86B', 140],
+  ['ears_ear_cuffs', '#B5A7D6', 120],
 ];
 
 const styles = SHOP_CATALOG.filter((item) => item.kind === ShopItemKind.AVATAR_STYLE);
@@ -41,15 +60,15 @@ const styleIds = (type: 'hair' | 'top'): string[] =>
     .map((meta) => meta.styleId);
 
 describe('seed shop catalog', () => {
-  it('has 21 accessories and 25 styles, all implemented and active', () => {
-    expect(SHOP_CATALOG).toHaveLength(46);
-    expect(accessories).toHaveLength(21);
+  it('has 40 accessories and 25 styles, all implemented and active', () => {
+    expect(SHOP_CATALOG).toHaveLength(65);
+    expect(accessories).toHaveLength(40);
     expect(styles).toHaveLength(25);
     expect(SHOP_CATALOG.every((item) => item.isActive && item.isImplemented)).toBe(true);
   });
 
   it('uses unique codes and prices within 80..250', () => {
-    expect(new Set(SHOP_CATALOG.map((item) => item.code)).size).toBe(46);
+    expect(new Set(SHOP_CATALOG.map((item) => item.code)).size).toBe(65);
     for (const item of SHOP_CATALOG) {
       expect(item.defaultPrice).toBeGreaterThanOrEqual(80);
       expect(item.defaultPrice).toBeLessThanOrEqual(250);

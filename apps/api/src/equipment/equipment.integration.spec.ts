@@ -238,7 +238,15 @@ describe('EquipmentService (real PostgreSQL)', () => {
     expect(state).toMatchObject({
       classroomId: ids.classroom,
       studentId: ids.student,
-      slots: { head: null, face: null, back: null, desk_decor: null },
+      slots: {
+        head: null,
+        face: null,
+        back: null,
+        desk_decor: null,
+        hand: null,
+        neck: null,
+        ears: null,
+      },
     });
     expect(
       await prisma.equippedItem.count({
@@ -578,6 +586,9 @@ describe('EquipmentService (real PostgreSQL)', () => {
             face: null,
             back: null,
             desk_decor: null,
+            hand: null,
+            neck: null,
+            ears: null,
           },
         },
       });
@@ -619,6 +630,9 @@ describe('EquipmentService (real PostgreSQL)', () => {
         face: null,
         back: null,
         desk_decor: null,
+        hand: null,
+        neck: null,
+        ears: null,
       });
     });
 

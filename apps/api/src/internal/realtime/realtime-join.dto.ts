@@ -87,7 +87,15 @@ export class MemberAppearanceDto {
   @ApiProperty({
     type: 'object',
     additionalProperties: { $ref: getSchemaPath(EquippedItemPayloadDto), nullable: true },
-    example: { head: null, face: null, back: null, desk_decor: null },
+    example: {
+      head: null,
+      face: null,
+      back: null,
+      desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
+    },
     description: 'Equipped item per slot; null when the slot is empty.',
   })
   items!: Record<AppearanceSlotName, EquippedItemPayloadDto | null>;

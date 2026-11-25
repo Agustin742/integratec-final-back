@@ -156,7 +156,15 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
       deskCount: 0,
       appearance: {
         baseAvatar: { ...DEFAULT_AVATAR },
-        items: { head: null, face: null, back: null, desk_decor: null },
+        items: {
+          head: null,
+          face: null,
+          back: null,
+          desk_decor: null,
+          hand: null,
+          neck: null,
+          ears: null,
+        },
       },
     });
   });
@@ -209,7 +217,15 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
       hairColor: '#AF6D63',
       clothingColor: '#75B7DA',
     };
-    const NULL_ITEMS = { head: null, face: null, back: null, desk_decor: null } as const;
+    const NULL_ITEMS = {
+      head: null,
+      face: null,
+      back: null,
+      desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
+    } as const;
 
     it('answers the default appearance for a member without stored data', async () => {
       const res = await post({ accessToken: memberToken, classroomId }).expect(200);
@@ -264,6 +280,9 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
             face: null,
             back: null,
             desk_decor: null,
+            hand: null,
+            neck: null,
+            ears: null,
           },
         });
         // The only non-appearance field is an internal ordering token; no private data rides along.

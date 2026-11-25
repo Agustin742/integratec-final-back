@@ -21,6 +21,9 @@ export interface StubAppearance {
     face: null;
     back: null;
     desk_decor: null;
+    hand: null;
+    neck: null;
+    ears: null;
   };
 }
 
@@ -52,6 +55,9 @@ export const makeStubAppearance = (hairColor = '#AF6D63'): StubAppearance => ({
     face: null,
     back: null,
     desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
   },
 });
 

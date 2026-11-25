@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Hand, neck and ears equipment slots (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (schema, migration `20261125000000_add_hand_neck_ears_equipped_slots`, shop catalog), `apps/api/src/equipment/`, `apps/api/src/users/member-appearance.ts`, `packages/contracts/src/index.ts`, `apps/realtime/src/testing/stub-api.ts`, `apps/api/openapi.json`, `docs/`, `rules/data.md`
+- **Change:** Added independent `hand`, `neck` and `ears` equipment slots for avatar accessories through the database enum, equipment API, member appearance and shared contract, and seeded 19 shop items (40 accessories in total).
+- **Reason:** The front merged hand, neck and ear accessory assets that students cannot buy or equip yet.
+- **Verification:** Specs written RED first; touched specs without a database, lint and typecheck pass. DB-backed specs and the migration were not run (no PostgreSQL running).
+- **Next step:** Run the DB-backed specs in CI; deploy API and realtime together because the appearance contract now requires the new keys.
+
 ## 2026-11-24 — Synced pet and tutor bot routines in the classroom room (#147)
 
 - **Status:** completed
