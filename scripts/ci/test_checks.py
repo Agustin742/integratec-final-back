@@ -64,6 +64,21 @@ class PackageTests(unittest.TestCase):
                                  (code, '', error))
                 self.assertEqual((folder / 'output').read_text(), output)
 
+    def test_test_runner_forwards_sequential_file_flag(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        script = workflow.split('      - name: Run tests\n', 1)[1]
+        script = script.split('        run: |\n', 1)[1].split('\n      - name:', 1)[0]
+        # Exercise the configured branch without invoking Node, pnpm, or the DB.
+        result = subprocess.run(['bash'], cwd=ROOT,
+            input=('node() { return 0; }\n'
+                   'pnpm() { printf "%s\\n" "$@"; }\n' + script).encode(),
+            capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(result.stdout.decode().splitlines(), [
+            '--recursive', '--workspace-concurrency=1', 'run', 'test',
+            '--no-file-parallelism',
+        ])
+
     def test_absence_notices(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         cases = [
