@@ -26,6 +26,21 @@ const APPEARANCE = {
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const FOREIGN = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
 
+describe('RoomDirectory call rooms', () => {
+  it('evicts from the call rooms of the classroom too, and forgets them once unregistered', () => {
+    const directory = new RoomDirectory();
+    const call = { evict: vi.fn().mockReturnValue(1) };
+    directory.registerCall('A', call);
+
+    expect(directory.evict({ userId: 'u', classroomId: 'A' })).toBe(1);
+    expect(directory.evict({ userId: 'u', classroomId: 'B' })).toBe(0);
+    expect(directory.evict({ userId: 'u' })).toBe(1);
+
+    directory.unregisterCall('A', call);
+    expect(directory.evict({ userId: 'u', classroomId: 'A' })).toBe(0);
+  });
+});
+
 describe('RoomDirectory', () => {
   it('evicts from the room of the given classroom only', () => {
     const directory = new RoomDirectory();

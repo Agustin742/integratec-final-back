@@ -14,6 +14,8 @@ import {
   CALL_SIGNAL_MESSAGE,
   CLOSE_CODE_CALL_ENDED,
   CLOSE_CODE_CALL_FULL,
+  CLOSE_REASON_CALL_NOT_STARTED,
+  CLOSE_CODE_CALL_REPLACED,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -67,6 +69,8 @@ describe('call room contract', () => {
     expect(CLOSE_CODE_CALL_ENDED).toBe(4102);
     expect(taken).not.toContain(CLOSE_CODE_CALL_FULL);
     expect(taken).not.toContain(CLOSE_CODE_CALL_ENDED);
+    expect(CLOSE_REASON_CALL_NOT_STARTED).toBe('call_not_started');
+    expect(CLOSE_CODE_CALL_REPLACED).toBe(4104);
     expect(CLOSE_REASON_CALL_FULL).toBe('call_full');
     expect(CLOSE_REASON_CALL_ENDED).toBe('call_ended');
   });
@@ -109,6 +113,18 @@ describe('call room contract', () => {
         to: 'abc123',
         payload: { type: 'ice', candidate: { candidate: 'c', sdpMid: '0', sdpMLineIndex: null } },
       },
+      {
+        // What RTCIceCandidate.toJSON() emits in browsers.
+        to: 'abc123',
+        payload: {
+          type: 'ice',
+          candidate: { candidate: 'c', sdpMid: '0', sdpMLineIndex: 0, usernameFragment: 'abcd' },
+        },
+      },
+      {
+        to: 'abc123',
+        payload: { type: 'ice', candidate: { candidate: 'c', usernameFragment: null } },
+      },
     ])('accepts %j', (payload) => {
       expect(callSignalSchema.safeParse(payload).success).toBe(true);
     });
@@ -118,6 +134,16 @@ describe('call room contract', () => {
       [
         'an oversized candidate',
         { to: 'a', payload: { type: 'ice', candidate: { candidate: 'x'.repeat(2049) } } },
+      ],
+      [
+        'an oversized username fragment',
+        {
+          to: 'a',
+          payload: {
+            type: 'ice',
+            candidate: { candidate: 'c', usernameFragment: 'x'.repeat(257) },
+          },
+        },
       ],
       ['an empty target', { to: '', payload: offer }],
       ['an oversized target', { to: 'x'.repeat(65), payload: offer }],

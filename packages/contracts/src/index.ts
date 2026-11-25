@@ -188,8 +188,13 @@ export const CALL_MAX_PARTICIPANTS = 12;
 /** Close codes of the call room, outside every code Colyseus and the classroom room use. */
 export const CLOSE_CODE_CALL_FULL = 4101;
 export const CLOSE_CODE_CALL_ENDED = 4102;
+/** The same user joined again: the newer connection replaces this one. */
+export const CLOSE_CODE_CALL_REPLACED = 4104;
 export const CLOSE_REASON_CALL_FULL = 'call_full';
 export const CLOSE_REASON_CALL_ENDED = 'call_ended';
+/** Matchmaking error message (HTTP 403) when a student asks for a classroom call nobody started. */
+export const CLOSE_REASON_CALL_NOT_STARTED = 'call_not_started';
+export const CLOSE_REASON_CALL_REPLACED = 'call_replaced';
 
 export const CALL_KINDS = ['classroom', 'direct'] as const;
 export type CallKind = (typeof CALL_KINDS)[number];
@@ -224,6 +229,8 @@ export const callSignalPayloadSchema = z.discriminatedUnion('type', [
       candidate: z.string().max(CALL_ICE_CANDIDATE_MAX_LENGTH),
       sdpMid: z.string().max(64).nullable().optional(),
       sdpMLineIndex: z.number().int().min(0).max(65535).nullable().optional(),
+      // Present in RTCIceCandidate.toJSON() output.
+      usernameFragment: z.string().max(256).nullable().optional(),
     }),
   }),
 ]);

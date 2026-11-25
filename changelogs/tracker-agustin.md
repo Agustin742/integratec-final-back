@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Voice call room core (#149, B2)
+
+- **Status:** in-progress
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `call-key.ts`, `authenticate-call-join.ts`, `appearance-state.ts`, `room-directory.ts`, `app.config.ts`, `config/realtime-config.ts`, `packages/contracts/src/index.ts` (ICE `usernameFragment`, close codes 4104), `README.md`, `docker-compose.yml`, `.env.example`
+- **Change:** New `call` Colyseus room: server-derived call key (one call, one room), moderator-only start of classroom calls, private direct pair rooms, participant cap (`CALL_MAX_PARTICIPANTS`), one connection per user, signaling relay restricted to room participants, self mute/speaking/emote state and per-connection rate limits. Calls are evictable through the room directory.
+- **Reason:** Voice calls need an authenticated signaling and state room before moderation (B3) and ringing (B4).
+- **Verification:** Specs written RED first, then GREEN; typecheck, lint, prettier and `realtime:codegen:check`.
+- **Next step:** B3 teacher moderation and focus mode.
+
 ## 2026-11-25 — Voice call room contracts (#149, B1)
 
 - **Status:** in-progress

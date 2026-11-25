@@ -42,31 +42,12 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
+import { applyAppearanceToState } from './appearance-state';
+import { Avatar, ClassroomState } from './classroom-state';
 import type { DirectoryRoom, RoomDirectory } from './room-directory';
 
-/**
- * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
- * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
- * equipped is simply absent from the items map.
- */
 function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
-  avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
-  avatar.appearance.hairId = appearance.baseAvatar.hairId;
-  avatar.appearance.topId = appearance.baseAvatar.topId;
-  avatar.appearance.hairColor = appearance.baseAvatar.hairColor;
-  avatar.appearance.clothingColor = appearance.baseAvatar.clothingColor;
-  avatar.appearance.items.clear();
-  for (const [slot, item] of Object.entries(appearance.items)) {
-    if (item === null) continue;
-    const view = new EquippedItemView();
-    view.slot = item.slot;
-    view.shopItemId = item.shopItemId;
-    view.shopItemCode = item.shopItemCode;
-    view.shopItemName = item.shopItemName;
-    view.kind = item.kind;
-    avatar.appearance.items.set(slot, view);
-  }
+  applyAppearanceToState(avatar.appearance, appearance);
 }
 
 /** Collaborators and settings a room receives from the server bootstrap. */

@@ -65,6 +65,20 @@ export interface RoomDirectoryLike {
  */
 export class RoomDirectory {
   private readonly rooms = new Map<string, Set<DirectoryRoom>>();
+  /** Voice call rooms by classroom; they only need to be evictable. */
+  private readonly callRooms = new Map<string, Set<EvictableRoom>>();
+
+  registerCall(classroomId: string, room: EvictableRoom): void {
+    const set = this.callRooms.get(classroomId) ?? new Set<EvictableRoom>();
+    set.add(room);
+    this.callRooms.set(classroomId, set);
+  }
+
+  unregisterCall(classroomId: string, room: EvictableRoom): void {
+    const set = this.callRooms.get(classroomId);
+    set?.delete(room);
+    if (set?.size === 0) this.callRooms.delete(classroomId);
+  }
 
   register(classroomId: string, room: DirectoryRoom): void {
     const set = this.rooms.get(classroomId) ?? new Set<DirectoryRoom>();
@@ -81,10 +95,10 @@ export class RoomDirectory {
   /** Closes the matching connections and returns how many there were. */
   evict(filter: EvictionFilter): number {
     const { classroomId, ...roomFilter } = filter;
-    const targets =
+    const targets: EvictableRoom[] =
       classroomId === undefined
-        ? [...this.rooms.values()].flatMap((set) => [...set])
-        : [...(this.rooms.get(classroomId) ?? [])];
+        ? [...this.rooms.values(), ...this.callRooms.values()].flatMap((set) => [...set])
+        : [...(this.rooms.get(classroomId) ?? []), ...(this.callRooms.get(classroomId) ?? [])];
     return targets.reduce((total, room) => total + room.evict(roomFilter), 0);
   }
 

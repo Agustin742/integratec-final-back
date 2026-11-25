@@ -295,6 +295,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `API_INTERNAL_URL`        | Required; absolute `http(s)` URL                  | Base URL of the API for internal calls                                   | Private        | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `RECONNECTION_WINDOW_SECONDS` | Default `20`; integer 1-120                   | Seconds a dropped connection may reconnect before its avatar is removed  | Public         | Yes     |
+| `CALL_MAX_PARTICIPANTS`       | Default `12`; integer 2-24                    | Participants one voice call admits (WebRTC mesh; direct calls always 2)  | Public         | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 

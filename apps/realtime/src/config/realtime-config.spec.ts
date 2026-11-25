@@ -26,6 +26,21 @@ describe('loadRealtimeConfig', () => {
       apiInternalUrl: 'http://localhost:3000',
       internalServiceSecret: SECRET,
       reconnectionWindowSeconds: 20,
+      callMaxParticipants: 12,
+    });
+  });
+
+  describe('CALL_MAX_PARTICIPANTS', () => {
+    it('parses an explicit cap', () => {
+      expect(loadRealtimeConfig({ ...validEnv(), CALL_MAX_PARTICIPANTS: '8' })).toMatchObject({
+        callMaxParticipants: 8,
+      });
+    });
+
+    it.each(['1', '25', '-2', '2.5', 'many'])('rejects %j by name', (value) => {
+      expect(messageOf({ ...validEnv(), CALL_MAX_PARTICIPANTS: value })).toContain(
+        'CALL_MAX_PARTICIPANTS',
+      );
     });
   });
 
