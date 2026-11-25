@@ -2383,7 +2383,7 @@
     },
     "/submissions/{submissionId}/grade": {
       "post": {
-        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Assigns a 0-100 score and visible feedback (`1-5000` characters) to an ungraded `FILE` submission, computes server-weighted points (`round(score * typeWeight * activity.weightMultiplier)`), credits the points ledger atomically when points > 0, and records a student-only `grade_posted` notification. Returns `409` if already graded or not a `FILE` activity, `403` for classroom students or linked parents, and `404` for out-of-scope actors.",
+        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Assigns a 0-100 score and visible feedback (`1-5000` characters) to an ungraded `FILE` submission, computes server-weighted points (`round(score * typeWeight * activity.weightMultiplier)`), credits the points ledger atomically when points > 0, and records `grade_posted` notifications for the student and any active linked parents when adult mode is off. Returns `409` if already graded or not a `FILE` activity, `403` for classroom students or linked parents, and `404` for out-of-scope actors.",
         "operationId": "SubmissionGradesController_grade",
         "parameters": [
           {
@@ -2443,7 +2443,7 @@
         "tags": ["grades"]
       },
       "patch": {
-        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Uses optimistic concurrency (`version`) to update score and feedback, appends a `GradeRevision` row, applies a compensating ledger entry (or initial earning from 0) when weighted points change, and records a student-only `grade_posted` notification. Returns `409` on stale `version` or if a negative delta would drive student points below zero.",
+        "description": "Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Uses optimistic concurrency (`version`) to update score and feedback, appends a `GradeRevision` row, applies a compensating ledger entry (or initial earning from 0) when weighted points change, and records `grade_posted` notifications for the student and any active linked parents when adult mode is off. Returns `409` on stale `version` or if a negative delta would drive student points below zero.",
         "operationId": "SubmissionGradesController_regrade",
         "parameters": [
           {
@@ -3388,6 +3388,98 @@
         "security": [{ "bearer": [] }],
         "summary": "Equip a purchased item in a slot, or unequip the slot",
         "tags": ["equipment"]
+      }
+    },
+    "/me/parent-links": {
+      "get": {
+        "description": "Returns all active parent links for the authenticated user whose classroom (and owning school, if any) is live and whose linked child is still an active enrolled student. Links in adult-mode classrooms are included with `adultMode: true` so clients can display them as disabled while adult mode is active. Ordered by `createdAt` ascending, then `id` ascending.",
+        "operationId": "FamilyController_listMyParentLinks",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Active parent-child links for the authenticated user.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FamilyLinksResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List active parent-child links for the authenticated user",
+        "tags": ["family"]
+      }
+    },
+    "/me/parent-links/{linkId}/report-card": {
+      "get": {
+        "description": "Parent-only read view (HU-ACT-006) scoped to one active parent link. Reuses the same graded-activity report card and participation metrics as the student view. Returns `404` for malformed UUIDs, foreign or inactive links, deleted classrooms/schools, or removed students (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
+        "operationId": "FamilyController_getChildReportCard",
+        "parameters": [
+          {
+            "name": "linkId",
+            "required": true,
+            "in": "path",
+            "description": "ParentLink UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Items per page.",
+            "schema": { "minimum": 1, "maximum": 100, "default": 20, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The linked child's report card and participation metrics.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FamilyReportCardResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters (`page`, `pageSize`).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent viewing is disabled while the classroom is in adult education mode.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, inactive, or inaccessible parent link.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Read a linked child's report card and participation metrics",
+        "tags": ["family"]
       }
     },
     "/gamification/me": {
@@ -7259,6 +7351,182 @@
           }
         }
       },
+      "FamilyLinkDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "ParentLink UUID." },
+          "classroomId": { "type": "string", "format": "uuid", "description": "Classroom UUID." },
+          "classroomName": { "type": "string", "description": "Classroom display name." },
+          "classroomSubject": {
+            "type": "string",
+            "nullable": true,
+            "description": "Classroom subject or description, if configured."
+          },
+          "schoolId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Owning school UUID, or null for an independent-teacher classroom."
+          },
+          "adultMode": {
+            "type": "boolean",
+            "description": "Whether the classroom is currently in adult education mode. Existing links remain visible so clients can indicate that parent actions are disabled while adult mode is active."
+          },
+          "childId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Linked student user UUID."
+          },
+          "childDisplayName": { "type": "string", "description": "Linked student display name." },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Link creation timestamp (UTC ISO-8601)."
+          }
+        },
+        "required": [
+          "id",
+          "classroomId",
+          "classroomName",
+          "classroomSubject",
+          "schoolId",
+          "adultMode",
+          "childId",
+          "childDisplayName",
+          "createdAt"
+        ]
+      },
+      "FamilyLinksResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Active parent links where the classroom and school are live and the child is an active enrolled student, ordered by createdAt ascending then id ascending.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FamilyLinkDto" }
+          }
+        },
+        "required": ["items"]
+      },
+      "ReportCardItemDto": {
+        "type": "object",
+        "properties": {
+          "activityId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Graded activity UUID."
+          },
+          "activityTitle": {
+            "type": "string",
+            "description": "Activity title frozen at grading time; later edits do not change it."
+          },
+          "activityType": {
+            "type": "string",
+            "enum": ["TP", "EXAM"],
+            "description": "Activity type."
+          },
+          "maxScore": {
+            "type": "number",
+            "description": "Activity maxScore (0-100) frozen at grading time; later edits do not change it."
+          },
+          "score": { "type": "number", "description": "Awarded score (0..maxScore)." },
+          "feedback": { "type": "string", "description": "Written feedback left by the grader." },
+          "pointsAwarded": {
+            "type": "number",
+            "description": "Net credited weighted points for this grade."
+          },
+          "isLate": { "type": "boolean", "description": "Whether the submission was late." },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Submission instant (UTC)."
+          },
+          "gradedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Latest grading instant (UTC)."
+          }
+        },
+        "required": [
+          "activityId",
+          "activityTitle",
+          "activityType",
+          "maxScore",
+          "score",
+          "feedback",
+          "pointsAwarded",
+          "isLate",
+          "submittedAt",
+          "gradedAt"
+        ]
+      },
+      "StudentParticipationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "connectedSeconds": {
+            "type": "number",
+            "description": "Sum of connected seconds across all recorded UTC days."
+          },
+          "submissionCount": {
+            "type": "number",
+            "description": "Sum of raw submission events across all recorded UTC days."
+          },
+          "messageCount": {
+            "type": "number",
+            "description": "Sum of classroom chat messages sent across all recorded UTC days."
+          },
+          "gradedCount": {
+            "type": "number",
+            "description": "Number of graded submissions to published non-deleted activities."
+          },
+          "ungradedCount": {
+            "type": "number",
+            "description": "Number of submitted but not yet graded submissions to published non-deleted activities."
+          },
+          "pendingCount": {
+            "type": "number",
+            "description": "Number of published non-deleted activities without a submission yet."
+          },
+          "averageScorePercent": {
+            "type": "number",
+            "nullable": true,
+            "description": "Mean percentage score (0-100, rounded to 2 decimals) across graded published activities with maxScore > 0, or null when none are graded."
+          }
+        },
+        "required": [
+          "connectedSeconds",
+          "submissionCount",
+          "messageCount",
+          "gradedCount",
+          "ungradedCount",
+          "pendingCount",
+          "averageScorePercent"
+        ]
+      },
+      "FamilyReportCardResponseDto": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "description": "Verified active parent-child link summary.",
+            "allOf": [{ "$ref": "#/components/schemas/FamilyLinkDto" }]
+          },
+          "items": {
+            "description": "Graded published activities for the linked child, latest grading first.",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ReportCardItemDto" }
+          },
+          "page": { "type": "number", "description": "Current 1-based page number." },
+          "pageSize": { "type": "number", "description": "Page size." },
+          "total": {
+            "type": "number",
+            "description": "Total number of graded published activities for the linked child."
+          },
+          "metrics": {
+            "description": "Aggregated participation and grade progress totals for the linked child.",
+            "allOf": [{ "$ref": "#/components/schemas/StudentParticipationSummaryDto" }]
+          }
+        },
+        "required": ["link", "items", "page", "pageSize", "total", "metrics"]
+      },
       "StreakSummaryDto": {
         "type": "object",
         "properties": {
@@ -8121,58 +8389,6 @@
         "type": "object",
         "properties": { "body": { "type": "string", "minLength": 1, "maxLength": 2000 } },
         "required": ["body"]
-      },
-      "ReportCardItemDto": {
-        "type": "object",
-        "properties": {
-          "activityId": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Graded activity UUID."
-          },
-          "activityTitle": {
-            "type": "string",
-            "description": "Activity title frozen at grading time; later edits do not change it."
-          },
-          "activityType": {
-            "type": "string",
-            "enum": ["TP", "EXAM"],
-            "description": "Activity type."
-          },
-          "maxScore": {
-            "type": "number",
-            "description": "Activity maxScore (0-100) frozen at grading time; later edits do not change it."
-          },
-          "score": { "type": "number", "description": "Awarded score (0..maxScore)." },
-          "feedback": { "type": "string", "description": "Written feedback left by the grader." },
-          "pointsAwarded": {
-            "type": "number",
-            "description": "Net credited weighted points for this grade."
-          },
-          "isLate": { "type": "boolean", "description": "Whether the submission was late." },
-          "submittedAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Submission instant (UTC)."
-          },
-          "gradedAt": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Latest grading instant (UTC)."
-          }
-        },
-        "required": [
-          "activityId",
-          "activityTitle",
-          "activityType",
-          "maxScore",
-          "score",
-          "feedback",
-          "pointsAwarded",
-          "isLate",
-          "submittedAt",
-          "gradedAt"
-        ]
       },
       "DailyMetricDto": {
         "type": "object",

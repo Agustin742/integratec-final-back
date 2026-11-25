@@ -1,5 +1,20 @@
 # Tracker — Luis
 
+## 2026-11-25 — Corte 2: Family Area Read API (`HU-ACT-006`) & Parent Grade Notifications (`feat/parent-invitations`)
+
+- **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)
+- **Area / files:** `apps/api/src/family/family.dto.ts`, `apps/api/src/family/family.service.ts`, `apps/api/src/family/family.controller.ts`, `apps/api/src/family/family.module.ts`, `apps/api/src/family/family.service.spec.ts`, `apps/api/src/family/family.http.integration.spec.ts`, `apps/api/src/metrics/metrics.dto.ts`, `apps/api/src/metrics/metrics.service.ts`, `apps/api/src/notifications/notification-recorder.service.ts`, `apps/api/src/grades/grades.service.ts`, `apps/api/src/grades/grades.controller.ts`, `apps/api/src/grades/grades.spec.ts`, `apps/api/src/grades/grades.integration.spec.ts`, `apps/api/src/submissions/submissions.service.ts`, `apps/api/src/app.module.ts`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Corte 2 (Family Area Read API & Parent Grade Notifications):
+  1. Extracted reusable `MetricsService.readStudentReportCard` and added `MetricsService.readStudentActivitySummary` (`StudentActivitySummaryDto`) so parent and student report cards share 100% identical grading queries and ordering without duplicating grading math.
+  2. Added `FamilyModule` (`GET /me/parent-links` and `GET /me/parent-links/:linkId/report-card`), registered in `AppModule`:
+     - `GET /me/parent-links` returns active `ParentLink` rows for the caller where the classroom and school are live and the child still holds an `ACTIVE` non-deleted `STUDENT` membership, including adult-mode classrooms with `adultMode: true`, ordered by `createdAt ASC, id ASC`.
+     - `GET /me/parent-links/:linkId/report-card` enforces strict `404` anti-enumeration for invalid UUIDs, foreign/inactive links, deleted classrooms/schools, or removed students, returns `403 Forbidden` when `classroom.adultMode === true`, and otherwise returns `FamilyReportCardResponseDto` (`link`, paginated `items`, `page`, `pageSize`, `total`, and `metrics`).
+  3. Added `recordGradePostedNotifications` in `notification-recorder.service.ts` and wired it into `GradesService.gradeSubmission`, `GradesService.regradeSubmission`, and `SubmissionsService.submit` (auto-graded MC): records `grade_posted` notifications (with `studentId`) for the student and all `ACTIVE` linked parents when `classroom.adultMode === false`, and student-only (0 for parents) when `classroom.adultMode === true`.
+  4. Added unit and PostgreSQL HTTP/integration tests (`family.service.spec.ts`, `family.http.integration.spec.ts`, updated `grades.spec.ts` and `grades.integration.spec.ts`), exported `apps/api/openapi.json`.
+- **Reason:** Deliver parent read access to linked children's grades/metrics (`HU-ACT-006`) and parent grade notifications while enforcing `adultMode` and anti-enumeration rules from `rules/classrooms-and-roles.md` and `rules/communication-and-notifications.md`.
+- **Validation:** `openapi:export`, targeted Vitest suites passed **43/43 across 3 files (`0` skipped)**: `family.service.spec.ts` (10/10), `grades.spec.ts` (19/19), `openapi.spec.ts` (14/14). `pnpm lint` (0 errors, 1 pre-existing warning in `openapi.spec.ts:559`), `pnpm typecheck` (all 3 workspaces), `pnpm format:check`, `python scripts/ci/check_docs.py` (84 files), and `git diff --check develop` passed. Note: PostgreSQL integration suites (`family.http.integration.spec.ts`, `grades.integration.spec.ts`) are ready to run unsandboxed against PostgreSQL by the coordinator.
+- **Next step:** Run PostgreSQL integration suites (`family.http.integration.spec.ts`, `grades.integration.spec.ts`) against local PostgreSQL, review, and commit on `feat/parent-invitations`.
+
 ## 2026-11-25 — Corte 1: Parent Invitations & Guardian Links (`feat/parent-invitations`)
 
 - **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)
