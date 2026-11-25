@@ -197,7 +197,8 @@ export interface ClassroomLayout {
   spawnPoints: readonly { x: number; z: number }[];
 }
 
-export type PropObstacleId = 'shopKiosk' | 'petBed' | 'botStation';
+export type PropObstacleId =
+  'shopKiosk' | 'petBed' | 'botStation' | 'reportCardStand' | 'chatComputer';
 
 /** Footprint of a floor prop: an axis-aligned box on the floor plane. */
 export interface PropObstacle extends LayoutBox {
@@ -250,6 +251,9 @@ function buildPropObstacles({ minX, minZ }: LayoutBox): PropObstacle[] {
     { id: 'shopKiosk', ...desk(4.8, minZ + 0.44, 0.98, 0.355) },
     { id: 'petBed', ...desk(6.85, minZ + 0.62, 0.52, 0.4) },
     { id: 'botStation', ...desk(minX + 1.05, 1.05, 0.639, 0.766) },
+    // Report card stand (0.78 x 0.48 m) on the front wall; chat computer (0.54 x 0.88 m) on the left.
+    { id: 'reportCardStand', ...desk(2.95, minZ + 0.32, 0.39, 0.24) },
+    { id: 'chatComputer', ...desk(minX + 0.38, -3.0, 0.27, 0.44) },
   ];
 }
 

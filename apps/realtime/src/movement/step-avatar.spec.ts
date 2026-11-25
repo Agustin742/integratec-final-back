@@ -89,8 +89,8 @@ describe('stepAvatar', () => {
     const west = run({ x: -7, z: 5.5 }, { x: -1, z: 0 }, 40).position;
     expect(west.x).toBeCloseTo(bounds.minX + avatarRadius, 6);
 
-    // x = 3 is clear of the kiosk, the pet bed and the desk columns.
-    const north = run({ x: 3, z: -5 }, { x: 0, z: -1 }, 40).position;
+    // x = 2 is clear of the teacher desk and every prop.
+    const north = run({ x: 2, z: -5 }, { x: 0, z: -1 }, 40).position;
     expect(north.z).toBeCloseTo(bounds.minZ + avatarRadius, 6);
   });
 

@@ -157,7 +157,13 @@ describe('prop obstacles', () => {
 
   it('declares the shop kiosk, pet bed and bot station without touching the desk obstacles', () => {
     const layout = buildClassroomLayout(12);
-    expect(layout.props.map((p) => p.id)).toEqual(['shopKiosk', 'petBed', 'botStation']);
+    expect(layout.props.map((p) => p.id)).toEqual([
+      'shopKiosk',
+      'petBed',
+      'botStation',
+      'reportCardStand',
+      'chatComputer',
+    ]);
     expect(layout.obstacles).toEqual(LEGACY_LAYOUT.obstacles);
   });
 
@@ -179,6 +185,10 @@ describe('prop obstacles', () => {
     expectBox(bed, box(6.85, minZ + 0.62, 0.52, 0.4));
     // 1.532 x 1.278 m rotated 90 degrees: 1.278 along x, 1.532 along z, at (minX + 1.05, 1.05)
     expectBox(station, box(minX + 1.05, 1.05, 0.639, 0.766));
+    // 0.78 x 0.48 m at (2.95, minZ + 0.32)
+    expectBox(find(layout, 'reportCardStand') as LayoutBox, box(2.95, minZ + 0.32, 0.39, 0.24));
+    // 0.54 x 0.88 m at (minX + 0.38, -3.0)
+    expectBox(find(layout, 'chatComputer') as LayoutBox, box(minX + 0.38, -3.0, 0.27, 0.44));
   });
 
   it('stays clear of the walls, the desks and each other', () => {
