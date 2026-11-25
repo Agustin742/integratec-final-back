@@ -1,5 +1,21 @@
 # Tracker — Luis
 
+## 2026-11-25 — Corte 3: Private Parent ↔ Teacher Messaging (`feat/parent-invitations`)
+
+- **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)
+- **Area / files:** `apps/api/src/family/family-messages.dto.ts`, `apps/api/src/family/family-messages.service.ts`, `apps/api/src/family/parent-link-messages.controller.ts`, `apps/api/src/family/family.service.ts`, `apps/api/src/family/family.module.ts`, `apps/api/src/family/family-messages.service.spec.ts`, `apps/api/src/family/family.http.integration.spec.ts`, `apps/api/openapi.json`, `changelogs/tracker-luis.md`
+- **Change:** Implemented Corte 3 (Private Parent ↔ Teacher Messaging over existing `Message.parentLinkId`, no Prisma schema migration required):
+  1. Added `family-messages.dto.ts` (`ListParentLinkMessagesQueryDto` with `page >= 1` default `1` and `pageSize 1..50` default `30`, `CreateParentLinkMessageDto` with trimmed 1–2000 char body rejecting empty/zero-width/unsafe C0–C1 control characters while preserving tabs/newlines, `ParentLinkMessageDto`, and `ParentLinkMessagesResponseDto`).
+  2. Added `FamilyMessagesService` and `ParentLinkMessagesController` (`GET /parent-links/:linkId/messages`, `POST /parent-links/:linkId/messages` under `@ApiTags('family')`, protected by `SessionAuthGuard`):
+     - Validates `linkId` UUID, active `ParentLink`, live classroom/school (`deletedAt === null`), and active enrolled `STUDENT` membership for `childId` (`404` otherwise).
+     - Enforces strict `404` anti-enumeration: only `link.parentId` (`'PARENT'`) and classroom staff via `AccessVerificationService.verifyClassroomAccess(..., { requiredRole: 'STAFF' })` (`'STAFF'`) can access; the linked child, foreign parents, and outsiders receive `404`.
+     - Enforces `adultMode`: authorized participants receive `403 Forbidden` while `classroom.adultMode === true` (no writes), while unauthorized callers still receive `404`.
+     - Lists non-hidden messages (`hiddenAt: null`) ordered chronologically (`createdAt ASC, id ASC`) with pagination, and creates messages with `parentLinkId: link.id` and `classroomId: null`.
+  3. Added unit tests (`family-messages.service.spec.ts`) and PostgreSQL HTTP integration tests (`family.http.integration.spec.ts`) covering Parent ↔ Teacher roundtrip, `classroomId IS NULL` verification in PostgreSQL, `404` anti-enumeration, `403` in `adultMode`, and DTO `400` validation; re-exported `apps/api/openapi.json`.
+- **Reason:** Deliver private Parent ↔ Teacher messaging per `rules/communication-and-notifications.md` and `rules/classrooms-and-roles.md`.
+- **Validation:** `openapi:export`, targeted Vitest suites passed **34/34 across 3 files (`0` skipped)**: `family-messages.service.spec.ts` (10/10), `family.service.spec.ts` (10/10), `openapi.spec.ts` (14/14). `pnpm lint` (0 errors, 1 pre-existing warning in `openapi.spec.ts:559`), `pnpm typecheck` (all 3 workspaces), `pnpm format:check`, `python scripts/ci/check_docs.py`, and `git diff --check develop` passed. PostgreSQL HTTP integration suite (`family.http.integration.spec.ts`) is ready to run unsandboxed against PostgreSQL by the coordinator.
+- **Next step:** Run PostgreSQL HTTP integration suite (`family.http.integration.spec.ts`) against local PostgreSQL, review, and commit on `feat/parent-invitations`.
+
 ## 2026-11-25 — Corte 2: Family Area Read API (`HU-ACT-006`) & Parent Grade Notifications (`feat/parent-invitations`)
 
 - **Status:** completed (local working tree on `feat/parent-invitations`, ready for coordinator review & PostgreSQL integration run)

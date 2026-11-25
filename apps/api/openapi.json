@@ -3482,6 +3482,130 @@
         "tags": ["family"]
       }
     },
+    "/parent-links/{linkId}/messages": {
+      "get": {
+        "description": "Returns paginated visible messages for one active parent-child link, ordered chronologically (`createdAt ASC, id ASC`) for natural conversation reading. Accessible only to the linked parent and classroom staff (teacher, school admin, or school owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
+        "operationId": "ParentLinkMessagesController_listMessages",
+        "parameters": [
+          {
+            "name": "linkId",
+            "required": true,
+            "in": "path",
+            "description": "ParentLink UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "1-based page number.",
+            "schema": { "minimum": 1, "maximum": 10000, "default": 1, "type": "integer" }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "description": "Messages per page (1..50, default 30).",
+            "schema": { "minimum": 1, "maximum": 50, "default": 30, "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated chronological messages for the parent-teacher thread.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ParentLinkMessagesResponseDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid pagination parameters (`page`, `pageSize`).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent messaging is disabled while the classroom is in adult education mode.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, inactive, or inaccessible parent link.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List private messages for a parent-teacher thread",
+        "tags": ["family"]
+      },
+      "post": {
+        "description": "Persists a new plain-text message bound to one active parent-child link (`classroomId: null`). Accessible only to the linked parent and classroom staff (teacher, school admin, or school owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
+        "operationId": "ParentLinkMessagesController_createMessage",
+        "parameters": [
+          {
+            "name": "linkId",
+            "required": true,
+            "in": "path",
+            "description": "ParentLink UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateParentLinkMessageDto" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The newly created parent-teacher message.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ParentLinkMessageDto" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid message body (empty, overlong, or unsafe control characters).",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Parent messaging is disabled while the classroom is in adult education mode.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Malformed, nonexistent, inactive, or inaccessible parent link.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Send a private message in a parent-teacher thread",
+        "tags": ["family"]
+      }
+    },
     "/gamification/me": {
       "get": {
         "description": "Own recipient only; computed by the server in America/Argentina/Buenos_Aires. Badges are ordered by unlock time (awardedAt ASC, id ASC). No sort override.",
@@ -7526,6 +7650,89 @@
           }
         },
         "required": ["link", "items", "page", "pageSize", "total", "metrics"]
+      },
+      "ParentLinkMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "Message UUID." },
+          "parentLinkId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ParentLink UUID this message belongs to."
+          },
+          "authorId": { "type": "string", "format": "uuid", "description": "Author user UUID." },
+          "authorDisplayName": {
+            "type": "string",
+            "description": "Current display name of the message author."
+          },
+          "authorRole": {
+            "type": "string",
+            "enum": ["PARENT", "STAFF"],
+            "description": "Whether the author is the linked parent (`PARENT`) or classroom staff (`STAFF`)."
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed plain text message body, never interpreted as HTML."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server-assigned UTC creation timestamp (ISO-8601)."
+          }
+        },
+        "required": [
+          "id",
+          "parentLinkId",
+          "authorId",
+          "authorDisplayName",
+          "authorRole",
+          "body",
+          "createdAt"
+        ]
+      },
+      "ParentLinkMessagesResponseDto": {
+        "type": "object",
+        "properties": {
+          "link": {
+            "description": "Verified active parent-child link summary.",
+            "allOf": [{ "$ref": "#/components/schemas/FamilyLinkDto" }]
+          },
+          "items": {
+            "description": "Visible messages in this parent-link thread, ordered chronologically (`createdAt ASC, id ASC`).",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ParentLinkMessageDto" }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Current 1-based page number."
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Page size."
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of visible messages in this thread."
+          }
+        },
+        "required": ["link", "items", "page", "pageSize", "total"]
+      },
+      "CreateParentLinkMessageDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Plain text message body; 1–2000 characters after trimming. Tabs and line breaks are allowed; NUL and unsafe C0/C1 control characters are rejected. Never interpreted as HTML."
+          }
+        },
+        "required": ["body"]
       },
       "StreakSummaryDto": {
         "type": "object",
