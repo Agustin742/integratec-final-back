@@ -142,7 +142,7 @@ describe('OpenAiCompatibleAiAdapter', () => {
       authTestConfig({
         aiProviderApiKey: 'synthetic-key',
         aiProviderBaseUrl: 'https://ai.example.test/v1',
-        aiChatModel: 'gemini-2.5-flash',
+        aiChatModel: 'gemini-3.8-flash',
       }),
       { fetchFn: fetchMock },
     );

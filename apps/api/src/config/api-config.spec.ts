@@ -69,7 +69,7 @@ describe('loadApiConfig', () => {
       dailyQuestionMaxAttempts: 5,
       aiProviderApiKey: undefined,
       aiProviderBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-      aiChatModel: 'gemini-2.5-flash',
+      aiChatModel: 'gemini-3.8-flash',
       aiEmbeddingModel: 'gemini-embedding-001',
       aiEmbeddingDimension: 768,
       aiRequestTimeoutSeconds: 20,

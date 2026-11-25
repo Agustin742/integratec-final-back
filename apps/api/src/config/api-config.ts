@@ -93,7 +93,7 @@ export interface ApiConfig {
   aiProviderApiKey?: string;
   /** Base URL of the external OpenAI-compatible provider API (defaults to Google Gemini OpenAI compatibility). */
   aiProviderBaseUrl?: string;
-  /** Chat model identifier supporting tool calling (defaults to gemini-2.5-flash). */
+  /** Chat model identifier supporting tool calling (defaults to gemini-3.8-flash). */
   aiChatModel?: string;
   /** Embedding model identifier (defaults to gemini-embedding-001). */
   aiEmbeddingModel?: string;
@@ -171,7 +171,7 @@ export const DEFAULT_DAILY_QUESTION_ATTEMPTS = 5;
 /** Study Guide Bot external AI provider, RAG, and rate-limiter bounds and defaults. */
 export const DEFAULT_AI_PROVIDER_BASE_URL =
   'https://generativelanguage.googleapis.com/v1beta/openai';
-export const DEFAULT_AI_CHAT_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_AI_CHAT_MODEL = 'gemini-3.8-flash';
 export const DEFAULT_AI_EMBEDDING_MODEL = 'gemini-embedding-001';
 export const DEFAULT_AI_EMBEDDING_DIMENSION = 768;
 export const MIN_AI_EMBEDDING_DIMENSION = DEFAULT_AI_EMBEDDING_DIMENSION;
