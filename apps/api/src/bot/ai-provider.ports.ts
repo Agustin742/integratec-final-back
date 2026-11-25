@@ -4,6 +4,11 @@ export interface ChatToolCall {
   id: string;
   name: string;
   argumentsJson: string;
+  /**
+   * Opaque provider data attached to this call. Callers MUST return it unchanged with
+   * the same call on later turns, and MUST NOT inspect or log it.
+   */
+  providerContext?: unknown;
 }
 
 export interface ChatMessage {

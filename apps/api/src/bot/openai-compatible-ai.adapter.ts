@@ -36,6 +36,7 @@ interface RawChatCompletionResponse {
         id?: unknown;
         type?: unknown;
         function?: { name?: unknown; arguments?: unknown };
+        extra_content?: unknown;
       }>;
     };
   }>;
@@ -83,6 +84,8 @@ function toWireMessages(messages: readonly ChatMessage[]) {
           id: call.id,
           type: 'function',
           function: { name: call.name, arguments: call.argumentsJson },
+          // Gemini 3 thought signatures: rejected with 400 unless echoed on the same call.
+          ...(call.providerContext === undefined ? {} : { extra_content: call.providerContext }),
         })),
       };
     }
@@ -155,6 +158,9 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
           id: rawCall.id,
           name: rawCall.function.name,
           argumentsJson: rawCall.function.arguments,
+          ...(rawCall.extra_content === undefined
+            ? {}
+            : { providerContext: rawCall.extra_content }),
         });
       }
     }
@@ -199,12 +205,15 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
 
     const ordered = new Array<number[]>(texts.length);
     for (const item of raw.data) {
+      // Gemini omits `index` when it is 0 (proto3 default).
+      const index = item?.index === undefined ? 0 : item.index;
       if (
-        typeof item?.index !== 'number' ||
-        !Number.isInteger(item.index) ||
-        item.index < 0 ||
-        item.index >= texts.length ||
-        !Array.isArray(item.embedding) ||
+        typeof index !== 'number' ||
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= texts.length ||
+        ordered[index] !== undefined ||
+        !Array.isArray(item?.embedding) ||
         item.embedding.length !== dimension
       ) {
         throw new AiProviderUnavailableError();
@@ -217,11 +226,7 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
       ) {
         throw new AiProviderUnavailableError();
       }
-      ordered[item.index] = vector;
-    }
-
-    if (ordered.some((vector) => vector === undefined)) {
-      throw new AiProviderUnavailableError();
+      ordered[index] = vector;
     }
 
     const totalTokens =
