@@ -608,7 +608,7 @@
     },
     "/classrooms/{id}/invitations": {
       "post": {
-        "description": "Issues a single-use email invitation for the specified classroom and schedules asynchronous email delivery via the transactional outbox. Restricted to teaching staff (School Owner/Admin or the classroom Teacher). Completely preserves non-disclosure (never reveals whether the email exists).",
+        "description": "Issues a single-use email invitation (STUDENT or PARENT) for the specified classroom and schedules asynchronous email delivery via the transactional outbox. Parent invitations require childId of an active student, are rejected when adultMode is enabled, and enforce the maximum of 2 active guardians per student. Restricted to teaching staff (School Owner/Admin or the classroom Teacher). Completely preserves non-disclosure (never reveals whether the email exists).",
         "operationId": "ClassroomsController_createInvitation",
         "parameters": [
           {
@@ -637,7 +637,7 @@
             }
           },
           "400": {
-            "description": "Validation failed on email or role.",
+            "description": "Validation failed on email, role, or childId.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -655,7 +655,13 @@
             }
           },
           "404": {
-            "description": "Classroom does not exist or caller has no relationship with it.",
+            "description": "Classroom does not exist, caller has no relationship with it, or target student is not active in this classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "409": {
+            "description": "Classroom is in adult education mode, student already has 2 active guardians, or a duplicate pending parent invitation already exists.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -926,6 +932,100 @@
         "tags": ["classrooms"]
       }
     },
+    "/classrooms/{id}/parent-links": {
+      "get": {
+        "description": "Returns all active ParentLink records for the specified classroom. Restricted to classroom staff (School Owner/Admin or the classroom Teacher).",
+        "operationId": "ClassroomsController_listParentLinks",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active parent-child guardian links in the classroom.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassroomParentLinksResponseDto" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a student or parent without classroom staff authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom does not exist or caller has no relationship with it.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "List active parent-child guardian links for a classroom",
+        "tags": ["classrooms"]
+      }
+    },
+    "/classrooms/{id}/parent-links/{linkId}": {
+      "delete": {
+        "description": "Marks the ParentLink as INACTIVE while preserving historical messages and records. Idempotent if already inactive. Restricted to classroom staff.",
+        "operationId": "ClassroomsController_unlinkParentLink",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Classroom UUID",
+            "schema": { "format": "uuid", "type": "string" }
+          },
+          {
+            "name": "linkId",
+            "required": true,
+            "in": "path",
+            "description": "ParentLink UUID to deactivate",
+            "schema": { "format": "uuid", "type": "string" }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Parent link deactivated (or already inactive); no response body."
+          },
+          "401": {
+            "description": "Missing, malformed, expired, or revoked access token.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "403": {
+            "description": "Caller is a student or parent without classroom staff authority.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "404": {
+            "description": "Classroom or parent link does not exist in this classroom.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          }
+        },
+        "security": [{ "bearer": [] }],
+        "summary": "Logically unlink a guardian from a student in a classroom",
+        "tags": ["classrooms"]
+      }
+    },
     "/me/classrooms": {
       "get": {
         "description": "Returns a paginated list of classrooms accessible to the authenticated user (as School Owner/Admin, Teacher, enrolled Student, or active linked Parent when adultMode is false) with derived role and capabilities.",
@@ -999,7 +1099,7 @@
     },
     "/invitations/accept": {
       "post": {
-        "description": "Atomically binds the authenticated user account to the classroom specified in the email invitation and assigns an available desk. Idempotent: re-accepting by an already enrolled student succeeds and returns the existing desk without error.",
+        "description": "Atomically accepts a single-use STUDENT or PARENT email invitation. For STUDENT invitations, creates/reactivates classroom membership and assigns an available desk. For PARENT invitations, verifies adultMode is off, student is active, self-link is prevented, and the 2-guardian cap is respected, then creates/reactivates a ParentLink without creating a classroom membership or desk. Idempotent for already-active members and guardians.",
         "operationId": "InvitationsController_accept",
         "parameters": [],
         "requestBody": {
@@ -1010,15 +1110,15 @@
         },
         "responses": {
           "200": {
-            "description": "Classroom membership established and desk assigned.",
+            "description": "Classroom membership (STUDENT) or guardian link (PARENT) established.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/JoinClassroomResponseDto" }
+                "schema": { "$ref": "#/components/schemas/AcceptInvitationResponseDto" }
               }
             }
           },
           "400": {
-            "description": "Invitation token is malformed, expired, or already used.",
+            "description": "Invitation token is malformed, expired, revoked, or already used.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -1036,14 +1136,14 @@
             }
           },
           "409": {
-            "description": "Concurrent invitation acceptance conflict.",
+            "description": "Adult mode enabled, student no longer enrolled, self-link attempted, 2-guardian cap reached, or concurrent invitation acceptance conflict.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
           }
         },
         "security": [{ "bearer": [] }],
-        "summary": "Accept an email invitation to join a classroom",
+        "summary": "Accept an email invitation to join a classroom as student or guardian",
         "tags": ["invitations"]
       }
     },
@@ -5928,9 +6028,15 @@
           },
           "role": {
             "type": "string",
-            "description": "Classroom role for the invitee. Only STUDENT is supported; teacher invitations are out of scope for classroom invitations.",
-            "enum": ["STUDENT"],
+            "description": "Classroom role for the invitee (STUDENT or PARENT). Teacher invitations belong to the school-teacher invitation flow.",
+            "enum": ["STUDENT", "PARENT"],
             "default": "STUDENT"
+          },
+          "childId": {
+            "type": "string",
+            "description": "UUID of the enrolled student to link when role is PARENT. Must be omitted when role is STUDENT.",
+            "format": "uuid",
+            "example": "4e5f6a7b-0000-4000-8000-000000000009"
           }
         },
         "required": ["email"]
@@ -5951,8 +6057,19 @@
           },
           "role": {
             "type": "string",
-            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
             "description": "Assigned role upon joining"
+          },
+          "childId": {
+            "type": "object",
+            "description": "Linked student user UUID when role is PARENT, null otherwise",
+            "format": "uuid",
+            "nullable": true
+          },
+          "childDisplayName": {
+            "type": "object",
+            "description": "Linked student display name when role is PARENT, null otherwise",
+            "nullable": true
           },
           "maxUses": {
             "type": "object",
@@ -6002,8 +6119,19 @@
           },
           "role": {
             "type": "string",
-            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
             "description": "Assigned role upon joining"
+          },
+          "childId": {
+            "type": "object",
+            "description": "Linked student user UUID when role is PARENT, null otherwise",
+            "format": "uuid",
+            "nullable": true
+          },
+          "childDisplayName": {
+            "type": "object",
+            "description": "Linked student display name when role is PARENT, null otherwise",
+            "nullable": true
           },
           "maxUses": {
             "type": "object",
@@ -6072,7 +6200,7 @@
           },
           "role": {
             "type": "string",
-            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT"],
+            "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
             "default": "STUDENT"
           },
           "maxUses": {
@@ -6099,6 +6227,50 @@
         },
         "required": ["id", "code", "role", "useCount", "state", "expiresAt", "createdAt"]
       },
+      "ClassroomParentLinkDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "description": "ParentLink UUID" },
+          "parentId": { "type": "string", "format": "uuid", "description": "Guardian user UUID" },
+          "parentDisplayName": { "type": "string", "description": "Guardian display name" },
+          "childId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Linked student user UUID"
+          },
+          "childDisplayName": { "type": "string", "description": "Linked student display name" },
+          "state": {
+            "type": "string",
+            "enum": ["ACTIVE", "INACTIVE"],
+            "description": "Current link state"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "parentId",
+          "parentDisplayName",
+          "childId",
+          "childDisplayName",
+          "state",
+          "createdAt"
+        ]
+      },
+      "ClassroomParentLinksResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Active parent links for the classroom",
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ClassroomParentLinkDto" }
+          }
+        },
+        "required": ["items"]
+      },
       "AcceptInvitationDto": {
         "type": "object",
         "properties": {
@@ -6109,6 +6281,60 @@
           }
         },
         "required": ["token"]
+      },
+      "AcceptInvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "classroomId": { "type": "string", "description": "Classroom UUID" },
+          "membershipId": {
+            "type": "object",
+            "description": "Created or existing classroom membership UUID (null for PARENT invitations)",
+            "format": "uuid",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": ["STUDENT", "PARENT"],
+            "description": "Role granted by the accepted invitation"
+          },
+          "desk": {
+            "nullable": true,
+            "description": "Assigned desk for STUDENT invitations; null for PARENT invitations",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/AssignedDeskDto" }]
+          },
+          "deskIndex": {
+            "type": "object",
+            "description": "1-based index of the assigned desk for STUDENT invitations; null for PARENT invitations",
+            "nullable": true
+          },
+          "childId": {
+            "type": "object",
+            "description": "Linked student user UUID for PARENT invitations; null for STUDENT invitations",
+            "format": "uuid",
+            "nullable": true
+          },
+          "parentLinkId": {
+            "type": "object",
+            "description": "Created or existing ParentLink UUID for PARENT invitations; null for STUDENT invitations",
+            "format": "uuid",
+            "nullable": true
+          },
+          "alreadyMember": {
+            "type": "boolean",
+            "description": "True if the caller already held an active membership or parent link (idempotent retry)"
+          }
+        },
+        "required": [
+          "classroomId",
+          "membershipId",
+          "role",
+          "desk",
+          "deskIndex",
+          "childId",
+          "parentLinkId",
+          "alreadyMember"
+        ]
       },
       "NotificationDto": {
         "type": "object",
