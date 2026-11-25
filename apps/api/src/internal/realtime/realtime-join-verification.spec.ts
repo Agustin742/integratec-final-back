@@ -113,8 +113,35 @@ describe('POST /internal/realtime/join-verification (#24)', () => {
     await prisma?.classroomMembership.deleteMany({ where: { classroomId: { in: classroomIds } } });
     await prisma?.classroom.deleteMany({ where: { id: { in: classroomIds } } });
     await prisma?.session.deleteMany({ where: { id: { in: sessionIds } } });
+    await prisma?.avatarConfiguration.deleteMany({ where: { userId: { in: userIds } } });
     await prisma?.user.deleteMany({ where: { id: { in: userIds } } });
     await app?.close();
+  });
+
+  it('projects saved unowned paid styles field-wise on join without rewriting storage', async () => {
+    const userId = await makeUser('rt-normalized');
+    const { token } = await makeSession(userId);
+    await prisma.classroomMembership.create({
+      data: { userId, classroomId, role: ClassroomRole.STUDENT },
+    });
+    const saved = {
+      ...DEFAULT_AVATAR,
+      bodyId: 'female',
+      hairId: 'dreads',
+      topId: 'hoodie',
+      hairColor: '#AF6D63',
+      clothingColor: '#F4E6D2',
+    };
+    await prisma.avatarConfiguration.create({ data: { userId, appearance: saved } });
+    const res = await post({ accessToken: token, classroomId }).expect(200);
+    expect(res.body.appearance.baseAvatar).toEqual({
+      ...saved,
+      hairId: DEFAULT_AVATAR.hairId,
+      topId: DEFAULT_AVATAR.topId,
+    });
+    expect(
+      (await prisma.avatarConfiguration.findUniqueOrThrow({ where: { userId } })).appearance,
+    ).toEqual(saved);
   });
 
   it('answers 200 with the verified identity for a member', async () => {

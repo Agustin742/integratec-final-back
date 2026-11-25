@@ -1,15 +1,12 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { ClassroomRole, MembershipState, type Prisma } from '@prisma/client';
-import { plainToInstance } from 'class-transformer';
-import { validateSync } from 'class-validator';
+import { ClassroomRole, MembershipState } from '@prisma/client';
 import {
   AccessVerificationService,
   deriveClassroomAccessRole,
 } from '../../access/access-verification.service';
 import { paginated, toSkipTake, type Paginated } from '../../http/pagination/paginated';
 import { PrismaService } from '../../prisma/prisma.service';
-import { compatibilityErrors } from '../../users/avatar-access.port';
-import { AvatarDto, avatarSnapshot, DEFAULT_AVATAR } from '../../users/avatar.dto';
+import { readableBaseAppearance } from '../../users/member-appearance';
 import type {
   ClassroomMemberDto,
   ClassroomMemberRole,
@@ -107,7 +104,14 @@ export class ClassroomDirectoryService {
         userId: m.user.id,
         displayName: m.user.displayName,
         role: m.role as ClassroomMemberRole,
-        avatar: this.readAppearance(m.user.avatarConfig?.appearance),
+        avatar: await readableBaseAppearance(
+          this.prisma,
+          m.user.id,
+          m.user.avatarConfig?.appearance,
+          {
+            onUnsupported: () => this.unsupportedAppearance(),
+          },
+        ),
       });
     }
 
@@ -132,7 +136,12 @@ export class ClassroomDirectoryService {
           userId: independentTeacher.id,
           displayName: independentTeacher.displayName,
           role: 'TEACHER',
-          avatar: this.readAppearance(independentTeacher.avatarConfig?.appearance),
+          avatar: await readableBaseAppearance(
+            this.prisma,
+            independentTeacher.id,
+            independentTeacher.avatarConfig?.appearance,
+            { onUnsupported: () => this.unsupportedAppearance() },
+          ),
         });
       }
     }
@@ -157,30 +166,7 @@ export class ClassroomDirectoryService {
     return paginated(items, total, query);
   }
 
-  private readAppearance(value: Prisma.JsonValue | undefined): AvatarDto {
-    if (
-      value === undefined ||
-      value === null ||
-      typeof value !== 'object' ||
-      Array.isArray(value) ||
-      Object.keys(value).length === 0
-    ) {
-      return { ...DEFAULT_AVATAR };
-    }
-
-    try {
-      const appearance = plainToInstance(AvatarDto, avatarSnapshot(value as unknown as AvatarDto));
-      if (validateSync(appearance).length > 0 || compatibilityErrors(appearance).length > 0) {
-        return this.unsupportedAppearance();
-      }
-      return avatarSnapshot(appearance);
-    } catch {
-      return this.unsupportedAppearance();
-    }
-  }
-
-  private unsupportedAppearance(): AvatarDto {
+  private unsupportedAppearance(): void {
     this.logger.warn('Unsupported stored base appearance; using default avatar.');
-    return { ...DEFAULT_AVATAR };
   }
 }
