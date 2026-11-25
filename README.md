@@ -271,7 +271,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `GRADE_WEIGHT_EXAM`       | Default `1.5`; decimal 0.1-10 (<= 2 decimals), `> GRADE_WEIGHT_TP` | Points multiplier applied to graded EXAM activities     | Public         | Yes     |
 | `AI_PROVIDER_API_KEY`     | Optional; trimmed non-empty string                | Server-only API key for the OpenAI-compatible AI provider (unset leaves live calls failing closed with `503`) | Private | Yes |
 | `AI_PROVIDER_BASE_URL`    | Default `https://generativelanguage.googleapis.com/v1beta/openai`; `http(s)` URL (HTTPS in prod) | Base URL for `/chat/completions` and `/embeddings` | Public | Yes |
-| `AI_CHAT_MODEL`           | Default `gemini-3.8-flash`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
+| `AI_CHAT_MODEL`           | Default `gemini-3.5-flash-lite`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
 | `AI_EMBEDDING_MODEL`      | Default `gemini-embedding-001`; 1-120 non-whitespace chars | Text embedding model identifier                                  | Public         | Yes     |
 | `AI_EMBEDDING_DIMENSION`  | Default `768`; must equal `768` (DB `vector(768)`)             | Requested embedding dimension                                   | Public         | Yes     |
 | `AI_REQUEST_TIMEOUT`      | Default `20s`; duration 1s-120s                   | Per-request HTTP timeout for external AI calls                           | Public         | Yes     |

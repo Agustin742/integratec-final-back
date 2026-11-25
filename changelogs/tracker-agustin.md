@@ -1,13 +1,13 @@
 # Tracker — Agustin
 
-## 2026-11-25 — Move the study guide bot to Gemini 3 Flash
+## 2026-11-25 — Move the study guide bot to Gemini 3
 
 - **Status:** completed
 - **Area / files:** AI config default, `docker-compose.yml`, `apps/api/.env.example`, README and docs, `apps/api/src/bot/`
-- **Change:** Changed the default chat model to `gemini-3.8-flash`. Tool calls now carry opaque `providerContext`, which the adapter reads from and writes back to `extra_content`, preserving Gemini thought signatures across the tool loop.
+- **Change:** Changed the default chat model to `gemini-3.5-flash-lite` (`gemini-3.8-flash` did not answer within 90s on a free-tier key). Tool calls now carry opaque `providerContext`, which the adapter reads from and writes back to `extra_content`, preserving Gemini thought signatures across the tool loop.
 - **Reason:** `gemini-2.5-flash` returns 404 for new API keys, and Gemini 3 rejects tool turns without the signature.
-- **Verification:** Specs written RED first, then GREEN; typecheck and eslint on the touched files. Full suite not run; live Gemini API not called.
-- **Next step:** Verify a tool-using question against the live provider.
+- **Verification:** Specs written RED first, then GREEN; typecheck and eslint on the touched files. Full suite not run. Manual live check of the bot with `gemini-3.5-flash-lite` passed (in-material and out-of-material questions).
+- **Next step:** None.
 
 ## 2026-11-25 — Accept Gemini embeddings without a zero index
 
