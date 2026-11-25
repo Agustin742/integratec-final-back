@@ -11,6 +11,9 @@ import {
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
   CLOSE_REASON_ACCESS_REVOKED,
   CLOSE_REASON_VERIFICATION_UNAVAILABLE,
+  NPC_INTERACT_COOLDOWN_MS,
+  NPC_INTERACT_MAX_DISTANCE,
+  TUTOR_BOT_PHRASES,
 } from '@aula/contracts';
 import { createClassroomRoom, type ClassroomRoom } from './classroom-room';
 import {
@@ -1058,5 +1061,182 @@ describe('NPC routines (#147)', () => {
         ).toBe(true);
       }
     }
+  });
+});
+
+describe('NPC interactions (#147)', () => {
+  const OTHER_AUTH = { ...AUTH, userId: '9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e5f' };
+  const homes = deriveNpcHomes(buildClassroomLayout(12));
+  let random = 0.5;
+  let nowMs = 1_000_000;
+
+  const makeRoom = async () => {
+    random = 0.5;
+    nowMs = 1_000_000;
+    const room = new (createClassroomRoom(
+      { verify: vi.fn(), reverify: vi.fn().mockResolvedValue(IDENTITY) },
+      { random: () => random, now: () => nowMs },
+    ))();
+    vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+    room.onCreate({ classroomId: CLASSROOM_ID });
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    await room.onJoin({ sessionId: 's2', auth: OTHER_AUTH } as never);
+    return room;
+  };
+  const interact = (room: ClassroomRoom, sessionId: string, payload: unknown): void =>
+    (
+      room as unknown as { onNpcInteract(c: { sessionId: string }, i: unknown): void }
+    ).onNpcInteract({ sessionId }, payload);
+  /** Puts a member's avatar `d` metres from the NPC. */
+  const standNear = (room: ClassroomRoom, userId: string, npcId: 'pet' | 'tutorBot', d = 1) => {
+    const avatar = room.state.avatars.get(userId)!;
+    avatar.x = homes[npcId].x + d;
+    avatar.z = homes[npcId].z;
+  };
+  const tickFor = (room: ClassroomRoom, seconds: number) => {
+    for (let t = 0; t < seconds; t += 0.05) room.tick(0.05);
+  };
+  const runtimeOf = (room: ClassroomRoom, id: 'pet' | 'tutorBot') =>
+    (
+      room as unknown as { npcRuntimes: Map<string, { phase: string; state: string }> }
+    ).npcRuntimes.get(id)!;
+
+  it('makes the pet react, stops it in place and tells the room who triggered it', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    random = 0.1;
+
+    interact(room, 's1', { npcId: 'pet' });
+
+    const pet = room.state.npcs.get('pet')!;
+    expect(pet).toMatchObject({
+      state: 'reacting',
+      reaction: 'greet',
+      phraseId: -1,
+      reactionSeq: 1,
+      reactingSessionId: 's1',
+      emote: '',
+    });
+    expect(pet.rotation).toBeCloseTo(Math.PI / 2, 5); // faces the member, who stands at +x
+    const { x, z } = pet;
+    tickFor(room, 1.5);
+    expect(pet).toMatchObject({ x, z, state: 'reacting', reaction: 'greet' });
+  });
+
+  it('picks the other pet reaction with a high roll', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    random = 0.9;
+
+    interact(room, 's1', { npcId: 'pet' });
+
+    expect(room.state.npcs.get('pet')!.reaction).toBe('askForPets');
+  });
+
+  it('makes the tutor bot say a phrase of the shared list', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'tutorBot');
+
+    interact(room, 's1', { npcId: 'tutorBot' });
+
+    const bot = room.state.npcs.get('tutorBot')!;
+    expect(bot).toMatchObject({ state: 'reacting', reaction: 'phrase', reactingSessionId: 's1' });
+    expect(bot.phraseId).toBeGreaterThanOrEqual(0);
+    expect(bot.phraseId).toBeLessThan(TUTOR_BOT_PHRASES.length);
+  });
+
+  it('ignores a member who is too far from the NPC', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet', NPC_INTERACT_MAX_DISTANCE + 0.2);
+
+    interact(room, 's1', { npcId: 'pet' });
+
+    expect(room.state.npcs.get('pet')).toMatchObject({ reaction: '', reactionSeq: 0 });
+    expect(room.state.npcs.get('pet')!.state).not.toBe('reacting');
+  });
+
+  it('ignores a payload that is not an NPC id, and a connection that is not in the room', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+
+    interact(room, 's1', { npcId: 'dog' });
+    interact(room, 's1', undefined);
+    interact(room, 'ghost', { npcId: 'pet' });
+
+    expect(room.state.npcs.get('pet')!.reactionSeq).toBe(0);
+  });
+
+  it('applies a per-member cooldown for the same NPC', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    interact(room, 's1', { npcId: 'pet' });
+    tickFor(room, 6); // the reaction is over, only the cooldown remains
+    nowMs += NPC_INTERACT_COOLDOWN_MS - 1;
+
+    interact(room, 's1', { npcId: 'pet' });
+    expect(room.state.npcs.get('pet')!.reactionSeq).toBe(1);
+
+    nowMs += 1;
+    interact(room, 's1', { npcId: 'pet' });
+    expect(room.state.npcs.get('pet')!.reactionSeq).toBe(2);
+  });
+
+  it('ignores another member while the NPC is already reacting', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    standNear(room, OTHER_AUTH.userId, 'pet');
+    interact(room, 's1', { npcId: 'pet' });
+
+    interact(room, 's2', { npcId: 'pet' });
+
+    expect(room.state.npcs.get('pet')).toMatchObject({ reactionSeq: 1, reactingSessionId: 's1' });
+  });
+
+  it('wakes a sleeping pet and makes it react', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    const runtime = runtimeOf(room, 'pet');
+    runtime.phase = 'sleep';
+    runtime.state = 'sleeping';
+    room.tick(0.05);
+    expect(room.state.npcs.get('pet')!.state).toBe('sleeping');
+
+    interact(room, 's1', { npcId: 'pet' });
+
+    expect(room.state.npcs.get('pet')).toMatchObject({ state: 'reacting', reactionSeq: 1 });
+  });
+
+  it('never says the same phrase twice in a row', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'tutorBot');
+    random = 0; // the raw roll always lands on the first phrase
+    const phrases: number[] = [];
+
+    for (let i = 0; i < 3; i++) {
+      interact(room, 's1', { npcId: 'tutorBot' });
+      phrases.push(room.state.npcs.get('tutorBot')!.phraseId);
+      tickFor(room, 8);
+      nowMs += NPC_INTERACT_COOLDOWN_MS;
+    }
+
+    expect(phrases[0]).not.toBe(phrases[1]);
+    expect(phrases[1]).not.toBe(phrases[2]);
+  });
+
+  it('clears the reaction when it ends and the routine resumes', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'tutorBot');
+    interact(room, 's1', { npcId: 'tutorBot' });
+    const bot = room.state.npcs.get('tutorBot')!;
+    expect(bot.reaction).toBe('phrase');
+
+    tickFor(room, 4);
+    expect(bot.state).toBe('reacting');
+    tickFor(room, 2);
+
+    expect(bot).toMatchObject({ reaction: '', phraseId: -1, reactingSessionId: '' });
+    expect(bot.state).not.toBe('reacting');
+    expect(bot.reactionSeq).toBe(1);
+    expect(runtimeOf(room, 'tutorBot').phase).not.toBe('reacting');
   });
 });

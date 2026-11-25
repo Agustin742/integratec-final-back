@@ -6,6 +6,10 @@ import {
   deriveNpcHomes,
   MIN_CLASSROOM_DESKS,
   NPC_IDS,
+  NPC_INTERACT_COOLDOWN_MS,
+  NPC_INTERACT_MAX_DISTANCE,
+  NPC_INTERACT_MESSAGE,
+  TUTOR_BOT_PHRASES,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -17,11 +21,13 @@ import {
   PATCH_RATE_HZ,
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
+  npcInteractSchema,
   type AvatarInput,
   type ClassroomLayout,
   type MemberAppearance,
   type NpcHome,
   type NpcId,
+  type NpcInteract,
   type ChatMessageHiddenPayload,
   type ChatMessagePayload,
 } from '@aula/contracts';
@@ -37,7 +43,13 @@ import {
 } from '@colyseus/core';
 import { JoinDeniedError, type ClassroomAuth, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
-import { createNpcRuntime, stepNpc, type NpcRuntime } from '../npc/npc-routine';
+import {
+  createNpcRuntime,
+  interruptNpc,
+  NPC_EMOTE_DURATION_S,
+  stepNpc,
+  type NpcRuntime,
+} from '../npc/npc-routine';
 import { isWalkable, stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
 import { pickSpawnPoint } from '../presence/spawn';
@@ -90,6 +102,16 @@ export interface ClassroomRoomOptions {
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
 
+/** Pet reactions and the clip each one plays (the front maps the reaction to the clip). */
+const PET_REACTIONS = [
+  { reaction: 'greet', clip: 'Meow' },
+  { reaction: 'askForPets', clip: 'AskForPets' },
+] as const;
+/** Extra seconds on top of the clip, so the reaction does not cut the animation short. */
+const REACTION_CLIP_MARGIN_S = 0.5;
+/** How long the tutor bot holds its speech bubble and Talk clip. */
+const TUTOR_BOT_REACTION_S = 5;
+
 /**
  * Largest `connectedSeconds` the API accepts in one report (`MAX_CONNECTED_SECONDS_PER_REPORT` in
  * its connected-time DTO, seven days). A longer presence session is reported at this value instead
@@ -133,6 +155,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   private npcHomes: Record<NpcId, NpcHome> = deriveNpcHomes(this.layout);
   /** Routine state of each NPC (timers, targets). Server-only: never part of the schema. */
   private readonly npcRuntimes = new Map<NpcId, NpcRuntime>();
+  /** When each member last made each NPC react (`userId:npcId`), for the per-member cooldown. */
+  private readonly npcInteractedAt = new Map<string, number>();
+  /** Last phrase the tutor bot said, so it never repeats it back to back. */
+  private lastPhraseId = -1;
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -144,6 +170,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   messages = {
     [AVATAR_INPUT_MESSAGE]: validate(avatarInputSchema, (client, input) =>
       this.onAvatarInput(client, input),
+    ),
+    [NPC_INTERACT_MESSAGE]: validate(npcInteractSchema, (client, input) =>
+      this.onNpcInteract(client, input),
     ),
   };
 
@@ -528,12 +557,78 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       const npc = this.state.npcs.get(id);
       if (!runtime || !npc) continue;
       stepNpc(runtime, dtSeconds, ctx);
-      if (npc.x !== runtime.x) npc.x = runtime.x;
-      if (npc.z !== runtime.z) npc.z = runtime.z;
-      if (npc.rotation !== runtime.rotation) npc.rotation = runtime.rotation;
-      if (npc.state !== runtime.state) npc.state = runtime.state;
-      if (npc.emote !== runtime.emote) npc.emote = runtime.emote;
+      this.publishNpc(npc, runtime);
+      // The routine left `reacting` by itself: the reaction is over.
+      if (runtime.state !== 'reacting' && npc.reaction !== '') {
+        npc.reaction = '';
+        if (npc.phraseId !== -1) npc.phraseId = -1;
+        if (npc.reactingSessionId !== '') npc.reactingSessionId = '';
+      }
     }
+  }
+
+  /** Copies the routine fields into the synchronized state, touching only what changed. */
+  private publishNpc(npc: Npc, runtime: NpcRuntime): void {
+    if (npc.x !== runtime.x) npc.x = runtime.x;
+    if (npc.z !== runtime.z) npc.z = runtime.z;
+    if (npc.rotation !== runtime.rotation) npc.rotation = runtime.rotation;
+    if (npc.state !== runtime.state) npc.state = runtime.state;
+    if (npc.emote !== runtime.emote) npc.emote = runtime.emote;
+  }
+
+  /**
+   * A member pressed E on an NPC. Ignored unless the connection is live, the avatar is close
+   * enough, the member is out of cooldown and the NPC is not already reacting. A sleeping pet
+   * wakes up and reacts. The reaction is plain synchronized state, so the whole room sees it.
+   */
+  private onNpcInteract(client: Pick<Client, 'sessionId'>, input: NpcInteract): void {
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (userId === undefined || !this.userConnections.isLive(client.sessionId)) return;
+    const parsed = npcInteractSchema.safeParse(input);
+    if (!parsed.success) return;
+    const npcId = parsed.data.npcId;
+    const avatar = this.state.avatars.get(userId);
+    const runtime = this.npcRuntimes.get(npcId);
+    const npc = this.state.npcs.get(npcId);
+    if (!avatar || !runtime || !npc) return;
+    if (runtime.state === 'reacting') return;
+    if (Math.hypot(avatar.x - runtime.x, avatar.z - runtime.z) > NPC_INTERACT_MAX_DISTANCE) return;
+    const now = this.now();
+    const cooldownKey = `${userId}:${npcId}`;
+    const last = this.npcInteractedAt.get(cooldownKey);
+    if (last !== undefined && now - last < NPC_INTERACT_COOLDOWN_MS) return;
+    this.npcInteractedAt.set(cooldownKey, now);
+
+    const random = this.options.random ?? Math.random;
+    let durationSeconds = TUTOR_BOT_REACTION_S;
+    if (npcId === 'pet') {
+      const pick = PET_REACTIONS[random() < 0.5 ? 0 : 1];
+      npc.reaction = pick.reaction;
+      durationSeconds = (NPC_EMOTE_DURATION_S[pick.clip] ?? 2) + REACTION_CLIP_MARGIN_S;
+    } else {
+      npc.reaction = 'phrase';
+      npc.phraseId = this.pickPhrase(random);
+    }
+    npc.reactionSeq += 1;
+    npc.reactingSessionId = client.sessionId;
+    runtime.rotation = Math.atan2(avatar.x - runtime.x, avatar.z - runtime.z);
+    interruptNpc(runtime, durationSeconds);
+    this.publishNpc(npc, runtime);
+  }
+
+  /** A random phrase index that differs from the previous one. */
+  private pickPhrase(random: () => number): number {
+    const count = TUTOR_BOT_PHRASES.length;
+    let index: number;
+    if (this.lastPhraseId < 0) {
+      index = Math.min(count - 1, Math.floor(random() * count));
+    } else {
+      // Roll among the other phrases, then step over the previous one.
+      index = Math.min(count - 2, Math.floor(random() * (count - 1)));
+      if (index >= this.lastPhraseId) index += 1;
+    }
+    this.lastPhraseId = index;
+    return index;
   }
 
   private onAvatarInput(client: Client, input: AvatarInput): void {
