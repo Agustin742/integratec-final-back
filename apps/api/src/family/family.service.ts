@@ -11,7 +11,7 @@ import {
   type FamilyReportCardResponseDto,
 } from './family.dto';
 
-const FAMILY_LINK_SELECT = {
+export const FAMILY_LINK_SELECT = {
   id: true,
   classroomId: true,
   childId: true,
@@ -33,9 +33,9 @@ const FAMILY_LINK_SELECT = {
   },
 } satisfies Prisma.ParentLinkSelect;
 
-type FamilyLinkRow = Prisma.ParentLinkGetPayload<{ select: typeof FAMILY_LINK_SELECT }>;
+export type FamilyLinkRow = Prisma.ParentLinkGetPayload<{ select: typeof FAMILY_LINK_SELECT }>;
 
-function toFamilyLinkDto(row: FamilyLinkRow): FamilyLinkDto {
+export function toFamilyLinkDto(row: FamilyLinkRow): FamilyLinkDto {
   return {
     id: row.id,
     classroomId: row.classroomId,
@@ -49,7 +49,7 @@ function toFamilyLinkDto(row: FamilyLinkRow): FamilyLinkDto {
   };
 }
 
-function isClassroomLive(classroom: FamilyLinkRow['classroom']): boolean {
+export function isClassroomLive(classroom: FamilyLinkRow['classroom']): boolean {
   if (classroom.deletedAt !== null) return false;
   if (
     classroom.schoolId !== null &&

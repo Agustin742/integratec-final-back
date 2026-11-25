@@ -41,6 +41,10 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
     const req = request(app.getHttpServer()).get(path);
     return actor ? req.set('Authorization', token(actor)) : req;
   };
+  const post = (path: string, actor?: string) => {
+    const req = request(app.getHttpServer()).post(path);
+    return actor ? req.set('Authorization', token(actor)) : req;
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -287,6 +291,8 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
   it('rejects unauthenticated requests with 401', async () => {
     await get('/me/parent-links').expect(401);
     await get(`/me/parent-links/${linkLive}/report-card`).expect(401);
+    await get(`/parent-links/${linkLive}/messages`).expect(401);
+    await post(`/parent-links/${linkLive}/messages`).send({ body: 'Hi' }).expect(401);
   });
 
   it('GET /me/parent-links returns active links including adultMode: true and excludes inactive/removed/deleted', async () => {
@@ -369,5 +375,136 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
     // Adult mode -> 403
     const adultRes = await get(`/me/parent-links/${linkAdult}/report-card`, parentA).expect(403);
     expect(adultRes.body.error.message).toContain('adult education mode');
+  });
+
+  it('POST + GET /parent-links/:linkId/messages completes Parent <-> Teacher roundtrip with classroomId NULL in PostgreSQL', async () => {
+    const parentPost = await post(`/parent-links/${linkLive}/messages`, parentA)
+      .send({ body: '  Hello Prof. Ada, how is Sofia doing?  ' })
+      .expect(201);
+
+    expect(parentPost.body).toMatchObject({
+      parentLinkId: linkLive,
+      authorId: parentA,
+      authorDisplayName: 'Parent Ana',
+      authorRole: 'PARENT',
+      body: 'Hello Prof. Ada, how is Sofia doing?',
+    });
+    expect(typeof parentPost.body.id).toBe('string');
+    expect(typeof parentPost.body.createdAt).toBe('string');
+
+    const teacherPost = await post(`/parent-links/${linkLive}/messages`, teacher)
+      .send({ body: 'Hello Ana!\nSofia is doing great in Physics.' })
+      .expect(201);
+
+    expect(teacherPost.body).toMatchObject({
+      parentLinkId: linkLive,
+      authorId: teacher,
+      authorDisplayName: 'Prof. Ada',
+      authorRole: 'STAFF',
+      body: 'Hello Ana!\nSofia is doing great in Physics.',
+    });
+
+    // Seed a hidden message to confirm hidden rows are excluded from GET.
+    await prisma.message.create({
+      data: {
+        parentLinkId: linkLive,
+        classroomId: null,
+        authorId: teacher,
+        body: 'Hidden internal note',
+        hiddenAt: new Date(),
+        hiddenById: teacher,
+      },
+    });
+
+    // Verify PostgreSQL rows strictly have classroomId === null.
+    const dbRows = await prisma.message.findMany({
+      where: { parentLinkId: linkLive },
+      select: { id: true, classroomId: true, parentLinkId: true },
+    });
+    expect(dbRows).toHaveLength(3);
+    for (const row of dbRows) {
+      expect(row.classroomId).toBeNull();
+      expect(row.parentLinkId).toBe(linkLive);
+    }
+
+    // Both parent and teacher read the same chronological thread (excluding hidden messages).
+    const [parentGet, teacherGet] = await Promise.all([
+      get(`/parent-links/${linkLive}/messages`, parentA).expect(200),
+      get(`/parent-links/${linkLive}/messages`, teacher).expect(200),
+    ]);
+
+    expect(parentGet.body).toEqual(teacherGet.body);
+    expect(parentGet.body.total).toBe(2);
+    expect(parentGet.body.page).toBe(1);
+    expect(parentGet.body.pageSize).toBe(30);
+    expect(parentGet.body.link).toMatchObject({
+      id: linkLive,
+      classroomId: classroomLive,
+      childId: studentActive,
+      adultMode: false,
+    });
+    expect(parentGet.body.items).toEqual([parentPost.body, teacherPost.body]);
+
+    // Pagination slice check
+    const page2 = await get(`/parent-links/${linkLive}/messages?page=2&pageSize=1`, parentA).expect(
+      200,
+    );
+    expect(page2.body.total).toBe(2);
+    expect(page2.body.page).toBe(2);
+    expect(page2.body.pageSize).toBe(1);
+    expect(page2.body.items).toEqual([teacherPost.body]);
+
+    // Invalid query & DTO body validation -> 400
+    await get(`/parent-links/${linkLive}/messages?pageSize=51`, parentA).expect(400);
+    await post(`/parent-links/${linkLive}/messages`, parentA).send({ body: '   ' }).expect(400);
+    await post(`/parent-links/${linkLive}/messages`, parentA)
+      .send({ body: 'a'.repeat(2001) })
+      .expect(400);
+    await post(`/parent-links/${linkLive}/messages`, parentA)
+      .send({ body: 'bad\u0000text' })
+      .expect(400);
+  });
+
+  it('enforces 404 anti-enumeration for child, foreign parent, outsider, inactive/removed/deleted links, and 403 in adultMode', async () => {
+    // Student (childId), foreign parent, and outsider -> 404 on GET & POST
+    for (const actor of [studentActive, parentB, stranger]) {
+      await get(`/parent-links/${linkLive}/messages`, actor).expect(404);
+      await post(`/parent-links/${linkLive}/messages`, actor).send({ body: 'Hi' }).expect(404);
+    }
+
+    // Malformed UUID -> 404
+    await get('/parent-links/not-a-uuid/messages', parentA).expect(404);
+    await post('/parent-links/not-a-uuid/messages', parentA).send({ body: 'Hi' }).expect(404);
+
+    // Inactive link -> 404
+    await get(`/parent-links/${linkInactive}/messages`, parentB).expect(404);
+    await post(`/parent-links/${linkInactive}/messages`, parentB).send({ body: 'Hi' }).expect(404);
+
+    // Removed student -> 404
+    await get(`/parent-links/${linkRemovedStudent}/messages`, parentA).expect(404);
+    await post(`/parent-links/${linkRemovedStudent}/messages`, teacher)
+      .send({ body: 'Hi' })
+      .expect(404);
+
+    // Deleted classroom -> 404
+    await get(`/parent-links/${linkDeletedClassroom}/messages`, parentA).expect(404);
+    await post(`/parent-links/${linkDeletedClassroom}/messages`, teacher)
+      .send({ body: 'Hi' })
+      .expect(404);
+
+    // Adult mode -> 403 for authorized participants (writes nothing), 404 for unauthorized callers
+    for (const actor of [parentA, teacher]) {
+      const getAdult = await get(`/parent-links/${linkAdult}/messages`, actor).expect(403);
+      expect(getAdult.body.error.message).toContain('adult education mode');
+      const postAdult = await post(`/parent-links/${linkAdult}/messages`, actor)
+        .send({ body: 'Blocked' })
+        .expect(403);
+      expect(postAdult.body.error.message).toContain('adult education mode');
+    }
+    await get(`/parent-links/${linkAdult}/messages`, studentActive).expect(404);
+    await post(`/parent-links/${linkAdult}/messages`, stranger).send({ body: 'Hi' }).expect(404);
+
+    const adultMessagesCount = await prisma.message.count({ where: { parentLinkId: linkAdult } });
+    expect(adultMessagesCount).toBe(0);
   });
 });
