@@ -9,6 +9,8 @@ import { configureExpress } from './server';
 export interface AppOptions extends Omit<ClassroomRoomOptions, 'directory'> {
   /** Participants one call admits; defaults to `CALL_MAX_PARTICIPANTS` from the contracts. */
   callMaxParticipants?: number;
+  /** Milliseconds a direct call rings before it times out; defaults to 30 seconds. */
+  callRingTimeoutMs?: number;
   /**
    * Shared secret for the internal routes. Without it the internal eviction route is not mounted
    * (or chat broadcast route; tests that do not exercise them).
@@ -22,7 +24,7 @@ export interface AppOptions extends Omit<ClassroomRoomOptions, 'directory'> {
  * configuration.
  */
 export function createAppConfig(verifier: JoinVerifier, options: AppOptions = {}) {
-  const { internalServiceSecret, callMaxParticipants, ...roomOptions } = options;
+  const { internalServiceSecret, callMaxParticipants, callRingTimeoutMs, ...roomOptions } = options;
   // Rooms announce themselves here so the internal eviction route can find them.
   const directory = new RoomDirectory();
   return config({
@@ -47,6 +49,7 @@ export function createAppConfig(verifier: JoinVerifier, options: AppOptions = {}
           createCallRoom(verifier, {
             now: roomOptions.now,
             maxParticipants: callMaxParticipants,
+            ringTimeoutMs: callRingTimeoutMs,
             directory,
           }),
         )

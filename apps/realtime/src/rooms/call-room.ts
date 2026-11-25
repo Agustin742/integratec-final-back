@@ -1,9 +1,12 @@
 import {
+  CALL_DECLINED_EVENT,
   CALL_EMOTE_MESSAGE,
   CALL_END_MESSAGE,
   CALL_ENDED_EVENT,
+  CALL_INCOMING_EVENT,
   CALL_MAX_PARTICIPANTS,
   CALL_MODERATE_MESSAGE,
+  CALL_RING_CANCELED_EVENT,
   CALL_SELF_MESSAGE,
   CALL_SIGNAL_MESSAGE,
   CLOSE_CODE_ACCESS_REVOKED,
@@ -22,11 +25,15 @@ import {
   callModerateSchema,
   callSelfSchema,
   callSignalSchema,
+  type CallDeclinedPayload,
   type CallEmoteMessage,
   type CallEndedPayload,
   type CallEndedReason,
+  type CallIncomingPayload,
   type CallKind,
   type CallModerate,
+  type CallRingCancelReason,
+  type CallRingCanceledPayload,
   type CallSelf,
   type CallSignal,
   type CallSignalRelay,
@@ -48,7 +55,7 @@ import { authenticateCallJoin, type CallAuth } from './authenticate-call-join';
 import { callCapacity, isCallModerator } from './call-key';
 import { applyCallModeration, hasCallModerator } from './call-moderation';
 import { CallParticipant, CallState } from './call-state';
-import type { EvictableRoom, RoomDirectory } from './room-directory';
+import type { EvictableRoom, RingableCall, RoomDirectory } from './room-directory';
 
 /**
  * Per-connection limits, as token buckets with a burst of one second's worth. The general realtime
@@ -60,13 +67,25 @@ import type { EvictableRoom, RoomDirectory } from './room-directory';
 export const CALL_SIGNAL_RATE_LIMIT_PER_SECOND = 150;
 export const CALL_STATE_RATE_LIMIT_PER_SECOND = 20;
 
+/** How long a direct call rings before the caller is told nobody answered. */
+export const DEFAULT_RING_TIMEOUT_MS = 30_000;
+
 /** Collaborators and settings a call room receives from the server bootstrap. */
 export interface CallRoomOptions {
   now?: () => number;
   /** Participants a classroom call admits; direct calls always admit 2. */
   maxParticipants?: number;
-  /** Where the room announces itself so live evictions can find it. */
+  /** Where the room announces itself so live evictions can find it, and reaches classroom rooms. */
   directory?: RoomDirectory;
+  /** Milliseconds a direct call rings before it times out. */
+  ringTimeoutMs?: number;
+}
+
+/** A direct call that is ringing its peer; see {@link CallRoom.startRinging}. */
+interface Ring {
+  callerUserId: string;
+  calleeUserId: string;
+  timer: { clear(): void };
 }
 
 /** A join whose access is being verified: not a participant yet, but already revocable. */
@@ -93,7 +112,7 @@ interface Limiters {
  * A dropped connection is not held: its participant is removed right away, since the peer
  * connections of the mesh would have to be renegotiated anyway; the client rejoins.
  */
-export class CallRoom extends Room<{ state: CallState }> implements EvictableRoom {
+export class CallRoom extends Room<{ state: CallState }> implements EvictableRoom, RingableCall {
   protected options: CallRoomOptions = {};
   protected verifier!: JoinVerifier;
   private callKey = '';
@@ -106,6 +125,8 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   private ending = false;
   /** Whether this room told the classroom rooms about its class call (and so must retract it). */
   private classStatusPublished = false;
+  /** Set while a direct call rings its peer (the caller is in the room, the peer has not joined). */
+  private ring: Ring | undefined;
 
   /** Payloads are validated by Colyseus against the shared contract schemas before any handler. */
   messages = {
@@ -215,6 +236,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
       state: new RateLimiter(CALL_STATE_RATE_LIMIT_PER_SECOND),
     });
     this.state.participants.set(client.sessionId, this.newParticipant(auth, current.appearance));
+    if (this.kind === 'direct') this.updateRinging(auth);
   }
 
   /**
@@ -257,11 +279,77 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
 
   onDispose(): void {
     for (const admission of this.pendingAdmissions.values()) admission.revoked = true;
+    this.stopRinging('caller_left');
     this.options.directory?.unregisterCall(this.classroomId, this);
     if (this.classStatusPublished) {
       this.classStatusPublished = false;
       this.options.directory?.clearClassCallStatus(this.classroomId, this);
     }
+  }
+
+  /**
+   * Ringing (#149), direct calls only. The first participant is the caller: their peer is rung on
+   * every live classroom connection (`call:incoming`) and has `ringTimeoutMs` to join. A peer with
+   * no classroom connection cannot be rung, so the call ends at once as `unavailable`. The peer
+   * joining is the answer; a caller replacing their own connection while it rings changes nothing.
+   * Without a directory (rooms built without one) nobody can be rung, so there is no ringing.
+   */
+  private updateRinging(auth: CallAuth): void {
+    if (this.state.participants.size > 1) {
+      this.stopRinging('answered');
+      return;
+    }
+    const directory = this.options.directory;
+    if (this.ring !== undefined || directory === undefined || auth.peerUserId === undefined) return;
+    const ring = {
+      callerUserId: auth.userId.toLowerCase(),
+      calleeUserId: auth.peerUserId.toLowerCase(),
+    };
+    const incoming: CallIncomingPayload = {
+      classroomId: this.classroomId,
+      callerUserId: auth.userId,
+      callerDisplayName: auth.displayName,
+    };
+    if (
+      directory.sendToUser(this.classroomId, ring.calleeUserId, CALL_INCOMING_EVENT, incoming) === 0
+    ) {
+      // Deferred: the caller's join is still completing, and a message sent now could be lost.
+      this.clock.setTimeout(() => this.endCall('unavailable'), 0);
+      return;
+    }
+    const timer = this.clock.setTimeout(() => {
+      this.stopRinging('timeout');
+      this.endCall('timeout');
+    }, this.options.ringTimeoutMs ?? DEFAULT_RING_TIMEOUT_MS);
+    this.ring = { ...ring, timer };
+    directory.registerRing(this.classroomId, ring.callerUserId, ring.calleeUserId, this);
+  }
+
+  /** The callee declined (called by the directory, which checked classroom, caller and callee). */
+  declineRing(): void {
+    const ring = this.ring;
+    if (ring === undefined || this.ending) return;
+    this.stopRinging('declined');
+    const declined: CallDeclinedPayload = { byUserId: ring.calleeUserId };
+    this.options.directory?.sendToUser(
+      this.classroomId,
+      ring.callerUserId,
+      CALL_DECLINED_EVENT,
+      declined,
+    );
+    this.endCall('declined');
+  }
+
+  /** Stops ringing and tells every classroom connection of the callee to drop the prompt. */
+  private stopRinging(reason: CallRingCancelReason): void {
+    const ring = this.ring;
+    if (ring === undefined) return;
+    this.ring = undefined;
+    ring.timer.clear();
+    const directory = this.options.directory;
+    directory?.unregisterRing(this.classroomId, ring.callerUserId, ring.calleeUserId, this);
+    const canceled: CallRingCanceledPayload = { callerUserId: ring.callerUserId, reason };
+    directory?.sendToUser(this.classroomId, ring.calleeUserId, CALL_RING_CANCELED_EVENT, canceled);
   }
 
   /**
@@ -286,6 +374,7 @@ export class CallRoom extends Room<{ state: CallState }> implements EvictableRoo
   private afterDeparture(role: string): void {
     if (this.kind === 'direct') {
       if (this.state.participants.size > 0) this.endCall('peer_left');
+      else this.stopRinging('caller_left');
       return;
     }
     if (this.state.focusMode && isCallModerator(role) && !hasCallModerator(this.state)) {

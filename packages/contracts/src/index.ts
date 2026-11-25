@@ -301,13 +301,42 @@ export const CALL_DECLINED_EVENT = 'call:declined';
 export const callDeclinedPayloadSchema = z.strictObject({ byUserId: z.uuid() });
 export type CallDeclinedPayload = z.infer<typeof callDeclinedPayloadSchema>;
 
-export const CALL_ENDED_REASONS = ['moderator_ended', 'host_left', 'peer_left'] as const;
+/**
+ * Why the call room closed. `unavailable` (a direct call whose peer has no classroom connection),
+ * `timeout` (the peer did not answer in time) and `declined` (the peer declined) only end a
+ * direct call that was still ringing.
+ */
+export const CALL_ENDED_REASONS = [
+  'moderator_ended',
+  'host_left',
+  'peer_left',
+  'unavailable',
+  'timeout',
+  'declined',
+] as const;
 export type CallEndedReason = (typeof CALL_ENDED_REASONS)[number];
 
 /** Server to client in the call room, right before the server closes it. */
 export const CALL_ENDED_EVENT = 'call:ended';
 export const callEndedPayloadSchema = z.strictObject({ reason: z.enum(CALL_ENDED_REASONS) });
 export type CallEndedPayload = z.infer<typeof callEndedPayloadSchema>;
+
+/** Why a ringing direct call stopped ringing for the callee. */
+export const CALL_RING_CANCEL_REASONS = ['answered', 'declined', 'timeout', 'caller_left'] as const;
+export type CallRingCancelReason = (typeof CALL_RING_CANCEL_REASONS)[number];
+
+/**
+ * Server to client over the classroom room, to every classroom connection of the callee: the call
+ * from `callerUserId` is no longer ringing (answered, declined or timed out on another connection,
+ * or the caller hung up), so the incoming-call prompt must go away. After `answered` the
+ * connection that answered receives it too and ignores it.
+ */
+export const CALL_RING_CANCELED_EVENT = 'call:ring-canceled';
+export const callRingCanceledPayloadSchema = z.strictObject({
+  callerUserId: z.uuid(),
+  reason: z.enum(CALL_RING_CANCEL_REASONS),
+});
+export type CallRingCanceledPayload = z.infer<typeof callRingCanceledPayloadSchema>;
 
 /** Axis-aligned box on the floor plane (x, z), in layout units. */
 export interface LayoutBox {

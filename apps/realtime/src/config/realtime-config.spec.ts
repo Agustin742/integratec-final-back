@@ -27,6 +27,7 @@ describe('loadRealtimeConfig', () => {
       internalServiceSecret: SECRET,
       reconnectionWindowSeconds: 20,
       callMaxParticipants: 12,
+      callRingTimeoutSeconds: 30,
     });
   });
 
@@ -40,6 +41,20 @@ describe('loadRealtimeConfig', () => {
     it.each(['1', '25', '-2', '2.5', 'many'])('rejects %j by name', (value) => {
       expect(messageOf({ ...validEnv(), CALL_MAX_PARTICIPANTS: value })).toContain(
         'CALL_MAX_PARTICIPANTS',
+      );
+    });
+  });
+
+  describe('CALL_RING_TIMEOUT_SECONDS', () => {
+    it('parses an explicit timeout', () => {
+      expect(loadRealtimeConfig({ ...validEnv(), CALL_RING_TIMEOUT_SECONDS: '45' })).toMatchObject({
+        callRingTimeoutSeconds: 45,
+      });
+    });
+
+    it.each(['4', '121', '-2', '2.5', 'long'])('rejects %j by name', (value) => {
+      expect(messageOf({ ...validEnv(), CALL_RING_TIMEOUT_SECONDS: value })).toContain(
+        'CALL_RING_TIMEOUT_SECONDS',
       );
     });
   });

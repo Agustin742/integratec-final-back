@@ -9,6 +9,8 @@ import {
   CALL_INCOMING_EVENT,
   CALL_MAX_PARTICIPANTS,
   CALL_MODERATE_MESSAGE,
+  CALL_RING_CANCELED_EVENT,
+  CALL_RING_CANCEL_REASONS,
   CALL_ROOM_NAME,
   CALL_SELF_MESSAGE,
   CALL_SIGNAL_MESSAGE,
@@ -29,6 +31,7 @@ import {
   callIncomingPayloadSchema,
   callJoinOptionsSchema,
   callModerateSchema,
+  callRingCanceledPayloadSchema,
   callSelfSchema,
   callSignalPayloadSchema,
   callSignalRelaySchema,
@@ -51,6 +54,7 @@ describe('call room contract', () => {
     expect(CALL_INCOMING_EVENT).toBe('call:incoming');
     expect(CALL_DECLINED_EVENT).toBe('call:declined');
     expect(CALL_ENDED_EVENT).toBe('call:ended');
+    expect(CALL_RING_CANCELED_EVENT).toBe('call:ring-canceled');
     expect(CALL_EMOTES).toEqual(['wave', 'happy', 'sad', 'angry', 'think', 'celebrate']);
   });
 
@@ -243,6 +247,21 @@ describe('call room contract', () => {
     it('validates call:ended with a known reason', () => {
       expect(callEndedPayloadSchema.safeParse({ reason: 'moderator_ended' }).success).toBe(true);
       expect(callEndedPayloadSchema.safeParse({ reason: 'whatever' }).success).toBe(false);
+      for (const reason of ['unavailable', 'timeout', 'declined']) {
+        expect(callEndedPayloadSchema.safeParse({ reason }).success).toBe(true);
+      }
+      expect(CALL_RING_CANCEL_REASONS).toEqual(['answered', 'declined', 'timeout', 'caller_left']);
+      const canceled = { callerUserId: ID, reason: 'timeout' };
+      expect(callRingCanceledPayloadSchema.safeParse(canceled).success).toBe(true);
+      expect(callRingCanceledPayloadSchema.safeParse({ ...canceled, reason: 'no' }).success).toBe(
+        false,
+      );
+      expect(
+        callRingCanceledPayloadSchema.safeParse({ ...canceled, callerUserId: 'x' }).success,
+      ).toBe(false);
+      expect(callRingCanceledPayloadSchema.safeParse({ ...canceled, extra: 1 }).success).toBe(
+        false,
+      );
     });
   });
 });

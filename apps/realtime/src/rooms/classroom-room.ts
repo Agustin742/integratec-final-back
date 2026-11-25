@@ -1,5 +1,6 @@
 import {
   AVATAR_INPUT_MESSAGE,
+  CALL_DECLINE_MESSAGE,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
   buildClassroomLayout,
@@ -15,7 +16,9 @@ import {
   PATCH_RATE_HZ,
   SIMULATION_TICK_RATE_HZ,
   avatarInputSchema,
+  callDeclineSchema,
   type AvatarInput,
+  type CallDecline,
   type ClassroomLayout,
   type MemberAppearance,
   type ChatMessageHiddenPayload,
@@ -117,6 +120,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   messages = {
     [AVATAR_INPUT_MESSAGE]: validate(avatarInputSchema, (client, input) =>
       this.onAvatarInput(client, input),
+    ),
+    [CALL_DECLINE_MESSAGE]: validate(callDeclineSchema, (client, decline) =>
+      this.onCallDecline(client, decline),
     ),
   };
 
@@ -409,6 +415,19 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     }
   }
 
+  /** Sends to every live (not held) connection of the user; returns how many received it. */
+  sendToUser(userId: string, type: string, payload: unknown): number {
+    let sent = 0;
+    for (const connectionId of this.userConnections.connectionIds(userId)) {
+      if (!this.userConnections.isLive(connectionId)) continue;
+      const client = this.clients.getById(connectionId);
+      if (client === undefined) continue;
+      client.send(type, payload);
+      sent += 1;
+    }
+    return sent;
+  }
+
   broadcastChatMessage(payload: ChatMessagePayload): void {
     this.broadcast(CHAT_MESSAGE_EVENT, payload);
   }
@@ -482,6 +501,24 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     } else {
       this.intents.set(userId, { x: input.x, z: input.z, owner: client.sessionId });
     }
+  }
+
+  /**
+   * The callee declines a ringing direct call (#149). Same gates as avatar input: a live connection
+   * within the rate limit. The sender is the connection's verified user, never the payload, so only
+   * the callee of an existing ringing call (this classroom, `callerUserId`, this user) has any effect.
+   */
+  private onCallDecline(client: Client, decline: CallDecline): void {
+    const limiter = this.limiters.get(client.sessionId);
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (limiter === undefined || userId === undefined) return;
+    if (!this.userConnections.isLive(client.sessionId)) return;
+    if (!limiter.tryConsume(this.now())) return;
+    this.options.directory?.declineRing(
+      this.classroomId,
+      decline.callerUserId.toLowerCase(),
+      userId.toLowerCase(),
+    );
   }
 
   /** Tells the time tracker whether the user has any live connection right now. */

@@ -52,12 +52,24 @@ export interface CallStatusApplicableRoom {
   applyCallStatus(status: ClassCallStatus): void;
 }
 
+/** What a classroom room offers the directory to reach one user's live connections (#149 ringing). */
+export interface UserMessageRoom {
+  /** Sends to every live connection of the user and returns how many received it. */
+  sendToUser(userId: string, type: string, payload: unknown): number;
+}
+
+/** A direct call room that is ringing its peer: the directory asks it to end when the peer declines. */
+export interface RingableCall {
+  declineRing(): void;
+}
+
 /** The full set of room capabilities the internal routes use through the directory. */
 export interface DirectoryRoom
   extends
     AppearanceApplicableRoom,
     DeskCountApplicableRoom,
     CallStatusApplicableRoom,
+    UserMessageRoom,
     ClassroomRoomHandle {}
 
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
@@ -84,6 +96,53 @@ export class RoomDirectory {
   private readonly callRooms = new Map<string, Set<EvictableRoom>>();
   /** The running class call of each classroom, so a late classroom room can be told about it. */
   private readonly classCalls = new Map<string, { owner: object; status: ClassCallStatus }>();
+
+  /** Direct calls that are ringing, by classroom, caller and callee. */
+  private readonly rings = new Map<string, RingableCall>();
+
+  private static ringKey(classroomId: string, callerUserId: string, calleeUserId: string): string {
+    return JSON.stringify([classroomId, callerUserId, calleeUserId]);
+  }
+
+  registerRing(
+    classroomId: string,
+    callerUserId: string,
+    calleeUserId: string,
+    call: RingableCall,
+  ): void {
+    this.rings.set(RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId), call);
+  }
+
+  /** A no-op unless `call` is the one registered, so a stale room cannot drop a newer ring. */
+  unregisterRing(
+    classroomId: string,
+    callerUserId: string,
+    calleeUserId: string,
+    call: RingableCall,
+  ): void {
+    const key = RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId);
+    if (this.rings.get(key) === call) this.rings.delete(key);
+  }
+
+  /**
+   * The callee declines: acts only when a ringing direct call exists for exactly this classroom,
+   * caller and callee, and reports whether it did.
+   */
+  declineRing(classroomId: string, callerUserId: string, calleeUserId: string): boolean {
+    const call = this.rings.get(RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId));
+    if (call === undefined) return false;
+    call.declineRing();
+    return true;
+  }
+
+  /** Sends one event to every live classroom connection of a user and returns how many got it. */
+  sendToUser(classroomId: string, userId: string, type: string, payload: unknown): number {
+    let delivered = 0;
+    for (const room of this.rooms.get(classroomId) ?? []) {
+      delivered += room.sendToUser(userId, type, payload);
+    }
+    return delivered;
+  }
 
   registerCall(classroomId: string, room: EvictableRoom): void {
     const set = this.callRooms.get(classroomId) ?? new Set<EvictableRoom>();

@@ -26,6 +26,10 @@ backend/
 
 - [Panel availability contract](docs/classroom-context.md): `GET /classrooms/:id` adds role-scoped `availablePanels`, separate from action authorization; Pet is reserved and disabled. Context invalidation (delivery B) is not implemented.
 
+## Voice calls
+
+- [Voice calls](docs/voice-calls.md): P2P WebRTC audio mesh with STUN only, signaling and shared state in the `call` realtime room, class calls with teacher moderation and focus mode, and direct calls rung through the classroom connection (timeout, decline, unavailable).
+
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
@@ -296,6 +300,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `RECONNECTION_WINDOW_SECONDS` | Default `20`; integer 1-120                   | Seconds a dropped connection may reconnect before its avatar is removed  | Public         | Yes     |
 | `CALL_MAX_PARTICIPANTS`       | Default `12`; integer 2-24                    | Participants one voice call admits (WebRTC mesh; direct calls always 2)  | Public         | Yes     |
+| `CALL_RING_TIMEOUT_SECONDS`   | Default `30`; integer 5-120                   | Seconds a direct call rings before the caller is told nobody answered    | Public         | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 

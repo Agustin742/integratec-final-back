@@ -11,6 +11,7 @@ const room = (result = 1) => ({
   applyAppearance: vi.fn().mockReturnValue(result > 0),
   applyDeskCount: vi.fn(),
   applyCallStatus: vi.fn(),
+  sendToUser: vi.fn().mockReturnValue(1),
   broadcastChatMessage: vi.fn(),
   broadcastChatMessageHidden: vi.fn(),
 });
@@ -244,5 +245,53 @@ describe('RoomDirectory class call status', () => {
     expect(late.applyCallStatus).toHaveBeenCalledWith({ active: true, focusMode: true });
     directory.clearClassCallStatus(CLASSROOM, newCall);
     expect(here.applyCallStatus).toHaveBeenCalledWith({ active: false, focusMode: false });
+  });
+});
+
+describe('RoomDirectory direct call ringing', () => {
+  const ring = () => ({ declineRing: vi.fn() });
+
+  it('sends an event to the live connections of one user in one classroom only', () => {
+    const directory = new RoomDirectory();
+    const here = room(1);
+    const elsewhere = room(1);
+    here.sendToUser.mockReturnValue(2);
+    directory.register('A', here);
+    directory.register('B', elsewhere);
+
+    expect(directory.sendToUser('A', 'u', 'call:incoming', { x: 1 })).toBe(2);
+    expect(here.sendToUser).toHaveBeenCalledWith('u', 'call:incoming', { x: 1 });
+    expect(elsewhere.sendToUser).not.toHaveBeenCalled();
+    expect(directory.sendToUser('C', 'u', 'call:incoming', {})).toBe(0);
+  });
+
+  it('declines a ringing call only for exactly that classroom, caller and callee', () => {
+    const directory = new RoomDirectory();
+    const call = ring();
+    directory.registerRing('A', 'caller', 'callee', call);
+
+    expect(directory.declineRing('B', 'caller', 'callee')).toBe(false);
+    expect(directory.declineRing('A', 'other', 'callee')).toBe(false);
+    expect(directory.declineRing('A', 'caller', 'other')).toBe(false);
+    expect(directory.declineRing('A', 'callee', 'caller')).toBe(false);
+    expect(call.declineRing).not.toHaveBeenCalled();
+
+    expect(directory.declineRing('A', 'caller', 'callee')).toBe(true);
+    expect(call.declineRing).toHaveBeenCalledTimes(1);
+  });
+
+  it('forgets a ring once unregistered, and a stale owner cannot unregister a newer ring', () => {
+    const directory = new RoomDirectory();
+    const first = ring();
+    const second = ring();
+    directory.registerRing('A', 'caller', 'callee', first);
+    directory.registerRing('A', 'caller', 'callee', second);
+
+    directory.unregisterRing('A', 'caller', 'callee', first);
+    expect(directory.declineRing('A', 'caller', 'callee')).toBe(true);
+    expect(second.declineRing).toHaveBeenCalledTimes(1);
+
+    directory.unregisterRing('A', 'caller', 'callee', second);
+    expect(directory.declineRing('A', 'caller', 'callee')).toBe(false);
   });
 });

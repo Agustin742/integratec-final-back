@@ -57,6 +57,7 @@ describe('CallRoom (real Colyseus server + stub API)', () => {
     colyseus = await boot(createAppConfig(verifier, { callMaxParticipants: MAX }), PORT);
   });
   afterEach(async () => {
+    inWorld.clear();
     colyseus.sdk.auth.token = undefined as never;
     await colyseus.cleanup();
   });
@@ -65,7 +66,22 @@ describe('CallRoom (real Colyseus server + stub API)', () => {
     await api.close();
   });
 
+  /** Users with a classroom connection open: a direct call can only ring a peer that has one. */
+  const inWorld = new Set<string>();
+  const enterWorld = async (user: StubUser): Promise<void> => {
+    if (inWorld.has(user.userId)) return;
+    inWorld.add(user.userId);
+    colyseus.sdk.auth.token = user.token;
+    await colyseus.sdk.joinOrCreate(CLASSROOM_ROOM_NAME, { classroomId: CLASSROOM });
+  };
+  const peers = [teacher, ada, bob, cara];
+
   const join = async (user: StubUser, options: unknown = classroomCall): Promise<SdkRoom> => {
+    const direct = options as Partial<CallJoinOptions>;
+    if (direct.kind === 'direct') {
+      const peer = peers.find((candidate) => candidate.userId === direct.peerUserId);
+      if (peer !== undefined) await enterWorld(peer);
+    }
     colyseus.sdk.auth.token = user.token;
     const room = await colyseus.sdk.joinOrCreate(CALL_ROOM_NAME, options as object);
     room.reconnection.enabled = false;
