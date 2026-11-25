@@ -1,5 +1,15 @@
 # Tracker — Alejo
 
+## 2026-11-24 — PR #146 audit corrections
+
+- **Status:** blocked (implementation committed; complete runtime verification unavailable)
+- **Area / files:** avatar compatibility and paid styles, shop ownership projection, regression tests, related docs and CI argument forwarding.
+- **Change:** Correct the audited legacy fallback, unowned saved paid styles, and duplicate-style catalog ownership; verify concurrent cross-classroom purchases.
+- **Reason:** Alejo requested all audit findings corrected locally; test accounts must use reasonable free replacements rather than grandfathered paid entitlements.
+- **Verification:** Shop RED reproduced; GREEN 26/26 plus independent unit/integration/HTTP 30/30, typecheck/lint/format passed (commit `9fa71f8`). Avatar/profile/directory RED reproduced; final focused 423/423 across 10 files, API typecheck/users lint/format and diff check passed. Test-first history retains earlier IPC crash, missing test DB URL and corrected fixture FK cleanup failure. Isolated disposable PostgreSQL databases only; Node 24.15 satisfies declared >=22. Full checks and independent avatar review are pending; prior PR CI is not evidence for these corrections.
+- **Final evidence:** Appearance commit `43626d4` statically reviewed independently; strict paid PATCH remains 403. CI command forwarded an extra literal `--`, defeating file isolation; regression observed RED then GREEN 9/9 and help probes confirm correction (`ab6fe6a`). Independent full format check passed after correction. First full suite: contracts 60/60, API partial shop HTTP FK failure then IPC, realtime not reached. Corrected-runner suite also exited 1 with recurring IPC; final verifier had WSL/Git Bash mismatch, invalid git/Python commands and skipped DB tests, so no package totals are attested for that run. No further retries. Nonblocking concern: directory performs serial ownership queries for paid-look members before pagination; no measured latency regression.
+- **Next step:** Obtain complete full-suite evidence in a validated runtime before PR approval. Local branch `fix/pr146-avatar-audit` only; no publication, approval or merge. Do not claim 100% passed. Existing root human edits preserved.
+
 ## 2026-11-21 — Issue #41: Study Guide Bot RAG, citations, anti-copy & exam lockout (HU-BOT-002)
 
 - **Status:** completed (local implementation, pgvector DB/HTTP verification, and Node 22.23.4 Docker runtime verification complete on `feat/41-study-guide-bot-rag`; PR publication awaiting Alejo's approval)
