@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { ClientState, CloseCode, ServerError } from '@colyseus/core';
 import {
   buildClassroomLayout,
+  deriveNpcHomes,
+  NPC_IDS,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
   CLOSE_CODE_ACCESS_REVOKED,
@@ -339,6 +341,27 @@ describe('createClassroomRoom', () => {
       expect(room.state.classroomId).toBe(CLASSROOM_ID);
     });
 
+    it('seeds the pet and the tutor bot idle at their homes (#147)', () => {
+      const { room } = makeCreatedRoom();
+      const homes = deriveNpcHomes(buildClassroomLayout(12));
+
+      expect([...room.state.npcs.keys()].sort()).toEqual([...NPC_IDS].sort());
+      for (const id of NPC_IDS) {
+        expect(room.state.npcs.get(id)).toMatchObject({
+          id,
+          x: homes[id].x,
+          z: homes[id].z,
+          rotation: homes[id].rotation,
+          state: 'idle',
+          emote: '',
+          reaction: '',
+          phraseId: -1,
+          reactionSeq: 0,
+          reactingSessionId: '',
+        });
+      }
+    });
+
     it('broadcasts only the two server-owned chat notification events', () => {
       const { room } = makeCreatedRoom();
       const broadcast = vi.spyOn(room, 'broadcast');
@@ -620,6 +643,33 @@ describe('createClassroomRoom', () => {
         LAYOUT_13.avatarRadius * 2,
       );
       expect({ x: fine.x, z: fine.z }).toEqual({ x: 0, z: 0 });
+    });
+
+    it('moves idle npcs resting at their old home to the new home (#147)', () => {
+      const room = makeJoinedRoom();
+      const next = deriveNpcHomes(LAYOUT_13);
+
+      room.applyDeskCount(13);
+
+      for (const id of NPC_IDS) {
+        expect(room.state.npcs.get(id)).toMatchObject({
+          x: next[id].x,
+          z: next[id].z,
+        });
+      }
+    });
+
+    it('leaves an npc that is away from its home where it is (#147)', () => {
+      const room = makeJoinedRoom();
+      const pet = room.state.npcs.get('pet');
+      if (!pet) throw new Error('pet missing');
+      pet.state = 'walking';
+      pet.x = 2;
+      pet.z = 1;
+
+      room.applyDeskCount(13);
+
+      expect({ x: pet.x, z: pet.z }).toEqual({ x: 2, z: 1 });
     });
 
     it('does not move an avatar that stays on a walkable point', () => {

@@ -3,7 +3,9 @@ import {
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
   buildClassroomLayout,
+  deriveNpcHomes,
   MIN_CLASSROOM_DESKS,
+  NPC_IDS,
   CLOSE_CODE_ACCESS_REVOKED,
   CLOSE_CODE_TOO_MANY_CONNECTIONS,
   CLOSE_CODE_VERIFICATION_UNAVAILABLE,
@@ -42,7 +44,7 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
+import { Avatar, ClassroomState, EquippedItemView, Npc } from './classroom-state';
 import type { DirectoryRoom, RoomDirectory } from './room-directory';
 
 /**
@@ -145,6 +147,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     this.state = new ClassroomState();
     this.state.classroomId = classroomId;
     this.state.deskCount = MIN_CLASSROOM_DESKS;
+    this.seedNpcs();
     this.patchRate = 1000 / PATCH_RATE_HZ;
     this.setFixedTimestep(({ dt }) => this.tick(dt), SIMULATION_TICK_RATE_HZ);
     this.options.directory?.register(classroomId, this);
@@ -398,8 +401,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     const layout = buildClassroomLayout(deskCount);
     const effectiveCount = layout.obstacles.length - 1; // every obstacle but the teacher desk
     if (effectiveCount <= this.state.deskCount) return;
+    const previousHomes = deriveNpcHomes(this.layout);
     this.layout = layout;
     this.state.deskCount = effectiveCount;
+    this.rehomeIdleNpcs(previousHomes);
     const avatars = [...this.state.avatars.values()];
     const placed = avatars.filter((avatar) => isWalkable(layout, avatar.x, avatar.z));
     for (const avatar of avatars) {
@@ -408,6 +413,36 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       avatar.x = spawn.x;
       avatar.z = spawn.z;
       placed.push(avatar);
+    }
+  }
+
+  /** Puts the pet and the tutor bot idle at the homes of the current layout (#147). */
+  private seedNpcs(): void {
+    const homes = deriveNpcHomes(this.layout);
+    for (const id of NPC_IDS) {
+      const npc = new Npc();
+      npc.id = id;
+      npc.x = homes[id].x;
+      npc.z = homes[id].z;
+      npc.rotation = homes[id].rotation;
+      this.state.npcs.set(id, npc);
+    }
+  }
+
+  /**
+   * The homes follow the layout props, which move when desks are added. An NPC resting idle at its
+   * previous home moves to the new one; any other keeps its position (the routine owns it).
+   */
+  private rehomeIdleNpcs(previousHomes: ReturnType<typeof deriveNpcHomes>): void {
+    const homes = deriveNpcHomes(this.layout);
+    for (const id of NPC_IDS) {
+      const npc = this.state.npcs.get(id);
+      if (!npc || npc.state !== 'idle') continue;
+      const previous = previousHomes[id];
+      if (npc.x !== previous.x || npc.z !== previous.z) continue;
+      npc.x = homes[id].x;
+      npc.z = homes[id].z;
+      npc.rotation = homes[id].rotation;
     }
   }
 
