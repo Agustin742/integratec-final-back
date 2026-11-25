@@ -20,6 +20,8 @@ import {
   type AvatarInput,
   type ClassroomLayout,
   type MemberAppearance,
+  type NpcHome,
+  type NpcId,
   type ChatMessageHiddenPayload,
   type ChatMessagePayload,
 } from '@aula/contracts';
@@ -35,6 +37,7 @@ import {
 } from '@colyseus/core';
 import { JoinDeniedError, type ClassroomAuth, type JoinVerifier } from '../join/join-verifier';
 import { RateLimiter } from '../movement/rate-limiter';
+import { createNpcRuntime, stepNpc, type NpcRuntime } from '../npc/npc-routine';
 import { isWalkable, stepAvatar } from '../movement/step-avatar';
 import { PresenceRegistry } from '../presence/presence-registry';
 import { pickSpawnPoint } from '../presence/spawn';
@@ -81,6 +84,8 @@ export interface ClassroomRoomOptions {
   reporter?: ConnectedTimeReporter;
   /** Where the room announces itself so live evictions can find it. */
   directory?: RoomDirectory;
+  /** Uniform random source in [0, 1) for the NPC routines. Default `Math.random`; seeded in tests. */
+  random?: () => number;
 }
 
 const DEFAULT_RECONNECTION_WINDOW_SECONDS = 20;
@@ -124,6 +129,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   private readonly pendingAdmissions = new Map<string, PendingAdmission>();
   /** Walkable surface of this classroom; only {@link applyDeskCount} replaces it (#79). */
   private layout: ClassroomLayout = buildClassroomLayout(MIN_CLASSROOM_DESKS);
+  /** Where the NPCs rest; follows the layout props, so it is refreshed with the layout. */
+  private npcHomes: Record<NpcId, NpcHome> = deriveNpcHomes(this.layout);
+  /** Routine state of each NPC (timers, targets). Server-only: never part of the schema. */
+  private readonly npcRuntimes = new Map<NpcId, NpcRuntime>();
   private readonly connectedTime = new ConnectedTimeTracker();
   /** Reports still being delivered, awaited on dispose so none is cut short. */
   private readonly inFlightReports = new Set<Promise<void>>();
@@ -401,8 +410,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     const layout = buildClassroomLayout(deskCount);
     const effectiveCount = layout.obstacles.length - 1; // every obstacle but the teacher desk
     if (effectiveCount <= this.state.deskCount) return;
-    const previousHomes = deriveNpcHomes(this.layout);
+    const previousHomes = this.npcHomes;
     this.layout = layout;
+    this.npcHomes = deriveNpcHomes(layout);
     this.state.deskCount = effectiveCount;
     this.rehomeIdleNpcs(previousHomes);
     const avatars = [...this.state.avatars.values()];
@@ -418,8 +428,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
 
   /** Puts the pet and the tutor bot idle at the homes of the current layout (#147). */
   private seedNpcs(): void {
-    const homes = deriveNpcHomes(this.layout);
+    const homes = this.npcHomes;
+    const random = this.options.random ?? Math.random;
     for (const id of NPC_IDS) {
+      this.npcRuntimes.set(id, createNpcRuntime(id, homes[id], random));
       const npc = new Npc();
       npc.id = id;
       npc.x = homes[id].x;
@@ -434,15 +446,16 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
    * previous home moves to the new one; any other keeps its position (the routine owns it).
    */
   private rehomeIdleNpcs(previousHomes: ReturnType<typeof deriveNpcHomes>): void {
-    const homes = deriveNpcHomes(this.layout);
+    const homes = this.npcHomes;
     for (const id of NPC_IDS) {
       const npc = this.state.npcs.get(id);
-      if (!npc || npc.state !== 'idle') continue;
+      const runtime = this.npcRuntimes.get(id);
+      if (!npc || !runtime || npc.state !== 'idle') continue;
       const previous = previousHomes[id];
       if (npc.x !== previous.x || npc.z !== previous.z) continue;
-      npc.x = homes[id].x;
-      npc.z = homes[id].z;
-      npc.rotation = homes[id].rotation;
+      npc.x = runtime.x = homes[id].x;
+      npc.z = runtime.z = homes[id].z;
+      npc.rotation = runtime.rotation = homes[id].rotation;
     }
   }
 
@@ -486,7 +499,10 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     await Promise.allSettled([...this.inFlightReports]);
   }
 
-  /** One fixed simulation step: every moving avatar advances, clamped by the classroom layout. */
+  /**
+   * One fixed simulation step: every moving avatar advances, clamped by the classroom layout, and
+   * the NPCs follow their routine, but only while someone is in the room (an empty room does no work).
+   */
   tick(dtSeconds: number): void {
     for (const [userId, intent] of this.intents) {
       const avatar = this.state.avatars.get(userId);
@@ -496,6 +512,27 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
       if (next.x !== avatar.x) avatar.x = next.x;
       if (next.z !== avatar.z) avatar.z = next.z;
       if (next.rotation !== avatar.rotation) avatar.rotation = next.rotation;
+    }
+    if (this.state.avatars.size > 0) this.stepNpcs(dtSeconds);
+  }
+
+  /** Advances each NPC routine and publishes only the fields that changed, like the avatars. */
+  private stepNpcs(dtSeconds: number): void {
+    const ctx = {
+      layout: this.layout,
+      homes: this.npcHomes,
+      random: this.options.random ?? Math.random,
+    };
+    for (const id of NPC_IDS) {
+      const runtime = this.npcRuntimes.get(id);
+      const npc = this.state.npcs.get(id);
+      if (!runtime || !npc) continue;
+      stepNpc(runtime, dtSeconds, ctx);
+      if (npc.x !== runtime.x) npc.x = runtime.x;
+      if (npc.z !== runtime.z) npc.z = runtime.z;
+      if (npc.rotation !== runtime.rotation) npc.rotation = runtime.rotation;
+      if (npc.state !== runtime.state) npc.state = runtime.state;
+      if (npc.emote !== runtime.emote) npc.emote = runtime.emote;
     }
   }
 

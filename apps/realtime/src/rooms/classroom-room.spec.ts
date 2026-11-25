@@ -948,3 +948,115 @@ describe('createClassroomRoom', () => {
     });
   });
 });
+
+describe('NPC routines (#147)', () => {
+  /** Same seed, same walk: a tiny deterministic PRNG injected through the room options. */
+  const seeded = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const makeRoom = (seed = 1) => {
+    const room = new (createClassroomRoom(
+      { verify: vi.fn(), reverify: vi.fn().mockResolvedValue(IDENTITY) },
+      { random: seeded(seed) },
+    ))();
+    vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+    room.onCreate({ classroomId: CLASSROOM_ID });
+    return room;
+  };
+  const snapshot = (room: ClassroomRoom) =>
+    NPC_IDS.map((id) => {
+      const { x, z, rotation, state, emote } = room.state.npcs.get(id)!;
+      return { x, z, rotation, state, emote };
+    });
+  const tickFor = (room: ClassroomRoom, seconds: number, dt = 0.05) => {
+    for (let t = 0; t < seconds; t += dt) room.tick(dt);
+  };
+
+  it('keeps the NPCs frozen while nobody is in the room', () => {
+    const room = makeRoom();
+    const before = snapshot(room);
+
+    tickFor(room, 300);
+
+    expect(snapshot(room)).toEqual(before);
+  });
+
+  it('moves them, within walkable spots, while a member is present', async () => {
+    const room = makeRoom();
+    const homes = deriveNpcHomes(buildClassroomLayout(12));
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    const layout = buildClassroomLayout(12);
+    const seenStates = new Set<string>();
+
+    for (let t = 0; t < 300; t += 0.05) {
+      room.tick(0.05);
+      for (const id of NPC_IDS) {
+        const npc = room.state.npcs.get(id)!;
+        seenStates.add(npc.state);
+        expect(
+          isWalkable(layout, npc.x, npc.z, {
+            radius: 0.3,
+            ignoreProps: id === 'pet' ? ['petBed'] : [],
+          }),
+        ).toBe(true);
+        if (npc.state !== 'emote') expect(npc.emote).toBe('');
+      }
+    }
+
+    expect(seenStates.has('walking')).toBe(true);
+    expect(
+      NPC_IDS.some((id) => {
+        const npc = room.state.npcs.get(id)!;
+        return npc.x !== homes[id].x || npc.z !== homes[id].z;
+      }),
+    ).toBe(true);
+  });
+
+  it('freezes again when the last member leaves', async () => {
+    const room = makeRoom();
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    tickFor(room, 60);
+
+    room.onLeave({ sessionId: 's1' } as never);
+    const frozen = snapshot(room);
+    tickFor(room, 120);
+
+    expect(room.state.avatars.size).toBe(0);
+    expect(snapshot(room)).toEqual(frozen);
+  });
+
+  it('shows every member the same thing for the same seed', async () => {
+    const a = makeRoom(7);
+    const b = makeRoom(7);
+    await a.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    await b.onJoin({ sessionId: 's1', auth: AUTH } as never);
+
+    tickFor(a, 120);
+    tickFor(b, 120);
+
+    expect(snapshot(a)).toEqual(snapshot(b));
+  });
+
+  it('keeps the routine on the grown layout after desks are added', async () => {
+    const room = makeRoom(3);
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    room.applyDeskCount(20);
+    const grown = buildClassroomLayout(20);
+
+    for (let t = 0; t < 120; t += 0.05) {
+      room.tick(0.05);
+      for (const id of NPC_IDS) {
+        const npc = room.state.npcs.get(id)!;
+        expect(
+          isWalkable(grown, npc.x, npc.z, {
+            radius: 0.3,
+            ignoreProps: id === 'pet' ? ['petBed'] : [],
+          }),
+        ).toBe(true);
+      }
+    }
+  });
+});

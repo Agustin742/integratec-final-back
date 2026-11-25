@@ -159,4 +159,19 @@ describe('prop obstacles', () => {
     const { tutorBot } = deriveNpcHomes(LAYOUT);
     expect(isWalkable(LAYOUT, tutorBot.x, tutorBot.z)).toBe(true);
   });
+
+  it('can inflate obstacles by a custom body radius', () => {
+    // 0.45 m from the kiosk face: clear for a 0.3 m body, blocked for a 0.5 m one.
+    expect(isWalkable(LAYOUT, 4.8, -4.785, { radius: 0.3 })).toBe(true);
+    expect(isWalkable(LAYOUT, 4.8, -4.785, { radius: 0.5 })).toBe(false);
+    expect(isWalkable(LAYOUT, 4.8, -4.8)).toBe(isWalkable(LAYOUT, 4.8, -4.8, { radius: 0.3 }));
+  });
+
+  it('can ignore named props for one body, such as the pet on its own bed', () => {
+    const { pet } = deriveNpcHomes(LAYOUT);
+    expect(isWalkable(LAYOUT, pet.x, pet.z)).toBe(false);
+    expect(isWalkable(LAYOUT, pet.x, pet.z, { ignoreProps: ['petBed'] })).toBe(true);
+    // Ignoring one prop never opens the others.
+    expect(isWalkable(LAYOUT, 4.8, -5.5, { ignoreProps: ['petBed'] })).toBe(false);
+  });
 });

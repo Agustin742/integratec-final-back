@@ -2,6 +2,7 @@ import {
   AVATAR_SPEED_UNITS_PER_SECOND,
   type ClassroomLayout,
   type LayoutBox,
+  type PropObstacleId,
 } from '@aula/contracts';
 
 export interface Pose {
@@ -28,14 +29,32 @@ const MAX_SUBSTEP = 0.05;
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
 
-/** Whether an avatar centre may stand at (x, z): inside the walls and clear of every desk and prop. */
-export function isWalkable(layout: ClassroomLayout, x: number, z: number): boolean {
-  const { bounds, avatarRadius: r, obstacles, props } = layout;
+/** Who is standing: defaults to an avatar. NPCs pass their own radius and the props they may enter. */
+export interface WalkBody {
+  /** Collision radius; defaults to the layout `avatarRadius`. */
+  radius?: number;
+  /** Props this body may stand on, such as the pet on its own bed. */
+  ignoreProps?: readonly PropObstacleId[];
+}
+
+/**
+ * Whether a body centre may stand at (x, z): inside the walls and clear of every desk and prop. An
+ * avatar by default; `body` adapts it to an NPC.
+ */
+export function isWalkable(
+  layout: ClassroomLayout,
+  x: number,
+  z: number,
+  body: WalkBody = {},
+): boolean {
+  const { bounds, obstacles, props } = layout;
+  const r = body.radius ?? layout.avatarRadius;
   if (x < bounds.minX + r || x > bounds.maxX - r) return false;
   if (z < bounds.minZ + r || z > bounds.maxZ - r) return false;
   const blocks = (o: LayoutBox) =>
     x > o.minX - r && x < o.maxX + r && z > o.minZ - r && z < o.maxZ + r;
-  return !obstacles.some(blocks) && !props.some(blocks);
+  const ignored = body.ignoreProps ?? [];
+  return !obstacles.some(blocks) && !props.some((p) => !ignored.includes(p.id) && blocks(p));
 }
 
 /**
