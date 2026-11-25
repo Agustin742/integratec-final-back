@@ -1155,15 +1155,30 @@ describe('NPC interactions (#147)', () => {
     expect(room.state.npcs.get('pet')!.state).not.toBe('reacting');
   });
 
-  it('ignores a payload that is not an NPC id, and a connection that is not in the room', async () => {
+  it('ignores an unknown npc id, and a connection that is not in the room', async () => {
     const room = await makeRoom();
     standNear(room, AUTH.userId, 'pet');
 
     interact(room, 's1', { npcId: 'dog' });
-    interact(room, 's1', undefined);
     interact(room, 'ghost', { npcId: 'pet' });
 
     expect(room.state.npcs.get('pet')!.reactionSeq).toBe(0);
+  });
+
+  it('forgets the cooldown when the member leaves for good', async () => {
+    const room = await makeRoom();
+    standNear(room, AUTH.userId, 'pet');
+    interact(room, 's1', { npcId: 'pet' });
+    tickFor(room, 6); // the reaction is over, only the now-based cooldown remains
+    nowMs += NPC_INTERACT_COOLDOWN_MS / 2;
+
+    room.onLeave({ sessionId: 's1' } as never);
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    standNear(room, AUTH.userId, 'pet');
+    random = 0.1;
+
+    interact(room, 's1', { npcId: 'pet' });
+    expect(room.state.npcs.get('pet')!.reactionSeq).toBe(2);
   });
 
   it('applies a per-member cooldown for the same NPC', async () => {

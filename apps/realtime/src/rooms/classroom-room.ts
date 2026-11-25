@@ -510,10 +510,21 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     this.releaseIntent(userId, connectionId);
     if (detached?.userGone) {
       this.state.avatars.delete(userId);
+      this.forgetNpcCooldowns(userId);
       this.reportConnectedTime(userId, this.connectedTime.complete(userId, this.now()));
     } else {
       this.refreshStatus(userId);
       this.syncConnectedTime(userId);
+    }
+  }
+
+  /**
+   * Drops the per-NPC interaction cooldowns of a member who left for good. A rejoining member
+   * starts with a clean cooldown, and no entry outlives the member it belongs to.
+   */
+  private forgetNpcCooldowns(userId: string): void {
+    for (const key of this.npcInteractedAt.keys()) {
+      if (key.startsWith(`${userId}:`)) this.npcInteractedAt.delete(key);
     }
   }
 
@@ -577,16 +588,21 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   }
 
   /**
-   * A member pressed E on an NPC. Ignored unless the connection is live, the avatar is close
-   * enough, the member is out of cooldown and the NPC is not already reacting. A sleeping pet
-   * wakes up and reacts. The reaction is plain synchronized state, so the whole room sees it.
+   * A member pressed E on an NPC. Ignored unless the connection is live and within the
+   * connection's message budget, the avatar is close enough, the member is out of cooldown
+   * and the NPC is not already reacting. A sleeping pet wakes up and reacts. The reaction is
+   * plain synchronized state, so the whole room sees it.
    */
   private onNpcInteract(client: Pick<Client, 'sessionId'>, input: NpcInteract): void {
+    const limiter = this.limiters.get(client.sessionId);
     const userId = this.userConnections.userOf(client.sessionId);
-    if (userId === undefined || !this.userConnections.isLive(client.sessionId)) return;
-    const parsed = npcInteractSchema.safeParse(input);
-    if (!parsed.success) return;
-    const npcId = parsed.data.npcId;
+    if (limiter === undefined || userId === undefined) return;
+    // A held connection (dropped, or reconnected but not yet re-verified) cannot interact.
+    if (!this.userConnections.isLive(client.sessionId)) return;
+    // Over the limit: dropped silently, with no effect on the NPC. The budget is shared
+    // with avatar:input, so one connection cannot exceed 30 messages per second in total.
+    if (!limiter.tryConsume(this.now())) return;
+    const npcId = input.npcId;
     const avatar = this.state.avatars.get(userId);
     const runtime = this.npcRuntimes.get(npcId);
     const npc = this.state.npcs.get(npcId);
