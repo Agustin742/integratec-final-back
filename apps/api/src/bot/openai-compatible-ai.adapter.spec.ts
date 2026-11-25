@@ -76,6 +76,45 @@ describe('OpenAiCompatibleAiAdapter', () => {
     await expect(adapter.embed(['hello'])).rejects.toBeInstanceOf(AiProviderUnavailableError);
   });
 
+  it('treats an omitted index as 0, as Gemini does', async () => {
+    const v0 = [1, 0];
+    const v1 = [0, 1];
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ index: 1, embedding: v1 }, { embedding: v0 }],
+      }),
+    );
+    const adapter = new OpenAiCompatibleAiAdapter(
+      authTestConfig({ aiProviderApiKey: 'synthetic-key', aiEmbeddingDimension: 2 }),
+      { fetchFn: fetchMock },
+    );
+
+    const result = await adapter.embed(['first', 'second']);
+    expect(result.vectors).toEqual([v0, v1]);
+  });
+
+  it.each([
+    ['duplicate', [{ index: 1 }, { index: 1 }]],
+    ['repeatedly omitted', [{}, {}]],
+    ['omitted and explicit zero', [{}, { index: 0 }]],
+    ['out-of-range', [{}, { index: 2 }]],
+    ['null', [{ index: null }, { index: 1 }]],
+  ])('rejects embeddings with %s indexes', async (_label, items) => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({ data: items.map((item) => ({ ...item, embedding: [1, 0] })) }),
+      );
+    const adapter = new OpenAiCompatibleAiAdapter(
+      authTestConfig({ aiProviderApiKey: 'synthetic-key', aiEmbeddingDimension: 2 }),
+      { fetchFn: fetchMock },
+    );
+
+    await expect(adapter.embed(['first', 'second'])).rejects.toBeInstanceOf(
+      AiProviderUnavailableError,
+    );
+  });
+
   it('parses chat completions with tool calls and usage', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
       jsonResponse({

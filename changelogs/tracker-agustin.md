@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Accept Gemini embeddings without a zero index
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/bot/openai-compatible-ai.adapter.ts` and its spec
+- **Change:** `embed()` now reads an omitted `index` as 0. Duplicate indexes are now rejected explicitly; the previous hole check skipped sparse array slots and let them through.
+- **Reason:** Gemini omits `index` when it is 0, so every real embedding request was rejected.
+- **Verification:** Specs written RED first, then GREEN; typecheck and eslint on the touched files. Full suite not run.
+- **Next step:** None.
+
 ## 2026-11-24 — Synced pet and tutor bot routines in the classroom room (#147)
 
 - **Status:** completed

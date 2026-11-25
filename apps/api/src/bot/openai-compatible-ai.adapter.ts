@@ -199,12 +199,15 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
 
     const ordered = new Array<number[]>(texts.length);
     for (const item of raw.data) {
+      // Gemini omits `index` when it is 0 (proto3 default).
+      const index = item?.index === undefined ? 0 : item.index;
       if (
-        typeof item?.index !== 'number' ||
-        !Number.isInteger(item.index) ||
-        item.index < 0 ||
-        item.index >= texts.length ||
-        !Array.isArray(item.embedding) ||
+        typeof index !== 'number' ||
+        !Number.isInteger(index) ||
+        index < 0 ||
+        index >= texts.length ||
+        ordered[index] !== undefined ||
+        !Array.isArray(item?.embedding) ||
         item.embedding.length !== dimension
       ) {
         throw new AiProviderUnavailableError();
@@ -217,11 +220,7 @@ export class OpenAiCompatibleAiAdapter implements ChatModelPort, EmbeddingModelP
       ) {
         throw new AiProviderUnavailableError();
       }
-      ordered[item.index] = vector;
-    }
-
-    if (ordered.some((vector) => vector === undefined)) {
-      throw new AiProviderUnavailableError();
+      ordered[index] = vector;
     }
 
     const totalTokens =
