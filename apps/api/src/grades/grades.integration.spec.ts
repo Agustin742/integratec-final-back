@@ -739,10 +739,84 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
     });
   });
 
-  it('materializes student-only grade_posted in-app notification without parent or email notifications', async () => {
+  it('materializes grade_posted in-app notifications for student and active linked parents (excluding INACTIVE links) when adultMode is false', async () => {
+    const secondParentId = randomUUID();
+    const inactiveParentId = randomUUID();
+    await prisma.user.createMany({
+      data: [secondParentId, inactiveParentId].map((id) => ({
+        id,
+        email: `grades-int-parent-${id}@example.invalid`,
+        passwordHash: 'unused-synthetic-hash',
+        displayName: `Parent ${id.slice(0, 6)}`,
+        registrationPath: RegistrationPath.INVITEE,
+      })),
+    });
+    await prisma.parentLink.createMany({
+      data: [
+        {
+          classroomId: ids.classroom,
+          parentId: secondParentId,
+          childId: ids.student,
+          state: MembershipState.ACTIVE,
+        },
+        {
+          classroomId: ids.classroom,
+          parentId: inactiveParentId,
+          childId: ids.student,
+          state: MembershipState.INACTIVE,
+        },
+      ],
+    });
+
     const grade = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
       score: 90,
       feedback: 'Great analysis',
+    });
+
+    const pending = await prisma.outboxEvent.findMany({
+      where: {
+        type: NOTIFICATION_REQUESTED_EVENT,
+        payload: { path: ['resourceId'], equals: grade.id },
+      },
+    });
+    expect(pending).toHaveLength(3);
+
+    await dispatcher.dispatchPending(
+      100,
+      new Date(),
+      [NOTIFICATION_REQUESTED_EVENT],
+      pending.map((e) => e.id),
+    );
+
+    const notices = await prisma.notification.findMany({
+      where: { resourceId: grade.id },
+      include: { deliveries: true },
+    });
+    expect(notices).toHaveLength(3);
+    expect(notices.map((n) => n.recipientId).sort()).toEqual(
+      [ids.student, ids.parent, secondParentId].sort(),
+    );
+    for (const notice of notices) {
+      expect(notice).toMatchObject({
+        kind: 'grade_posted',
+        classroomId: ids.classroom,
+        studentId: ids.student,
+        resourceId: grade.id,
+      });
+      expect(notice.deliveries.map((d) => d.channel)).toEqual(['in_app']);
+    }
+    expect(notices.some((n) => n.recipientId === inactiveParentId)).toBe(false);
+  });
+
+  it('emits grade_posted notification for student ONLY (0 for parents) when classroom adultMode is true', async () => {
+    await prisma.classroom.update({
+      where: { id: ids.classroom },
+      data: { adultMode: true },
+    });
+
+    const grade = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
+      score: 85,
+      feedback: 'Adult mode analysis',
     });
 
     const pending = await prisma.outboxEvent.findMany({

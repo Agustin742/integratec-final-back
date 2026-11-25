@@ -14,7 +14,10 @@ import { RequestValidationException } from '../http/validation';
 import { paginated, toSkipTake, type Paginated } from '../http/pagination/paginated';
 import { parseSort } from '../http/pagination/sort';
 import { isExamPassed, StreakService } from '../gamification/streak.service';
-import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import {
+  NotificationRecorder,
+  recordGradePostedNotifications,
+} from '../notifications/notification-recorder.service';
 import { PointsLedgerService } from '../points/points-ledger.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { isUniqueViolation } from '../prisma/unique-violation';
@@ -206,7 +209,8 @@ export class GradesService {
   /**
    * Grades an ungraded FILE submission once (`version = 1`), computes weighted points on the
    * server, appends an earning entry to the points ledger when `pointsAwarded > 0`, and records
-   * a student-only `grade_posted` notification in the same transaction.
+   * `grade_posted` notifications for the student and active linked parents (when adultMode is off)
+   * in the same transaction.
    */
   async gradeSubmission(
     actorId: string,
@@ -301,11 +305,9 @@ export class GradesService {
           },
         });
 
-        await this.notifications.record(tx, {
-          kind: 'grade_posted',
+        await recordGradePostedNotifications(tx, this.notifications, {
           classroomId: context.activity.classroomId,
-          resourceId: created.id,
-          recipientId: submission.studentId,
+          gradeId: created.id,
           studentId: submission.studentId,
         });
 
@@ -353,7 +355,8 @@ export class GradesService {
   /**
    * Regrades an existing grade using optimistic concurrency (`dto.version`), appends a new
    * `GradeRevision`, compensates points atomically when the rounded weighted points change, and
-   * records a student-only `grade_posted` notification.
+   * records `grade_posted` notifications for the student and active linked parents (when adultMode
+   * is off).
    */
   async regradeSubmission(
     actorId: string,
@@ -524,11 +527,9 @@ export class GradesService {
         },
       });
 
-      await this.notifications.record(tx, {
-        kind: 'grade_posted',
+      await recordGradePostedNotifications(tx, this.notifications, {
         classroomId: context.activity.classroomId,
-        resourceId: currentGrade.id,
-        recipientId: submission.studentId,
+        gradeId: currentGrade.id,
         studentId: submission.studentId,
       });
 

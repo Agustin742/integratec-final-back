@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { MembershipState, type Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { UUID_PATTERN } from '../access/access-verification.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
@@ -48,6 +48,55 @@ export class NotificationRecorder {
     return this.outbox.record(tx, {
       type: NOTIFICATION_REQUESTED_EVENT,
       payload: parsed.data,
+    });
+  }
+}
+
+/**
+ * Records `grade_posted` notification requests inside the grading transaction for the graded
+ * student and, when the classroom is not in adult education mode, every ACTIVE linked parent.
+ * Each parent notice carries `studentId` so `NotificationsService.hasCurrentAccess` re-verifies
+ * link, enrollment, and adultMode state on materialization and read.
+ */
+export async function recordGradePostedNotifications(
+  tx: Prisma.TransactionClient,
+  notifications: NotificationRecorder,
+  input: { classroomId: string; gradeId: string; studentId: string },
+): Promise<void> {
+  await notifications.record(tx, {
+    kind: 'grade_posted',
+    classroomId: input.classroomId,
+    resourceId: input.gradeId,
+    recipientId: input.studentId,
+    studentId: input.studentId,
+  });
+
+  const classroom = await tx.classroom.findUnique({
+    where: { id: input.classroomId },
+    select: { adultMode: true },
+  });
+  if (!classroom || classroom.adultMode) {
+    return;
+  }
+
+  const parentLinks = await tx.parentLink.findMany({
+    where: {
+      classroomId: input.classroomId,
+      childId: input.studentId,
+      state: MembershipState.ACTIVE,
+    },
+    select: { parentId: true },
+    orderBy: { id: 'asc' },
+  });
+
+  for (const link of parentLinks) {
+    if (link.parentId === input.studentId) continue;
+    await notifications.record(tx, {
+      kind: 'grade_posted',
+      classroomId: input.classroomId,
+      resourceId: input.gradeId,
+      recipientId: link.parentId,
+      studentId: input.studentId,
     });
   }
 }
