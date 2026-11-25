@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-25 — PR #151 compatible voice-call corrections
+
+- **Status:** in-progress.
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, call moderation tests, voice-call rules/docs; branch `fix/pr151-call-audit` based on Agustin's `d985a42`.
+- **Change:** With AI assistance directed by Alejo: retained private per-user forced-mute policy across replacement/rejoin and mute-all late arrivals (`121cb45`), preserving teacher unmute and allowed self-unmute. Recorded bounded voice-only P2P decision D21 (`b0dded1`) with client-dependent audio limits. Static comparison of frontend #145 confirms existing fields/events/close codes suffice; no wire or frontend changes. Agustin's original implementation and attribution preserved.
+- **Verification:** SDK regression RED: 3 intended failures/36 passes, exit1 before source fix; focused GREEN39/39; full realtime502/502 + contracts129/129, exit0. Worker reported initial native crash3221226505 before RED and an exact retry (process deviation from no-automatic-retry guidance, disclosed). No further retry authorized. Docs85/Prettier/whitespace passed. Independent/differential checks and develop integration pending; Docker daemon unavailable, so local DB suite not claimed.
+- **Reason:** Alejo authorized fixes to prepare PR #151 for teammate re-review, without breaking the paired frontend.
+- **Next step:** Integrate develop additively, verify shared behavior independently and run post-integration checks. No push, PR approval or PR merge authorized.
+
 ## 2026-11-24 — PR #146 audit corrections
 
 - **Status:** completed (local implementation and independent Linux/Node 22 verification; publication and PR approval remain separate)
