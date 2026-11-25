@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Desk decor shop items and per-desk visibility (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (shop catalog, seed), `apps/api/src/classrooms/desks/`, `apps/api/src/users/member-appearance.ts`, `apps/api/openapi.json`, `docs/`
+- **Change:** Seeded 7 desk decor shop items (`DESK_UPGRADE`, `desk_decor` slot, 80 to 220 points). `GET /classrooms/:id/desks` now returns each assigned student's equipped desk decor as `deskDecor`, with the same access rules (parents excluded).
+- **Reason:** Each student's desk must show their decor to the whole classroom; the realtime state only covers connected students and no REST endpoint exposed other members' equipment.
+- **Verification:** Specs written RED first; touched specs without a database, lint and typecheck pass. The desk map PostgreSQL spec was updated but not run (no PostgreSQL running).
+- **Next step:** Front regenerates API types and reads `deskDecor`. Run the DB-backed specs in CI.
+
 ## 2026-11-25 — Hand, neck and ears equipment slots (#154)
 
 - **Status:** completed

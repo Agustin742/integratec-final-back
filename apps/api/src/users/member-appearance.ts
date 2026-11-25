@@ -1,7 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import type { Prisma } from '@prisma/client';
+import { EquippedSlot, type Prisma, type ShopItem } from '@prisma/client';
 import type { AppearanceSlotName } from '@aula/contracts';
 import { SLOT_NAME_BY_ENUM } from '../equipment/equipment.dto';
 import type { EquippedItemPayloadDto } from '../internal/realtime/realtime-join.dto';
@@ -96,6 +96,20 @@ export async function readableBaseAppearance(
   return appearance;
 }
 
+/** Public projection of one equipped item: catalog fields only, no purchase or price data. */
+function toEquippedItemPayload(
+  slot: AppearanceSlotName,
+  shopItem: Pick<ShopItem, 'id' | 'code' | 'name' | 'kind'>,
+): EquippedItemPayloadDto {
+  return {
+    slot,
+    shopItemId: shopItem.id,
+    shopItemCode: shopItem.code,
+    shopItemName: shopItem.name,
+    kind: shopItem.kind,
+  };
+}
+
 /** Every slot is always present, null when nothing is equipped. */
 export async function equippedItemsFor(
   client: AppearanceReader,
@@ -120,15 +134,29 @@ export async function equippedItemsFor(
   };
   for (const row of equipped) {
     const slot = SLOT_NAME_BY_ENUM[row.slot];
-    items[slot] = {
-      slot,
-      shopItemId: row.shopItem.id,
-      shopItemCode: row.shopItem.code,
-      shopItemName: row.shopItem.name,
-      kind: row.shopItem.kind,
-    };
+    items[slot] = toEquippedItemPayload(slot, row.shopItem);
   }
   return items;
+}
+
+/**
+ * Equipped desk decor of every student in one classroom, keyed by student id. Reads persisted
+ * equipment, so it does not depend on who is connected to the live room.
+ */
+export async function deskDecorFor(
+  client: Pick<AppearanceReader, 'equippedItem'>,
+  classroomId: string,
+): Promise<Map<string, EquippedItemPayloadDto>> {
+  const equipped = await client.equippedItem.findMany({
+    where: { classroomId, slot: EquippedSlot.DESK_DECOR },
+    select: {
+      studentId: true,
+      shopItem: { select: { id: true, code: true, name: true, kind: true } },
+    },
+  });
+  return new Map(
+    equipped.map((row) => [row.studentId, toEquippedItemPayload('desk_decor', row.shopItem)]),
+  );
 }
 
 /** A member's public appearance in one classroom, plus the display name read on the way. */

@@ -24,6 +24,8 @@ Send the session access token as `Authorization: Bearer <access token>`.
 - **Per-user rate limiting:** `EquipmentRateLimiter` protects `PUT` with a sliding window configured via `EQUIP_RATE_LIMIT_WINDOW` (default `1m`) and `EQUIP_RATE_LIMIT_MAX` (default `20`), returning `429 TOO_MANY_REQUESTS`. Read-only `GET` is never rate limited.
 - **Privacy-safe audit log:** equip and unequip operations emit a structured `shop_item_equipped` / `shop_item_unequipped` log with non-PII identifiers (`classroomId`, `studentId`, `slot`, `shopItemId`).
 
+The classroom [desk map](classroom-desks.md) returns each student's equipped `desk_decor` item, so it can be drawn on their desk while they are offline.
+
 Out of scope (follow-ups): rendering of equipped items and the inventory UI (frontend repository), the realtime broadcast of the new look, and equipping pet accessories.
 
 ## Verification

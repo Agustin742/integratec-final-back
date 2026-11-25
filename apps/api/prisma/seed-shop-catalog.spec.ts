@@ -51,6 +51,17 @@ const EXPECTED_ACCESSORIES: ReadonlyArray<[string, string, number]> = [
   ['ears_ear_cuffs', '#B5A7D6', 120],
 ];
 
+const EXPECTED_DESK_DECOR: ReadonlyArray<[string, string, string, number]> = [
+  ['desk_mug', 'mug', 'Taza de escritorio', 80],
+  ['desk_plant', 'plant', 'Planta de escritorio', 100],
+  ['desk_photo_frame', 'photo-frame', 'Portarretrato', 120],
+  ['desk_puzzle_cube', 'puzzle-cube', 'Cubo mágico', 140],
+  ['desk_mini_globe', 'mini-globe', 'Mini globo terráqueo', 180],
+  ['desk_lamp', 'lamp', 'Lámpara de escritorio', 200],
+  ['desk_figurine', 'figurine', 'Figura coleccionable', 220],
+];
+
+const deskDecor = SHOP_CATALOG.filter((item) => item.kind === ShopItemKind.DESK_UPGRADE);
 const styles = SHOP_CATALOG.filter((item) => item.kind === ShopItemKind.AVATAR_STYLE);
 const accessories = SHOP_CATALOG.filter((item) => item.kind === ShopItemKind.AVATAR_ACCESSORY);
 const styleIds = (type: 'hair' | 'top'): string[] =>
@@ -60,15 +71,16 @@ const styleIds = (type: 'hair' | 'top'): string[] =>
     .map((meta) => meta.styleId);
 
 describe('seed shop catalog', () => {
-  it('has 40 accessories and 25 styles, all implemented and active', () => {
-    expect(SHOP_CATALOG).toHaveLength(65);
+  it('has 40 accessories, 25 styles and 7 desk decor items, all implemented and active', () => {
+    expect(SHOP_CATALOG).toHaveLength(72);
     expect(accessories).toHaveLength(40);
     expect(styles).toHaveLength(25);
+    expect(deskDecor).toHaveLength(7);
     expect(SHOP_CATALOG.every((item) => item.isActive && item.isImplemented)).toBe(true);
   });
 
   it('uses unique codes and prices within 80..250', () => {
-    expect(new Set(SHOP_CATALOG.map((item) => item.code)).size).toBe(65);
+    expect(new Set(SHOP_CATALOG.map((item) => item.code)).size).toBe(72);
     for (const item of SHOP_CATALOG) {
       expect(item.defaultPrice).toBeGreaterThanOrEqual(80);
       expect(item.defaultPrice).toBeLessThanOrEqual(250);
@@ -88,6 +100,22 @@ describe('seed shop catalog', () => {
     for (const item of accessories) {
       const { assetId, slot } = item.metadata as { assetId: string; slot: string };
       expect(item.code).toBe(`${slot}_${assetId.replaceAll('-', '_')}`);
+    }
+  });
+
+  it('sells the seven desk decor assets into the single desk_decor slot', () => {
+    expect(
+      deskDecor.map((item) => [
+        item.code,
+        (item.metadata as { assetId: string }).assetId,
+        item.name,
+        item.defaultPrice,
+      ]),
+    ).toEqual(EXPECTED_DESK_DECOR);
+    for (const item of deskDecor) {
+      const { assetId } = item.metadata as { assetId: string };
+      expect(item.metadata).toEqual({ assetId, slot: 'desk_decor' });
+      expect(item.code).toBe(`desk_${assetId.replaceAll('-', '_')}`);
     }
   });
 

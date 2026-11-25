@@ -114,6 +114,17 @@ const ACCESSORIES: ReadonlyArray<{
   { slot: 'ears', assetId: 'ear-cuffs', name: 'Aros cuff', color: '#B5A7D6', price: 120 },
 ];
 
+/** Desk decor shares the single `desk_decor` slot; asset ids match the front desk-decor models. */
+const DESK_DECOR: ReadonlyArray<{ assetId: string; name: string; price: number }> = [
+  { assetId: 'mug', name: 'Taza de escritorio', price: 80 },
+  { assetId: 'plant', name: 'Planta de escritorio', price: 100 },
+  { assetId: 'photo-frame', name: 'Portarretrato', price: 120 },
+  { assetId: 'puzzle-cube', name: 'Cubo mágico', price: 140 },
+  { assetId: 'mini-globe', name: 'Mini globo terráqueo', price: 180 },
+  { assetId: 'lamp', name: 'Lámpara de escritorio', price: 200 },
+  { assetId: 'figurine', name: 'Figura coleccionable', price: 220 },
+];
+
 /** Keyed by paid style id so a missing or extra entry fails type checking. */
 const HAIR_STYLES: Record<(typeof PAID_HAIR_IDS)[number], { name: string; price: number }> = {
   'side-part': { name: 'Raya al costado', price: 80 },
@@ -161,6 +172,19 @@ function accessoryItems(): SeedShopItem[] {
   }));
 }
 
+function deskDecorItems(): SeedShopItem[] {
+  return DESK_DECOR.map(({ assetId, name, price }) => ({
+    code: `desk_${snake(assetId)}`,
+    name,
+    description: `${name} para decorar tu escritorio.`,
+    kind: ShopItemKind.DESK_UPGRADE,
+    defaultPrice: price,
+    isActive: true,
+    isImplemented: true,
+    metadata: { assetId, slot: 'desk_decor' },
+  }));
+}
+
 function styleItems(
   styleType: AvatarStyleKind,
   styles: Record<string, { name: string; price: number }>,
@@ -180,9 +204,13 @@ function styleItems(
   }));
 }
 
-/** Synthetic local-only shop catalog: 40 avatar accessories and 25 paid hair/top styles. */
+/**
+ * Synthetic local-only shop catalog: 40 avatar accessories, 7 desk decor items and 25 paid
+ * hair/top styles.
+ */
 export const SHOP_CATALOG: readonly SeedShopItem[] = [
   ...accessoryItems(),
+  ...deskDecorItems(),
   ...styleItems('hair', HAIR_STYLES),
   ...styleItems('top', TOP_STYLES),
 ];

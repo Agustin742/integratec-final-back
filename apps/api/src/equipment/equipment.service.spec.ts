@@ -1,6 +1,7 @@
 import { ShopItemKind } from '@prisma/client';
 import { APPEARANCE_SLOT_NAMES } from '@aula/contracts';
 import { describe, expect, it, vi } from 'vitest';
+import { SHOP_CATALOG } from '../../prisma/seed-shop-catalog';
 import { equippedItemsFor } from '../users/member-appearance';
 import { EQUIPPED_SLOT_NAMES, SLOT_ENUM_BY_NAME, SLOT_NAME_BY_ENUM } from './equipment.dto';
 import { EquipmentService } from './equipment.service';
@@ -64,6 +65,17 @@ describe('equipment accessory slots (#154)', () => {
     const { equip, tx } = makeService({ kind: ShopItemKind.DESK_UPGRADE, slot });
     await expect(equip(slot)).rejects.toThrow('does not fit the declared equipment slot');
     expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('equips every seeded desk decor item into desk_decor', async () => {
+    const decor = SHOP_CATALOG.filter((item) => item.kind === ShopItemKind.DESK_UPGRADE);
+    expect(decor).toHaveLength(7);
+    for (const item of decor) {
+      const { slot } = item.metadata as { slot: string };
+      const { equip, tx } = makeService({ kind: ShopItemKind.DESK_UPGRADE, slot });
+      await equip('desk_decor');
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('still rejects an avatar accessory in desk_decor', async () => {

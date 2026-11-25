@@ -3932,7 +3932,7 @@
     },
     "/classrooms/{id}/desks": {
       "get": {
-        "description": "Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.",
+        "description": "Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, each with the equipped desk_decor item of its student, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.",
         "operationId": "ClassroomDesksController_read",
         "parameters": [
           {
@@ -7399,6 +7399,21 @@
         },
         "required": ["id", "userId", "displayName", "role", "avatar"]
       },
+      "AppearanceSlotName": {
+        "type": "string",
+        "enum": ["head", "face", "back", "desk_decor", "hand", "neck", "ears"]
+      },
+      "EquippedItemPayloadDto": {
+        "type": "object",
+        "properties": {
+          "slot": { "allOf": [{ "$ref": "#/components/schemas/AppearanceSlotName" }] },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "head_cap" },
+          "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "kind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] }
+        },
+        "required": ["slot", "shopItemId", "shopItemCode", "shopItemName", "kind"]
+      },
       "ClassroomDeskDto": {
         "type": "object",
         "properties": {
@@ -7423,9 +7438,15 @@
             "format": "uuid",
             "nullable": true,
             "description": "Assigned student user identifier, or null for a free desk. No directory profile data."
+          },
+          "deskDecor": {
+            "nullable": true,
+            "description": "The assigned student's equipped desk_decor item in this classroom, whether or not they are connected. Null for a free desk or an empty slot.",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/EquippedItemPayloadDto" }]
           }
         },
-        "required": ["id", "deskIndex", "membershipId", "userId"]
+        "required": ["id", "deskIndex", "membershipId", "userId", "deskDecor"]
       },
       "ClassroomDeskMapDto": {
         "type": "object",

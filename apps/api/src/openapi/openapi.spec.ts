@@ -266,7 +266,7 @@ describe('OpenAPI document', () => {
     ]);
   });
 
-  it('registers the protected, complete desk-map contract without directory data', async () => {
+  it('registers the protected, complete desk-map contract with desk decor and no directory data', async () => {
     app = await createApp('test');
     const doc = buildOpenApiDocument(app);
     const operation = doc.paths['/classrooms/{id}/desks']?.get;
@@ -282,10 +282,14 @@ describe('OpenAPI document', () => {
     });
     const desk = doc.components?.schemas?.ClassroomDeskDto;
     expect(desk).toMatchObject({
-      required: ['id', 'deskIndex', 'membershipId', 'userId'],
+      required: ['id', 'deskIndex', 'membershipId', 'userId', 'deskDecor'],
       properties: {
         membershipId: { type: 'string', format: 'uuid', nullable: true },
         userId: { type: 'string', format: 'uuid', nullable: true },
+        deskDecor: {
+          nullable: true,
+          allOf: [{ $ref: '#/components/schemas/EquippedItemPayloadDto' }],
+        },
       },
     });
     expect(desk && 'properties' in desk && Object.keys(desk.properties ?? {})).toEqual([
@@ -293,6 +297,7 @@ describe('OpenAPI document', () => {
       'deskIndex',
       'membershipId',
       'userId',
+      'deskDecor',
     ]);
   });
 
