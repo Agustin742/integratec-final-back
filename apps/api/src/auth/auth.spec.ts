@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApiConfigModule } from '../config/config.module';
 import { AuthModule } from './auth.module';
 import { AuthService } from './auth.service';
+import { hashRefreshToken } from './session-tokens';
 import { authTestConfig } from './testing/auth-test-config';
 
 describe('Auth / Registration (HU-AUT-001)', () => {
@@ -167,6 +168,9 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       }
 
       if (createdUserIds.length > 0) {
+        await prisma.session.deleteMany({
+          where: { userId: { in: createdUserIds } },
+        });
         await prisma.avatarConfiguration.deleteMany({
           where: { userId: { in: createdUserIds } },
         });
@@ -195,6 +199,7 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       expect(res.body.displayName).toBe('Profesor Independiente');
       expect(res.body.path).toBe(RegistrationPath.INDEPENDENT_TEACHER);
       expect(res.body.school).toBeUndefined();
+      expect(res.body.session).toBeUndefined();
       expect(res.body.createdAt).toBeDefined();
 
       // Ensure sensitive data is NEVER returned
@@ -243,6 +248,7 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       expect(res.body.displayName).toBe('Directora San Martín');
       expect(res.body.path).toBe(RegistrationPath.SCHOOL);
       expect(res.body.school).toBeDefined();
+      expect(res.body.session).toBeUndefined();
       expect(res.body.school.name).toBe(schoolName);
       expect(res.body.school.slug).toMatch(/^colegio-san-martin/);
       expect(res.body.school.timeZone).toBe('America/Argentina/Buenos_Aires');
@@ -355,7 +361,7 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       createdUserIds.push(successfulRes.body.id);
     });
 
-    it('registers an INVITEE standalone account with empty avatar and zero school/classroom roles', async () => {
+    it('registers an INVITEE standalone account with empty avatar, zero roles, and an active authenticated session', async () => {
       const email = `invitee.student.${Date.now()}@example.com`;
       const res = await request(app.getHttpServer())
         .post('/auth/register')
@@ -371,7 +377,14 @@ describe('Auth / Registration (HU-AUT-001)', () => {
         email,
         displayName: 'Alumna Sofía',
         path: RegistrationPath.INVITEE,
+        session: {
+          accessToken: expect.any(String),
+          refreshToken: expect.any(String),
+          tokenType: 'Bearer',
+          expiresIn: expect.any(Number),
+        },
       });
+      expect(res.body.session.expiresIn).toBeGreaterThan(0);
       expect(res.body.school).toBeUndefined();
       createdUserIds.push(res.body.id);
 
@@ -381,6 +394,9 @@ describe('Auth / Registration (HU-AUT-001)', () => {
           avatarConfig: true,
           schoolMemberships: true,
           classroomMemberships: true,
+          sessions: {
+            include: { refreshTokens: true },
+          },
         },
       });
       expect(dbUser).not.toBeNull();
@@ -388,6 +404,32 @@ describe('Auth / Registration (HU-AUT-001)', () => {
       expect(dbUser?.avatarConfig).not.toBeNull();
       expect(dbUser?.schoolMemberships).toHaveLength(0);
       expect(dbUser?.classroomMemberships).toHaveLength(0);
+      expect(dbUser?.sessions).toHaveLength(1);
+      expect(dbUser?.sessions[0].revokedAt).toBeNull();
+      expect(dbUser?.sessions[0].refreshTokens).toHaveLength(1);
+      expect(dbUser?.sessions[0].refreshTokens[0].tokenHash).toBe(
+        hashRefreshToken(res.body.session.refreshToken),
+      );
+
+      const refreshed = await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .send({ refreshToken: res.body.session.refreshToken })
+        .expect(200);
+      expect(refreshed.body).toMatchObject({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+        tokenType: 'Bearer',
+      });
+
+      await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Authorization', `Bearer ${refreshed.body.accessToken}`)
+        .expect(204);
+
+      await request(app.getHttpServer())
+        .post('/auth/logout')
+        .set('Authorization', `Bearer ${refreshed.body.accessToken}`)
+        .expect(401);
     });
 
     it('handles concurrent duplicate INVITEE registrations by returning one 201 and one 409', async () => {
@@ -444,6 +486,41 @@ describe('Auth / Registration (HU-AUT-001)', () => {
         where: { email: failingEmail },
       });
 
+      expect(persistedUser).toBeNull();
+    });
+
+    it('enforces atomicity for INVITEE: rolls back user, avatar, and session if transaction fails', async () => {
+      const failingEmail = `atomic.invitee.${Date.now()}@example.com`;
+      const authService = app.get(AuthService);
+      const prismaService = app.get(PrismaService);
+
+      const originalTx = prismaService.$transaction.bind(prismaService);
+      const transactionSpy = vi
+        .spyOn(prismaService, '$transaction')
+        .mockImplementation(async (callback: unknown) => {
+          return originalTx(async (tx) => {
+            await (callback as (client: typeof tx) => Promise<unknown>)(tx);
+            throw new Error('Simulated INVITEE session rollback');
+          });
+        });
+
+      try {
+        await expect(
+          authService.register({
+            email: failingEmail,
+            password: 'passwordSegura123',
+            displayName: 'Invitee Atómico',
+            path: RegistrationPath.INVITEE,
+          }),
+        ).rejects.toThrow('Simulated INVITEE session rollback');
+      } finally {
+        transactionSpy.mockRestore();
+      }
+
+      const persistedUser = await prisma.user.findFirst({
+        where: { email: failingEmail },
+        include: { sessions: true, avatarConfig: true },
+      });
       expect(persistedUser).toBeNull();
     });
   });

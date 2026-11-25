@@ -241,9 +241,9 @@ export class AuthService implements OnModuleInit {
     // 2. Hash password securely with per-password salt
     const passwordHash = await hashPassword(dto.password);
 
-    // 3. Atomically create User, AvatarConfiguration and organization structure
+    // 3. Atomically create User, AvatarConfiguration, organizational structure or INVITEE session
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: {
             email: normalizedEmail,
@@ -301,15 +301,46 @@ export class AuthService implements OnModuleInit {
           };
         }
 
+        let sessionId: string | undefined;
+        let refreshToken: string | undefined;
+        if (dto.path === RegistrationPath.INVITEE) {
+          refreshToken = generateRefreshToken();
+          const session = await tx.session.create({
+            data: {
+              userId: user.id,
+              expiresAt: new Date(Date.now() + this.config.refreshTokenTtlSeconds * 1000),
+              refreshTokens: { create: { tokenHash: hashRefreshToken(refreshToken) } },
+            },
+            select: { id: true },
+          });
+          sessionId = session.id;
+        }
+
         return {
-          id: user.id,
-          email: user.email,
-          displayName: user.displayName,
-          path: user.registrationPath,
-          school: createdSchool,
-          createdAt: user.createdAt.toISOString(),
+          response: {
+            id: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            path: user.registrationPath,
+            school: createdSchool,
+            createdAt: user.createdAt.toISOString(),
+          },
+          sessionId,
+          refreshToken,
         };
       });
+
+      if (result.sessionId !== undefined && result.refreshToken !== undefined) {
+        return {
+          ...result.response,
+          session: await this.tokenPair(
+            { sub: result.response.id, sid: result.sessionId },
+            result.refreshToken,
+          ),
+        };
+      }
+
+      return result.response;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const target = String(error.meta?.target ?? '');
