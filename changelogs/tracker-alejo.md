@@ -1,5 +1,14 @@
 # Tracker — Alejo
 
+## 2026-11-26 — Expand voice-call `CALL_EMOTES` contract with all 13 expressive avatar animations (#149)
+
+- **Status:** completed (local branch `feat/149-call-emote-animations` in `odd/worktrees/call-emotes` off `origin/develop` `a077d32`; not pushed)
+- **Area / files:** `packages/contracts/src/index.ts`, `packages/contracts/src/realtime/call-contract.spec.ts`, `apps/realtime/src/rooms/call-room.e2e.spec.ts`, `changelogs/tracker-alejo.md`.
+- **Change:** Expanded `CALL_EMOTES` from 6 to all 13 expressive avatar gestures matching both `male/body.glb` and `female/body.glb` (`wave`, `happy`, `sad`, `angry`, `think`, `celebrate`, plus `raise-hand`, `clap`, `nod`, `shake-head`, `dance`, `explain`, `point`), updated `call-contract.spec.ts` (using `CALL_EMOTES` and switching the negative unknown-emote fixture from `'dance'` to `'backflip'`), and extended `call-room.e2e.spec.ts` to cover newly added emotes (`'dance'`, `'raise-hand'`). No server room logic changed because `CallRoom.onEmote` stores `participant.emote` and bumps `emoteSeq` generically for schema-validated emotes.
+- **Reason:** Paired minimal backend contract expansion required so live Colyseus `call` rooms accept all 13 avatar animation reactions integrated on frontend PR #145 (`#141`).
+- **Verification:** `pnpm --filter @aula/contracts test` (`4/4` files, `139/139` tests, including `call-contract.spec.ts` `65/65`); isolated `call-room.e2e.spec.ts` (`34/34`); sequential `@aula/realtime` suite via `vitest run --no-file-parallelism` (`36/36` files, `531/531` tests); `@aula/contracts` + `@aula/realtime` `typecheck` (exit `0`); `pnpm lint` (`0` errors, `1` pre-existing warning in `openapi.spec.ts:623`); `pnpm format:check` (clean); `git diff --check origin/develop..HEAD --` (clean). Disclosed: default parallel `@aula/realtime` runs hit pre-existing Colyseus/hook concurrency races (`classroom-emote.e2e.spec.ts` 10s `beforeAll` hook timeout on run 1; `EADDRINUSE :::2579` + `call-room.e2e.spec.ts` hook timeout on parallel rerun) before passing sequentially.
+- **Next step:** Push `feat/149-call-emote-animations` and merge a backend PR before or alongside frontend PR #145 so live Colyseus accepts the 7 new emotes. No push or PR action performed.
+
 ## 2026-11-26 — PR #155 family audit corrections
 
 - **Status:** completed (local corrections and full Linux Node 22 CI-parity verification; publication, GitHub approval, and merge remain separate human decisions).

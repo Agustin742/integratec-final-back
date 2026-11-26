@@ -55,7 +55,21 @@ describe('call room contract', () => {
     expect(CALL_DECLINED_EVENT).toBe('call:declined');
     expect(CALL_ENDED_EVENT).toBe('call:ended');
     expect(CALL_RING_CANCELED_EVENT).toBe('call:ring-canceled');
-    expect(CALL_EMOTES).toEqual(['wave', 'happy', 'sad', 'angry', 'think', 'celebrate']);
+    expect(CALL_EMOTES).toEqual([
+      'wave',
+      'happy',
+      'sad',
+      'angry',
+      'think',
+      'celebrate',
+      'raise-hand',
+      'clap',
+      'nod',
+      'shake-head',
+      'dance',
+      'explain',
+      'point',
+    ]);
   });
 
   it('adds close codes outside the Colyseus and existing room codes', () => {
@@ -190,10 +204,10 @@ describe('call room contract', () => {
   });
 
   describe('call:emote', () => {
-    it.each(['wave', 'happy', 'sad', 'angry', 'think', 'celebrate'])('accepts %s', (emote) => {
+    it.each(CALL_EMOTES)('accepts %s', (emote) => {
       expect(callEmoteSchema.safeParse({ emote }).success).toBe(true);
     });
-    it.each([{ emote: 'dance' }, {}, { emote: 'wave', extra: 1 }])('rejects %j', (p) => {
+    it.each([{ emote: 'backflip' }, {}, { emote: 'wave', extra: 1 }])('rejects %j', (p) => {
       expect(callEmoteSchema.safeParse(p).success).toBe(false);
     });
   });
