@@ -62,7 +62,7 @@ class ApiMigrateStageTests(unittest.TestCase):
         self.assertRegex(block, r"(?m)^WORKDIR /app/apps/api\s*$")
         self.assertRegex(
             block,
-            r'(?m)^CMD \["(?:\./)?node_modules/\.bin/prisma",\s*"migrate",\s*"deploy",\s*"--schema",\s*"prisma/schema\.prisma"\]\s*$',
+            r'(?m)^CMD \["sh", "-c", "node_modules/\.bin/prisma migrate deploy --schema prisma/schema\.prisma && node_modules/\.bin/ts-node --transpile-only prisma/load-shop-catalog\.ts"\]\s*$',
         )
         self.assertNotIn("DATABASE_URL", block, "the URL comes from the environment at run time")
 

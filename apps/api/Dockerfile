@@ -30,15 +30,15 @@ RUN mkdir -p /prisma-generated && \
 
 # Stage 2: One-shot migration job. Derived from the builder because only it has the Prisma CLI
 # (the runtime stage installs production dependencies only). The host runs it with
-# DATABASE_URL in the environment before the api starts; it applies the committed migrations
-# and exits. It stays above `runner` so that a plain `docker build` still yields the api image.
+# DATABASE_URL in the environment before the api starts; it applies the committed migrations,
+# adds any missing shop catalog items and exits. It stays above `runner` so that a plain `docker build` still yields the api image.
 FROM builder AS migrate
 
 USER node
 
 WORKDIR /app/apps/api
 
-CMD ["node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy --schema prisma/schema.prisma && node_modules/.bin/ts-node --transpile-only prisma/load-shop-catalog.ts"]
 
 # Stage 3: Production runtime
 FROM public.ecr.aws/docker/library/node:22.23.4-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS runner

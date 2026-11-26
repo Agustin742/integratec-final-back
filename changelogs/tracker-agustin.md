@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-26 — Load the shop catalog on deploy
+
+- **Status:** completed, not yet deployed
+- **Area / files:** `apps/api/prisma/`, `apps/api/Dockerfile`, `scripts/ci/`, `docs/shop.md`
+- **Change:** The migrate container inserts the missing shop catalog items after the migrations; existing rows are never updated or deleted.
+- **Reason:** Only the destructive seed created the items, so the production shop was empty.
+- **Verification:** Loader spec failed first, then passed; Dockerfile tests and typecheck pass. The script was not run against a real database.
+- **Next step:** Deploy and check the shop.
+
 ## 2026-11-26 — Keep the API entry point at `dist/main.js`
 
 - **Status:** completed, not yet deployed

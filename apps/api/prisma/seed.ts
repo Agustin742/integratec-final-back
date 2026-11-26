@@ -204,8 +204,8 @@ async function main(): Promise<void> {
     },
   });
 
-  // 6. Synthetic shop catalog: avatar accessories, desk decor and paid styles (never seeded in
-  // production or SQL migrations).
+  // 6. Synthetic shop catalog: avatar accessories, desk decor and paid styles. Production gets
+  // the same catalog through load-shop-catalog.ts, never through this destructive seed.
   await prisma.shopItem.createMany({ data: [...SHOP_CATALOG] });
 
   // 7. Test badge catalog for the idempotent awarding mechanism (HU-GAM-002).
