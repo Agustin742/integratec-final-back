@@ -15,6 +15,7 @@ export class ClassroomInvitationResponseDto {
   role!: InvitationRole;
 
   @ApiPropertyOptional({
+    type: String,
     description: 'Linked student user UUID when role is PARENT, null otherwise',
     format: 'uuid',
     nullable: true,
@@ -22,6 +23,7 @@ export class ClassroomInvitationResponseDto {
   childId!: string | null;
 
   @ApiPropertyOptional({
+    type: String,
     description: 'Linked student display name when role is PARENT, null otherwise',
     nullable: true,
   })

@@ -3484,12 +3484,12 @@
     },
     "/me/family-threads": {
       "get": {
-        "description": "Returns all active parent-child messaging threads across live, non-adult-mode classrooms where the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or `SCHOOL_ADMIN`), including the latest visible message preview. Ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Returns `{ items: [] }` without error for students, parents, or users without staff classrooms.",
+        "description": "Returns all active parent-child messaging threads across live, non-adult-mode classrooms where the authenticated user is the classroom's independent teacher or has an active classroom `TEACHER` membership (with active school `TEACHER` membership when school-owned), including the latest visible message preview. School Owner/Admin are excluded even with a teaching membership. Ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Returns `{ items: [] }` without error for users without eligible teaching classrooms.",
         "operationId": "FamilyController_listMyFamilyThreads",
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Active family messaging threads for the authenticated staff user.",
+            "description": "Active family messaging threads for the authenticated classroom teacher.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/StaffFamilyThreadsResponseDto" }
@@ -3504,13 +3504,13 @@
           }
         },
         "security": [{ "bearer": [] }],
-        "summary": "List active parent-teacher messaging threads for staff classrooms",
+        "summary": "List active parent-teacher messaging threads for teaching classrooms",
         "tags": ["family"]
       }
     },
     "/parent-links/{linkId}/messages": {
       "get": {
-        "description": "Returns paginated visible messages for one active parent-child link, ordered chronologically (`createdAt ASC, id ASC`) for natural conversation reading. Accessible only to the linked parent and classroom staff (teacher, school admin, or school owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
+        "description": "Returns paginated visible messages for one active parent-child link, ordered chronologically (`createdAt ASC, id ASC`) for natural conversation reading. Accessible only to the linked parent and the classroom's active teacher (independent teacher or active classroom `TEACHER` membership with active school `TEACHER` membership when school-owned). School Owner/Admin authority does not grant access, even with a teaching membership; an actual parent link is evaluated separately. Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
         "operationId": "ParentLinkMessagesController_listMessages",
         "parameters": [
           {
@@ -3574,7 +3574,7 @@
         "tags": ["family"]
       },
       "post": {
-        "description": "Persists a new plain-text message bound to one active parent-child link (`classroomId: null`). Accessible only to the linked parent and classroom staff (teacher, school admin, or school owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
+        "description": "Persists a new plain-text message bound to one active parent-child link (`classroomId: null`). Accessible only to the linked parent and the classroom's active teacher (independent teacher or active classroom `TEACHER` membership with active school `TEACHER` membership when school-owned), not school Owner/Admin acting as staff (even with a teaching membership). Actual linked-parent access is separate. Allows at most 5 messages per author/thread in a rolling 10-second window; concurrent sends for that pair may return `429` without writing. Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed students, or any other caller including the linked student (strict anti-enumeration), and `403` while the classroom is in adult education mode.",
         "operationId": "ParentLinkMessagesController_createMessage",
         "parameters": [
           {
@@ -3622,6 +3622,12 @@
           },
           "404": {
             "description": "Malformed, nonexistent, inactive, or inaccessible parent link.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
+            }
+          },
+          "429": {
+            "description": "Per-author/thread send window exceeded or another send is in flight. No message is written.",
             "content": {
               "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } }
             }
@@ -6340,13 +6346,13 @@
             "description": "Assigned role upon joining"
           },
           "childId": {
-            "type": "object",
+            "type": "string",
             "description": "Linked student user UUID when role is PARENT, null otherwise",
             "format": "uuid",
             "nullable": true
           },
           "childDisplayName": {
-            "type": "object",
+            "type": "string",
             "description": "Linked student display name when role is PARENT, null otherwise",
             "nullable": true
           },
@@ -6402,13 +6408,13 @@
             "description": "Assigned role upon joining"
           },
           "childId": {
-            "type": "object",
+            "type": "string",
             "description": "Linked student user UUID when role is PARENT, null otherwise",
             "format": "uuid",
             "nullable": true
           },
           "childDisplayName": {
-            "type": "object",
+            "type": "string",
             "description": "Linked student display name when role is PARENT, null otherwise",
             "nullable": true
           },
@@ -6566,7 +6572,7 @@
         "properties": {
           "classroomId": { "type": "string", "description": "Classroom UUID" },
           "membershipId": {
-            "type": "object",
+            "type": "string",
             "description": "Created or existing classroom membership UUID (null for PARENT invitations)",
             "format": "uuid",
             "nullable": true
@@ -6583,18 +6589,18 @@
             "allOf": [{ "$ref": "#/components/schemas/AssignedDeskDto" }]
           },
           "deskIndex": {
-            "type": "object",
+            "type": "number",
             "description": "1-based index of the assigned desk for STUDENT invitations; null for PARENT invitations",
             "nullable": true
           },
           "childId": {
-            "type": "object",
+            "type": "string",
             "description": "Linked student user UUID for PARENT invitations; null for STUDENT invitations",
             "format": "uuid",
             "nullable": true
           },
           "parentLinkId": {
-            "type": "object",
+            "type": "string",
             "description": "Created or existing ParentLink UUID for PARENT invitations; null for STUDENT invitations",
             "format": "uuid",
             "nullable": true
@@ -7785,7 +7791,7 @@
         "type": "object",
         "properties": {
           "items": {
-            "description": "Active family threads ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Empty when the authenticated user has no staff classrooms.",
+            "description": "Active family threads ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Empty when the authenticated user has no eligible teaching classrooms.",
             "type": "array",
             "items": { "$ref": "#/components/schemas/StaffFamilyThreadDto" }
           }
@@ -7809,7 +7815,7 @@
           "authorRole": {
             "type": "string",
             "enum": ["PARENT", "STAFF"],
-            "description": "Whether the author is the linked parent (`PARENT`) or classroom staff (`STAFF`)."
+            "description": "Whether the author is the linked parent (`PARENT`) or a teacher (`STAFF`, retained wire label)."
           },
           "body": {
             "type": "string",

@@ -534,6 +534,65 @@ describe('OpenAPI document', () => {
       expect(res.body.error.code).toBe('NOT_FOUND');
     }
   });
+
+  it('publishes parent invitation, family area, and private messaging contracts with typed nullable fields', async () => {
+    app = await createApp('test');
+    const doc = buildOpenApiDocument(app);
+
+    for (const [path, method, statuses] of [
+      ['/classrooms/{id}/parent-links', 'get', ['200', '401', '403', '404']],
+      ['/classrooms/{id}/parent-links/{linkId}', 'delete', ['204', '401', '403', '404']],
+      ['/me/parent-links', 'get', ['200', '401']],
+      ['/me/parent-links/{linkId}/report-card', 'get', ['200', '400', '401', '403', '404']],
+      ['/me/family-threads', 'get', ['200', '401']],
+      ['/parent-links/{linkId}/messages', 'get', ['200', '400', '401', '403', '404']],
+      ['/parent-links/{linkId}/messages', 'post', ['201', '400', '401', '403', '404', '429']],
+    ] as const) {
+      const operation = doc.paths[path]?.[method];
+      expect(operation, `${method.toUpperCase()} ${path}`).toBeDefined();
+      expect(operation?.security).toEqual([{ bearer: [] }]);
+      for (const status of statuses) {
+        expect(
+          operation?.responses?.[status],
+          `${method.toUpperCase()} ${path} ${status}`,
+        ).toBeDefined();
+      }
+    }
+
+    const schemas = doc.components?.schemas ?? {};
+    expect(schemas.AcceptInvitationResponseDto).toMatchObject({
+      properties: {
+        membershipId: { type: 'string', format: 'uuid', nullable: true },
+        deskIndex: { type: 'number', nullable: true },
+        childId: { type: 'string', format: 'uuid', nullable: true },
+        parentLinkId: { type: 'string', format: 'uuid', nullable: true },
+      },
+    });
+    expect(schemas.ClassroomInvitationResponseDto).toMatchObject({
+      properties: {
+        childId: { type: 'string', format: 'uuid', nullable: true },
+        childDisplayName: { type: 'string', nullable: true },
+      },
+    });
+    expect(schemas.FamilyLinkDto).toMatchObject({
+      properties: {
+        classroomSubject: { type: 'string', nullable: true },
+        schoolId: { type: 'string', format: 'uuid', nullable: true },
+      },
+    });
+    expect(schemas.StaffFamilyThreadDto).toMatchObject({
+      properties: {
+        lastMessageBody: { type: 'string', nullable: true },
+        lastMessageAt: { type: 'string', format: 'date-time', nullable: true },
+        lastMessageAuthorRole: { type: 'string', enum: ['PARENT', 'STAFF'], nullable: true },
+      },
+    });
+    expect(schemas.StudentParticipationSummaryDto).toMatchObject({
+      properties: {
+        averageScorePercent: { type: 'number', nullable: true },
+      },
+    });
+  });
 });
 
 describe('openapi export', () => {

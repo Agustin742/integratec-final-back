@@ -36,6 +36,7 @@ export class AcceptInvitationResponseDto {
   classroomId!: string;
 
   @ApiProperty({
+    type: String,
     description: 'Created or existing classroom membership UUID (null for PARENT invitations)',
     format: 'uuid',
     nullable: true,
@@ -56,6 +57,7 @@ export class AcceptInvitationResponseDto {
   desk!: AssignedDeskDto | null;
 
   @ApiProperty({
+    type: Number,
     description:
       '1-based index of the assigned desk for STUDENT invitations; null for PARENT invitations',
     nullable: true,
@@ -63,6 +65,7 @@ export class AcceptInvitationResponseDto {
   deskIndex!: number | null;
 
   @ApiProperty({
+    type: String,
     description: 'Linked student user UUID for PARENT invitations; null for STUDENT invitations',
     format: 'uuid',
     nullable: true,
@@ -70,6 +73,7 @@ export class AcceptInvitationResponseDto {
   childId!: string | null;
 
   @ApiProperty({
+    type: String,
     description:
       'Created or existing ParentLink UUID for PARENT invitations; null for STUDENT invitations',
     format: 'uuid',

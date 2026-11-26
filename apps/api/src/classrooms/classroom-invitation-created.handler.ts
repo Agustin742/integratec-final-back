@@ -50,11 +50,25 @@ export class ClassroomInvitationCreatedHandler implements OnModuleInit {
     try {
       const invitation = await this.prisma.invitation.findUnique({
         where: { id: payload.invitationId },
-        include: { classroom: { select: { name: true, deletedAt: true, adultMode: true } } },
+        include: {
+          classroom: {
+            select: {
+              name: true,
+              deletedAt: true,
+              adultMode: true,
+              school: { select: { deletedAt: true } },
+            },
+          },
+        },
       });
 
-      if (!invitation || invitation.state === 'REVOKED' || invitation.classroom?.deletedAt) {
-        return; // Canceled, revoked, or classroom deleted
+      if (
+        !invitation ||
+        invitation.state === 'REVOKED' ||
+        invitation.classroom?.deletedAt ||
+        invitation.classroom?.school?.deletedAt
+      ) {
+        return; // Canceled, revoked, or classroom/school deleted
       }
 
       const isParentInvitation =
