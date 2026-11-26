@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Database-backed verification of the asset customization branch (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/equipment/equipment.integration.spec.ts`
+- **Change:** Applied every migration to a temporary PostgreSQL database and ran the DB-backed specs for equipment, desks, classrooms, invitations, join verification, reverification, context transaction, realtime events, users and shop. Added a case that equips `hand`, `neck` and `ears` together and reads them back.
+- **Reason:** The branch migrations and DB-backed specs had not been run.
+- **Verification:** 542 of 549 passed in the first parallel run; the 7 failures, and one concurrency case on a later rerun, were 5 s timeouts on a local Docker database and passed with a 60 s timeout.
+- **Next step:** Confirm in CI with its default timeout.
+
 ## 2026-11-25 — Tutor bot skin per classroom, synced to the room (#154)
 
 - **Status:** completed
