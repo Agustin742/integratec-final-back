@@ -25,7 +25,7 @@ resource "aws_amplify_app" "this" {
   # status 200 (a rewrite, not a redirect). Must stay identical to the rewrite rule in
   # the frontend docs/routing.md.
   custom_rule {
-    source = "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp|wasm)$)([^.]+$)/>"
+    source = "</^[^.]+$|\\.(?!(css|gif|glb|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp|wasm)$)([^.]+$)/>"
     target = "/index.html"
     status = "200"
   }

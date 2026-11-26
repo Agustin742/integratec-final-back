@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-26 — Serve 3D models from the hosted front
+
+- **Status:** completed, not yet applied
+- **Area / files:** `infra/modules/frontend_hosting/`, `infra/envs/prod/tests/`
+- **Change:** Added `glb` to the static-file extensions excluded from the Amplify SPA rewrite.
+- **Reason:** The hosted site answered every `.glb` request with `index.html`, so no 3D model loaded.
+- **Verification:** Hosting test failed first, then passed with the new rule.
+- **Next step:** Apply through the pipeline and request a model from the published site.
+
 ## 2026-11-26 — Classroom avatar emotes in the realtime room (#154)
 
 - **Status:** completed
