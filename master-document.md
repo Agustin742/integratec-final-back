@@ -64,7 +64,7 @@ Al registrarse con espacio de trabajo propio se elige entre **dos caminos de org
 | Ver métricas de actividad de alumnos | Sí | Sí (en sus aulas) | Solo las propias | Solo las de su hijo |
 | Ver y entregar actividades, ver notas, usar tienda | No | No | Sí | Notas de su hijo |
 | Chatear con compañeros | No | Sí | Sí | No |
-| Mensajes con el profesor | No | Sí | Sí | Sí (profesor e hijo) |
+| Mensajes con el profesor | No en conversaciones privadas padre–profesor como personal escolar | Sí (membresía docente activa para conversaciones privadas padre–profesor) | Sí | Sí (profesor e hijo) |
 
 ### 2.3 Herramientas del profesor
 
@@ -89,7 +89,8 @@ Interfaz lo más simple posible:
 
 - Notificaciones sobre el estado de su hijo, **dentro de la aplicación y por email**.
 - Calificaciones de su hijo.
-- Mensajes con el profesor y con su hijo.
+- Mensajes con el profesor y con su hijo (alcance del producto; el flujo actual padre–profesor no implementa mensajería padre–hijo).
+- **Privacidad padre–profesor:** por decisión explícita de Alejo para la corrección del PR #155, solo acceden el padre realmente vinculado mediante `ParentLink` y el profesor activo del aula (profesor independiente propietario o usuario con membresía docente activa en el aula, y membresía escolar `TEACHER` activa cuando el aula pertenece a una escuela). Dueño/Admin no puede leer el historial, enviar mensajes ni ver vistas previas del buzón como personal escolar, incluso si también tiene rol Profesor en esa aula. Una cuenta que además sea personal escolar conserva el acceso como padre realmente vinculado, evaluado por su `ParentLink`. Esta excepción no modifica los demás privilegios escolares ni el alcance padre–hijo; ver [reglas de comunicación](rules/communication-and-notifications.md#parent-messages).
 - Si se da de baja a un alumno del aula, también se retira el acceso de sus padres derivado de ese vínculo, sin borrar el historial. Se conserva el acceso por otros hijos activos o por otras aulas (confirmación de Alejo para la implementación de #23).
 
 ### 2.6 Actividades y calificaciones
@@ -166,7 +167,7 @@ Las acciones con efectos de negocio se validan en el backend; interactuar con un
 
 - **Chat del aula** abierto entre alumnos; el profesor lo modera y dispone del historial. El profesor puede silenciarlo.
 - **@menciones** con notificación al mencionado.
-- Mensajes entre padre, profesor e hijo.
+- Mensajes entre padre, profesor e hijo, con la excepción de privacidad padre–profesor definida en §2.5; no existe acceso de supervisión escolar a esas conversaciones privadas.
 - Presencia en tiempo real de los integrantes conectados.
 - Notificaciones dentro de la aplicación y, para padres, también por email.
 
