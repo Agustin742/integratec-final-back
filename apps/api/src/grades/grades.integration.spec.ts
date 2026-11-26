@@ -14,6 +14,9 @@ import {
 } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authTestConfig } from '../auth/testing/auth-test-config';
+import { AnnouncementsModule } from '../announcements/announcements.module';
+import { InMemoryEmailAdapter } from '../platform/email/in-memory-email.adapter';
+import { NOTIFICATION_EMAIL_REQUESTED_EVENT } from '../notifications/notification-events';
 import { ApiConfigModule } from '../config/config.module';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
 import { NOTIFICATION_REQUESTED_EVENT } from '../notifications/notification-recorder.service';
@@ -67,6 +70,7 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
         }),
         GradesModule,
         ShopModule,
+        AnnouncementsModule,
       ],
     }).compile();
     await module.init();
@@ -773,10 +777,13 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       ],
     });
 
+    const email = module.get(InMemoryEmailAdapter);
+    const before = email.sent.length;
     const grade = await grades.gradeSubmission(ids.teacher, ids.tpSubmission, {
       score: 90,
       feedback: 'Great analysis',
     });
+    expect(email.sent.length).toBe(before);
 
     const pending = await prisma.outboxEvent.findMany({
       where: {
@@ -811,6 +818,39 @@ describe('GradesService (real PostgreSQL & concurrency)', () => {
       expect(notice.deliveries.map((d) => d.channel)).toEqual(['in_app']);
     }
     expect(notices.some((n) => n.recipientId === inactiveParentId)).toBe(false);
+    expect(email.sent.length).toBe(before);
+    const jobs = await prisma.outboxEvent.findMany({
+      where: {
+        type: NOTIFICATION_EMAIL_REQUESTED_EVENT,
+        OR: notices.map((notice) => ({ payload: { path: ['notificationId'], equals: notice.id } })),
+      },
+    });
+    expect(jobs).toHaveLength(2);
+    expect(
+      await dispatcher.dispatchPending(
+        100,
+        new Date(),
+        [NOTIFICATION_EMAIL_REQUESTED_EVENT],
+        jobs.map((job) => job.id),
+      ),
+    ).toEqual({ delivered: 2, retried: 0, exhausted: 0 });
+    expect(
+      email.sent
+        .slice(before)
+        .map((message) => message.to)
+        .sort(),
+    ).toEqual(
+      [
+        `grades-int-${ids.parent}@example.invalid`,
+        `grades-int-parent-${secondParentId}@example.invalid`,
+      ].sort(),
+    );
+    for (const message of email.sent.slice(before)) {
+      expect(message.subject).toBe('Nueva calificación disponible');
+      expect(message.text).toBe(
+        'Hay una nueva calificación disponible. Ingresá a la aplicación para consultarla: https://app.example.test/',
+      );
+    }
   });
 
   it('emits grade_posted notification for student ONLY (0 for parents) when classroom adultMode is true', async () => {

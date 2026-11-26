@@ -3,6 +3,10 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { ClassroomRole, MembershipState, RegistrationPath, SchoolRole } from '@prisma/client';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccessVerificationService } from '../access/access-verification.service';
+import { AnnouncementsModule } from '../announcements/announcements.module';
+import { NotificationEmailService } from '../announcements/notification-email.service';
+import { InMemoryEmailAdapter } from '../platform/email/in-memory-email.adapter';
+import { NOTIFICATION_EMAIL_REQUESTED_EVENT } from './notification-events';
 import { authTestConfig } from '../auth/testing/auth-test-config';
 import { ApiConfigModule } from '../config/config.module';
 import { loadIsolatedTestDatabaseUrl } from '../config/testing/isolated-test-database';
@@ -12,6 +16,7 @@ import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   NotificationRecorder,
+  recordGradePostedNotifications,
   NOTIFICATION_REQUESTED_EVENT,
   type NotificationRequest,
 } from './notification-recorder.service';
@@ -76,7 +81,11 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
-      imports: [ApiConfigModule.forRoot({ ...authTestConfig(), databaseUrl }), NotificationsModule],
+      imports: [
+        ApiConfigModule.forRoot({ ...authTestConfig(), databaseUrl, emailProvider: 'memory' }),
+        NotificationsModule,
+        AnnouncementsModule,
+      ],
     }).compile();
     await module.init();
     prisma = module.get(PrismaService);
@@ -156,6 +165,308 @@ describe('notifications (public recorder, dispatcher and service; real PostgreSQ
         ],
       });
     });
+  });
+
+  const emailJobs = async () => {
+    const rows = await notices();
+    return prisma.outboxEvent.findMany({
+      where: {
+        type: NOTIFICATION_EMAIL_REQUESTED_EVENT,
+        OR: rows.map((row) => ({ payload: { path: ['notificationId'], equals: row.id } })),
+      },
+    });
+  };
+  const recordGrade = async () => {
+    await prisma.$transaction((tx) =>
+      recordGradePostedNotifications(tx, recorder, {
+        classroomId: ids.classroom,
+        gradeId: ids.resource,
+        studentId: ids.student,
+      }),
+    );
+    eventIds = (
+      await prisma.outboxEvent.findMany({
+        where: {
+          type: NOTIFICATION_REQUESTED_EVENT,
+          payload: { path: ['resourceId'], equals: ids.resource },
+        },
+      })
+    ).map((event) => event.id);
+  };
+  const dispatchEmails = async (now = new Date()) =>
+    dispatcher.dispatchPending(
+      1000,
+      now,
+      [NOTIFICATION_EMAIL_REQUESTED_EVENT],
+      (await emailJobs()).map((event) => event.id),
+    );
+
+  it('sends committed parent grade email asynchronously through the existing dispatcher', async () => {
+    const email = module.get(InMemoryEmailAdapter);
+    const before = email.sent.length;
+    await recordGrade();
+    expect(await notices()).toEqual([]);
+    expect(email.sent.length).toBe(before);
+    expect(await dispatch()).toEqual({ delivered: 2, retried: 0, exhausted: 0 });
+    expect((await notices()).map((row) => row.recipientId).sort()).toEqual(
+      [ids.student, ids.parent].sort(),
+    );
+    expect(email.sent.length).toBe(before);
+    expect(await emailJobs()).toHaveLength(1);
+    expect(await dispatchEmails()).toEqual({ delivered: 1, retried: 0, exhausted: 0 });
+    const [parent] = (await notices()).filter((row) => row.recipientId === ids.parent);
+    expect(email.sent.slice(before)).toEqual([
+      {
+        idempotencyKey: `notification:${parent.id}:email`,
+        to: `notification-${ids.parent}@example.invalid`,
+        subject: 'Nueva calificación disponible',
+        text: 'Hay una nueva calificación disponible. Ingresá a la aplicación para consultarla: https://app.example.test/',
+      },
+    ]);
+    expect(parent.deliveries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ channel: 'in_app', deliveredAt: expect.any(Date) }),
+        expect.objectContaining({ channel: 'email', deliveredAt: expect.any(Date) }),
+      ]),
+    );
+    const [student] = (await notices()).filter((row) => row.recipientId === ids.student);
+    expect(student.deliveries.map((delivery) => delivery.channel)).toEqual(['in_app']);
+  });
+
+  it.each([
+    'link',
+    'child_inactive',
+    'child_deleted',
+    'child_role',
+    'adult',
+    'classroom',
+    'school',
+  ] as const)('suppresses queued parent email after current access changes: %s', async (change) => {
+    await recordGrade();
+    await dispatch();
+    const [job] = await emailJobs();
+    expect(job).toBeDefined();
+    // An unrelated remaining child never authorizes this child's mail.
+    await prisma.parentLink.create({
+      data: {
+        classroomId: ids.classroom,
+        parentId: ids.parent,
+        childId: ids.sibling,
+      },
+    });
+    if (change === 'link') {
+      await prisma.parentLink.updateMany({
+        where: { parentId: ids.parent, childId: ids.student, classroomId: ids.classroom },
+        data: { state: MembershipState.INACTIVE },
+      });
+    }
+    if (change.startsWith('child_')) {
+      await prisma.classroomMembership.updateMany({
+        where: { classroomId: ids.classroom, userId: ids.student },
+        data:
+          change === 'child_inactive'
+            ? { state: MembershipState.INACTIVE }
+            : change === 'child_deleted'
+              ? { deletedAt: new Date() }
+              : { role: ClassroomRole.TEACHER },
+      });
+    }
+    if (change === 'adult' || change === 'classroom') {
+      await prisma.classroom.update({
+        where: { id: ids.classroom },
+        data: change === 'adult' ? { adultMode: true } : { deletedAt: new Date() },
+      });
+    }
+    if (change === 'school') {
+      await prisma.school.update({
+        where: { id: ids.school },
+        data: { deletedAt: new Date() },
+      });
+    }
+    const before = module.get(InMemoryEmailAdapter).sent.length;
+    const storedBefore = await notices();
+    expect(await dispatchEmails()).toEqual({ delivered: 1, retried: 0, exhausted: 0 });
+    expect(module.get(InMemoryEmailAdapter).sent.length).toBe(before);
+    expect(await notices()).toEqual(storedBefore); // No receipt or read-state mutation on denial.
+  });
+
+  it.each(['link', 'adult'] as const)(
+    'never substitutes staff authority for parent email authorization after %s changes',
+    async (change) => {
+      await prisma.schoolMember.create({
+        data: { schoolId: ids.school, userId: ids.parent, role: SchoolRole.ADMIN },
+      });
+      await recordGrade();
+      await dispatch();
+      expect(await emailJobs()).toHaveLength(1);
+      if (change === 'link') {
+        await prisma.parentLink.updateMany({
+          where: { classroomId: ids.classroom, parentId: ids.parent, childId: ids.student },
+          data: { state: MembershipState.INACTIVE },
+        });
+      } else {
+        await prisma.classroom.update({ where: { id: ids.classroom }, data: { adultMode: true } });
+      }
+      const before = module.get(InMemoryEmailAdapter).sent.length;
+      await dispatchEmails();
+      expect(module.get(InMemoryEmailAdapter).sent.length).toBe(before);
+    },
+  );
+
+  it('does not email a student, staff recipient, wrong child, or link in a different classroom', async () => {
+    await prisma.parentLink.create({
+      data: {
+        classroomId: ids.otherClassroom,
+        parentId: ids.stranger,
+        childId: ids.student,
+      },
+    });
+    for (const recipientId of [ids.student, ids.admin, ids.otherParent, ids.stranger]) {
+      await record(request({ kind: 'grade_posted', studentId: ids.student, recipientId }));
+    }
+    await dispatch();
+    expect((await notices()).map((row) => row.recipientId).sort()).toEqual(
+      [ids.student, ids.admin].sort(),
+    );
+    expect(await emailJobs()).toEqual([]);
+    expect(
+      (await notices()).every((row) =>
+        row.deliveries.every((delivery) => delivery.channel === 'in_app'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps student grade notices in-app only in adult mode', async () => {
+    await prisma.classroom.update({ where: { id: ids.classroom }, data: { adultMode: true } });
+    await recordGrade();
+    expect(eventIds).toHaveLength(1);
+    await dispatch();
+    expect(await emailJobs()).toEqual([]);
+    expect(
+      (await notices()).map((row) => ({
+        recipientId: row.recipientId,
+        channels: row.deliveries.map((delivery) => delivery.channel),
+      })),
+    ).toEqual([{ recipientId: ids.student, channels: ['in_app'] }]);
+  });
+
+  it('preserves announcement email payload, receipts and replay behavior', async () => {
+    await prisma.announcement.create({
+      data: {
+        id: ids.resource,
+        classroomId: ids.classroom,
+        authorId: ids.teacher,
+        title: 'Synthetic bulletin',
+        content: 'Synthetic body',
+      },
+    });
+    await record(request({ kind: 'announcement' }));
+    await dispatch();
+    const email = module.get(InMemoryEmailAdapter);
+    const before = email.sent.length;
+    const [job] = await emailJobs();
+    await dispatchEmails();
+    const [notice] = await notices();
+    expect(email.sent.slice(before)).toEqual([
+      {
+        idempotencyKey: `notification:${notice.id}:email`,
+        to: `notification-${ids.student}@example.invalid`,
+        subject: 'New announcement: Synthetic bulletin',
+        text: 'A new announcement was published in your classroom: Synthetic bulletin. Open the application to read it.',
+      },
+    ]);
+    await module.get(NotificationEmailService).deliver(job.id);
+    expect(email.sent.length).toBe(before + 1);
+    expect((await notices())[0].deliveries).toHaveLength(2);
+  });
+
+  it('replays concurrent parent jobs with one successful email and one receipt', async () => {
+    await recordGrade();
+    await dispatch();
+    const rows = await notices();
+    const parent = rows.find((row) => row.recipientId === ids.parent)!;
+    await service.markRead(ids.parent, parent.id);
+    const [job] = await emailJobs();
+    const email = module.get(InMemoryEmailAdapter);
+    const before = email.sent.length;
+    const deliver = () => module.get(NotificationEmailService).deliver(job.id);
+    await Promise.all([deliver(), deliver(), deliver()]);
+    await dispatchEmails();
+    for (const eventId of eventIds) await service.materializeCommittedEvent(eventId);
+    expect(await emailJobs()).toHaveLength(1);
+    expect(email.sent.length).toBe(before + 1);
+    const after = (await notices()).find((row) => row.id === parent.id)!;
+    expect(after.readAt).not.toBeNull();
+    expect(after.deliveries).toHaveLength(2);
+    expect(after.deliveries.every((delivery) => delivery.deliveredAt !== null)).toBe(true);
+  });
+
+  it.each([false, true])(
+    'retries failed parent email without duplicates (provider accepted=%s)',
+    async (accepted) => {
+      await recordGrade();
+      await dispatch();
+      const email = module.get(InMemoryEmailAdapter);
+      const original = email.send.bind(email);
+      const before = email.sent.length;
+      const send = vi.spyOn(email, 'send').mockImplementationOnce(async (message) => {
+        if (accepted) await original(message);
+        throw new Error('private-provider-response@example.invalid');
+      });
+      try {
+        const now = new Date();
+        expect(await dispatchEmails(now)).toEqual({ delivered: 0, retried: 1, exhausted: 0 });
+        const [job] = await emailJobs();
+        expect(job).toMatchObject({
+          attempts: 1,
+          lastError: 'Error: Email delivery failed',
+          failedAt: null,
+        });
+        expect(job.availableAt.getTime()).toBe(now.getTime() + 5000);
+        expect(await dispatchEmails(now)).toEqual({ delivered: 0, retried: 0, exhausted: 0 });
+        expect(await dispatchEmails(job.availableAt)).toEqual({
+          delivered: 1,
+          retried: 0,
+          exhausted: 0,
+        });
+        await module.get(NotificationEmailService).deliver(job.id);
+        expect(email.sent.length).toBe(before + 1);
+      } finally {
+        send.mockRestore();
+      }
+    },
+  );
+
+  it('bounds parent email failures with dispatcher backoff and exhaustion', async () => {
+    await recordGrade();
+    await dispatch();
+    const send = vi
+      .spyOn(module.get(InMemoryEmailAdapter), 'send')
+      .mockRejectedValue(new Error('Synthetic failure'));
+    try {
+      let now = new Date();
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        expect(await dispatchEmails(now)).toEqual({
+          delivered: 0,
+          retried: attempt < 5 ? 1 : 0,
+          exhausted: attempt === 5 ? 1 : 0,
+        });
+        const [job] = await emailJobs();
+        expect(job.attempts).toBe(attempt);
+        if (attempt < 5) {
+          expect(job.availableAt.getTime() - now.getTime()).toBe(5000 * 2 ** (attempt - 1));
+          now = job.availableAt;
+        } else expect(job.failedAt).toEqual(now);
+      }
+      expect(await dispatchEmails(new Date(now.getTime() + 3600000))).toEqual({
+        delivered: 0,
+        retried: 0,
+        exhausted: 0,
+      });
+      expect(send).toHaveBeenCalledTimes(5);
+    } finally {
+      send.mockRestore();
+    }
   });
 
   it('records a reusable notification request in the originating transaction', async () => {
