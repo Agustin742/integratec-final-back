@@ -41,9 +41,36 @@ export interface DeskCountApplicableRoom {
   applyDeskCount(deskCount: number): void;
 }
 
+/** Whether the classroom has a class voice call, and whether its teacher locked the world (#149). */
+export interface ClassCallStatus {
+  active: boolean;
+  focusMode: boolean;
+}
+
+/** What a classroom room offers the directory when its class call starts, changes or ends. */
+export interface CallStatusApplicableRoom {
+  applyCallStatus(status: ClassCallStatus): void;
+}
+
+/** What a classroom room offers the directory to reach one user's live connections (#149 ringing). */
+export interface UserMessageRoom {
+  /** Sends to every live connection of the user and returns how many received it. */
+  sendToUser(userId: string, type: string, payload: unknown): number;
+}
+
+/** A direct call room that is ringing its peer: the directory asks it to end when the peer declines. */
+export interface RingableCall {
+  declineRing(): void;
+}
+
 /** The full set of room capabilities the internal routes use through the directory. */
 export interface DirectoryRoom
-  extends AppearanceApplicableRoom, DeskCountApplicableRoom, ClassroomRoomHandle {}
+  extends
+    AppearanceApplicableRoom,
+    DeskCountApplicableRoom,
+    CallStatusApplicableRoom,
+    UserMessageRoom,
+    ClassroomRoomHandle {}
 
 /** What the internal routes need from the directory: the `RoomDirectory` method surface. */
 export interface RoomDirectoryLike {
@@ -65,11 +92,99 @@ export interface RoomDirectoryLike {
  */
 export class RoomDirectory {
   private readonly rooms = new Map<string, Set<DirectoryRoom>>();
+  /** Voice call rooms by classroom; they only need to be evictable. */
+  private readonly callRooms = new Map<string, Set<EvictableRoom>>();
+  /** The running class call of each classroom, so a late classroom room can be told about it. */
+  private readonly classCalls = new Map<string, { owner: object; status: ClassCallStatus }>();
+
+  /** Direct calls that are ringing, by classroom, caller and callee. */
+  private readonly rings = new Map<string, RingableCall>();
+
+  private static ringKey(classroomId: string, callerUserId: string, calleeUserId: string): string {
+    return JSON.stringify([classroomId, callerUserId, calleeUserId]);
+  }
+
+  registerRing(
+    classroomId: string,
+    callerUserId: string,
+    calleeUserId: string,
+    call: RingableCall,
+  ): void {
+    this.rings.set(RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId), call);
+  }
+
+  /** A no-op unless `call` is the one registered, so a stale room cannot drop a newer ring. */
+  unregisterRing(
+    classroomId: string,
+    callerUserId: string,
+    calleeUserId: string,
+    call: RingableCall,
+  ): void {
+    const key = RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId);
+    if (this.rings.get(key) === call) this.rings.delete(key);
+  }
+
+  /**
+   * The callee declines: acts only when a ringing direct call exists for exactly this classroom,
+   * caller and callee, and reports whether it did.
+   */
+  declineRing(classroomId: string, callerUserId: string, calleeUserId: string): boolean {
+    const call = this.rings.get(RoomDirectory.ringKey(classroomId, callerUserId, calleeUserId));
+    if (call === undefined) return false;
+    call.declineRing();
+    return true;
+  }
+
+  /** Sends one event to every live classroom connection of a user and returns how many got it. */
+  sendToUser(classroomId: string, userId: string, type: string, payload: unknown): number {
+    let delivered = 0;
+    for (const room of this.rooms.get(classroomId) ?? []) {
+      delivered += room.sendToUser(userId, type, payload);
+    }
+    return delivered;
+  }
+
+  registerCall(classroomId: string, room: EvictableRoom): void {
+    const set = this.callRooms.get(classroomId) ?? new Set<EvictableRoom>();
+    set.add(room);
+    this.callRooms.set(classroomId, set);
+  }
+
+  unregisterCall(classroomId: string, room: EvictableRoom): void {
+    const set = this.callRooms.get(classroomId);
+    set?.delete(room);
+    if (set?.size === 0) this.callRooms.delete(classroomId);
+  }
 
   register(classroomId: string, room: DirectoryRoom): void {
     const set = this.rooms.get(classroomId) ?? new Set<DirectoryRoom>();
     set.add(room);
     this.rooms.set(classroomId, set);
+    // A room created while a class call is running (a second room, a restart of the room) joins it.
+    const current = this.classCalls.get(classroomId);
+    if (current !== undefined) room.applyCallStatus({ ...current.status });
+  }
+
+  /**
+   * Publishes the class call of one classroom to its live classroom rooms and remembers it for
+   * rooms registered later. Called by the call room (single process; see the class comment).
+   */
+  setClassCallStatus(classroomId: string, owner: object, status: ClassCallStatus): void {
+    this.classCalls.set(classroomId, { owner, status: { ...status } });
+    for (const room of this.rooms.get(classroomId) ?? []) room.applyCallStatus({ ...status });
+  }
+
+  /**
+   * The class call ended: the classroom is no longer in a call and focus mode is off. A no-op unless
+   * `owner` is the call room that published the current status, so a call room disposed late cannot
+   * wipe the status of the call that replaced it.
+   */
+  clearClassCallStatus(classroomId: string, owner: object): void {
+    if (this.classCalls.get(classroomId)?.owner !== owner) return;
+    this.classCalls.delete(classroomId);
+    for (const room of this.rooms.get(classroomId) ?? []) {
+      room.applyCallStatus({ active: false, focusMode: false });
+    }
   }
 
   unregister(classroomId: string, room: DirectoryRoom): void {
@@ -81,10 +196,10 @@ export class RoomDirectory {
   /** Closes the matching connections and returns how many there were. */
   evict(filter: EvictionFilter): number {
     const { classroomId, ...roomFilter } = filter;
-    const targets =
+    const targets: EvictableRoom[] =
       classroomId === undefined
-        ? [...this.rooms.values()].flatMap((set) => [...set])
-        : [...(this.rooms.get(classroomId) ?? [])];
+        ? [...this.rooms.values(), ...this.callRooms.values()].flatMap((set) => [...set])
+        : [...(this.rooms.get(classroomId) ?? []), ...(this.callRooms.get(classroomId) ?? [])];
     return targets.reduce((total, room) => total + room.evict(roomFilter), 0);
   }
 

@@ -1,5 +1,41 @@
 # Tracker — Agustin
 
+## 2026-11-25 — Voice calls, direct call ringing and docs (#149, B4)
+
+- **Status:** completed (pending CI and merge of the PR)
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `room-directory.ts`, `classroom-room.ts`, `app.config.ts`, `index.ts`, `config/realtime-config.ts`, `packages/contracts/src/index.ts`, `docs/voice-calls.md`, `README.md`, `docker-compose.yml`, `apps/realtime/.env.example`
+- **Change:** A direct call now rings the peer: the first participant is the caller and every live classroom connection of the peer gets `call:incoming`. No classroom connection ends the call as `unavailable`; no answer within `CALL_RING_TIMEOUT_SECONDS` (default 30) ends it as `timeout`. The callee can `call:decline` over the classroom room (rate limited, only for a ringing call addressed to them), which ends the call and sends the caller `call:declined`. Whenever a ring ends the callee's classroom connections get `call:ring-canceled` so other tabs stop ringing. New `docs/voice-calls.md` documents the whole feature (P2P mesh, STUN only, call keys, moderation, ringing, limits, single-process assumption). No HTTP or database change, so no OpenAPI export.
+- **Reason:** Direct calls need a way to reach a user who is not in a call yet; the classroom connection is the only channel they have.
+- **Verification:** Specs written RED first, then GREEN; typecheck, lint, prettier and `realtime:codegen:check`.
+- **Next step:** Front F2 call engine.
+
+## 2026-11-25 — Teacher call moderation and focus mode (#149, B3)
+
+- **Status:** in-progress
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `call-moderation.ts`, `call-key.ts`, `room-directory.ts`, `classroom-room.ts`, `rules/realtime-and-presence.md`
+- **Change:** Moderators (OWNER, ADMIN, TEACHER) of a classroom call can mute all, mute or unmute one student, allow or deny self unmute, toggle focus mode and end the call (`call:ended`, then close code 4102). Anyone else is ignored silently, and direct calls reject moderation. The room directory mirrors the class call into the classroom room (`classCallActive`, `focusMode`); while focus mode is on, the classroom room ignores student movement. If the last moderator leaves, focus mode is cleared and the call stays alive. When a peer leaves a direct call, the other gets `call:ended` (`peer_left`) and the call closes.
+- **Reason:** The teacher needs control of a class call, and focus mode must hold on the server, not only in the client.
+- **Verification:** Specs written RED first, then GREEN; typecheck, lint and prettier.
+- **Next step:** B4 one-to-one calls.
+
+## 2026-11-25 — Voice call room core (#149, B2)
+
+- **Status:** in-progress
+- **Area / files:** `apps/realtime/src/rooms/call-room.ts`, `call-key.ts`, `authenticate-call-join.ts`, `appearance-state.ts`, `room-directory.ts`, `app.config.ts`, `config/realtime-config.ts`, `packages/contracts/src/index.ts` (ICE `usernameFragment`, close codes 4104), `README.md`, `docker-compose.yml`, `.env.example`
+- **Change:** New `call` Colyseus room: server-derived call key (one call, one room), moderator-only start of classroom calls, private direct pair rooms, participant cap (`CALL_MAX_PARTICIPANTS`), one connection per user, signaling relay restricted to room participants, self mute/speaking/emote state and per-connection rate limits. Calls are evictable through the room directory.
+- **Reason:** Voice calls need an authenticated signaling and state room before moderation (B3) and ringing (B4).
+- **Verification:** Specs written RED first, then GREEN; typecheck, lint, prettier and `realtime:codegen:check`.
+- **Next step:** B3 teacher moderation and focus mode.
+
+## 2026-11-25 — Voice call room contracts (#149, B1)
+
+- **Status:** in-progress
+- **Area / files:** `packages/contracts/src/index.ts`, `packages/contracts/src/realtime/call-contract.spec.ts`, `packages/contracts/src/realtime/generated/` (`CallState`, `CallParticipant`, `ClassroomState`), `apps/realtime/src/rooms/call-state.ts`, `apps/realtime/src/rooms/classroom-state.ts`, `apps/realtime/package.json`
+- **Change:** New contracts for avatar voice calls: call room name and participant cap (12), join options (classroom or direct), signaling/self/emote/moderation/end/decline message schemas, server event payloads, call close codes (4101, 4102), and the `CallState` schema. The classroom state gains `classCallActive` and `focusMode`. Codegen now covers both state files.
+- **Reason:** The call room, moderation and 1:1 ringing (B2 to B4) need one shared, validated contract with the frontend.
+- **Verification:** Contract and state specs written RED first, then GREEN; `realtime:codegen:check`, typecheck and lint.
+- **Next step:** B2 call room implementation.
+
 ## 2026-11-25 — Move the study guide bot to Gemini 3
 
 - **Status:** completed

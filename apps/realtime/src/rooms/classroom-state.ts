@@ -78,6 +78,10 @@ export class ClassroomState extends Schema {
    */
   @type('uint16') deskCount = 12;
   @type({ map: Avatar }) avatars = new MapSchema<Avatar>();
+  /** A class voice call is running; clients show the join banner (#149). */
+  @type('boolean') classCallActive = false;
+  /** Focus mode: students cannot move and the client hides the 3D world (#149). */
+  @type('boolean') focusMode = false;
   /** The pet and the tutor bot, keyed by NPC id (#147). */
   @type({ map: Npc }) npcs = new MapSchema<Npc>();
 }
