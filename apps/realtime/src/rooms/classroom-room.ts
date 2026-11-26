@@ -3,6 +3,7 @@ import {
   AVATAR_EMOTE_MESSAGE,
   AVATAR_EMOTED_EVENT,
   AVATAR_INPUT_MESSAGE,
+  CALL_DECLINE_MESSAGE,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
   buildClassroomLayout,
@@ -25,10 +26,12 @@ import {
   SIMULATION_TICK_RATE_HZ,
   avatarEmoteSchema,
   avatarInputSchema,
+  callDeclineSchema,
   npcInteractSchema,
   type AvatarEmoted,
   type AvatarEmoteInput,
   type AvatarInput,
+  type CallDecline,
   type ClassroomLayout,
   type MemberAppearance,
   type NpcHome,
@@ -66,31 +69,15 @@ import {
 } from '../time/api-connected-time-reporter';
 import { ConnectedTimeTracker } from '../time/connected-time-tracker';
 import { authenticateJoin, parseClassroomId } from './authenticate-join';
-import { Avatar, ClassroomState, EquippedItemView, Npc } from './classroom-state';
-import type { DirectoryRoom, RoomDirectory } from './room-directory';
+import { applyAppearanceToState } from './appearance-state';
+import { Avatar, ClassroomState, Npc } from './classroom-state';
+import type { ClassCallStatus, DirectoryRoom, RoomDirectory } from './room-directory';
 
-/**
- * Copies the API-verified public appearance onto the avatar's synchronized state (#114). The
- * payload is already validated (`memberAppearanceSchema` in @aula/contracts); a slot that is not
- * equipped is simply absent from the items map.
- */
+/** Role whose movement focus mode freezes. */
+const STUDENT_ROLE = 'STUDENT';
+
 function applyAppearanceToAvatar(avatar: Avatar, appearance: MemberAppearance): void {
-  avatar.appearance.bodyId = appearance.baseAvatar.bodyId;
-  avatar.appearance.hairId = appearance.baseAvatar.hairId;
-  avatar.appearance.topId = appearance.baseAvatar.topId;
-  avatar.appearance.hairColor = appearance.baseAvatar.hairColor;
-  avatar.appearance.clothingColor = appearance.baseAvatar.clothingColor;
-  avatar.appearance.items.clear();
-  for (const [slot, item] of Object.entries(appearance.items)) {
-    if (item === null) continue;
-    const view = new EquippedItemView();
-    view.slot = item.slot;
-    view.shopItemId = item.shopItemId;
-    view.shopItemCode = item.shopItemCode;
-    view.shopItemName = item.shopItemName;
-    view.kind = item.kind;
-    avatar.appearance.items.set(slot, view);
-  }
+  applyAppearanceToState(avatar.appearance, appearance);
 }
 
 /** Collaborators and settings a room receives from the server bootstrap. */
@@ -184,6 +171,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     ),
     [AVATAR_EMOTE_MESSAGE]: validate(avatarEmoteSchema, (client, input) =>
       this.onAvatarEmote(client, input),
+    ),
+    [CALL_DECLINE_MESSAGE]: validate(callDeclineSchema, (client, decline) =>
+      this.onCallDecline(client, decline),
     ),
     [NPC_INTERACT_MESSAGE]: validate(npcInteractSchema, (client, input) =>
       this.onNpcInteract(client, input),
@@ -486,6 +476,33 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     if (this.state.tutorBotSkin !== skin) this.state.tutorBotSkin = skin;
   }
 
+  /**
+   * Mirrors the class voice call into the synchronized state (#149). While focus mode is on, avatar
+   * input from students is ignored (see {@link onAvatarInput}); students already walking when it
+   * starts are stopped so they do not keep drifting. Moderators are never affected.
+   */
+  applyCallStatus(status: ClassCallStatus): void {
+    this.state.classCallActive = status.active;
+    this.state.focusMode = status.focusMode;
+    if (!status.focusMode) return;
+    for (const userId of [...this.intents.keys()]) {
+      if (this.state.avatars.get(userId)?.role === STUDENT_ROLE) this.intents.delete(userId);
+    }
+  }
+
+  /** Sends to every live (not held) connection of the user; returns how many received it. */
+  sendToUser(userId: string, type: string, payload: unknown): number {
+    let sent = 0;
+    for (const connectionId of this.userConnections.connectionIds(userId)) {
+      if (!this.userConnections.isLive(connectionId)) continue;
+      const client = this.clients.getById(connectionId);
+      if (client === undefined) continue;
+      client.send(type, payload);
+      sent += 1;
+    }
+    return sent;
+  }
+
   /** Puts the pet and the tutor bot idle at the homes of the current layout (#147). */
   private seedNpcs(): void {
     const homes = this.npcHomes;
@@ -706,11 +723,36 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     if (!this.userConnections.isLive(client.sessionId)) return;
     // Over the limit: dropped silently, with no effect on the avatar.
     if (!limiter.tryConsume(this.now())) return;
+    // Focus mode (teacher class call): students stay put; the role is the verified one.
+    if (
+      this.state.focusMode &&
+      this.authByConnection.get(client.sessionId)?.role === STUDENT_ROLE
+    ) {
+      return;
+    }
     if (input.x === 0 && input.z === 0) {
       this.intents.delete(userId);
     } else {
       this.intents.set(userId, { x: input.x, z: input.z, owner: client.sessionId });
     }
+  }
+
+  /**
+   * The callee declines a ringing direct call (#149). Same gates as avatar input: a live connection
+   * within the rate limit. The sender is the connection's verified user, never the payload, so only
+   * the callee of an existing ringing call (this classroom, `callerUserId`, this user) has any effect.
+   */
+  private onCallDecline(client: Client, decline: CallDecline): void {
+    const limiter = this.limiters.get(client.sessionId);
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (limiter === undefined || userId === undefined) return;
+    if (!this.userConnections.isLive(client.sessionId)) return;
+    if (!limiter.tryConsume(this.now())) return;
+    this.options.directory?.declineRing(
+      this.classroomId,
+      decline.callerUserId.toLowerCase(),
+      userId.toLowerCase(),
+    );
   }
 
   /** Tells the time tracker whether the user has any live connection right now. */

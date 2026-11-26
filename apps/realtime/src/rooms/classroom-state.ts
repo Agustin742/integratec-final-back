@@ -80,6 +80,10 @@ export class ClassroomState extends Schema {
   /** Tutor bot skin chosen by classroom staff, a `TUTOR_BOT_SKINS` value (#154). */
   @type('string') tutorBotSkin = 'none';
   @type({ map: Avatar }) avatars = new MapSchema<Avatar>();
+  /** A class voice call is running; clients show the join banner (#149). */
+  @type('boolean') classCallActive = false;
+  /** Focus mode: students cannot move and the client hides the 3D world (#149). */
+  @type('boolean') focusMode = false;
   /** The pet and the tutor bot, keyed by NPC id (#147). */
   @type({ map: Npc }) npcs = new MapSchema<Npc>();
 }

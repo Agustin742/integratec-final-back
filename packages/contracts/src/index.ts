@@ -233,6 +233,170 @@ export function toTutorBotSkin(value: string): TutorBotSkin {
   return TUTOR_BOT_SKINS.find((skin) => skin === value) ?? DEFAULT_TUTOR_BOT_SKIN;
 }
 
+/**
+ * Voice call contract (#149). A call is a Colyseus room separate from the classroom room: the
+ * server only relays WebRTC signaling and keeps participant state; audio flows peer to peer.
+ */
+
+/** Name the call room is registered under. */
+export const CALL_ROOM_NAME = 'call';
+
+/** Participants of one call; a peer-to-peer mesh does not scale past this. */
+export const CALL_MAX_PARTICIPANTS = 12;
+
+/** Close codes of the call room, outside every code Colyseus and the classroom room use. */
+export const CLOSE_CODE_CALL_FULL = 4101;
+export const CLOSE_CODE_CALL_ENDED = 4102;
+/** The same user joined again: the newer connection replaces this one. */
+export const CLOSE_CODE_CALL_REPLACED = 4104;
+export const CLOSE_REASON_CALL_FULL = 'call_full';
+export const CLOSE_REASON_CALL_ENDED = 'call_ended';
+/** Matchmaking error message (HTTP 403) when a student asks for a classroom call nobody started. */
+export const CLOSE_REASON_CALL_NOT_STARTED = 'call_not_started';
+export const CLOSE_REASON_CALL_REPLACED = 'call_replaced';
+
+export const CALL_KINDS = ['classroom', 'direct'] as const;
+export type CallKind = (typeof CALL_KINDS)[number];
+
+/**
+ * Options a client passes when joining a call room. A direct call is private between the caller and
+ * `peerUserId`, who must share the classroom. The access token travels as `client.auth`, as for the
+ * classroom room.
+ */
+export const callJoinOptionsSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ classroomId: z.uuid(), kind: z.literal('classroom') }),
+  z.strictObject({ classroomId: z.uuid(), kind: z.literal('direct'), peerUserId: z.uuid() }),
+]);
+export type CallJoinOptions = z.infer<typeof callJoinOptionsSchema>;
+
+export const CALL_EMOTES = ['wave', 'happy', 'sad', 'angry', 'think', 'celebrate'] as const;
+export type CallEmote = (typeof CALL_EMOTES)[number];
+
+export const CALL_SDP_MAX_LENGTH = 16000;
+export const CALL_ICE_CANDIDATE_MAX_LENGTH = 2048;
+export const CALL_SESSION_ID_MAX_LENGTH = 64;
+
+/** An SDP offer or answer, or one ICE candidate; relayed verbatim between two participants. */
+export const callSignalPayloadSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.enum(['offer', 'answer']),
+    sdp: z.string().max(CALL_SDP_MAX_LENGTH),
+  }),
+  z.strictObject({
+    type: z.literal('ice'),
+    candidate: z.strictObject({
+      candidate: z.string().max(CALL_ICE_CANDIDATE_MAX_LENGTH),
+      sdpMid: z.string().max(64).nullable().optional(),
+      sdpMLineIndex: z.number().int().min(0).max(65535).nullable().optional(),
+      // Present in RTCIceCandidate.toJSON() output.
+      usernameFragment: z.string().max(256).nullable().optional(),
+    }),
+  }),
+]);
+export type CallSignalPayload = z.infer<typeof callSignalPayloadSchema>;
+
+const callSessionIdSchema = z.string().min(1).max(CALL_SESSION_ID_MAX_LENGTH);
+
+/** Client to server: signaling addressed to one participant (by session id). */
+export const CALL_SIGNAL_MESSAGE = 'call:signal';
+export const callSignalSchema = z.strictObject({
+  to: callSessionIdSchema,
+  payload: callSignalPayloadSchema,
+});
+export type CallSignal = z.infer<typeof callSignalSchema>;
+
+/** Server to client: the relayed signaling, stamped with the sender's session id. */
+export const callSignalRelaySchema = z.strictObject({
+  from: callSessionIdSchema,
+  payload: callSignalPayloadSchema,
+});
+export type CallSignalRelay = z.infer<typeof callSignalRelaySchema>;
+
+/** Client to server: the participant's own mic state; at least one key. */
+export const CALL_SELF_MESSAGE = 'call:self';
+export const callSelfSchema = z
+  .strictObject({ muted: z.boolean().optional(), speaking: z.boolean().optional() })
+  .refine((self) => self.muted !== undefined || self.speaking !== undefined, {
+    message: 'call:self needs muted or speaking',
+  });
+export type CallSelf = z.infer<typeof callSelfSchema>;
+
+export const CALL_EMOTE_MESSAGE = 'call:emote';
+export const callEmoteSchema = z.strictObject({ emote: z.enum(CALL_EMOTES) });
+export type CallEmoteMessage = z.infer<typeof callEmoteSchema>;
+
+/** Client to server: moderator actions on the class call. */
+export const CALL_MODERATE_MESSAGE = 'call:moderate';
+export const callModerateSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('mute-all') }),
+  z.strictObject({ action: z.literal('mute'), targetUserId: z.uuid() }),
+  z.strictObject({ action: z.literal('unmute'), targetUserId: z.uuid() }),
+  z.strictObject({ action: z.literal('allow-self-unmute'), value: z.boolean() }),
+  z.strictObject({ action: z.literal('focus-mode'), value: z.boolean() }),
+]);
+export type CallModerate = z.infer<typeof callModerateSchema>;
+
+/** Client to server: a moderator ends the class call for everyone. */
+export const CALL_END_MESSAGE = 'call:end';
+export const callEndSchema = z.strictObject({});
+export type CallEnd = z.infer<typeof callEndSchema>;
+
+/** Client to server over the classroom room: the callee declines a direct call. */
+export const CALL_DECLINE_MESSAGE = 'call:decline';
+export const callDeclineSchema = z.strictObject({ callerUserId: z.uuid() });
+export type CallDecline = z.infer<typeof callDeclineSchema>;
+
+/** Server to client over the classroom room: someone is calling you directly. */
+export const CALL_INCOMING_EVENT = 'call:incoming';
+export const callIncomingPayloadSchema = z.strictObject({
+  classroomId: z.uuid(),
+  callerUserId: z.uuid(),
+  callerDisplayName: z.string().min(1).max(120),
+});
+export type CallIncomingPayload = z.infer<typeof callIncomingPayloadSchema>;
+
+/** Server to client over the classroom room: the callee declined your direct call. */
+export const CALL_DECLINED_EVENT = 'call:declined';
+export const callDeclinedPayloadSchema = z.strictObject({ byUserId: z.uuid() });
+export type CallDeclinedPayload = z.infer<typeof callDeclinedPayloadSchema>;
+
+/**
+ * Why the call room closed. `unavailable` (a direct call whose peer has no classroom connection),
+ * `timeout` (the peer did not answer in time) and `declined` (the peer declined) only end a
+ * direct call that was still ringing.
+ */
+export const CALL_ENDED_REASONS = [
+  'moderator_ended',
+  'host_left',
+  'peer_left',
+  'unavailable',
+  'timeout',
+  'declined',
+] as const;
+export type CallEndedReason = (typeof CALL_ENDED_REASONS)[number];
+
+/** Server to client in the call room, right before the server closes it. */
+export const CALL_ENDED_EVENT = 'call:ended';
+export const callEndedPayloadSchema = z.strictObject({ reason: z.enum(CALL_ENDED_REASONS) });
+export type CallEndedPayload = z.infer<typeof callEndedPayloadSchema>;
+
+/** Why a ringing direct call stopped ringing for the callee. */
+export const CALL_RING_CANCEL_REASONS = ['answered', 'declined', 'timeout', 'caller_left'] as const;
+export type CallRingCancelReason = (typeof CALL_RING_CANCEL_REASONS)[number];
+
+/**
+ * Server to client over the classroom room, to every classroom connection of the callee: the call
+ * from `callerUserId` is no longer ringing (answered, declined or timed out on another connection,
+ * or the caller hung up), so the incoming-call prompt must go away. After `answered` the
+ * connection that answered receives it too and ignores it.
+ */
+export const CALL_RING_CANCELED_EVENT = 'call:ring-canceled';
+export const callRingCanceledPayloadSchema = z.strictObject({
+  callerUserId: z.uuid(),
+  reason: z.enum(CALL_RING_CANCEL_REASONS),
+});
+export type CallRingCanceledPayload = z.infer<typeof callRingCanceledPayloadSchema>;
+
 /** Axis-aligned box on the floor plane (x, z), in layout units. */
 export interface LayoutBox {
   minX: number;

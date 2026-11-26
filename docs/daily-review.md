@@ -53,7 +53,7 @@ enablement (#40) is documented in [Bot materials](bot-materials.md).
   same configured external OpenAI-compatible provider as the Study Guide Bot.
 - Model, provider base URL, timeout and the question attempt budget are configuration
   values: `AI_PROVIDER_API_KEY`, `AI_PROVIDER_BASE_URL`, `AI_CHAT_MODEL` (default
-  `gemini-2.5-flash`), `AI_REQUEST_TIMEOUT` (default `20s`, max `120s`) and
+  `gemini-3.5-flash-lite`), `AI_REQUEST_TIMEOUT` (default `20s`, max `120s`) and
   `DAILY_QUESTION_MAX_ATTEMPTS` (default 5, max 20). See
   [Configuration](../README.md#configuration) and `apps/api/.env.example`.
 - **Fail closed:** any provider error, timeout, throttle or invalid output returns the

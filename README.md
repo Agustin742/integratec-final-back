@@ -26,6 +26,10 @@ backend/
 
 - [Panel availability contract](docs/classroom-context.md): `GET /classrooms/:id` adds role-scoped `availablePanels`, separate from action authorization; Pet is reserved and disabled. Context invalidation (delivery B) is not implemented.
 
+## Voice calls
+
+- [Voice calls](docs/voice-calls.md): P2P WebRTC audio mesh with STUN only, signaling and shared state in the `call` realtime room, class calls with teacher moderation and focus mode, and direct calls rung through the classroom connection (timeout, decline, unavailable).
+
 ## Classroom desk map
 
 - [Desk-map contract](docs/classroom-desks.md): `GET /classrooms/:id/desks`, the complete ordered physical layout with nullable assignment identifiers; no directory profile or guardian data.
@@ -271,7 +275,7 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `GRADE_WEIGHT_EXAM`       | Default `1.5`; decimal 0.1-10 (<= 2 decimals), `> GRADE_WEIGHT_TP` | Points multiplier applied to graded EXAM activities     | Public         | Yes     |
 | `AI_PROVIDER_API_KEY`     | Optional; trimmed non-empty string                | Server-only API key for the OpenAI-compatible AI provider (unset leaves live calls failing closed with `503`) | Private | Yes |
 | `AI_PROVIDER_BASE_URL`    | Default `https://generativelanguage.googleapis.com/v1beta/openai`; `http(s)` URL (HTTPS in prod) | Base URL for `/chat/completions` and `/embeddings` | Public | Yes |
-| `AI_CHAT_MODEL`           | Default `gemini-2.5-flash`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
+| `AI_CHAT_MODEL`           | Default `gemini-3.5-flash-lite`; 1-120 non-whitespace chars | Chat model identifier supporting tool calling                        | Public         | Yes     |
 | `AI_EMBEDDING_MODEL`      | Default `gemini-embedding-001`; 1-120 non-whitespace chars | Text embedding model identifier                                  | Public         | Yes     |
 | `AI_EMBEDDING_DIMENSION`  | Default `768`; must equal `768` (DB `vector(768)`)             | Requested embedding dimension                                   | Public         | Yes     |
 | `AI_REQUEST_TIMEOUT`      | Default `20s`; duration 1s-120s                   | Per-request HTTP timeout for external AI calls                           | Public         | Yes     |
@@ -295,6 +299,8 @@ Realtime room state types are generated into `packages/contracts/src/realtime/ge
 | `API_INTERNAL_URL`        | Required; absolute `http(s)` URL                  | Base URL of the API for internal calls                                   | Private        | Yes     |
 | `INTERNAL_SERVICE_SECRET` | Required; at least 32 characters                  | Shared secret for authenticated API and realtime service-to-service calls | Private        | Yes     |
 | `RECONNECTION_WINDOW_SECONDS` | Default `20`; integer 1-120                   | Seconds a dropped connection may reconnect before its avatar is removed  | Public         | Yes     |
+| `CALL_MAX_PARTICIPANTS`       | Default `12`; integer 2-24                    | Participants one voice call admits (WebRTC mesh; direct calls always 2)  | Public         | Yes     |
+| `CALL_RING_TIMEOUT_SECONDS`   | Default `30`; integer 5-120                   | Seconds a direct call rings before the caller is told nobody answered    | Public         | Yes     |
 
 Blank values are treated as unset. "Public" means the value is not a credential; none of these variables is ever sent to the browser.
 
