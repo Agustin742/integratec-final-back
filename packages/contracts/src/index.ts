@@ -269,7 +269,21 @@ export const callJoinOptionsSchema = z.discriminatedUnion('kind', [
 ]);
 export type CallJoinOptions = z.infer<typeof callJoinOptionsSchema>;
 
-export const CALL_EMOTES = ['wave', 'happy', 'sad', 'angry', 'think', 'celebrate'] as const;
+export const CALL_EMOTES = [
+  'wave',
+  'happy',
+  'sad',
+  'angry',
+  'think',
+  'celebrate',
+  'raise-hand',
+  'clap',
+  'nod',
+  'shake-head',
+  'dance',
+  'explain',
+  'point',
+] as const;
 export type CallEmote = (typeof CALL_EMOTES)[number];
 
 export const CALL_SDP_MAX_LENGTH = 16000;

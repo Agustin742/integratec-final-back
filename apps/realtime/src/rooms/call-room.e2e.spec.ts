@@ -316,6 +316,12 @@ describe('CallRoom (real Colyseus server + stub API)', () => {
       student.send(CALL_EMOTE_MESSAGE, { emote: 'wave' });
       await waitUntil(() => me().emoteSeq === 2, 'second emote');
       expect(me().emote).toBe('wave');
+      student.send(CALL_EMOTE_MESSAGE, { emote: 'dance' });
+      await waitUntil(() => me().emoteSeq === 3, 'third emote');
+      expect(me().emote).toBe('dance');
+      student.send(CALL_EMOTE_MESSAGE, { emote: 'raise-hand' });
+      await waitUntil(() => me().emoteSeq === 4, 'fourth emote');
+      expect(me().emote).toBe('raise-hand');
     });
 
     it('ignores unknown messages without side effects', async () => {
