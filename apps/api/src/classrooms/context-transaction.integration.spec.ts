@@ -16,6 +16,7 @@ import { OutboxHandlerRegistry } from '../platform/outbox/outbox.registry';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import type { PrismaService } from '../prisma/prisma.service';
 import { ClassroomsService } from './classrooms.service';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 
 const databaseUrl = loadIsolatedTestDatabaseUrl();
 
@@ -62,6 +63,7 @@ describe('classroom context transaction integration (isolated PostgreSQL)', () =
       prisma as unknown as PrismaService,
       new AccessVerificationService(prisma as unknown as PrismaService),
       new ClassroomContextRecorder(writer),
+      new RealtimeEventsRecorder(writer),
     );
     const classroom = await service.create(teacher, { name: `Context ${randomUUID()}` });
     classroomId = classroom.id;

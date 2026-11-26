@@ -1,6 +1,12 @@
 import { type INestApplication, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
+import {
+  ClassroomRole,
+  EquippedSlot,
+  MembershipState,
+  SchoolRole,
+  ShopItemKind,
+} from '@prisma/client';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthModule } from '../../auth/auth.module';
@@ -85,6 +91,12 @@ let desks: {
   membershipId: string | null;
   membership: { userId: string } | null;
 }[];
+let equipped: {
+  classroomId: string;
+  studentId: string;
+  slot: EquippedSlot;
+  shopItem: { id: string; code: string; name: string; kind: ShopItemKind };
+}[];
 const prisma = {
   classroom: { findFirst: vi.fn() },
   school: { findFirst: vi.fn() },
@@ -92,6 +104,7 @@ const prisma = {
   classroomMembership: { findFirst: vi.fn() },
   parentLink: { findMany: vi.fn() },
   desk: { findMany: vi.fn() },
+  equippedItem: { findMany: vi.fn() },
 };
 
 // Exact predicates matter: a role in a different classroom/school must not match.
@@ -99,7 +112,7 @@ function matches(row: object, where: Record<string, unknown>) {
   return Object.entries(where).every(([key, value]) => row[key as keyof typeof row] === value);
 }
 function snapshot() {
-  return structuredClone({ classrooms, members, schoolMembers, links, desks });
+  return structuredClone({ classrooms, members, schoolMembers, links, desks, equipped });
 }
 
 describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
@@ -155,6 +168,10 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
       membershipId: deskIndex === 2 ? null : id(200 + deskIndex),
       membership: deskIndex === 2 ? null : { userId: deskIndex === 1 ? actorId : childId },
     }));
+    equipped = [];
+    prisma.equippedItem.findMany.mockImplementation(async ({ where }) =>
+      structuredClone(equipped.filter((row) => matches(row, where))),
+    );
     prisma.classroom.findFirst.mockImplementation(
       async ({ where }) => classrooms.find((row) => matches(row, where)) ?? null,
     );
@@ -195,6 +212,7 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
         deskIndex,
         membershipId: deskIndex === 2 ? null : id(200 + deskIndex),
         userId: deskIndex === 2 ? null : deskIndex === 1 ? actorId : childId,
+        deskDecor: null,
       })),
     });
     expect(prisma.desk.findMany).toHaveBeenCalledWith({
@@ -207,6 +225,50 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
         membership: { select: { userId: true } },
       },
     });
+  });
+  it("returns each desk owner's equipped desk decor from this classroom only", async () => {
+    const decor = (n: number, code: string) => ({
+      id: id(n),
+      code,
+      name: `Synthetic ${code}`,
+      kind: ShopItemKind.DESK_UPGRADE,
+    });
+    equipped = [
+      // childId holds no connection anywhere: the map reads persisted equipment only.
+      {
+        classroomId,
+        studentId: childId,
+        slot: EquippedSlot.DESK_DECOR,
+        shopItem: decor(301, 'desk_lamp'),
+      },
+      // Another classroom's decor and a non-desk slot must not appear.
+      {
+        classroomId: foreignId,
+        studentId: actorId,
+        slot: EquippedSlot.DESK_DECOR,
+        shopItem: decor(302, 'desk_mug'),
+      },
+      {
+        classroomId,
+        studentId: actorId,
+        slot: EquippedSlot.HAND,
+        shopItem: { ...decor(303, 'hand_mug'), kind: ShopItemKind.AVATAR_ACCESSORY },
+      },
+    ];
+    sealFixture();
+    const { items } = (await get().expect(200)).body;
+    expect(items.map((desk: { deskDecor: unknown }) => desk.deskDecor)).toEqual([
+      null,
+      null,
+      {
+        slot: 'desk_decor',
+        shopItemId: id(301),
+        shopItemCode: 'desk_lamp',
+        shopItemName: 'Synthetic desk_lamp',
+        kind: ShopItemKind.DESK_UPGRADE,
+      },
+    ]);
+    expect(prisma.equippedItem.findMany).toHaveBeenCalledTimes(1);
   });
   it('returns every physical desk without an arbitrary page limit', async () => {
     desks = Array.from({ length: 105 }, (_, index) => ({
@@ -282,6 +344,7 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
       sealFixture();
       expect((await get().expect(404)).body.error.code).toBe('NOT_FOUND');
       expect(prisma.desk.findMany).not.toHaveBeenCalled();
+      expect(prisma.equippedItem.findMany).not.toHaveBeenCalled();
     },
   );
   it.each([false, true])(
@@ -322,6 +385,7 @@ describe('desk map HTTP — S1/S2/S4 classroom resource authorization', () => {
     const response = await get().expect(adultMode ? 404 : 403);
     expect(response.body.error.code).toBe(adultMode ? 'NOT_FOUND' : 'FORBIDDEN');
     expect(prisma.desk.findMany).not.toHaveBeenCalled();
+    expect(prisma.equippedItem.findMany).not.toHaveBeenCalled();
   });
   it.each(['not-a-uuid', id(999)])('hides invalid or missing resource %s', async (resourceId) => {
     await get(resourceId).expect(404);

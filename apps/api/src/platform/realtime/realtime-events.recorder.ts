@@ -7,10 +7,12 @@ import {
   REALTIME_CLASSROOM_ACCESS_REVOKED_EVENT,
   REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT,
   REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
+  REALTIME_CLASSROOM_TUTOR_BOT_SKIN_CHANGED_EVENT,
   REALTIME_SESSIONS_REVOKED_EVENT,
   type ClassroomAccessRevokedPayload,
   type ClassroomAppearanceChangedPayload,
   type ClassroomLayoutChangedPayload,
+  type ClassroomTutorBotSkinChangedPayload,
   type RealtimeChatMessageCreatedPayload,
   type RealtimeChatMessageHiddenPayload,
 } from './realtime-events';
@@ -88,6 +90,21 @@ export class RealtimeEventsRecorder {
     await this.outbox.record(tx, {
       type: REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT,
       payload: { classroomId: payload.classroomId, deskCount: payload.deskCount },
+    });
+  }
+
+  /** Records a tutor bot skin change (#154), with the revision committed by the same transaction. */
+  async recordClassroomTutorBotSkinChanged(
+    tx: Prisma.TransactionClient,
+    payload: ClassroomTutorBotSkinChangedPayload,
+  ): Promise<void> {
+    await this.outbox.record(tx, {
+      type: REALTIME_CLASSROOM_TUTOR_BOT_SKIN_CHANGED_EVENT,
+      payload: {
+        classroomId: payload.classroomId,
+        tutorBotSkin: payload.tutorBotSkin,
+        tutorBotSkinRevision: payload.tutorBotSkinRevision,
+      },
     });
   }
 

@@ -80,6 +80,31 @@ export const avatarInputSchema = z.strictObject({
 
 export type AvatarInput = z.infer<typeof avatarInputSchema>;
 
+/** Avatar emotes a member can trigger (#154). Each value is the name of the animation clip. */
+export const AVATAR_EMOTES = ['Wave', 'Cheer', 'Clap', 'Dance', 'RaiseHand'] as const;
+export type AvatarEmote = (typeof AVATAR_EMOTES)[number];
+
+/** Client to server: play an emote on the sender's own avatar. */
+export const AVATAR_EMOTE_MESSAGE = 'avatar:emote';
+
+export const avatarEmoteSchema = z.strictObject({
+  emote: z.enum(AVATAR_EMOTES),
+});
+
+export type AvatarEmoteInput = z.infer<typeof avatarEmoteSchema>;
+
+/** Server to client: a member of the room emoted. Ephemeral, never replayed to late joiners. */
+export const AVATAR_EMOTED_EVENT = 'avatar:emoted';
+
+export interface AvatarEmoted {
+  /** Key of the sender in `ClassroomState.avatars`, taken from the server session. */
+  userId: string;
+  emote: AvatarEmote;
+}
+
+/** Minimum time between two emotes of the same member, across all their connections. */
+export const AVATAR_EMOTE_COOLDOWN_MS = 3000;
+
 /** Server to client: a persisted classroom chat message, announced after its database commit. */
 export const CHAT_MESSAGE_EVENT = 'chat:message';
 export const CHAT_MESSAGE_MAX_BODY_LENGTH = 2000;
@@ -132,7 +157,15 @@ export type AvatarStatus = (typeof AVATAR_STATUSES)[number];
  * equipment URL slot names; duplicated here so the realtime service can validate the payload
  * without importing server code.
  */
-export const APPEARANCE_SLOT_NAMES = ['head', 'face', 'back', 'desk_decor'] as const;
+export const APPEARANCE_SLOT_NAMES = [
+  'head',
+  'face',
+  'back',
+  'desk_decor',
+  'hand',
+  'neck',
+  'ears',
+] as const;
 export type AppearanceSlotName = (typeof APPEARANCE_SLOT_NAMES)[number];
 
 /** Public projection of one equipped item: catalog fields only, no purchase or price data. */
@@ -163,6 +196,9 @@ export const memberAppearanceSchema = z
       face: equippedItemPayloadSchema.nullable(),
       back: equippedItemPayloadSchema.nullable(),
       desk_decor: equippedItemPayloadSchema.nullable(),
+      hand: equippedItemPayloadSchema.nullable(),
+      neck: equippedItemPayloadSchema.nullable(),
+      ears: equippedItemPayloadSchema.nullable(),
     }),
   })
   .refine(
@@ -173,6 +209,29 @@ export const memberAppearanceSchema = z
     { message: 'equipped item slot must match its items key' },
   );
 export type MemberAppearance = z.infer<typeof memberAppearanceSchema>;
+
+/**
+ * Skins of the tutor bot a classroom's staff can choose (#154). Each value but `none` matches a
+ * frontend model `public/models/bot/skins/skin-<id>.glb`.
+ */
+export const TUTOR_BOT_SKINS = [
+  'none',
+  'boca',
+  'seleccion',
+  'folklore',
+  'guardapolvo',
+  'scientist',
+  'graduate',
+  'gamer',
+] as const;
+export type TutorBotSkin = (typeof TUTOR_BOT_SKINS)[number];
+
+export const DEFAULT_TUTOR_BOT_SKIN: TutorBotSkin = 'none';
+
+/** Narrows a stored value; one this build does not know reads as no skin. */
+export function toTutorBotSkin(value: string): TutorBotSkin {
+  return TUTOR_BOT_SKINS.find((skin) => skin === value) ?? DEFAULT_TUTOR_BOT_SKIN;
+}
 
 /**
  * Voice call contract (#149). A call is a Colyseus room separate from the classroom room: the

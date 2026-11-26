@@ -115,6 +115,9 @@ enum EquippedSlot {
   FACE       @map("face")
   BACK       @map("back")
   DESK_DECOR @map("desk_decor")
+  HAND       @map("hand")
+  NECK       @map("neck")
+  EARS       @map("ears")
 
   @@map("equipped_slot")
 }
@@ -278,6 +281,10 @@ model Classroom {
   chatMuted            Boolean   @default(false) @map("chat_muted")
   collaborationLocked  Boolean   @default(false) @map("collaboration_locked")
   gamesDisabled        Boolean   @default(false) @map("games_disabled")
+  /// Tutor bot skin chosen by classroom staff; allowed values are `TUTOR_BOT_SKINS`.
+  tutorBotSkin         String    @default("none") @map("tutor_bot_skin") @db.VarChar(20)
+  /// Orders at-least-once realtime deliveries of the skin.
+  tutorBotSkinRevision Int       @default(0) @map("tutor_bot_skin_revision")
   deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

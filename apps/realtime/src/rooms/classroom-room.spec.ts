@@ -36,6 +36,8 @@ const IDENTITY = {
   appearanceRevision: 1,
   appearance: APPEARANCE,
   deskCount: 12,
+  tutorBotSkin: 'none' as const,
+  tutorBotSkinRevision: 0,
 };
 const AUTH = {
   userId: IDENTITY.userId,
@@ -46,6 +48,8 @@ const AUTH = {
   appearanceRevision: IDENTITY.appearanceRevision,
   appearance: APPEARANCE,
   deskCount: IDENTITY.deskCount,
+  tutorBotSkin: IDENTITY.tutorBotSkin,
+  tutorBotSkinRevision: IDENTITY.tutorBotSkinRevision,
 };
 
 describe('createClassroomRoom', () => {
@@ -768,6 +772,59 @@ describe('createClassroomRoom', () => {
     });
   });
 
+  describe('tutor bot skin of the classroom (#154)', () => {
+    const makeRoomWith = (reverify: JoinVerifier['reverify']) => {
+      const room = new (createClassroomRoom({ verify: vi.fn(), reverify }))();
+      vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+      vi.spyOn(room, 'allowReconnection').mockReturnValue(Promise.resolve(undefined) as never);
+      room.onCreate({ classroomId: CLASSROOM_ID });
+      return room;
+    };
+    const BOCA = { ...IDENTITY, tutorBotSkin: 'boca' as const, tutorBotSkinRevision: 2 };
+
+    it('syncs the skin of the verified classroom to a new room', async () => {
+      const room = makeRoomWith(vi.fn().mockResolvedValue(BOCA));
+
+      await room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+
+      expect(room.state.tutorBotSkin).toBe('boca');
+    });
+
+    it('applies a pushed change, including back to no skin', () => {
+      const room = makeJoinedRoom();
+
+      room.applyTutorBotSkin('gamer', 1);
+      expect(room.state.tutorBotSkin).toBe('gamer');
+
+      room.applyTutorBotSkin('none', 2);
+      expect(room.state.tutorBotSkin).toBe('none');
+    });
+
+    it('ignores an older revision, such as a late delivery or re-verification', async () => {
+      const room = makeRoomWith(vi.fn().mockResolvedValue(BOCA));
+      room.applyTutorBotSkin('gamer', 3);
+
+      await room.onJoin({ sessionId: 's1', auth: { ...AUTH } } as never);
+      room.applyTutorBotSkin('folklore', 1);
+
+      expect(room.state.tutorBotSkin).toBe('gamer');
+    });
+
+    it('refreshes the skin when a reconnection is verified', async () => {
+      const reverify = vi.fn().mockResolvedValueOnce(IDENTITY).mockResolvedValue(BOCA);
+      const room = makeRoomWith(reverify);
+      const client = { sessionId: 's1', auth: { ...AUTH }, leave: vi.fn() };
+      await room.onJoin(client as never);
+      expect(room.state.tutorBotSkin).toBe('none');
+      room.onDrop(client as never);
+
+      await room.onReconnect(client as never);
+
+      expect(room.state.tutorBotSkin).toBe('boca');
+      expect(client.auth.tutorBotSkin).toBe('boca');
+    });
+  });
+
   describe('admission re-verification (a seat reservation outlives access)', () => {
     const makeAdmissionRoom = (reverify: JoinVerifier['reverify']) => {
       const clock = { value: 1_000_000 };
@@ -812,6 +869,8 @@ describe('createClassroomRoom', () => {
           appearanceRevision: AUTH.appearanceRevision,
           appearance: AUTH.appearance,
           deskCount: AUTH.deskCount,
+          tutorBotSkin: AUTH.tutorBotSkin,
+          tutorBotSkinRevision: AUTH.tutorBotSkinRevision,
         },
       ]);
       expect(room.state.avatars.get(IDENTITY.userId)).toMatchObject({
@@ -1253,5 +1312,46 @@ describe('NPC interactions (#147)', () => {
     expect(bot.state).not.toBe('reacting');
     expect(bot.reactionSeq).toBe(1);
     expect(runtimeOf(room, 'tutorBot').phase).not.toBe('reacting');
+  });
+});
+
+describe('avatar emotes (#154)', () => {
+  const emote = (room: ClassroomRoom, sessionId: string): void =>
+    (
+      room as unknown as { onAvatarEmote(c: { sessionId: string }, i: unknown): void }
+    ).onAvatarEmote({ sessionId }, { emote: 'Wave' });
+
+  const makeRoom = async () => {
+    const room = new (createClassroomRoom({
+      verify: vi.fn(),
+      reverify: vi.fn().mockResolvedValue(IDENTITY),
+    }))();
+    vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+    vi.spyOn(room, 'allowReconnection').mockReturnValue(new Promise(() => undefined) as never);
+    const broadcast = vi.spyOn(room, 'broadcast').mockImplementation(() => undefined as never);
+    room.onCreate({ classroomId: CLASSROOM_ID });
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    return { room, broadcast };
+  };
+
+  it('ignores a held connection and a connection that never joined', async () => {
+    const { room, broadcast } = await makeRoom();
+    room.onDrop({ sessionId: 's1' } as never);
+
+    emote(room, 's1');
+    emote(room, 'unknown');
+
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('forgets the cooldown of a member who left for good', async () => {
+    const { room, broadcast } = await makeRoom();
+    emote(room, 's1');
+    room.onLeave({ sessionId: 's1' } as never);
+    await room.onJoin({ sessionId: 's2', auth: AUTH } as never);
+
+    emote(room, 's2');
+
+    expect(broadcast).toHaveBeenCalledTimes(2);
   });
 });

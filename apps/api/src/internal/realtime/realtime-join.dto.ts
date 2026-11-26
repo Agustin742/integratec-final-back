@@ -4,7 +4,9 @@ import { IsNotEmpty, IsString, IsUUID, MaxLength } from 'class-validator';
 import {
   APPEARANCE_SLOT_NAMES,
   MAX_CLASSROOM_DESKS,
+  TUTOR_BOT_SKINS,
   type AppearanceSlotName,
+  type TutorBotSkin,
 } from '@aula/contracts';
 
 /** Upper bound for a presented access token; real JWTs are a few hundred characters. */
@@ -87,7 +89,15 @@ export class MemberAppearanceDto {
   @ApiProperty({
     type: 'object',
     additionalProperties: { $ref: getSchemaPath(EquippedItemPayloadDto), nullable: true },
-    example: { head: null, face: null, back: null, desk_decor: null },
+    example: {
+      head: null,
+      face: null,
+      back: null,
+      desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
+    },
     description: 'Equipped item per slot; null when the slot is empty.',
   })
   items!: Record<AppearanceSlotName, EquippedItemPayloadDto | null>;
@@ -122,4 +132,12 @@ export class JoinVerificationResponseDto {
   /** Student desks the classroom has; the realtime room lays out its floor from it (#79). */
   @ApiProperty({ minimum: 0, maximum: MAX_CLASSROOM_DESKS })
   deskCount!: number;
+
+  /** Tutor bot skin of the classroom, synced by the realtime room (#154). */
+  @ApiProperty({ enum: TUTOR_BOT_SKINS, enumName: 'TutorBotSkin' })
+  tutorBotSkin!: TutorBotSkin;
+
+  /** Internal ordering token for skin changes; not part of the synchronized state. */
+  @ApiProperty({ minimum: 0 })
+  tutorBotSkinRevision!: number;
 }

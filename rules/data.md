@@ -17,7 +17,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | AvatarConfiguration | Persistent avatar appearance | One per user |
 | School | Isolation unit of the school path; persisted IANA time zone (default `America/Argentina/Buenos_Aires`, D10) | One Owner; many members and classrooms |
 | SchoolMember | Membership with school role (Owner, Admin, Teacher) and state | Joins User and School |
-| Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
+| Classroom | Persistent classroom; owned by a School or by an independent teacher (exactly one); adult-mode flag; chat-mute, collaboration-lock, and games-disabled state; tutor bot skin (a `TUTOR_BOT_SKINS` value, default `none`) with a monotonic revision | Belongs to a School or to an independent teacher; has teachers, enrollments, content, one Pet |
 | Enrollment | A student's membership in a classroom, and state | Joins User and Classroom |
 | ParentLink | Link from a parent to one child, within a classroom context | Joins parent User and child User; a parent has many links |
 | Invitation | Two mechanisms (D7). Email invitation: hashed secret, target email, target (school or classroom), role, expiry, state. Classroom join code: classroom, `Student` role only, hashed secret, expiry, optional maximum uses, use count, state | Belongs to a School or Classroom; has a creator; each join code use is recorded (who and when) |
@@ -32,7 +32,7 @@ PostgreSQL, accessed through Prisma, is the system of record for durable domain 
 | ClassroomShopItem | Optional per-classroom price override and availability toggle (`isEnabled`) | Belongs to a classroom and a ShopItem |
 | ClassroomItem | Classroom-wide item unlocked after purchasing a `classroom_item`, with state (`unlocked`, `active`, `disabled`) | Belongs to a classroom; references a ShopItem and its originating StudentPurchase |
 | StudentPurchase | Immutable student purchase record storing `pricePaid`, `idempotencyKey`, and debit transaction link | Belongs to a classroom and student; references a ShopItem and PointTransaction |
-| EquippedItem | Equipped purchase in one slot (`head`, `face`, `back`, `desk_decor` derived from `ShopItem.metadata.slot`) | Belongs to a classroom and student; references a ShopItem; unique per (classroom, student, slot) |
+| EquippedItem | Equipped purchase in one slot (`head`, `face`, `back`, `desk_decor`, `hand`, `neck`, `ears` derived from `ShopItem.metadata.slot`) | Belongs to a classroom and student; references a ShopItem; unique per (classroom, student, slot) |
 | Pet / PetAccessory | The classroom's single pet and the accessories it owns or has equipped | Pet belongs to a classroom |
 | Streak | Current and best streak per student, with last qualifying day | Belongs to a student |
 | Announcement | Bulletin-board notice | Belongs to a classroom; has an author |

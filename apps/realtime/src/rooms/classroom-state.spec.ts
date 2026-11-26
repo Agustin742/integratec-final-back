@@ -7,6 +7,10 @@ describe('ClassroomState', () => {
     expect(new ClassroomState().deskCount).toBe(12);
   });
 
+  it('starts with the default tutor bot skin (#154)', () => {
+    expect(new ClassroomState().tutorBotSkin).toBe('none');
+  });
+
   it('starts with an empty avatar map', () => {
     const state = new ClassroomState();
     expect(state.avatars).toBeInstanceOf(MapSchema);

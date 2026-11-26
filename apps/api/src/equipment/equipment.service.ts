@@ -74,6 +74,9 @@ function buildState(
     face: null,
     back: null,
     desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
   };
   for (const row of rows) {
     slots[SLOT_NAME_BY_ENUM[row.slot]] = toSlotDto(row);

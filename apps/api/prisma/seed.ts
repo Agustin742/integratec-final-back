@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     },
   });
 
-  // 6. Synthetic shop catalog: modular avatar accessories and paid styles (never seeded in
+  // 6. Synthetic shop catalog: avatar accessories, desk decor and paid styles (never seeded in
   // production or SQL migrations).
   await prisma.shopItem.createMany({ data: [...SHOP_CATALOG] });
 

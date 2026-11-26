@@ -336,7 +336,15 @@ describe('Equipment HTTP contract (/classrooms/:id/me/equipment/*)', () => {
     expect(emptyUnequip.body).toMatchObject({
       classroomId: ids.classroom,
       studentId: ids.student,
-      slots: { head: null, face: null, back: null, desk_decor: null },
+      slots: {
+        head: null,
+        face: null,
+        back: null,
+        desk_decor: null,
+        hand: null,
+        neck: null,
+        ears: null,
+      },
     });
 
     const omittedFieldUnequip = await putEquipment(ids.classroom, ids.student, 'head', {});

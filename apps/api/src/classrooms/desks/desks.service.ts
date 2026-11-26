@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { AccessVerificationService } from '../../access/access-verification.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { deskDecorFor } from '../../users/member-appearance';
 import type { ClassroomDeskMapDto } from './desks.dto';
 
 @Injectable()
@@ -26,13 +27,18 @@ export class ClassroomDesksService {
         membership: { select: { userId: true } },
       },
     });
+    const decor = await deskDecorFor(this.prisma, access.classroom.id);
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        deskIndex: row.deskIndex,
-        membershipId: row.membershipId,
-        userId: row.membership?.userId ?? null,
-      })),
+      items: rows.map((row) => {
+        const userId = row.membership?.userId ?? null;
+        return {
+          id: row.id,
+          deskIndex: row.deskIndex,
+          membershipId: row.membershipId,
+          userId,
+          deskDecor: (userId && decor.get(userId)) || null,
+        };
+      }),
     };
   }
 }

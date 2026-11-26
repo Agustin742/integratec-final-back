@@ -13,20 +13,30 @@ Send the normal `Authorization: Bearer <access-token>` header. A successful resp
       "id": "00000000-0000-4000-8000-000000000101",
       "deskIndex": 1,
       "membershipId": "00000000-0000-4000-8000-000000000201",
-      "userId": "00000000-0000-4000-8000-000000000001"
+      "userId": "00000000-0000-4000-8000-000000000001",
+      "deskDecor": {
+        "slot": "desk_decor",
+        "shopItemId": "00000000-0000-4000-8000-000000000301",
+        "shopItemCode": "desk_plant",
+        "shopItemName": "Planta de escritorio",
+        "kind": "DESK_UPGRADE"
+      }
     },
     {
       "id": "00000000-0000-4000-8000-000000000102",
       "deskIndex": 2,
       "membershipId": null,
-      "userId": null
+      "userId": null,
+      "deskDecor": null
     }
   ]
 }
 ```
 
 - `id` identifies the physical desk; `deskIndex` is its persisted 1-based layout position.
-- `membershipId` identifies the assigned enrollment; `userId` identifies the student for client-side identity joins. Both are explicitly `null` for a free desk. No names, emails, avatar data or guardian information are returned; this is not the member directory.
+- `membershipId` identifies the assigned enrollment; `userId` identifies the student for client-side identity joins. Both are explicitly `null` for a free desk. No names, emails, base avatar data or guardian information are returned; this is not the member directory.
+- `deskDecor` is the assigned student's equipped `desk_decor` item in this classroom (the same public catalog projection the realtime appearance carries; no price or purchase data), or `null` for a free desk or an empty slot. It comes from persisted equipment, so it is present for students who are not connected.
+- Freshness: a connected student's changes arrive live in `ClassroomState.avatars[userId].appearance.items['desk_decor']`, which takes precedence over this snapshot. A change made by a student who is not in the room is not pushed; clients see it on the next read of this endpoint.
 - `items` includes every persisted desk, including released and automatically expanded desks, ordered by `deskIndex` ascending with `id` as tiebreaker. An empty layout returns `{ "items": [] }`.
 - This endpoint returns **one complete layout**, not a paginated member list: missing a page would otherwise hide physical seats. There are no pagination, filtering or sorting parameters and no hidden row limit. Clients must render returned desks rather than assume 12 seats. Very large layouts have proportional response cost.
 

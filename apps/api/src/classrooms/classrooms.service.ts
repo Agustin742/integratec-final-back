@@ -4,6 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { toTutorBotSkin } from '@aula/contracts';
 import { ClassroomRole, MembershipState, type Prisma, SchoolRole } from '@prisma/client';
 import {
   AccessVerificationService,
@@ -17,6 +18,7 @@ import type { Sort } from '../http/pagination/sort';
 import { RequestValidationException } from '../http/validation';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClassroomContextRecorder } from '../platform/classroom-context/classroom-context.recorder';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 import {
   DEFAULT_CLASSROOM_CONTROL_STATES,
   DEFAULT_INITIAL_DESK_COUNT,
@@ -42,6 +44,7 @@ interface ClassroomWithDetails {
   chatMuted: boolean;
   collaborationLocked: boolean;
   gamesDisabled: boolean;
+  tutorBotSkin: string;
   createdAt: Date;
   updatedAt: Date;
   pet: {
@@ -62,6 +65,7 @@ export class ClassroomsService {
     private readonly prisma: PrismaService,
     private readonly accessService: AccessVerificationService,
     private readonly contextRecorder: ClassroomContextRecorder,
+    private readonly realtimeEvents: RealtimeEventsRecorder,
   ) {}
 
   /**
@@ -175,8 +179,9 @@ export class ClassroomsService {
 
   /**
    * Updates classroom configuration (name, subject, adultMode, chatMuted,
-   * collaborationLocked, gamesDisabled). Restricted to STAFF of the classroom
-   * (School Owner/Admin or the classroom's Teacher).
+   * collaborationLocked, gamesDisabled, tutorBotSkin). Restricted to STAFF of the classroom
+   * (School Owner/Admin or the classroom's Teacher). A tutor bot skin change is also pushed to
+   * the live room.
    */
   async update(
     actorUserId: string,
@@ -220,6 +225,11 @@ export class ClassroomsService {
     if (dto.gamesDisabled !== undefined && dto.gamesDisabled !== null) {
       updateData.gamesDisabled = dto.gamesDisabled;
     }
+    const changesSkin = dto.tutorBotSkin !== undefined && dto.tutorBotSkin !== null;
+    if (changesSkin) {
+      updateData.tutorBotSkin = dto.tutorBotSkin;
+      updateData.tutorBotSkinRevision = { increment: 1 };
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const classroom = await tx.classroom.update({
@@ -234,6 +244,13 @@ export class ClassroomsService {
       // Any effective update input may invalidate, even if its value is unchanged.
       if (Object.keys(updateData).length > 0) {
         await this.contextRecorder.recordChanged(tx, classroomId);
+      }
+      if (changesSkin) {
+        await this.realtimeEvents.recordClassroomTutorBotSkinChanged(tx, {
+          classroomId,
+          tutorBotSkin: toTutorBotSkin(classroom.tutorBotSkin),
+          tutorBotSkinRevision: classroom.tutorBotSkinRevision,
+        });
       }
       return classroom;
     });
@@ -270,6 +287,7 @@ export class ClassroomsService {
       chatMuted: classroom.chatMuted,
       collaborationLocked: classroom.collaborationLocked,
       gamesDisabled: classroom.gamesDisabled,
+      tutorBotSkin: toTutorBotSkin(classroom.tutorBotSkin),
       myRole,
       capabilities,
       createdAt: classroom.createdAt.toISOString(),
@@ -294,6 +312,7 @@ export class ClassroomsService {
       chatMuted: classroom.chatMuted,
       collaborationLocked: classroom.collaborationLocked,
       gamesDisabled: classroom.gamesDisabled,
+      tutorBotSkin: toTutorBotSkin(classroom.tutorBotSkin),
       deskCount: classroom._count.desks,
       pet: classroom.pet
         ? {

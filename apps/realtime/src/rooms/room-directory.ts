@@ -4,6 +4,7 @@ import {
   type MemberAppearance,
   type ChatMessagePayload,
   type ChatRealtimeBroadcast,
+  type TutorBotSkin,
 } from '@aula/contracts';
 
 export interface EvictionFilter {
@@ -41,6 +42,11 @@ export interface DeskCountApplicableRoom {
   applyDeskCount(deskCount: number): void;
 }
 
+/** What a room offers the directory when staff change the tutor bot skin (#154). */
+export interface TutorBotSkinApplicableRoom {
+  applyTutorBotSkin(skin: TutorBotSkin, revision: number): void;
+}
+
 /** Whether the classroom has a class voice call, and whether its teacher locked the world (#149). */
 export interface ClassCallStatus {
   active: boolean;
@@ -68,6 +74,7 @@ export interface DirectoryRoom
   extends
     AppearanceApplicableRoom,
     DeskCountApplicableRoom,
+    TutorBotSkinApplicableRoom,
     CallStatusApplicableRoom,
     UserMessageRoom,
     ClassroomRoomHandle {}
@@ -82,6 +89,7 @@ export interface RoomDirectoryLike {
     appearance: MemberAppearance,
   ): number;
   applyDeskCount(classroomId: string, deskCount: number): void;
+  applyTutorBotSkin(classroomId: string, skin: TutorBotSkin, revision: number): void;
   broadcastChatEvent(event: ChatRealtimeBroadcast): void;
 }
 
@@ -229,6 +237,11 @@ export class RoomDirectory {
    */
   applyDeskCount(classroomId: string, deskCount: number): void {
     for (const room of this.rooms.get(classroomId) ?? []) room.applyDeskCount(deskCount);
+  }
+
+  /** Syncs the tutor bot skin in the live rooms of one classroom (#154); unknown ones: no-op. */
+  applyTutorBotSkin(classroomId: string, skin: TutorBotSkin, revision: number): void {
+    for (const room of this.rooms.get(classroomId) ?? []) room.applyTutorBotSkin(skin, revision);
   }
 
   /** Delivers the event only to live rooms bound to the committed message's classroom. */

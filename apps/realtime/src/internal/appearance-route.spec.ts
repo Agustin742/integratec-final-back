@@ -28,6 +28,9 @@ const APPEARANCE = {
     face: null,
     back: null,
     desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
   },
 } as const;
 
@@ -36,6 +39,7 @@ const makeApp = (applied = 1) => {
     evict: vi.fn(),
     applyAppearance: vi.fn().mockReturnValue(applied),
     applyDeskCount: vi.fn(),
+    applyTutorBotSkin: vi.fn(),
     broadcastChatEvent: vi.fn(),
   };
   const app = configureExpress(express(), { internal: { serviceSecret: SECRET, directory } });

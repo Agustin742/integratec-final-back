@@ -1,5 +1,50 @@
 # Tracker — Agustin
 
+## 2026-11-26 — Classroom avatar emotes in the realtime room (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/realtime/src/rooms/`, `packages/contracts/`, `rules/` (realtime-and-presence, api-contracts)
+- **Change:** Added the `avatar:emote` command and the `avatar:emoted` broadcast with a 3-second per-member cooldown. Emotes are not stored and the state schema did not change.
+- **Reason:** The classroom must see each other's avatar emotes.
+- **Verification:** Specs written RED first; touched specs, lint, typecheck and Prettier pass.
+- **Next step:** Front mirrors the message names and payloads and plays the clips.
+
+## 2026-11-25 — Database-backed verification of the asset customization branch (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/src/equipment/equipment.integration.spec.ts`
+- **Change:** Applied every migration to a temporary PostgreSQL database and ran the DB-backed specs for equipment, desks, classrooms, invitations, join verification, reverification, context transaction, realtime events, users and shop. Added a case that equips `hand`, `neck` and `ears` together and reads them back.
+- **Reason:** The branch migrations and DB-backed specs had not been run.
+- **Verification:** 542 of 549 passed in the first parallel run; the 7 failures, and one concurrency case on a later rerun, were 5 s timeouts on a local Docker database and passed with a 60 s timeout.
+- **Next step:** Confirm in CI with its default timeout.
+
+## 2026-11-25 — Tutor bot skin per classroom, synced to the room (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (schema, migration `20261125010000_add_classroom_tutor_bot_skin`), `apps/api/src/classrooms/`, `apps/api/src/platform/realtime/`, `apps/api/src/internal/realtime/`, `apps/realtime/src/`, `packages/contracts/`, `apps/api/openapi.json`, `docs/`, `rules/`
+- **Change:** Classroom staff set `tutorBotSkin` through `PATCH /classrooms/:id`; classroom responses expose it and the room syncs it as `ClassroomState.tutorBotSkin`, from join verification for new rooms and from an outbox push for live ones, ordered by a per-classroom revision. A join verification without the skin fields, or with a skin the realtime build does not know, admits with `none` instead of failing.
+- **Reason:** The whole classroom must see the same tutor bot skin, including late joiners.
+- **Verification:** Specs written RED first; touched specs without a database, lint, typecheck and Prettier pass. DB-backed specs (join verification, reverification, context transaction, classrooms integration) were not run and the migration was not applied.
+- **Next step:** Deploy API and realtime together after the migration. Front regenerates API and realtime types. Run the DB-backed specs in CI.
+
+## 2026-11-25 — Desk decor shop items and per-desk visibility (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (shop catalog, seed), `apps/api/src/classrooms/desks/`, `apps/api/src/users/member-appearance.ts`, `apps/api/openapi.json`, `docs/`
+- **Change:** Seeded 7 desk decor shop items (`DESK_UPGRADE`, `desk_decor` slot, 80 to 220 points). `GET /classrooms/:id/desks` now returns each assigned student's equipped desk decor as `deskDecor`, with the same access rules (parents excluded).
+- **Reason:** Each student's desk must show their decor to the whole classroom; the realtime state only covers connected students and no REST endpoint exposed other members' equipment.
+- **Verification:** Specs written RED first; touched specs without a database, lint and typecheck pass. The desk map PostgreSQL spec was updated but not run (no PostgreSQL running).
+- **Next step:** Front regenerates API types and reads `deskDecor`. Run the DB-backed specs in CI.
+
+## 2026-11-25 — Hand, neck and ears equipment slots (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/api/prisma/` (schema, migration `20261125000000_add_hand_neck_ears_equipped_slots`, shop catalog), `apps/api/src/equipment/`, `apps/api/src/users/member-appearance.ts`, `packages/contracts/src/index.ts`, `apps/realtime/src/testing/stub-api.ts`, `apps/api/openapi.json`, `docs/`, `rules/data.md`
+- **Change:** Added independent `hand`, `neck` and `ears` equipment slots for avatar accessories through the database enum, equipment API, member appearance and shared contract, and seeded 19 shop items (40 accessories in total).
+- **Reason:** The front merged hand, neck and ear accessory assets that students cannot buy or equip yet.
+- **Verification:** Specs written RED first; touched specs without a database, lint and typecheck pass. DB-backed specs and the migration were not run (no PostgreSQL running).
+- **Next step:** Run the DB-backed specs in CI; deploy API and realtime together because the appearance contract now requires the new keys.
+
 ## 2026-11-25 — Voice calls, direct call ringing and docs (#149, B4)
 
 - **Status:** completed (pending CI and merge of the PR)

@@ -24,7 +24,7 @@ export class ClassroomDesksController {
   @ApiOperation({
     summary: 'Read the complete classroom desk map',
     description:
-      'Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.',
+      'Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, each with the equipped desk_decor item of its student, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.',
   })
   @ApiParam({ name: 'id', description: 'Classroom UUID' })
   @ApiOkResponse({ type: ClassroomDeskMapDto })
