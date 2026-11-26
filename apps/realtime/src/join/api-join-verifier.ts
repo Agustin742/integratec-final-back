@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { MAX_CLASSROOM_DESKS, memberAppearanceSchema, TUTOR_BOT_SKINS } from '@aula/contracts';
+import {
+  DEFAULT_TUTOR_BOT_SKIN,
+  MAX_CLASSROOM_DESKS,
+  memberAppearanceSchema,
+  toTutorBotSkin,
+} from '@aula/contracts';
 import {
   CLASSROOM_ROLES,
   JoinDeniedError,
@@ -33,8 +38,10 @@ const verifiedJoinSchema = z.object({
   appearanceRevision: z.number().int().nonnegative(),
   // Desks of the classroom (#79); a count the room could not lay out denies the join.
   deskCount: z.number().int().min(0).max(MAX_CLASSROOM_DESKS),
-  tutorBotSkin: z.enum(TUTOR_BOT_SKINS),
-  tutorBotSkinRevision: z.number().int().nonnegative(),
+  // The skin is cosmetic (#154): an API that omits it, or sends one this build does not know,
+  // must not deny the join. A malformed value still does.
+  tutorBotSkin: z.string().default(DEFAULT_TUTOR_BOT_SKIN).transform(toTutorBotSkin),
+  tutorBotSkinRevision: z.number().int().nonnegative().default(0),
 });
 
 export interface ApiJoinVerifierOptions {

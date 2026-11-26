@@ -107,12 +107,8 @@ describe('ApiJoinVerifier', () => {
     ['a missing appearance revision', json(200, { ...IDENTITY, appearanceRevision: undefined })],
     ['a negative appearance revision', json(200, { ...IDENTITY, appearanceRevision: -1 })],
     ['a missing desk count', json(200, { ...IDENTITY, deskCount: undefined })],
-    ['a missing tutor bot skin', json(200, { ...IDENTITY, tutorBotSkin: undefined })],
-    ['an unknown tutor bot skin', json(200, { ...IDENTITY, tutorBotSkin: 'river' })],
-    [
-      'a missing tutor bot skin revision',
-      json(200, { ...IDENTITY, tutorBotSkinRevision: undefined }),
-    ],
+    ['a non-string tutor bot skin', json(200, { ...IDENTITY, tutorBotSkin: 7 })],
+    ['a negative tutor bot skin revision', json(200, { ...IDENTITY, tutorBotSkinRevision: -1 })],
     ['a negative desk count', json(200, { ...IDENTITY, deskCount: -1 })],
     ['a fractional desk count', json(200, { ...IDENTITY, deskCount: 12.5 })],
     ['a string desk count', json(200, { ...IDENTITY, deskCount: '12' })],
@@ -125,6 +121,25 @@ describe('ApiJoinVerifier', () => {
     await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).rejects.toBeInstanceOf(
       JoinDeniedError,
     );
+  });
+
+  it.each([
+    [
+      'an older API that sends neither skin field',
+      { tutorBotSkin: undefined, tutorBotSkinRevision: undefined },
+      { tutorBotSkin: 'none', tutorBotSkinRevision: 0 },
+    ],
+    [
+      'a skin this build does not know',
+      { tutorBotSkin: 'river', tutorBotSkinRevision: 4 },
+      { tutorBotSkin: 'none', tutorBotSkinRevision: 4 },
+    ],
+  ])('admits with no skin for %s (#154)', async (_label, sent, expected) => {
+    const fetchImpl = vi.fn().mockResolvedValue(json(200, { ...IDENTITY, ...sent }));
+    await expect(makeVerifier(fetchImpl).verify(TOKEN, CLASSROOM_ID)).resolves.toEqual({
+      ...IDENTITY,
+      ...expected,
+    });
   });
 
   it.each([0, 13, MAX_CLASSROOM_DESKS])('accepts a desk count of %i', async (deskCount) => {
