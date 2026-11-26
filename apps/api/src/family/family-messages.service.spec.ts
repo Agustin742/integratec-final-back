@@ -1,5 +1,5 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import { ClassroomRole, MembershipState, SchoolRole } from '@prisma/client';
+import { ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { ClassroomRole, MembershipState, Prisma, SchoolRole } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +56,8 @@ describe('FamilyMessagesService (unit)', () => {
     classroomMembership: {
       findMany: ReturnType<typeof vi.fn>;
     };
+    $transaction: ReturnType<typeof vi.fn>;
+    $queryRaw: ReturnType<typeof vi.fn>;
     parentLink: {
       findFirst: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -80,6 +82,10 @@ describe('FamilyMessagesService (unit)', () => {
       classroomMembership: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      $transaction: vi.fn(async (callback) => callback(prisma)),
+      $queryRaw: vi.fn(async (query) =>
+        String(query).includes('pg_try_advisory') ? [{ locked: true }] : [{ now: msg1CreatedAt }],
+      ),
       parentLink: {
         findFirst: vi.fn().mockResolvedValue(null),
         findMany: vi.fn().mockResolvedValue([]),
@@ -198,6 +204,7 @@ describe('FamilyMessagesService (unit)', () => {
           classroomId: null,
           authorId: parentId,
           body: 'Thanks for the update!',
+          createdAt: msg1CreatedAt,
         },
       }),
     );
@@ -212,11 +219,7 @@ describe('FamilyMessagesService (unit)', () => {
     });
   });
 
-  it.each([
-    { label: 'Teacher', actorId: teacherId, myRole: 'TEACHER' },
-    { label: 'School Owner', actorId: schoolOwnerId, myRole: 'OWNER' },
-    { label: 'School Admin', actorId: schoolAdminId, myRole: 'ADMIN' },
-  ])(
+  it.each([{ label: 'Teacher', actorId: teacherId, myRole: 'TEACHER' }])(
     'allows classroom $label to read and reply with authorRole STAFF',
     async ({ actorId, myRole }) => {
       prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
@@ -237,6 +240,7 @@ describe('FamilyMessagesService (unit)', () => {
       const listRes = await service.listMessages(actorId, linkId, { page: 1, pageSize: 30 });
       expect(access.verifyClassroomAccess).toHaveBeenCalledWith(actorId, classroomId, {
         requiredRole: 'STAFF',
+        client: prisma,
       });
       expect(listRes.total).toBe(0);
 
@@ -257,12 +261,112 @@ describe('FamilyMessagesService (unit)', () => {
             classroomId: null,
             authorId: actorId,
             body: 'Reply from staff',
+            createdAt: msg1CreatedAt,
           },
         }),
       );
       expect(created.authorRole).toBe('STAFF');
     },
   );
+
+  it.each([
+    { actorId: schoolOwnerId, myRole: 'OWNER' },
+    { actorId: schoolAdminId, myRole: 'ADMIN' },
+  ])(
+    'privacy: denies $myRole private history and send without writes',
+    async ({ actorId, myRole }) => {
+      prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
+      access.verifyClassroomAccess.mockResolvedValue({ myRole });
+      await expect(
+        service.listMessages(actorId, linkId, { page: 1, pageSize: 30 }),
+      ).rejects.toThrow(NotFoundException);
+      await expect(service.createMessage(actorId, linkId, { body: 'Private' })).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(prisma.message.findMany).not.toHaveBeenCalled();
+      expect(prisma.message.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('send limiting: rejects the sixth persisted message without writing', async () => {
+    prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
+    prisma.message.count.mockResolvedValue(5);
+    prisma.message.create.mockResolvedValue({
+      id: msg1Id,
+      parentLinkId: linkId,
+      authorId: parentId,
+      body: 'Too many',
+      createdAt: msg1CreatedAt,
+      author: { displayName: 'Parent Ana' },
+    });
+    await expect(service.createMessage(parentId, linkId, { body: 'Too many' })).rejects.toThrow(
+      HttpException,
+    );
+    expect(prisma.message.create).not.toHaveBeenCalled();
+    expect(prisma.message.count).toHaveBeenCalledWith({
+      where: {
+        parentLinkId: linkId,
+        authorId: parentId,
+        createdAt: { gt: new Date(msg1CreatedAt.getTime() - 10_000) },
+      },
+    });
+  });
+
+  it('allows an independent teacher resolved as TEACHER by AccessVerificationService without ClassroomMembership and reads messages in RepeatableRead', async () => {
+    prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
+    access.verifyClassroomAccess.mockResolvedValue({
+      classroom: {
+        id: classroomId,
+        schoolId: null,
+        independentTeacherId: teacherId,
+        name: 'Physics A',
+        adultMode: false,
+      },
+      myRole: 'TEACHER',
+      capabilities: [],
+    });
+    prisma.message.count.mockResolvedValueOnce(0);
+    prisma.message.findMany.mockResolvedValueOnce([]);
+
+    await expect(
+      service.listMessages(teacherId, linkId, { page: 1, pageSize: 30 }),
+    ).resolves.toMatchObject({ total: 0 });
+    expect(prisma.$transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead }),
+    );
+
+    prisma.message.create.mockResolvedValueOnce({
+      id: msg2Id,
+      parentLinkId: linkId,
+      authorId: teacherId,
+      body: 'Independent reply',
+      createdAt: msg2CreatedAt,
+      author: { displayName: 'Prof. Ada' },
+    });
+    await expect(
+      service.createMessage(teacherId, linkId, { body: 'Independent reply' }),
+    ).resolves.toMatchObject({ authorRole: 'STAFF', body: 'Independent reply' });
+  });
+
+  it('keeps actual linked-parent access separate from school staff authority', async () => {
+    prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
+    access.verifyClassroomAccess.mockResolvedValue({ myRole: 'OWNER' });
+    await expect(
+      service.listMessages(parentId, linkId, { page: 1, pageSize: 30 }),
+    ).resolves.toMatchObject({ total: 0 });
+    expect(access.verifyClassroomAccess).not.toHaveBeenCalled();
+  });
+
+  it('send limiting: rejects lock contention without counting or writing', async () => {
+    prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
+    prisma.$queryRaw.mockResolvedValueOnce([{ locked: false }]);
+    await expect(service.createMessage(parentId, linkId, { body: 'Busy' })).rejects.toMatchObject({
+      status: 429,
+    });
+    expect(prisma.message.count).not.toHaveBeenCalled();
+    expect(prisma.message.create).not.toHaveBeenCalled();
+  });
 
   it('returns 404 for the linked student (childId), foreign parent, and outsider on both GET and POST', async () => {
     prisma.parentLink.findFirst.mockResolvedValue(makeLinkRow());
@@ -353,11 +457,7 @@ describe('FamilyMessagesService (unit)', () => {
     const classroom2Id = '00000000-0000-4000-8000-000000000012';
     const child2Id = '00000000-0000-4000-8000-000000000008';
 
-    it.each([
-      { label: 'Teacher', actorId: teacherId },
-      { label: 'School Owner', actorId: schoolOwnerId },
-      { label: 'School Admin', actorId: schoolAdminId },
-    ])(
+    it.each([{ label: 'Teacher', actorId: teacherId }])(
       'returns active family threads for $label ordered by lastMessageAt DESC NULLS LAST, createdAt ASC, id ASC',
       async ({ actorId }) => {
         prisma.classroom.findMany.mockResolvedValueOnce([
@@ -466,17 +566,6 @@ describe('FamilyMessagesService (unit)', () => {
               adultMode: false,
               AND: [{ OR: [{ schoolId: null }, { school: { deletedAt: null } }] }],
               OR: [
-                {
-                  school: {
-                    members: {
-                      some: {
-                        userId: actorId,
-                        state: MembershipState.ACTIVE,
-                        role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
-                      },
-                    },
-                  },
-                },
                 { independentTeacherId: actorId },
                 {
                   memberships: {
@@ -491,7 +580,13 @@ describe('FamilyMessagesService (unit)', () => {
                     { schoolId: null },
                     {
                       school: {
-                        members: { some: { userId: actorId, state: MembershipState.ACTIVE } },
+                        members: {
+                          some: {
+                            userId: actorId,
+                            state: MembershipState.ACTIVE,
+                            role: SchoolRole.TEACHER,
+                          },
+                        },
                       },
                     },
                   ],

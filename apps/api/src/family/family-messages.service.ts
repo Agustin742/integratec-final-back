@@ -1,5 +1,6 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ClassroomRole, MembershipState, type Prisma, SchoolRole } from '@prisma/client';
+import { createHash } from 'node:crypto';
+import { ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { ClassroomRole, MembershipState, Prisma, SchoolRole } from '@prisma/client';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { toIsoString } from '../http/iso-string';
 import { RequestValidationException } from '../http/validation';
@@ -18,6 +19,10 @@ import {
   UNSAFE_PARENT_MESSAGE_CONTROL_CHARS,
 } from './family-messages.dto';
 import { FAMILY_LINK_SELECT, isClassroomLive, toFamilyLinkDto } from './family.service';
+
+// Match classroom chat's admission budget, scoped to author + private thread.
+const SEND_MAX_MESSAGES = 5;
+const SEND_WINDOW_MS = 10_000;
 
 const PARENT_LINK_MESSAGE_THREAD_SELECT = {
   ...FAMILY_LINK_SELECT,
@@ -170,8 +175,10 @@ export class FamilyMessagesService {
 
   /**
    * Lists active parent-child messaging threads across every non-adult-mode live classroom where
-   * the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or `SCHOOL_ADMIN`).
-   * Returns `{ items: [] }` without error for students, parents, or users without staff classrooms.
+   * the authenticated user is the classroom's independent teacher or has an active classroom
+   * TEACHER membership (with active school TEACHER membership when school-owned), excluding
+   * school Owner/Admin. Returns `{ items: [] }` without error for users without eligible teaching
+   * classrooms.
    */
   async listMyFamilyThreads(actorUserId: string): Promise<StaffFamilyThreadsResponseDto> {
     if (!UUID_PATTERN.test(actorUserId)) {
@@ -184,17 +191,6 @@ export class FamilyMessagesService {
         adultMode: false,
         AND: [{ OR: [{ schoolId: null }, { school: { deletedAt: null } }] }],
         OR: [
-          {
-            school: {
-              members: {
-                some: {
-                  userId: actorUserId,
-                  state: MembershipState.ACTIVE,
-                  role: { in: [SchoolRole.OWNER, SchoolRole.ADMIN] },
-                },
-              },
-            },
-          },
           { independentTeacherId: actorUserId },
           {
             memberships: {
@@ -209,7 +205,13 @@ export class FamilyMessagesService {
               { schoolId: null },
               {
                 school: {
-                  members: { some: { userId: actorUserId, state: MembershipState.ACTIVE } },
+                  members: {
+                    some: {
+                      userId: actorUserId,
+                      state: MembershipState.ACTIVE,
+                      role: SchoolRole.TEACHER,
+                    },
+                  },
                 },
               },
             ],
@@ -286,16 +288,20 @@ export class FamilyMessagesService {
       hiddenAt: null,
     };
 
-    const [total, rows] = await Promise.all([
-      this.prisma.message.count({ where }),
-      this.prisma.message.findMany({
-        where,
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        skip,
-        take: pageSize,
-        select: MESSAGE_SELECT,
-      }),
-    ]);
+    const [total, rows] = await this.prisma.$transaction(
+      async (tx) =>
+        Promise.all([
+          tx.message.count({ where }),
+          tx.message.findMany({
+            where,
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            skip,
+            take: pageSize,
+            select: MESSAGE_SELECT,
+          }),
+        ]),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, maxWait: 10_000 },
+    );
 
     return {
       link: toFamilyLinkDto(link),
@@ -312,30 +318,56 @@ export class FamilyMessagesService {
     dto: CreateParentLinkMessageDto,
   ): Promise<ParentLinkMessageDto> {
     const body = validateMessageBody(dto.body);
-    const { link } = await this.resolveAuthorizedLink(actorUserId, linkId);
-
-    const created = await this.prisma.message.create({
-      data: {
-        parentLinkId: link.id,
-        classroomId: null,
-        authorId: actorUserId,
-        body,
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Authorize before admission so contention never reveals a foreign thread.
+        const { link } = await this.resolveAuthorizedLink(actorUserId, linkId, tx);
+        const key = createHash('sha256')
+          .update(`parent-message:${link.id.toLowerCase()}:${actorUserId.toLowerCase()}`)
+          .digest()
+          .readBigInt64BE(0);
+        const [lock] = await tx.$queryRaw<{ locked: boolean }[]>`
+          SELECT pg_try_advisory_xact_lock(${key}) AS locked`;
+        if (!lock?.locked) throw new HttpException('Parent message rate limit exceeded', 429);
+        // Sample after admission, not transaction-start CURRENT_TIMESTAMP.
+        const [clock] = await tx.$queryRaw<{ now: Date }[]>`
+          SELECT date_trunc('milliseconds', clock_timestamp()) AS now`;
+        const now = clock!.now;
+        const count = await tx.message.count({
+          where: {
+            parentLinkId: link.id,
+            authorId: actorUserId,
+            createdAt: { gt: new Date(now.getTime() - SEND_WINDOW_MS) },
+          },
+        });
+        if (count >= SEND_MAX_MESSAGES)
+          throw new HttpException('Parent message rate limit exceeded', 429);
+        const created = await tx.message.create({
+          data: {
+            parentLinkId: link.id,
+            classroomId: null,
+            authorId: actorUserId,
+            body,
+            createdAt: now,
+          },
+          select: MESSAGE_SELECT,
+        });
+        return toParentLinkMessageDto(created, link.parentId);
       },
-      select: MESSAGE_SELECT,
-    });
-
-    return toParentLinkMessageDto(created, link.parentId);
+      { maxWait: 10_000, timeout: 15_000 },
+    );
   }
 
   private async resolveAuthorizedLink(
     actorUserId: string,
     linkId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<{ link: ParentLinkMessageThreadRow; actorRole: ParentLinkMessageAuthorRole }> {
     if (!UUID_PATTERN.test(actorUserId) || !UUID_PATTERN.test(linkId)) {
       throw new NotFoundException('Parent link not found');
     }
 
-    const link = await this.prisma.parentLink.findFirst({
+    const link = await client.parentLink.findFirst({
       where: {
         id: linkId,
         state: MembershipState.ACTIVE,
@@ -351,7 +383,9 @@ export class FamilyMessagesService {
       throw new NotFoundException('Parent link not found');
     }
 
-    const childStillEnrolled = await this.access.isActiveStudent(link.classroomId, link.childId);
+    const childStillEnrolled = await this.access.isActiveStudent(link.classroomId, link.childId, {
+      client,
+    });
     if (!childStillEnrolled) {
       throw new NotFoundException('Parent link not found');
     }
@@ -361,9 +395,13 @@ export class FamilyMessagesService {
       actorRole = 'PARENT';
     } else {
       try {
-        await this.access.verifyClassroomAccess(actorUserId, link.classroomId, {
+        const access = await this.access.verifyClassroomAccess(actorUserId, link.classroomId, {
           requiredRole: 'STAFF',
+          client,
         });
+        // General staff authority is not private-conversation participation. Owner/Admin
+        // are denied even when they also hold a classroom teaching membership.
+        if (access.myRole !== 'TEACHER') throw new NotFoundException('Parent link not found');
         actorRole = 'STAFF';
       } catch (error) {
         if (error instanceof NotFoundException || error instanceof ForbiddenException) {

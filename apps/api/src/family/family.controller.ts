@@ -87,17 +87,19 @@ export class FamilyController {
   @Get('family-threads')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'List active parent-teacher messaging threads for staff classrooms',
+    summary: 'List active parent-teacher messaging threads for teaching classrooms',
     description:
       'Returns all active parent-child messaging threads across live, non-adult-mode classrooms ' +
-      'where the authenticated user holds a staff role (`TEACHER`, `SCHOOL_OWNER`, or ' +
-      '`SCHOOL_ADMIN`), including the latest visible message preview. Ordered by ' +
-      '`lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, then `id ASC`. Returns `{ items: [] }` ' +
-      'without error for students, parents, or users without staff classrooms.',
+      "where the authenticated user is the classroom's independent teacher or has an active " +
+      'classroom `TEACHER` membership (with active school `TEACHER` membership when school-owned), ' +
+      'including the latest visible message preview. School Owner/Admin are excluded even with a ' +
+      'teaching membership. Ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, ' +
+      'then `id ASC`. Returns `{ items: [] }` without error for users without eligible teaching ' +
+      'classrooms.',
   })
   @ApiOkResponse({
     type: StaffFamilyThreadsResponseDto,
-    description: 'Active family messaging threads for the authenticated staff user.',
+    description: 'Active family messaging threads for the authenticated classroom teacher.',
   })
   listMyFamilyThreads(
     @CurrentUser('userId') actorUserId: string,

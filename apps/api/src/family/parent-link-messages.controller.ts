@@ -9,6 +9,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -39,7 +40,10 @@ export class ParentLinkMessagesController {
     description:
       'Returns paginated visible messages for one active parent-child link, ordered ' +
       'chronologically (`createdAt ASC, id ASC`) for natural conversation reading. Accessible ' +
-      'only to the linked parent and classroom staff (teacher, school admin, or school owner). ' +
+      "only to the linked parent and the classroom's active teacher (independent teacher or " +
+      'active classroom `TEACHER` membership with active school `TEACHER` membership when ' +
+      'school-owned). School Owner/Admin authority does not grant access, even with a teaching ' +
+      'membership; an actual parent link is evaluated separately. ' +
       'Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, removed ' +
       'students, or any other caller including the linked student (strict anti-enumeration), ' +
       'and `403` while the classroom is in adult education mode.',
@@ -75,8 +79,12 @@ export class ParentLinkMessagesController {
     summary: 'Send a private message in a parent-teacher thread',
     description:
       'Persists a new plain-text message bound to one active parent-child link (`classroomId: null`). ' +
-      'Accessible only to the linked parent and classroom staff (teacher, school admin, or school ' +
-      'owner). Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, ' +
+      "Accessible only to the linked parent and the classroom's active teacher (independent teacher " +
+      'or active classroom `TEACHER` membership with active school `TEACHER` membership when ' +
+      'school-owned), not school Owner/Admin acting as staff (even with a teaching membership). ' +
+      'Actual linked-parent access is separate. ' +
+      'Allows at most 5 messages per author/thread in a rolling 10-second window; concurrent sends ' +
+      'for that pair may return `429` without writing. Returns `404` for malformed UUIDs, inactive links, deleted classrooms/schools, ' +
       'removed students, or any other caller including the linked student (strict anti-enumeration), ' +
       'and `403` while the classroom is in adult education mode.',
   })
@@ -95,6 +103,11 @@ export class ParentLinkMessagesController {
   @ApiNotFoundResponse({
     type: ErrorEnvelopeDto,
     description: 'Malformed, nonexistent, inactive, or inaccessible parent link.',
+  })
+  @ApiTooManyRequestsResponse({
+    type: ErrorEnvelopeDto,
+    description:
+      'Per-author/thread send window exceeded or another send is in flight. No message is written.',
   })
   createMessage(
     @CurrentUser('userId') actorUserId: string,

@@ -36,6 +36,17 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
     () => randomUUID(),
   );
 
+  const [
+    schoolId,
+    schoolClassroom,
+    schoolLink,
+    schoolOwner,
+    schoolAdmin,
+    schoolOnlyTeacher,
+    schoolTeacher,
+    schoolParent,
+  ] = Array.from({ length: 8 }, () => randomUUID());
+
   const token = (actor: string) => `Bearer family-test:${actor}`;
   const get = (path: string, actor?: string) => {
     const req = request(app.getHttpServer()).get(path);
@@ -145,6 +156,58 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
           deletedAt: new Date(),
         },
       ],
+    });
+
+    await prisma.user.createMany({
+      data: [schoolOwner, schoolAdmin, schoolOnlyTeacher, schoolTeacher, schoolParent].map(
+        (id) => ({
+          id,
+          email: `family-http-${id}@example.invalid`,
+          passwordHash: 'unused-synthetic-hash',
+          displayName: 'Synthetic school member',
+          registrationPath: RegistrationPath.INVITEE,
+        }),
+      ),
+    });
+    await prisma.school.create({
+      data: { id: schoolId, name: 'Synthetic private school', slug: `family-${schoolId}` },
+    });
+    await prisma.schoolMember.createMany({
+      data: [
+        { schoolId, userId: schoolOwner, role: 'OWNER' },
+        { schoolId, userId: schoolAdmin, role: 'ADMIN' },
+        { schoolId, userId: schoolParent, role: 'ADMIN' },
+        { schoolId, userId: schoolTeacher, role: 'TEACHER' },
+        { schoolId, userId: schoolOnlyTeacher, role: 'TEACHER' },
+      ],
+    });
+    await prisma.classroom.create({
+      data: { id: schoolClassroom, schoolId, name: 'Private classroom' },
+    });
+    await prisma.classroomMembership.createMany({
+      data: [
+        ...[schoolTeacher, schoolOwner, schoolAdmin].map((userId) => ({
+          classroomId: schoolClassroom,
+          userId,
+          role: ClassroomRole.TEACHER,
+        })),
+        { classroomId: schoolClassroom, userId: studentActive, role: ClassroomRole.STUDENT },
+      ],
+    });
+    await prisma.parentLink.create({
+      data: {
+        id: schoolLink,
+        classroomId: schoolClassroom,
+        parentId: schoolParent,
+        childId: studentActive,
+      },
+    });
+    await prisma.message.create({
+      data: {
+        parentLinkId: schoolLink,
+        authorId: schoolParent,
+        body: 'Private school conversation',
+      },
     });
 
     const t1 = new Date('2026-11-10T10:00:00.000Z');
@@ -507,6 +570,158 @@ describe('Family Area HTTP — HU-ACT-006 (real PostgreSQL)', () => {
 
     const adultMessagesCount = await prisma.message.count({ where: { parentLinkId: linkAdult } });
     expect(adultMessagesCount).toBe(0);
+  });
+
+  it('privacy: denies school Owner/Admin even with TEACHER membership, school-only teachers, and inactive school members', async () => {
+    const inactiveSchoolTeacher = randomUUID();
+    await prisma.user.create({
+      data: {
+        id: inactiveSchoolTeacher,
+        email: `family-http-${inactiveSchoolTeacher}@example.invalid`,
+        passwordHash: 'unused-synthetic-hash',
+        displayName: 'Inactive school teacher',
+        registrationPath: RegistrationPath.INVITEE,
+      },
+    });
+    await prisma.schoolMember.create({
+      data: {
+        schoolId,
+        userId: inactiveSchoolTeacher,
+        role: 'TEACHER',
+        state: MembershipState.INACTIVE,
+      },
+    });
+    await prisma.classroomMembership.create({
+      data: {
+        classroomId: schoolClassroom,
+        userId: inactiveSchoolTeacher,
+        role: ClassroomRole.TEACHER,
+        state: MembershipState.ACTIVE,
+      },
+    });
+
+    const before = await prisma.message.count({ where: { parentLinkId: schoolLink } });
+    for (const actor of [schoolOwner, schoolAdmin, schoolOnlyTeacher, inactiveSchoolTeacher]) {
+      await get(`/parent-links/${schoolLink}/messages`, actor).expect(404);
+      await post(`/parent-links/${schoolLink}/messages`, actor)
+        .send({ body: 'Denied' })
+        .expect(404);
+      const inbox = await get('/me/family-threads', actor).expect(200);
+      expect(inbox.body).toEqual({ items: [] });
+    }
+    expect(await prisma.message.count({ where: { parentLinkId: schoolLink } })).toBe(before);
+
+    const schoolTeacherInbox = await get('/me/family-threads', schoolTeacher).expect(200);
+    expect(schoolTeacherInbox.body.items.map((item: { id: string }) => item.id)).toContain(
+      schoolLink,
+    );
+
+    for (const actor of [schoolTeacher, schoolParent]) {
+      await get(`/parent-links/${schoolLink}/messages`, actor).expect(200);
+      await post(`/parent-links/${schoolLink}/messages`, actor)
+        .send({ body: 'Participant reply' })
+        .expect(201);
+    }
+    // The ADMIN parent sees only their own link, never a staff inbox.
+    expect((await get('/me/family-threads', schoolParent).expect(200)).body).toEqual({ items: [] });
+  });
+
+  it('send limiting: bounds concurrent admission at the persisted window without partial writes', async () => {
+    const limitLink = randomUUID();
+    await prisma.parentLink.create({
+      data: {
+        id: limitLink,
+        parentId: parentB,
+        childId: studentActive,
+        classroomId: schoolClassroom,
+      },
+    });
+    await prisma.message.createMany({
+      data: Array.from({ length: 4 }, () => ({
+        parentLinkId: limitLink,
+        authorId: parentB,
+        body: 'Recent send',
+        createdAt: new Date(),
+      })),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        post(
+          `/parent-links/${index % 2 ? limitLink.toUpperCase() : limitLink}/messages`,
+          parentB,
+        ).send({ body: 'Concurrent send' }),
+      ),
+    );
+    expect(results.map((res) => res.status).sort()).toEqual([201, 429, 429, 429]);
+    expect(await prisma.message.count({ where: { parentLinkId: limitLink } })).toBe(5);
+    await post(`/parent-links/${limitLink}/messages`, parentB)
+      .send({ body: 'Over limit' })
+      .expect(429);
+    expect(await prisma.message.count({ where: { parentLinkId: limitLink } })).toBe(5);
+    // Other authors and threads have separate quotas.
+    await post(`/parent-links/${limitLink}/messages`, schoolTeacher)
+      .send({ body: 'Teacher reply' })
+      .expect(201);
+    await post(`/parent-links/${schoolLink}/messages`, parentB)
+      .send({ body: 'Foreign link' })
+      .expect(404);
+  });
+
+  it('send limiting: expires old sends, counts hidden sends, and isolates each thread', async () => {
+    const expiryLink = randomUUID();
+    const expiryClassroom = randomUUID();
+    await prisma.classroom.create({ data: { id: expiryClassroom, schoolId, name: 'Expiry test' } });
+    await prisma.classroomMembership.create({
+      data: {
+        classroomId: expiryClassroom,
+        userId: studentActive,
+        role: ClassroomRole.STUDENT,
+      },
+    });
+    await prisma.parentLink.create({
+      data: {
+        id: expiryLink,
+        classroomId: expiryClassroom,
+        parentId: schoolParent,
+        childId: studentActive,
+      },
+    });
+    await prisma.message.createMany({
+      data: Array.from({ length: 5 }, () => ({
+        parentLinkId: expiryLink,
+        authorId: schoolParent,
+        body: 'Expired send',
+        createdAt: new Date(Date.now() - 60_000),
+      })),
+    });
+    await post(`/parent-links/${expiryLink}/messages`, schoolParent)
+      .send({ body: 'Window renewed' })
+      .expect(201);
+    await prisma.message.createMany({
+      data: Array.from({ length: 4 }, () => ({
+        parentLinkId: expiryLink,
+        authorId: schoolParent,
+        body: 'Hidden recent send',
+        hiddenAt: new Date(),
+        hiddenById: teacher,
+      })),
+    });
+    await post(`/parent-links/${expiryLink}/messages`, schoolParent)
+      .send({ body: 'Over limit' })
+      .expect(429);
+    expect(await prisma.message.count({ where: { parentLinkId: expiryLink } })).toBe(10);
+    await post(`/parent-links/${schoolLink}/messages`, schoolParent)
+      .send({ body: 'Other thread' })
+      .expect(201);
+    const page = await get(`/parent-links/${expiryLink}/messages`, schoolParent).expect(200);
+    const expected = await prisma.message.findMany({
+      where: { parentLinkId: expiryLink, hiddenAt: null },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    });
+    expect(page.body.items.map((item: { id: string }) => item.id)).toEqual(
+      expected.map((row) => row.id),
+    );
   });
 
   it('GET /me/family-threads returns active threads with latest visible message preview for teacher and { items: [] } for student/parent', async () => {

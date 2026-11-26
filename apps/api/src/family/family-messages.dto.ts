@@ -90,7 +90,8 @@ export class ParentLinkMessageDto {
 
   @ApiProperty({
     enum: ['PARENT', 'STAFF'],
-    description: 'Whether the author is the linked parent (`PARENT`) or classroom staff (`STAFF`).',
+    description:
+      'Whether the author is the linked parent (`PARENT`) or a teacher (`STAFF`, retained wire label).',
   })
   authorRole!: ParentLinkMessageAuthorRole;
 
@@ -138,7 +139,7 @@ export class ParentLinkMessagesResponseDto {
   total!: number;
 }
 
-/** One active parent-child messaging thread visible to classroom staff (`GET /me/family-threads`). */
+/** One active parent-child messaging thread visible to active classroom teachers (`GET /me/family-threads`). */
 export class StaffFamilyThreadDto {
   @ApiProperty({ format: 'uuid', description: 'ParentLink UUID.' })
   id!: string;
@@ -186,13 +187,13 @@ export class StaffFamilyThreadDto {
   lastMessageAuthorRole!: ParentLinkMessageAuthorRole | null;
 }
 
-/** Active family messaging threads across all classrooms where the caller holds a staff role. */
+/** Active family messaging threads across eligible classrooms where the caller has an active teaching membership. */
 export class StaffFamilyThreadsResponseDto {
   @ApiProperty({
     type: [StaffFamilyThreadDto],
     description:
       'Active family threads ordered by `lastMessageAt DESC NULLS LAST`, then `createdAt ASC`, ' +
-      'then `id ASC`. Empty when the authenticated user has no staff classrooms.',
+      'then `id ASC`. Empty when the authenticated user has no eligible teaching classrooms.',
   })
   items!: StaffFamilyThreadDto[];
 }
