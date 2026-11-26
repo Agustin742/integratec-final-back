@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "openapi:export": "ts-node -r tsconfig-paths/register src/openapi/export-cli.ts",
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",

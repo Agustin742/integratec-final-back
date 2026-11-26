@@ -9,7 +9,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsconfig
 COPY packages/contracts/package.json ./packages/contracts/
 COPY packages/contracts/tsconfig.json ./packages/contracts/
 COPY apps/api/package.json ./apps/api/
-COPY apps/api/tsconfig.json ./apps/api/
+COPY apps/api/tsconfig.json apps/api/tsconfig.build.json ./apps/api/
 COPY apps/api/prisma ./apps/api/prisma
 COPY apps/realtime/package.json ./apps/realtime/
 
@@ -20,7 +20,8 @@ COPY packages/contracts/src ./packages/contracts/src
 COPY apps/api/src ./apps/api/src
 
 RUN pnpm --filter @aula/contracts build && \
-    pnpm --filter @aula/api build
+    pnpm --filter @aula/api build && \
+    test -f apps/api/dist/main.js
 
 # Stage only the generated Prisma client (.prisma/client) with its original
 # relative path, so the runtime stage can copy it without dev dependencies.

@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-26 — Keep the API entry point at `dist/main.js`
+
+- **Status:** completed, not yet deployed
+- **Area / files:** `apps/api/` (tsconfig.build.json, package.json, Dockerfile)
+- **Change:** The production build compiles `src/` only, without specs, and the image build fails if `dist/main.js` is missing.
+- **Reason:** A spec importing from `prisma/` moved the output to `dist/src/`, so the deployed API crash-looped.
+- **Verification:** Reproduced locally, then `dist/main.js` is emitted and loads its modules; typecheck and Dockerfile tests pass. The image was not built or booted locally.
+- **Next step:** Deploy and check `/api/health`.
+
 ## 2026-11-26 — Serve 3D models from the hosted front
 
 - **Status:** completed, not yet applied
