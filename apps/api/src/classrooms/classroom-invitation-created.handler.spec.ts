@@ -270,4 +270,106 @@ describe('ClassroomInvitationCreatedHandler', () => {
 
     expect(mockEmail.send).not.toHaveBeenCalled();
   });
+
+  it('renders guardian invitation copy for PARENT invitations without leaking student PII', async () => {
+    const invitationId = randomUUID();
+    const classroomId = randomUUID();
+    const expiresAt = new Date('2026-12-01T12:00:00.000Z');
+
+    mockPrisma.invitation.findUnique.mockResolvedValue({
+      id: invitationId,
+      role: 'PARENT',
+      state: 'PENDING',
+      expiresAt,
+      classroom: { name: 'Biología 2', deletedAt: null, adultMode: false },
+    });
+
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId,
+        classroomId,
+        targetEmail: 'guardian@example.edu.ar',
+        role: 'PARENT',
+        encryptedToken: encryptSecret('parent-token-999', TOKEN_KEY, invitationId),
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await handler.handle(event);
+
+    const expectedUrl =
+      'https://invite-frontend.example.edu.ar/invitations/accept?token=parent-token-999';
+    expect(mockEmail.send).toHaveBeenCalledTimes(1);
+    expect(mockEmail.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'guardian@example.edu.ar',
+        subject: 'Guardian invitation for Biología 2',
+        text: expect.stringContaining('parent or guardian'),
+        html: expect.stringContaining(`href="${expectedUrl}"`),
+      }),
+    );
+  });
+
+  it('skips PARENT invitation email delivery when adultMode was enabled', async () => {
+    const invitationId = randomUUID();
+    mockPrisma.invitation.findUnique.mockResolvedValue({
+      id: invitationId,
+      role: 'PARENT',
+      state: 'PENDING',
+      expiresAt: new Date(Date.now() + 86400000),
+      classroom: { name: 'Adultos 1', deletedAt: null, adultMode: true },
+    });
+
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId,
+        classroomId: randomUUID(),
+        targetEmail: 'guardian@example.edu.ar',
+        role: 'PARENT',
+        encryptedToken: encryptSecret('parent-token-adult', TOKEN_KEY, invitationId),
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await handler.handle(event);
+
+    expect(mockEmail.send).not.toHaveBeenCalled();
+  });
+
+  it('skips invitation email delivery when the owning school was deleted', async () => {
+    const invitationId = randomUUID();
+    mockPrisma.invitation.findUnique.mockResolvedValue({
+      id: invitationId,
+      role: 'PARENT',
+      state: 'PENDING',
+      expiresAt: new Date(Date.now() + 86400000),
+      classroom: {
+        name: 'Biología 2',
+        deletedAt: null,
+        adultMode: false,
+        school: { deletedAt: new Date() },
+      },
+    });
+
+    const event: OutboxEventEnvelope = {
+      id: randomUUID(),
+      type: CLASSROOM_INVITATION_CREATED_EVENT,
+      payload: {
+        invitationId,
+        classroomId: randomUUID(),
+        targetEmail: 'guardian@example.edu.ar',
+        role: 'PARENT',
+        encryptedToken: encryptSecret('parent-token-deleted-school', TOKEN_KEY, invitationId),
+      } as unknown as OutboxEventEnvelope['payload'],
+      occurredAt: new Date(),
+    };
+
+    await handler.handle(event);
+
+    expect(mockEmail.send).not.toHaveBeenCalled();
+  });
 });

@@ -24,7 +24,10 @@ import {
 import { conflict } from '../http/conflict';
 import { RequestValidationException } from '../http/validation';
 import { isExamPassed, StreakService } from '../gamification/streak.service';
-import { NotificationRecorder } from '../notifications/notification-recorder.service';
+import {
+  NotificationRecorder,
+  recordGradePostedNotifications,
+} from '../notifications/notification-recorder.service';
 import { OutboxWriter } from '../platform/outbox/outbox.writer';
 import { STORAGE_PORT, type StoragePort } from '../platform/storage/storage.port';
 import { PointsLedgerService } from '../points/points-ledger.service';
@@ -606,11 +609,9 @@ export class SubmissionsService {
             },
           });
 
-          await this.notifications.record(tx, {
-            kind: 'grade_posted',
+          await recordGradePostedNotifications(tx, this.notifications, {
             classroomId,
-            resourceId: gradeId,
-            recipientId: studentId,
+            gradeId,
             studentId,
           });
 

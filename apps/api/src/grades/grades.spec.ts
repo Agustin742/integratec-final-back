@@ -172,6 +172,12 @@ describe('GradesService (unit)', () => {
     activity: {
       findFirst: ReturnType<typeof vi.fn>;
     };
+    classroom: {
+      findUnique: ReturnType<typeof vi.fn>;
+    };
+    parentLink: {
+      findMany: ReturnType<typeof vi.fn>;
+    };
     submission: {
       count: ReturnType<typeof vi.fn>;
       findMany: ReturnType<typeof vi.fn>;
@@ -212,6 +218,12 @@ describe('GradesService (unit)', () => {
       },
       activity: {
         findFirst: vi.fn(),
+      },
+      classroom: {
+        findUnique: vi.fn().mockResolvedValue({ adultMode: false }),
+      },
+      parentLink: {
+        findMany: vi.fn().mockResolvedValue([]),
       },
       submission: {
         count: vi.fn(),
@@ -750,6 +762,99 @@ describe('GradesService (unit)', () => {
     await expect(service.getGrade(otherStudentId, submissionId)).rejects.toThrow(
       ForbiddenException,
     );
+  });
+
+  it('records grade_posted notifications for student and active linked parents when adultMode is false', async () => {
+    const parent1Id = '00000000-0000-4000-8000-000000000031';
+    const parent2Id = '00000000-0000-4000-8000-000000000032';
+    txClient.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: activityId,
+          type: ActivityType.TP,
+          format: ActivityFormat.FILE,
+          title: 'TP 1',
+          maxScore: 100,
+          weightMultiplier: new Prisma.Decimal('1.00'),
+        },
+      ])
+      .mockResolvedValueOnce([{ id: submissionId, studentId, submittedAt: now }]);
+    txClient.grade.findUnique.mockResolvedValue(null);
+    txClient.grade.create.mockImplementation(async ({ data }) => ({
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    txClient.classroom.findUnique.mockResolvedValueOnce({ adultMode: false });
+    txClient.parentLink.findMany.mockResolvedValueOnce([
+      { parentId: parent1Id },
+      { parentId: parent2Id },
+    ]);
+
+    const res = await service.gradeSubmission(actorId, submissionId, {
+      score: 90,
+      feedback: 'Great work',
+    });
+
+    expect(notifications.record).toHaveBeenCalledTimes(3);
+    expect(notifications.record).toHaveBeenNthCalledWith(1, txClient, {
+      kind: 'grade_posted',
+      classroomId,
+      resourceId: res.id,
+      recipientId: studentId,
+      studentId,
+    });
+    expect(notifications.record).toHaveBeenNthCalledWith(2, txClient, {
+      kind: 'grade_posted',
+      classroomId,
+      resourceId: res.id,
+      recipientId: parent1Id,
+      studentId,
+    });
+    expect(notifications.record).toHaveBeenNthCalledWith(3, txClient, {
+      kind: 'grade_posted',
+      classroomId,
+      resourceId: res.id,
+      recipientId: parent2Id,
+      studentId,
+    });
+  });
+
+  it('records grade_posted notification for student only (0 for parents) when adultMode is true', async () => {
+    txClient.$queryRaw
+      .mockResolvedValueOnce([
+        {
+          id: activityId,
+          type: ActivityType.TP,
+          format: ActivityFormat.FILE,
+          title: 'TP 1',
+          maxScore: 100,
+          weightMultiplier: new Prisma.Decimal('1.00'),
+        },
+      ])
+      .mockResolvedValueOnce([{ id: submissionId, studentId, submittedAt: now }]);
+    txClient.grade.findUnique.mockResolvedValue(null);
+    txClient.grade.create.mockImplementation(async ({ data }) => ({
+      ...data,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    txClient.classroom.findUnique.mockResolvedValueOnce({ adultMode: true });
+
+    const res = await service.gradeSubmission(actorId, submissionId, {
+      score: 80,
+      feedback: 'Adult mode grade',
+    });
+
+    expect(txClient.parentLink.findMany).not.toHaveBeenCalled();
+    expect(notifications.record).toHaveBeenCalledTimes(1);
+    expect(notifications.record).toHaveBeenCalledWith(txClient, {
+      kind: 'grade_posted',
+      classroomId,
+      resourceId: res.id,
+      recipientId: studentId,
+      studentId,
+    });
   });
 });
 

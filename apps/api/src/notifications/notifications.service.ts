@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { MembershipState, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { AccessVerificationService, UUID_PATTERN } from '../access/access-verification.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -170,9 +170,35 @@ export class NotificationsService {
     return { updated: result.count };
   }
 
-  /** Notification-owned persistence boundary for a committed announcement email request. */
-  async prepareAnnouncementEmail(eventId: string): Promise<{
+  /** Email eligibility is a parent link, not staff authority or a sibling's link.
+   * The shared access check additionally enforces live school/classroom and child enrollment.
+   */
+  private async isParentGradeEmail(request: NotificationRequest): Promise<boolean> {
+    if (
+      request.kind !== 'grade_posted' ||
+      !request.classroomId ||
+      !request.studentId ||
+      request.recipientId === request.studentId
+    ) {
+      return false;
+    }
+    const link = await this.prisma.parentLink.findFirst({
+      where: {
+        classroomId: request.classroomId,
+        childId: request.studentId,
+        parentId: request.recipientId,
+        state: MembershipState.ACTIVE,
+        classroom: { adultMode: false },
+      },
+      select: { id: true },
+    });
+    return link !== null;
+  }
+
+  /** Notification-owned persistence boundary; re-authorize immediately before delivery. */
+  async prepareNotificationEmail(eventId: string): Promise<{
     notificationId: string;
+    kind: 'announcement' | 'grade_posted';
     resourceId: string;
     to: string;
   } | null> {
@@ -194,7 +220,7 @@ export class NotificationsService {
       },
     });
     if (!notification) throw new Error('Notification not materialized');
-    if (notification.kind !== 'announcement') return null;
+    if (notification.kind !== 'announcement' && notification.kind !== 'grade_posted') return null;
     const request = notificationRequestSchema.safeParse({
       kind: notification.kind,
       classroomId: notification.classroomId ?? undefined,
@@ -203,6 +229,9 @@ export class NotificationsService {
       studentId: notification.studentId ?? undefined,
     });
     if (!request.success || !(await this.hasCurrentAccess(request.data))) return null;
+    if (notification.kind === 'grade_posted' && !(await this.isParentGradeEmail(request.data))) {
+      return null;
+    }
     // Uniqueness protects receipts; the provider key protects external sends on replay.
     await this.prisma.notificationDelivery.createMany({
       data: [{ notificationId, channel: 'email' }],
@@ -215,13 +244,14 @@ export class NotificationsService {
     if (delivery.deliveredAt !== null) return null;
     return {
       notificationId,
+      kind: notification.kind,
       resourceId: notification.resourceId,
       to: notification.recipient.email,
     };
   }
 
   /** Called only after the email port acknowledges this stable delivery identity. */
-  async completeAnnouncementEmail(notificationId: string): Promise<void> {
+  async completeNotificationEmail(notificationId: string): Promise<void> {
     await this.prisma.notificationDelivery.update({
       where: { notificationId_channel: { notificationId, channel: 'email' } },
       data: { deliveredAt: new Date() },
@@ -237,6 +267,8 @@ export class NotificationsService {
     if (!parsed.success) throw new Error('Invalid notification request');
     const request = parsed.data;
     if (!(await this.hasCurrentAccess(request))) return;
+    const emailEligible =
+      request.kind === 'announcement' || (await this.isParentGradeEmail(request));
 
     await this.prisma.$transaction(async (tx) => {
       // createMany(skipDuplicates) is database-level ON CONFLICT DO NOTHING. A
@@ -253,10 +285,10 @@ export class NotificationsService {
         data: [{ notificationId: notification.id, channel: 'in_app', deliveredAt: new Date() }],
         skipDuplicates: true,
       });
-      // Announcement notices also travel by email: the request is recorded in the same
-      // transaction, so the email job sees a committed notification and its unique
-      // (notification, channel) delivery row makes retries idempotent.
-      if (request.kind === 'announcement' && inserted.count > 0) {
+      // Announcements and exact-child parent grade notices share the existing email path.
+      // Student grade notices remain in-app only. Enqueue atomically with the notice,
+      // once per source event; the delivery handler rechecks current authorization.
+      if (emailEligible && inserted.count > 0) {
         await this.outbox.record(tx, {
           type: NOTIFICATION_EMAIL_REQUESTED_EVENT,
           payload: { notificationId: notification.id },

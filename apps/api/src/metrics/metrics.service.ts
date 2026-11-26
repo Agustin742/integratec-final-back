@@ -10,6 +10,7 @@ import {
   type ListDailyMetricsQueryDto,
   type ListReportCardQueryDto,
   type ReportCardItemDto,
+  type StudentParticipationSummaryDto,
   type StudentMetricSummaryDto,
 } from './metrics.dto';
 
@@ -40,9 +41,21 @@ export class MetricsService {
     query: ListReportCardQueryDto,
   ): Promise<Paginated<ReportCardItemDto>> {
     await this.access.verifyClassroomAccess(actorId, classroomId, { requiredRole: 'STUDENT' });
+    return this.readStudentReportCard(classroomId, actorId, query);
+  }
 
+  /**
+   * Shared report-card query for one already-authorized student in one classroom. Reused by both
+   * `GET /classrooms/:id/me/report-card` (student) and `GET /me/parent-links/:linkId/report-card`
+   * (linked parent, HU-ACT-006) so grading items and ordering never diverge.
+   */
+  async readStudentReportCard(
+    classroomId: string,
+    studentId: string,
+    query: ListReportCardQueryDto,
+  ): Promise<Paginated<ReportCardItemDto>> {
     const where = {
-      studentId: actorId,
+      studentId,
       grade: { isNot: null },
       // Published only, like every other student-facing classroom query: an unpublished
       // activity leaves the card (no unpublish exists yet; revisit with it).
@@ -90,6 +103,70 @@ export class MetricsService {
       total,
       query,
     );
+  }
+
+  /**
+   * Aggregated participation and published-activity progress totals for one already-authorized
+   * student in one classroom.
+   */
+  async readStudentActivitySummary(
+    classroomId: string,
+    studentId: string,
+  ): Promise<StudentParticipationSummaryDto> {
+    const publishedActivityFilter = {
+      classroomId,
+      deletedAt: null,
+      state: 'PUBLISHED' as const,
+    };
+    const [metricSums, publishedActivitiesCount, submittedPublishedCount, gradedRows] =
+      await Promise.all([
+        this.prisma.activityMetric.aggregate({
+          where: { classroomId, userId: studentId },
+          _sum: { connectedSeconds: true, submissionCount: true, messageCount: true },
+        }),
+        this.prisma.activity.count({ where: publishedActivityFilter }),
+        this.prisma.submission.count({
+          where: { studentId, activity: publishedActivityFilter },
+        }),
+        this.prisma.submission.findMany({
+          where: {
+            studentId,
+            grade: { isNot: null },
+            activity: publishedActivityFilter,
+          },
+          select: { grade: { select: { score: true, maxScore: true } } },
+        }),
+      ]);
+
+    const gradedCount = gradedRows.length;
+    const ungradedCount = Math.max(0, submittedPublishedCount - gradedCount);
+    const pendingCount = Math.max(0, publishedActivitiesCount - submittedPublishedCount);
+
+    const scorableGrades = gradedRows.filter(
+      (row): row is { grade: { score: number; maxScore: number } } =>
+        row.grade !== null && row.grade.maxScore > 0,
+    );
+    const averageScorePercent =
+      scorableGrades.length === 0
+        ? null
+        : Math.round(
+            (scorableGrades.reduce(
+              (sum, row) => sum + (row.grade.score / row.grade.maxScore) * 100,
+              0,
+            ) /
+              scorableGrades.length) *
+              100,
+          ) / 100;
+
+    return {
+      connectedSeconds: metricSums._sum.connectedSeconds ?? 0,
+      submissionCount: metricSums._sum.submissionCount ?? 0,
+      messageCount: metricSums._sum.messageCount ?? 0,
+      gradedCount,
+      ungradedCount,
+      pendingCount,
+      averageScorePercent,
+    };
   }
 
   /** The authenticated student's own daily metric rows, latest day first. */

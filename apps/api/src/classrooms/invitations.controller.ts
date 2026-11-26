@@ -13,7 +13,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { ErrorEnvelopeDto } from '../http/error-envelope.dto';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { AcceptInvitationDto } from './dto/accept-invitation.dto';
-import { JoinClassroomResponseDto } from './dto/join-classroom-response.dto';
+import { AcceptInvitationResponseDto } from './dto/join-classroom-response.dto';
 
 @ApiTags('invitations')
 @ApiBearerAuth()
@@ -24,17 +24,17 @@ export class InvitationsController {
   @Post('accept')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Accept an email invitation to join a classroom',
+    summary: 'Accept an email invitation to join a classroom as student or guardian',
     description:
-      'Atomically binds the authenticated user account to the classroom specified in the email invitation and assigns an available desk. Idempotent: re-accepting by an already enrolled student succeeds and returns the existing desk without error.',
+      'Atomically accepts a single-use STUDENT or PARENT email invitation. For STUDENT invitations, creates/reactivates classroom membership and assigns an available desk. For PARENT invitations, verifies adultMode is off, student is active, self-link is prevented, and the 2-guardian cap is respected, then creates/reactivates a ParentLink without creating a classroom membership or desk. Idempotent for already-active members and guardians.',
   })
   @ApiOkResponse({
-    type: JoinClassroomResponseDto,
-    description: 'Classroom membership established and desk assigned.',
+    type: AcceptInvitationResponseDto,
+    description: 'Classroom membership (STUDENT) or guardian link (PARENT) established.',
   })
   @ApiBadRequestResponse({
     type: ErrorEnvelopeDto,
-    description: 'Invitation token is malformed, expired, or already used.',
+    description: 'Invitation token is malformed, expired, revoked, or already used.',
   })
   @ApiUnauthorizedResponse({
     type: ErrorEnvelopeDto,
@@ -46,12 +46,13 @@ export class InvitationsController {
   })
   @ApiConflictResponse({
     type: ErrorEnvelopeDto,
-    description: 'Concurrent invitation acceptance conflict.',
+    description:
+      'Adult mode enabled, student no longer enrolled, self-link attempted, 2-guardian cap reached, or concurrent invitation acceptance conflict.',
   })
   async accept(
     @CurrentUser('userId') actorUserId: string,
     @Body() dto: AcceptInvitationDto,
-  ): Promise<JoinClassroomResponseDto> {
+  ): Promise<AcceptInvitationResponseDto> {
     return this.invitationsService.acceptEmailInvitation(actorUserId, dto);
   }
 }

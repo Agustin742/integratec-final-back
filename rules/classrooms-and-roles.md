@@ -28,7 +28,7 @@ Every access decision is made on the server from persisted membership and role. 
 | Parent | Linked children | Sees only the data of linked children; may have several children |
 
 - Owner, Admin, and Teacher are **staff roles**. A user may hold different roles in different contexts (for example Teacher in one school and Parent elsewhere); each is a separate membership and **MUST** be evaluated per context.
-- **School Owner and Admin hold teacher-level authority over every classroom of their school without a per-classroom membership.** The server **MUST** derive this from the SchoolMember role of the classroom's school, not from enrollment or classroom membership.
+- **School Owner and Admin hold teacher-level authority over every classroom of their school without a per-classroom membership.** The server **MUST** derive this from the SchoolMember role of the classroom's school, not from enrollment or classroom membership. The narrowly scoped exception is private parent–teacher conversations: Owner/Admin staff authority grants no history, sending, or inbox-preview access, even with a classroom Teacher dual role. Actual linked-parent access is evaluated separately through ParentLink. Eligible teachers are the classroom's independent teacher or an active classroom Teacher membership (and, for school classrooms, an active school Teacher membership). See [Parent messages](./communication-and-notifications.md#parent-messages) for the privacy decision and review condition; other school privileges remain unchanged.
 - A **Teacher** holds teacher-level authority only over classrooms they teach. A Teacher **MUST NOT** act on another teacher's classroom, even within the same school.
 - A **Parent** **MUST** only read data of children linked to them through an explicit ParentLink. The link is the sole source of that access.
 - A **Student** **MUST** only read and write their own submissions, grades, points, and purchases, plus classroom content meant for students.
@@ -49,7 +49,9 @@ Server-side enforcement is required for every row. "Own classroom" means a class
 | View and submit activities, view grades, use the shop | No | No | Yes | Grades of linked child |
 | Chat with classmates | Staff only for moderation | Yes | Yes | No |
 | List the classroom member directory | Yes | Own classroom | Enrolled classroom | No |
-| Message the teacher | Yes | Yes | Yes | Yes (teacher and child) |
+| Message the teacher (product scope; private parent–teacher exception below) | Yes, except private parent–teacher staff access | Yes; active classroom Teacher membership for private parent–teacher conversations | Yes | Yes (teacher and child) |
+
+For private parent–teacher conversations, the exception in [Parent messages](./communication-and-notifications.md#parent-messages) overrides the general staff/own-classroom shorthand above, not the other matrix rows. Parent–child messaging remains product scope, not an implementation claim.
 
 Implementers **MUST NOT** extend the matrix. Changes require updating this rule and the master document together.
 

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { InvitationRole } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsEmail, IsIn, IsOptional } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateClassroomInvitationDto {
   @ApiProperty({
@@ -14,11 +14,23 @@ export class CreateClassroomInvitationDto {
 
   @ApiPropertyOptional({
     description:
-      'Classroom role for the invitee. Only STUDENT is supported; teacher invitations are out of scope for classroom invitations.',
-    enum: [InvitationRole.STUDENT],
+      'Classroom role for the invitee (STUDENT or PARENT). Teacher invitations belong to the school-teacher invitation flow.',
+    enum: [InvitationRole.STUDENT, InvitationRole.PARENT],
     default: InvitationRole.STUDENT,
   })
   @IsOptional()
-  @IsIn([InvitationRole.STUDENT], { message: 'role must be STUDENT' })
+  @IsIn([InvitationRole.STUDENT, InvitationRole.PARENT], {
+    message: 'role must be STUDENT or PARENT',
+  })
   role?: InvitationRole = InvitationRole.STUDENT;
+
+  @ApiPropertyOptional({
+    description:
+      'UUID of the enrolled student to link when role is PARENT. Must be omitted when role is STUDENT.',
+    format: 'uuid',
+    example: '4e5f6a7b-0000-4000-8000-000000000009',
+  })
+  @IsOptional()
+  @IsUUID('all', { message: 'childId must be a valid UUID' })
+  childId?: string;
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { InvitationRole } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -21,7 +22,26 @@ describe('CreateClassroomInvitationDto', () => {
     );
   });
 
-  it.each([InvitationRole.TEACHER, InvitationRole.ADMIN, InvitationRole.OWNER, 'PARENT'])(
+  it('accepts a PARENT role with a valid childId UUID', async () => {
+    expect(
+      await errorsFor({
+        email: 'parent@example.edu.ar',
+        role: InvitationRole.PARENT,
+        childId: randomUUID(),
+      }),
+    ).toEqual([]);
+  });
+
+  it('rejects a non-UUID childId', async () => {
+    const errors = await errorsFor({
+      email: 'parent@example.edu.ar',
+      role: InvitationRole.PARENT,
+      childId: 'not-a-uuid',
+    });
+    expect(errors.map((e) => e.property)).toEqual(['childId']);
+  });
+
+  it.each([InvitationRole.TEACHER, InvitationRole.ADMIN, InvitationRole.OWNER])(
     'rejects the %s role',
     async (role) => {
       const errors = await errorsFor({ email: 'a@example.edu.ar', role });

@@ -44,8 +44,9 @@ export class SubmissionGradesController {
       'Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Assigns a 0-100 score and ' +
       'visible feedback (`1-5000` characters) to an ungraded `FILE` submission, computes ' +
       'server-weighted points (`round(score * typeWeight * activity.weightMultiplier)`), credits ' +
-      'the points ledger atomically when points > 0, and records a student-only `grade_posted` ' +
-      'notification. Returns `409` if already graded or not a `FILE` activity, `403` for ' +
+      'the points ledger atomically when points > 0, and records `grade_posted` notifications for ' +
+      'the student and any active linked parents when adult mode is off. Returns `409` if already ' +
+      'graded or not a `FILE` activity, `403` for ' +
       'classroom students or linked parents, and `404` for out-of-scope actors.',
   })
   @ApiCreatedResponse({ type: GradeResponseDto, description: 'Grade created and points credited.' })
@@ -81,7 +82,8 @@ export class SubmissionGradesController {
       'Classroom staff (`OWNER`, `ADMIN`, or assigned `TEACHER`) only. Uses optimistic ' +
       'concurrency (`version`) to update score and feedback, appends a `GradeRevision` row, ' +
       'applies a compensating ledger entry (or initial earning from 0) when weighted points ' +
-      'change, and records a student-only `grade_posted` notification. Returns `409` on stale ' +
+      'change, and records `grade_posted` notifications for the student and any active linked ' +
+      'parents when adult mode is off. Returns `409` on stale ' +
       '`version` or if a negative delta would drive student points below zero.',
   })
   @ApiOkResponse({ type: GradeResponseDto, description: 'Grade updated and revision appended.' })

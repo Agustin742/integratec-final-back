@@ -41,6 +41,7 @@ enum InvitationRole {
   ADMIN   @map("admin")
   TEACHER @map("teacher")
   STUDENT @map("student")
+  PARENT  @map("parent")
 
   @@map("invitation_role")
 }
@@ -139,6 +140,7 @@ model User {
   independentClassrooms    Classroom[]           @relation("IndependentTeacherClassrooms")
   classroomMemberships     ClassroomMembership[]
   createdInvitations       Invitation[]          @relation("InvitationCreator")
+  childInvitations         Invitation[]          @relation("InvitationChild")
   parentOfLinks            ParentLink[]          @relation("ParentLinks")
   childInLinks             ParentLink[]          @relation("ChildLinks")
   usedJoinCodes            JoinCodeUsage[]
@@ -450,6 +452,7 @@ model Invitation {
   targetEmail String?         @map("target_email") @db.VarChar(255)
   schoolId    String?         @map("school_id") @db.Uuid
   classroomId String?         @map("classroom_id") @db.Uuid
+  childId     String?         @map("child_id") @db.Uuid
   role        InvitationRole  @default(STUDENT)
   maxUses     Int?            @map("max_uses")
   useCount    Int             @default(0) @map("use_count")
@@ -461,11 +464,13 @@ model Invitation {
 
   school    School?         @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   classroom Classroom?      @relation(fields: [classroomId], references: [id], onDelete: Restrict)
+  child     User?           @relation("InvitationChild", fields: [childId], references: [id], onDelete: Restrict)
   createdBy User            @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: Restrict)
   usages    JoinCodeUsage[]
 
   @@index([schoolId])
   @@index([classroomId])
+  @@index([childId])
   @@index([createdById])
   @@index([targetEmail])
   @@map("invitations")

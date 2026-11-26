@@ -45,7 +45,9 @@ Chat history, announcements, direct messages with parents, mentions, and notific
 - Parents can exchange messages with the teacher and with their child. A conversation is bound to one ParentLink (parent and child) and, for the teacher, to the classroom of the child; the server **MUST** verify the link on every read and write.
 - A parent **MUST NOT** message or read the messages of unlinked children, other students, or other parents.
 - Adult education mode disables parent messaging and links; see [Classrooms, roles, and permissions](./classrooms-and-roles.md).
-- Parent-to-teacher and parent-to-child conversations are visible only to their participants and, for audit and safeguarding, to school-level staff. Whether Owner or Admin may read them is **open**; until decided the default is that they **MUST NOT**.
+- Private parent–teacher conversations **MUST** be accessible only to the actual linked parent and the classroom's active teacher (the classroom's independent teacher or an active classroom Teacher membership). In a school classroom, the Teacher **MUST** also have active school `TEACHER` membership. School Owner/Admin **MUST NOT** read history, send messages, or see inbox previews as staff, even when they also hold a classroom Teacher membership.
+- An account that is also school staff **MAY** participate as the actual linked parent: that access **MUST** be evaluated through its ParentLink, not its staff role. This private-conversation exception follows Alejo's explicit PR #155 privacy decision; it grants no school audit or safeguarding override. It does not change broader school privileges or the product scope for parent–child messaging. Revisit only through an explicit product decision updating the master and role rules together.
+- The current parent–teacher implementation and its recovery, ordering, and admission behavior are described in [Private family messaging](../docs/family-messaging.md); it does not add parent–child messaging.
 - The same body validation, rate limiting, and logging restrictions as the classroom chat apply.
 
 ## Notifications
@@ -53,7 +55,7 @@ Chat history, announcements, direct messages with parents, mentions, and notific
 - Notifications are **in-app** for all roles, and **also by email for parents**. The in-app Notification is the durable record with a read state; email is a delivery channel for it.
 - A Notification belongs to one user and is created by NestJS after the triggering change is committed (for example grade published, activity published, mention, new parent message, classroom announcement, invitation). It **MUST NOT** be created by Colyseus or by the client.
 - Content **MUST** respect the recipient's current access: a recipient who lost access **MUST NOT** receive new notifications or see old content from that classroom.
-- Parent notifications about a child's state **MUST** go only to parents linked to that child and **MUST** carry the minimum data needed, linking to the application for detail.
+- Parent notifications about a child's state **MUST** go only to parents linked to that child and **MUST** carry the minimum data needed, linking to the application for detail. See [Parent grade notifications](../docs/parent-grade-notifications.md) for the implemented grade email path, current-access checks, and provider idempotency boundary.
 - Live delivery of `notification:created` is best effort. REST remains the source of truth; clients reconcile through it.
 
 ### Email delivery
@@ -68,11 +70,11 @@ Chat history, announcements, direct messages with parents, mentions, and notific
 
 ## Verification
 
-Tests **MUST** cover: access to the classroom channel by enrollment, staff, and an unrelated user; a parent denied the classroom chat; moderation keeping history for the teacher; chat mute across reconnection; mention resolution and no notification for users without access; parent messages limited to linked children and disabled in adult mode; notification creation only after commit; email retry without duplicates; and recovery after a missed broadcast. Provider calls in tests **MUST** use fakes. Follow [Quality and testing](./quality-and-testing.md).
+Tests **MUST** cover: access to the classroom channel by enrollment, staff, and an unrelated user; a parent denied the classroom chat; moderation keeping history for the teacher; chat mute across reconnection; mention resolution and no notification for users without access; parent messages limited to linked children and disabled in adult mode; private parent–teacher history, sending, and inbox previews denied to Owner/Admin staff (including Teacher dual roles), while actual linked-parent access and active classroom Teacher access remain allowed; notification creation only after commit; email retry without duplicates; and recovery after a missed broadcast. Provider calls in tests **MUST** use fakes. Follow [Quality and testing](./quality-and-testing.md).
 
 ## Open decisions
 
 - Retention of message history and of parent conversations.
-- Per-student mute, content filtering, and whether Owner or Admin may read parent conversations.
+- Per-student mute and content filtering.
 - Parent visibility of announcements.
 - Email service confirmation, digest policy, opt-out, and bounce handling.

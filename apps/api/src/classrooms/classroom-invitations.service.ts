@@ -36,10 +36,16 @@ import type {
   CreatedClassroomInvitationResponseDto,
   RevokeInvitationResponseDto,
 } from './dto/invitation-response.dto';
-import type { JoinClassroomResponseDto } from './dto/join-classroom-response.dto';
+import type {
+  AcceptInvitationResponseDto,
+  JoinClassroomResponseDto,
+} from './dto/join-classroom-response.dto';
 import type { JoinClassroomWithCodeDto } from './dto/join-classroom.dto';
 import type { JoinCodeResponseDto } from './dto/join-code-response.dto';
 import type { ListInvitationsQueryDto } from './dto/list-invitations-query.dto';
+import type { ClassroomParentLinksResponseDto } from './dto/parent-link-response.dto';
+
+const MAX_GUARDIANS_PER_STUDENT = 2;
 
 @Injectable()
 export class ClassroomInvitationsService {
@@ -71,11 +77,56 @@ export class ClassroomInvitationsService {
       requiredRole: 'STAFF',
     });
 
-    // Only student invitations are supported here. Teacher invitations belong to
-    // the school-teacher invitation flow (HU-AUL-004).
+    // Only student and parent invitations are supported here. Teacher invitations
+    // belong to the school-teacher invitation flow (HU-AUL-004).
     const role = dto.role ?? InvitationRole.STUDENT;
-    if (role !== InvitationRole.STUDENT) {
-      throw new BadRequestException('Classroom invitations can only be issued for students');
+    if (role !== InvitationRole.STUDENT && role !== InvitationRole.PARENT) {
+      throw new BadRequestException(
+        'Classroom invitations can only be issued for students or parents',
+      );
+    }
+
+    let childId: string | null = null;
+    if (role === InvitationRole.STUDENT) {
+      if (dto.childId !== undefined && dto.childId !== null) {
+        throw new BadRequestException('childId is only allowed for parent invitations');
+      }
+    } else {
+      if (!dto.childId) {
+        throw new BadRequestException('childId is required for parent invitations');
+      }
+      if (!UUID_PATTERN.test(dto.childId)) {
+        throw new BadRequestException('childId must be a valid UUID');
+      }
+      if (access.classroom.adultMode) {
+        throw new ConflictException('Parent invitations are disabled in adult education mode');
+      }
+      const studentMembership = await this.prisma.classroomMembership.findFirst({
+        where: {
+          classroomId,
+          userId: dto.childId,
+          role: ClassroomRole.STUDENT,
+          state: MembershipState.ACTIVE,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!studentMembership) {
+        throw new NotFoundException('Active student not found in this classroom');
+      }
+      const activeParentCount = await this.prisma.parentLink.count({
+        where: {
+          classroomId,
+          childId: dto.childId,
+          state: MembershipState.ACTIVE,
+        },
+      });
+      if (activeParentCount >= MAX_GUARDIANS_PER_STUDENT) {
+        throw new ConflictException(
+          'This student already has the maximum of 2 active guardians in this classroom',
+        );
+      }
+      childId = dto.childId;
     }
 
     const token = randomBytes(32).toString('hex');
@@ -84,6 +135,26 @@ export class ClassroomInvitationsService {
     const targetEmail = dto.email.trim().toLowerCase();
 
     const invitation = await this.prisma.$transaction(async (tx) => {
+      if (role === InvitationRole.PARENT && childId !== null) {
+        const existingPending = await tx.invitation.findFirst({
+          where: {
+            classroomId,
+            kind: InvitationKind.EMAIL,
+            role: InvitationRole.PARENT,
+            targetEmail,
+            childId,
+            state: InvitationState.PENDING,
+            expiresAt: { gt: new Date() },
+          },
+          select: { id: true },
+        });
+        if (existingPending) {
+          throw new ConflictException(
+            'A pending parent invitation already exists for this email and student in this classroom',
+          );
+        }
+      }
+
       const created = await tx.invitation.create({
         data: {
           kind: InvitationKind.EMAIL,
@@ -91,12 +162,16 @@ export class ClassroomInvitationsService {
           targetEmail,
           classroomId,
           schoolId: access.classroom.schoolId,
+          childId,
           role,
           maxUses: 1,
           useCount: 0,
           expiresAt,
           state: InvitationState.PENDING,
           createdById: actorUserId,
+        },
+        include: {
+          child: { select: { displayName: true } },
         },
       });
 
@@ -150,6 +225,9 @@ export class ClassroomInvitationsService {
       this.prisma.invitation.count({ where }),
       this.prisma.invitation.findMany({
         where,
+        include: {
+          child: { select: { displayName: true } },
+        },
         ...toSkipTake({ page: query.page, pageSize: query.pageSize }),
         orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       }),
@@ -618,12 +696,14 @@ export class ClassroomInvitationsService {
 
   /**
    * Accepts an email invitation using the opaque token received by email.
-   * Atomically binds the authenticated account to the classroom and assigns a desk.
+   * For STUDENT invitations, atomically binds the account to the classroom and assigns a desk.
+   * For PARENT invitations, atomically links the account as a guardian of the target student
+   * (max 2 active guardians, disabled in adult mode, no classroom membership or desk).
    */
   async acceptEmailInvitation(
     actorUserId: string,
     dto: AcceptInvitationDto,
-  ): Promise<JoinClassroomResponseDto> {
+  ): Promise<AcceptInvitationResponseDto> {
     if (!UUID_PATTERN.test(actorUserId)) {
       throw new UnauthorizedException('Authentication is required');
     }
@@ -636,6 +716,7 @@ export class ClassroomInvitationsService {
         classroom: {
           select: {
             id: true,
+            adultMode: true,
             deletedAt: true,
             school: { select: { deletedAt: true } },
           },
@@ -646,7 +727,7 @@ export class ClassroomInvitationsService {
     if (
       !invitation ||
       invitation.kind !== InvitationKind.EMAIL ||
-      invitation.role !== InvitationRole.STUDENT ||
+      (invitation.role !== InvitationRole.STUDENT && invitation.role !== InvitationRole.PARENT) ||
       !invitation.classroom ||
       invitation.classroom.deletedAt ||
       invitation.classroom.school?.deletedAt
@@ -654,12 +735,22 @@ export class ClassroomInvitationsService {
       throw new NotFoundException('Invalid or expired invitation');
     }
 
+    if (invitation.role === InvitationRole.PARENT) {
+      return this.acceptParentEmailInvitation(actorUserId, invitation);
+    }
+
     // Idempotent retry: the account that consumed this single-use invitation gets its
     // existing membership back instead of an error. Other accounts are still rejected.
     if (invitation.state === InvitationState.USED) {
       const enrolled = await this.findActiveStudentMembership(invitation.classroomId!, actorUserId);
       if (enrolled) {
-        return enrolled;
+        return {
+          ...enrolled,
+          role: InvitationRole.STUDENT,
+          deskIndex: enrolled.desk?.deskIndex ?? null,
+          childId: null,
+          parentLinkId: null,
+        };
       }
     }
 
@@ -698,8 +789,11 @@ export class ClassroomInvitationsService {
       return {
         classroomId,
         membershipId: existingMembership.id,
-        role: existingMembership.role,
+        role: InvitationRole.STUDENT,
         desk: existingMembership.desk,
+        deskIndex: existingMembership.desk?.deskIndex ?? null,
+        childId: null,
+        parentLinkId: null,
         alreadyMember: true,
       };
     }
@@ -740,8 +834,11 @@ export class ClassroomInvitationsService {
             return {
               classroomId,
               membershipId: concurrentMember.id,
-              role: concurrentMember.role,
+              role: InvitationRole.STUDENT,
               desk: concurrentMember.desk,
+              deskIndex: concurrentMember.desk?.deskIndex ?? null,
+              childId: null,
+              parentLinkId: null,
               alreadyMember: true,
             };
           }
@@ -787,8 +884,11 @@ export class ClassroomInvitationsService {
         return {
           classroomId,
           membershipId,
-          role: targetRole,
+          role: InvitationRole.STUDENT,
           desk,
+          deskIndex: desk?.deskIndex ?? null,
+          childId: null,
+          parentLinkId: null,
           alreadyMember: false,
         };
       });
@@ -802,6 +902,309 @@ export class ClassroomInvitationsService {
       }
       throw error;
     }
+  }
+
+  private async acceptParentEmailInvitation(
+    actorUserId: string,
+    invitation: {
+      id: string;
+      classroomId: string | null;
+      childId: string | null;
+      state: InvitationState;
+      expiresAt: Date;
+      classroom: {
+        id: string;
+        adultMode: boolean;
+        deletedAt: Date | null;
+        school: { deletedAt: Date | null } | null;
+      } | null;
+    },
+  ): Promise<AcceptInvitationResponseDto> {
+    if (!invitation.classroomId || !invitation.childId || !invitation.classroom) {
+      throw new NotFoundException('Invalid or expired invitation');
+    }
+
+    const classroomId = invitation.classroomId;
+    const childId = invitation.childId;
+
+    // Idempotent retry when this account already holds an active parent link for the child.
+    if (invitation.state === InvitationState.USED) {
+      if (invitation.classroom.adultMode) {
+        throw new ConflictException('Parent invitations are disabled in adult education mode');
+      }
+      const existingLink = await this.prisma.parentLink.findUnique({
+        where: {
+          parentId_childId_classroomId: {
+            parentId: actorUserId,
+            childId,
+            classroomId,
+          },
+        },
+        select: { id: true, state: true },
+      });
+      if (existingLink && existingLink.state === MembershipState.ACTIVE) {
+        const activeStudent = await this.prisma.classroomMembership.findFirst({
+          where: {
+            classroomId,
+            userId: childId,
+            role: ClassroomRole.STUDENT,
+            state: MembershipState.ACTIVE,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (activeStudent) {
+          return {
+            classroomId,
+            membershipId: null,
+            role: InvitationRole.PARENT,
+            desk: null,
+            deskIndex: null,
+            childId,
+            parentLinkId: existingLink.id,
+            alreadyMember: true,
+          };
+        }
+      }
+    }
+
+    if (invitation.state !== InvitationState.PENDING) {
+      throw new BadRequestException('Invitation is no longer active');
+    }
+
+    if (invitation.expiresAt <= new Date()) {
+      await this.prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { state: InvitationState.EXPIRED },
+      });
+      throw new BadRequestException('Invitation has expired');
+    }
+
+    if (actorUserId === childId) {
+      throw new ConflictException('A student cannot link themselves as their own guardian');
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const freshClassroom = await tx.classroom.findUnique({
+          where: { id: classroomId },
+          select: {
+            deletedAt: true,
+            adultMode: true,
+            school: { select: { deletedAt: true } },
+          },
+        });
+        if (!freshClassroom || freshClassroom.deletedAt || freshClassroom.school?.deletedAt) {
+          throw new NotFoundException('Invalid or expired invitation');
+        }
+        if (freshClassroom.adultMode) {
+          throw new ConflictException('Parent invitations are disabled in adult education mode');
+        }
+
+        // Lock the student's active membership row so concurrent parent acceptances for the
+        // same student serialize cleanly when checking the 2-guardian cap.
+        const lockedStudentRows = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM classroom_memberships
+          WHERE classroom_id = ${classroomId}::uuid
+            AND user_id = ${childId}::uuid
+            AND role = 'student'::classroom_role
+            AND state = 'active'::membership_state
+            AND deleted_at IS NULL
+          FOR UPDATE
+        `;
+        if (lockedStudentRows.length === 0) {
+          throw new ConflictException('Student is no longer enrolled in this classroom');
+        }
+
+        const existingLink = await tx.parentLink.findUnique({
+          where: {
+            parentId_childId_classroomId: {
+              parentId: actorUserId,
+              childId,
+              classroomId,
+            },
+          },
+          select: { id: true, state: true },
+        });
+
+        if (existingLink && existingLink.state === MembershipState.ACTIVE) {
+          return {
+            classroomId,
+            membershipId: null,
+            role: InvitationRole.PARENT,
+            desk: null,
+            deskIndex: null,
+            childId,
+            parentLinkId: existingLink.id,
+            alreadyMember: true,
+          };
+        }
+
+        const activeParentCount = await tx.parentLink.count({
+          where: {
+            classroomId,
+            childId,
+            state: MembershipState.ACTIVE,
+          },
+        });
+        if (activeParentCount >= MAX_GUARDIANS_PER_STUDENT) {
+          throw new ConflictException(
+            'This student already has the maximum of 2 active guardians in this classroom',
+          );
+        }
+
+        const updated = await tx.invitation.updateMany({
+          where: {
+            id: invitation.id,
+            state: InvitationState.PENDING,
+            expiresAt: { gt: new Date() },
+            useCount: 0,
+          },
+          data: {
+            state: InvitationState.USED,
+            useCount: 1,
+          },
+        });
+
+        if (updated.count === 0) {
+          const latest = await tx.invitation.findUnique({ where: { id: invitation.id } });
+          if (latest && (latest.state === InvitationState.USED || latest.useCount > 0)) {
+            throw new ConflictException('Invitation has already been used');
+          }
+          throw new BadRequestException('Invitation is no longer active');
+        }
+
+        const parentLink = existingLink
+          ? await tx.parentLink.update({
+              where: { id: existingLink.id },
+              data: { state: MembershipState.ACTIVE },
+              select: { id: true },
+            })
+          : await tx.parentLink.create({
+              data: {
+                parentId: actorUserId,
+                childId,
+                classroomId,
+                state: MembershipState.ACTIVE,
+              },
+              select: { id: true },
+            });
+
+        await this.contextRecorder.recordChanged(tx, classroomId);
+
+        return {
+          classroomId,
+          membershipId: null,
+          role: InvitationRole.PARENT,
+          desk: null,
+          deskIndex: null,
+          childId,
+          parentLinkId: parentLink.id,
+          alreadyMember: false,
+        };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002' || error.code === 'P2004') {
+          throw new ConflictException('Concurrent invitation acceptance conflict, please retry');
+        }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Lists active parent-child guardian links for a classroom. Restricted to classroom staff.
+   */
+  async listParentLinks(
+    actorUserId: string,
+    classroomId: string,
+  ): Promise<ClassroomParentLinksResponseDto> {
+    if (!UUID_PATTERN.test(actorUserId)) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    await this.accessService.verifyClassroomAccess(actorUserId, classroomId, {
+      requiredRole: 'STAFF',
+    });
+
+    const rows = await this.prisma.parentLink.findMany({
+      where: {
+        classroomId,
+        state: MembershipState.ACTIVE,
+      },
+      select: {
+        id: true,
+        parentId: true,
+        childId: true,
+        state: true,
+        createdAt: true,
+        parent: { select: { displayName: true } },
+        child: { select: { displayName: true } },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    });
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        parentId: row.parentId,
+        parentDisplayName: row.parent.displayName,
+        childId: row.childId,
+        childDisplayName: row.child.displayName,
+        state: row.state,
+        createdAt: row.createdAt,
+      })),
+    };
+  }
+
+  /**
+   * Logically unlinks a parent from a child in a classroom by marking the ParentLink INACTIVE.
+   * Preserves historical messages and records. Restricted to classroom staff.
+   */
+  async unlinkParentLink(actorUserId: string, classroomId: string, linkId: string): Promise<void> {
+    if (!UUID_PATTERN.test(actorUserId)) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    await this.accessService.verifyClassroomAccess(actorUserId, classroomId, {
+      requiredRole: 'STAFF',
+    });
+
+    if (!UUID_PATTERN.test(linkId)) {
+      throw new NotFoundException('Parent link not found');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.parentLink.findFirst({
+        where: { id: linkId, classroomId },
+        select: { id: true, state: true },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Parent link not found');
+      }
+
+      if (existing.state !== MembershipState.ACTIVE) {
+        return;
+      }
+
+      const changed = await tx.parentLink.updateMany({
+        where: {
+          id: linkId,
+          classroomId,
+          state: MembershipState.ACTIVE,
+        },
+        data: {
+          state: MembershipState.INACTIVE,
+        },
+      });
+
+      if (changed.count === 1) {
+        await this.contextRecorder.recordChanged(tx, classroomId);
+      }
+    });
   }
 
   /**
@@ -915,6 +1318,8 @@ export class ClassroomInvitationsService {
     kind: InvitationKind;
     targetEmail: string | null;
     role: InvitationRole;
+    childId?: string | null;
+    child?: { displayName: string } | null;
     maxUses: number | null;
     useCount: number;
     state: InvitationState;
@@ -926,6 +1331,8 @@ export class ClassroomInvitationsService {
       kind: row.kind,
       targetEmail: row.targetEmail,
       role: row.role,
+      childId: row.childId ?? null,
+      childDisplayName: row.child?.displayName ?? null,
       maxUses: row.maxUses,
       useCount: row.useCount,
       state: row.state,
