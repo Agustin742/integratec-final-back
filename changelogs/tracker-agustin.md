@@ -1,5 +1,14 @@
 # Tracker — Agustin
 
+## 2026-11-26 — Classroom avatar emotes in the realtime room (#154)
+
+- **Status:** completed
+- **Area / files:** `apps/realtime/src/rooms/`, `packages/contracts/`, `rules/` (realtime-and-presence, api-contracts)
+- **Change:** Added the `avatar:emote` command and the `avatar:emoted` broadcast with a 3-second per-member cooldown. Emotes are not stored and the state schema did not change.
+- **Reason:** The classroom must see each other's avatar emotes.
+- **Verification:** Specs written RED first; touched specs, lint, typecheck and Prettier pass.
+- **Next step:** Front mirrors the message names and payloads and plays the clips.
+
 ## 2026-11-25 — Database-backed verification of the asset customization branch (#154)
 
 - **Status:** completed

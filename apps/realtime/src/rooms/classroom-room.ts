@@ -1,4 +1,7 @@
 import {
+  AVATAR_EMOTE_COOLDOWN_MS,
+  AVATAR_EMOTE_MESSAGE,
+  AVATAR_EMOTED_EVENT,
   AVATAR_INPUT_MESSAGE,
   CHAT_MESSAGE_EVENT,
   CHAT_MESSAGE_HIDDEN_EVENT,
@@ -20,8 +23,11 @@ import {
   MAX_CONNECTIONS_PER_USER,
   PATCH_RATE_HZ,
   SIMULATION_TICK_RATE_HZ,
+  avatarEmoteSchema,
   avatarInputSchema,
   npcInteractSchema,
+  type AvatarEmoted,
+  type AvatarEmoteInput,
   type AvatarInput,
   type ClassroomLayout,
   type MemberAppearance,
@@ -158,6 +164,8 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   private readonly npcRuntimes = new Map<NpcId, NpcRuntime>();
   /** When each member last made each NPC react (`userId:npcId`), for the per-member cooldown. */
   private readonly npcInteractedAt = new Map<string, number>();
+  /** When each member last emoted, for the per-member cooldown (#154). */
+  private readonly emotedAt = new Map<string, number>();
   /** Revision of the synced tutor bot skin; server-only ordering token (#154). */
   private tutorBotSkinRevision = 0;
   /** Last phrase the tutor bot said, so it never repeats it back to back. */
@@ -173,6 +181,9 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
   messages = {
     [AVATAR_INPUT_MESSAGE]: validate(avatarInputSchema, (client, input) =>
       this.onAvatarInput(client, input),
+    ),
+    [AVATAR_EMOTE_MESSAGE]: validate(avatarEmoteSchema, (client, input) =>
+      this.onAvatarEmote(client, input),
     ),
     [NPC_INTERACT_MESSAGE]: validate(npcInteractSchema, (client, input) =>
       this.onNpcInteract(client, input),
@@ -531,6 +542,7 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     if (detached?.userGone) {
       this.state.avatars.delete(userId);
       this.forgetNpcCooldowns(userId);
+      this.emotedAt.delete(userId);
       this.reportConnectedTime(userId, this.connectedTime.complete(userId, this.now()));
     } else {
       this.refreshStatus(userId);
@@ -665,6 +677,25 @@ export class ClassroomRoom extends Room<{ state: ClassroomState }> implements Di
     }
     this.lastPhraseId = index;
     return index;
+  }
+
+  /**
+   * A member played an emote. Ignored unless the connection is live, within the shared message
+   * budget and the member is out of cooldown. The sender is the session's user, and nothing is
+   * stored: connected members get a notification and late joiners get nothing.
+   */
+  private onAvatarEmote(client: Pick<Client, 'sessionId'>, input: AvatarEmoteInput): void {
+    const limiter = this.limiters.get(client.sessionId);
+    const userId = this.userConnections.userOf(client.sessionId);
+    if (limiter === undefined || userId === undefined) return;
+    if (!this.userConnections.isLive(client.sessionId)) return;
+    const now = this.now();
+    if (!limiter.tryConsume(now)) return;
+    const last = this.emotedAt.get(userId);
+    if (last !== undefined && now - last < AVATAR_EMOTE_COOLDOWN_MS) return;
+    this.emotedAt.set(userId, now);
+    const payload: AvatarEmoted = { userId, emote: input.emote };
+    this.broadcast(AVATAR_EMOTED_EVENT, payload);
   }
 
   private onAvatarInput(client: Client, input: AvatarInput): void {

@@ -42,6 +42,8 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Per-connection rate limits **MUST** exist to bound abuse: at most **30 messages per second** per connection, with the excess dropped silently and without side effects (approved by Agustin on 2026-11-10).
 - The presence list shows who is online in the same classroom; users of other classrooms or schools **MUST NOT** appear.
 
+- **Avatar emotes (#154):** `avatar:emote` accepts only the five clip names in `AVATAR_EMOTES`; the sender comes from the session. The server enforces a 3-second cooldown per member (all connections together) on top of the per-connection rate limit, broadcasts `avatar:emoted` to the room and stores nothing. Any live member may emote: chat mute and mute everyone govern chat and media, not emotes, and freeze rejects movement only. Whether a frozen student may emote belongs to the open freeze decision in [Live classroom tools](./live-classroom-tools.md) and **MUST** be revisited when freeze is implemented.
+
 ## Classroom controls and broadcasts
 
 - Control messages (freeze, mute everyone, collaboration lock, disable games) are accepted only from a user whose current teacher-level authority over the classroom NestJS has confirmed; any other sender is ignored without side effects. See [Live classroom tools](./live-classroom-tools.md).

@@ -1314,3 +1314,44 @@ describe('NPC interactions (#147)', () => {
     expect(runtimeOf(room, 'tutorBot').phase).not.toBe('reacting');
   });
 });
+
+describe('avatar emotes (#154)', () => {
+  const emote = (room: ClassroomRoom, sessionId: string): void =>
+    (
+      room as unknown as { onAvatarEmote(c: { sessionId: string }, i: unknown): void }
+    ).onAvatarEmote({ sessionId }, { emote: 'Wave' });
+
+  const makeRoom = async () => {
+    const room = new (createClassroomRoom({
+      verify: vi.fn(),
+      reverify: vi.fn().mockResolvedValue(IDENTITY),
+    }))();
+    vi.spyOn(room, 'setFixedTimestep').mockImplementation(() => undefined);
+    vi.spyOn(room, 'allowReconnection').mockReturnValue(new Promise(() => undefined) as never);
+    const broadcast = vi.spyOn(room, 'broadcast').mockImplementation(() => undefined as never);
+    room.onCreate({ classroomId: CLASSROOM_ID });
+    await room.onJoin({ sessionId: 's1', auth: AUTH } as never);
+    return { room, broadcast };
+  };
+
+  it('ignores a held connection and a connection that never joined', async () => {
+    const { room, broadcast } = await makeRoom();
+    room.onDrop({ sessionId: 's1' } as never);
+
+    emote(room, 's1');
+    emote(room, 'unknown');
+
+    expect(broadcast).not.toHaveBeenCalled();
+  });
+
+  it('forgets the cooldown of a member who left for good', async () => {
+    const { room, broadcast } = await makeRoom();
+    emote(room, 's1');
+    room.onLeave({ sessionId: 's1' } as never);
+    await room.onJoin({ sessionId: 's2', auth: AUTH } as never);
+
+    emote(room, 's2');
+
+    expect(broadcast).toHaveBeenCalledTimes(2);
+  });
+});

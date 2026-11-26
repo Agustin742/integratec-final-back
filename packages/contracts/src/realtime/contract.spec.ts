@@ -1,5 +1,8 @@
 import { describe, it, expect, expectTypeOf } from 'vitest';
 import {
+  AVATAR_EMOTE_COOLDOWN_MS,
+  AVATAR_EMOTE_MESSAGE,
+  AVATAR_EMOTED_EVENT,
   AVATAR_INPUT_MESSAGE,
   AVATAR_STATUSES,
   buildClassroomLayout,
@@ -15,6 +18,7 @@ import {
   MAX_CONNECTIONS_PER_USER,
   PATCH_RATE_HZ,
   SIMULATION_TICK_RATE_HZ,
+  avatarEmoteSchema,
   avatarInputSchema,
   type AvatarInput,
   type ClassroomJoinOptions,
@@ -37,6 +41,15 @@ describe('realtime contract', () => {
     expect(PATCH_RATE_HZ).toBe(20);
     expect(INPUT_RATE_LIMIT_PER_SECOND).toBe(30);
     expect(MAX_CONNECTIONS_PER_USER).toBe(3);
+  });
+
+  it('pins the avatar emote contract', () => {
+    expect(AVATAR_EMOTE_MESSAGE).toBe('avatar:emote');
+    expect(AVATAR_EMOTED_EVENT).toBe('avatar:emoted');
+    expect(AVATAR_EMOTE_COOLDOWN_MS).toBe(3000);
+    expect(avatarEmoteSchema.safeParse({ emote: 'RaiseHand' }).success).toBe(true);
+    expect(avatarEmoteSchema.safeParse({ emote: 'wave' }).success).toBe(false);
+    expect(avatarEmoteSchema.safeParse({ emote: 'Wave', userId: 'x' }).success).toBe(false);
   });
 
   describe('close codes', () => {

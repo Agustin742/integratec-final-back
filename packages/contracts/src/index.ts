@@ -80,6 +80,31 @@ export const avatarInputSchema = z.strictObject({
 
 export type AvatarInput = z.infer<typeof avatarInputSchema>;
 
+/** Avatar emotes a member can trigger (#154). Each value is the name of the animation clip. */
+export const AVATAR_EMOTES = ['Wave', 'Cheer', 'Clap', 'Dance', 'RaiseHand'] as const;
+export type AvatarEmote = (typeof AVATAR_EMOTES)[number];
+
+/** Client to server: play an emote on the sender's own avatar. */
+export const AVATAR_EMOTE_MESSAGE = 'avatar:emote';
+
+export const avatarEmoteSchema = z.strictObject({
+  emote: z.enum(AVATAR_EMOTES),
+});
+
+export type AvatarEmoteInput = z.infer<typeof avatarEmoteSchema>;
+
+/** Server to client: a member of the room emoted. Ephemeral, never replayed to late joiners. */
+export const AVATAR_EMOTED_EVENT = 'avatar:emoted';
+
+export interface AvatarEmoted {
+  /** Key of the sender in `ClassroomState.avatars`, taken from the server session. */
+  userId: string;
+  emote: AvatarEmote;
+}
+
+/** Minimum time between two emotes of the same member, across all their connections. */
+export const AVATAR_EMOTE_COOLDOWN_MS = 3000;
+
 /** Server to client: a persisted classroom chat message, announced after its database commit. */
 export const CHAT_MESSAGE_EVENT = 'chat:message';
 export const CHAT_MESSAGE_MAX_BODY_LENGTH = 2000;
