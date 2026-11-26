@@ -22,12 +22,14 @@ Frontend and backend must agree on observable contracts before either side treat
 
 ## Realtime contract
 
-Approved by Agustin on 2026-11-10 ([D14](../docs/technical-justification.md#d14-realtime-presence-and-movement-policy)); the room behavior is in [Realtime and presence](./realtime-and-presence.md). The types live in `packages/contracts` and the room state types are generated with `@colyseus/schema` codegen.
+Approved by Agustin on 2026-11-10 ([D14](../docs/technical-justification.md#d14-realtime-presence-and-movement-policy)); the room behavior is in [Realtime and presence](./realtime-and-presence.md). The types live in `packages/contracts` and the room state types are generated with `@colyseus/schema` codegen. The `npc:interact` command and the `npcs` state patches below were added with the NPC routines (#147, pull request #148) under the same D8/D14 mechanisms.
 
 | Direction | Name | Kind | Payload | Failure or handling |
 |---|---|---|---|---|
 | Client to server | `avatar:input` | Command (no acknowledgement) | `{ x: number, z: number }`, each in `[-1, 1]`; `{ x: 0, z: 0 }` stops the avatar | A payload that fails validation closes the connection (Colyseus closes with its own code `4002`); a message over 30 per second per connection is dropped silently; a frozen avatar ignores it |
+| Client to server | `npc:interact` | Command (no acknowledgement) | `{ npcId: 'pet' \| 'tutorBot' }` | A payload that fails validation closes the connection (Colyseus `4002`); it shares the connection's 30-messages-per-second budget with `avatar:input` and the excess is dropped silently; ignored without side effects unless the sender is a live member whose avatar is within `NPC_INTERACT_MAX_DISTANCE` (1.8 m) and outside the 4 s per-member-per-NPC cooldown, and the NPC is not already reacting |
 | Server to client | state patches of `ClassroomState.avatars` | Notification | `MapSchema<Avatar>` keyed by `userId`; `Avatar { userId, displayName, role, x, z, rotation, status: 'online' \| 'reconnecting' }` | The newest state wins; there is nothing to reorder or deduplicate |
+| Server to client | state patches of `ClassroomState.npcs` | Notification | `MapSchema<Npc>` keyed by `npcId`; `Npc { id, x, z, rotation, state: NpcState, emote, reaction, phraseId, reactingSessionId, reactionSeq }` | The newest state wins; patches touch only changed fields, so there is nothing to reorder or deduplicate |
 | Server to client | `chat:message` | Notification | `ChatMessagePayload { id, classroomId, authorId, body, mentionedUserIds, createdAt }`, defined and validated in `packages/contracts` | Emitted after the message commit. Delivery is at least once; clients deduplicate by `id`. A missing event is recovered from `GET /classrooms/:id/messages` |
 | Server to client | `chat:message.hidden` | Notification | `{ messageId, hiddenAt }`, defined and validated in `packages/contracts` | Emitted after the first moderation commit. Clients hide the row by ID; staff fetch audit details from REST history. If it arrives before `chat:message`, keep a tombstone and do not resurrect that ID from an older `createdAt`. Duplicates are harmless; REST history is authoritative |
 
@@ -41,7 +43,7 @@ For chat, the browser sends messages only through the authenticated REST endpoin
 
 Colyseus itself uses `4001` for a server shutdown and `4002` for protocol errors (an invalid message or a failed join). The close **reason** disambiguates: only the values above mean revoked access or too many connections. `4100` is outside every code Colyseus uses (`4000` to `4003` and `4010`). The frontend **MUST** read the reason, not only the code.
 
-The classroom layout (bounds and obstacle boxes) that the server uses for collisions is built by `buildClassroomLayout(deskCount)` in `packages/contracts` so the frontend scene and the server agree. Student desks go in rows of four (minimum `MIN_CLASSROOM_DESKS` = 12); each extra row extends the room towards the back (issues #79 and #22).
+The classroom layout (bounds, obstacle boxes, and floor props) that the server uses for collisions is built by `buildClassroomLayout(deskCount)` in `packages/contracts` so the frontend scene and the server agree; `isWalkable` blocks the props for avatars and NPCs alike. Student desks go in rows of four (minimum `MIN_CLASSROOM_DESKS` = 12); each extra row extends the room towards the back (issues #79 and #22).
 
 ## Compatibility and verification
 

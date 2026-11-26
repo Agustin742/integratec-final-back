@@ -17,6 +17,8 @@ start(
         {
           internalServiceSecret: config.internalServiceSecret,
           reconnectionWindowSeconds: config.reconnectionWindowSeconds,
+          callMaxParticipants: config.callMaxParticipants,
+          callRingTimeoutMs: config.callRingTimeoutSeconds * 1000,
           reporter: new ApiConnectedTimeReporter({
             baseUrl: config.apiInternalUrl,
             serviceSecret: config.internalServiceSecret,

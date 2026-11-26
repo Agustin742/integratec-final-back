@@ -42,6 +42,30 @@ export class Avatar extends Schema {
 }
 
 /**
+ * A server-driven NPC of the classroom: the pet or the tutor bot (#147). Every enum-like field is a
+ * plain string here (generated client types must not depend on server imports): `id` is an
+ * `NPC_IDS` entry, `state` a `NpcState`, `emote` a name from `NPC_EMOTES`.
+ */
+export class Npc extends Schema {
+  @type('string') id = '';
+  @type('float32') x = 0;
+  @type('float32') z = 0;
+  /** Facing angle in radians around the vertical axis, same convention as {@link Avatar.rotation}. */
+  @type('float32') rotation = 0;
+  @type('string') state = 'idle';
+  /** Emote or clip name being played, `''` when none. */
+  @type('string') emote = '';
+  /** `''`, `'greet'`, `'askForPets'` or `'phrase'`: the reaction to a member pressing E. */
+  @type('string') reaction = '';
+  /** Index into `TUTOR_BOT_PHRASES` while `reaction` is `'phrase'`, `-1` otherwise. */
+  @type('int16') phraseId = -1;
+  /** Increments on every new reaction so clients can replay the same reaction twice in a row. */
+  @type('uint32') reactionSeq = 0;
+  /** Connection (session) that triggered the current reaction, `''` when none. */
+  @type('string') reactingSessionId = '';
+}
+
+/**
  * Synchronized state: who is in the classroom and where. Avatars are keyed by user id.
  * Client types are generated from this file (`pnpm realtime:codegen`), so keep it free of server
  * imports.
@@ -54,4 +78,10 @@ export class ClassroomState extends Schema {
    */
   @type('uint16') deskCount = 12;
   @type({ map: Avatar }) avatars = new MapSchema<Avatar>();
+  /** A class voice call is running; clients show the join banner (#149). */
+  @type('boolean') classCallActive = false;
+  /** Focus mode: students cannot move and the client hides the 3D world (#149). */
+  @type('boolean') focusMode = false;
+  /** The pet and the tutor bot, keyed by NPC id (#147). */
+  @type({ map: Npc }) npcs = new MapSchema<Npc>();
 }

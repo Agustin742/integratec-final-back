@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MapSchema } from '@colyseus/schema';
-import { Avatar, ClassroomState, EquippedItemView } from './classroom-state';
+import { Avatar, ClassroomState, EquippedItemView, Npc } from './classroom-state';
 
 describe('ClassroomState', () => {
   it('starts with the minimum desk count so every room has a layout before its first join (#79)', () => {
@@ -86,5 +86,45 @@ describe('ClassroomState', () => {
       clothingColor: '',
     });
     expect(appearance.items.size).toBe(0);
+  });
+
+  it('starts with an empty npc map keyed by npc id (#147)', () => {
+    const state = new ClassroomState();
+    expect(state.npcs).toBeInstanceOf(MapSchema);
+    expect(state.npcs.size).toBe(0);
+  });
+
+  it('defaults a new npc to the quiet state a client renders before the first patch (#147)', () => {
+    const npc = new Npc();
+    expect(npc.state).toBe('idle');
+    expect(npc.reaction).toBe('');
+    expect(npc.phraseId).toBe(-1);
+    expect(npc.reactingSessionId).toBe('');
+    expect(npc.reactionSeq).toBe(0);
+  });
+
+  it('stores npcs by id with their synced fields (#147)', () => {
+    const state = new ClassroomState();
+    const npc = new Npc();
+    npc.id = 'pet';
+    npc.x = 1.5;
+    npc.z = -2;
+    npc.state = 'reacting';
+    npc.reaction = 'phrase';
+    npc.phraseId = 3;
+    npc.reactionSeq = 7;
+    npc.reactingSessionId = 'session-1';
+    state.npcs.set(npc.id, npc);
+
+    expect(state.npcs.get('pet')).toMatchObject({
+      id: 'pet',
+      x: 1.5,
+      z: -2,
+      state: 'reacting',
+      reaction: 'phrase',
+      phraseId: 3,
+      reactionSeq: 7,
+      reactingSessionId: 'session-1',
+    });
   });
 });

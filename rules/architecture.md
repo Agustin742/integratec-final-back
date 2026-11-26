@@ -37,11 +37,11 @@ Both directions are internal, server-to-server contracts. Decision D2 (approved 
 
 ## External services (candidates)
 
-NestJS integrates these services; each is a candidate pending a decision and justification in `docs/technical-justification.md`, and none changes the ownership above.
+NestJS integrates these services; each is a candidate pending a decision and justification in `docs/technical-justification.md`, and none changes the ownership above. The bounded voice-only P2P exception in [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception) uses Colyseus for authorized call state and signaling, never raw audio; it does not adopt a media provider.
 
 | Need | Candidate | Boundary |
 |---|---|---|
-| Video, voice, and live presentations | LiveKit or Amazon Chime SDK | NestJS issues short-lived credentials after authorization; media does not pass through NestJS or Colyseus; see [Live classroom tools](./live-classroom-tools.md) |
+| Video, voice outside D21, and live presentations | LiveKit or Amazon Chime SDK | NestJS issues short-lived credentials after authorization; media does not pass through NestJS or Colyseus; see [Live classroom tools](./live-classroom-tools.md) |
 | RAG over approved material | Amazon Bedrock Knowledge Bases or equivalent | Called only from NestJS; per-classroom filtering by the server; see [AI bot and daily briefing](./ai-bot-and-daily-briefing.md) |
 | Email (invitations, parent notifications) | Amazon SES | Called only from NestJS asynchronously; see [Communication and notifications](./communication-and-notifications.md) |
 | Collaborative whiteboard sync | Colyseus state or Yjs | Server authorizes edits; see [Realtime and presence](./realtime-and-presence.md) |

@@ -1,3 +1,4 @@
+import { CALL_MAX_PARTICIPANTS } from '@aula/contracts';
 import { z } from 'zod';
 
 export const NODE_ENVIRONMENTS = ['development', 'test', 'production'] as const;
@@ -11,6 +12,10 @@ export interface RealtimeConfig {
   internalServiceSecret: string;
   /** How long a dropped connection may come back before its avatar is removed. */
   reconnectionWindowSeconds: number;
+  /** Participants one voice call admits (WebRTC mesh: every extra peer multiplies connections). */
+  callMaxParticipants: number;
+  /** Seconds a direct call rings before the caller is told nobody answered. */
+  callRingTimeoutSeconds: number;
 }
 
 export interface ConfigIssue {
@@ -36,6 +41,8 @@ export class ConfigValidationError extends Error {
 
 const PORT_MESSAGE = 'must be an integer between 1 and 65535';
 const RECONNECTION_WINDOW_MESSAGE = 'must be an integer number of seconds between 1 and 120';
+const CALL_MAX_PARTICIPANTS_MESSAGE = 'must be an integer between 2 and 24';
+const CALL_RING_TIMEOUT_MESSAGE = 'must be an integer number of seconds between 5 and 120';
 const required = { error: 'is required' };
 
 const isHttpUrl = (value: string): boolean => {
@@ -74,6 +81,28 @@ const envSchema = z.object({
         .transform(Number)
         .pipe(z.number().min(1, RECONNECTION_WINDOW_MESSAGE).max(120, RECONNECTION_WINDOW_MESSAGE)),
     ),
+  CALL_MAX_PARTICIPANTS: z
+    .string()
+    .default(String(CALL_MAX_PARTICIPANTS))
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+$/, CALL_MAX_PARTICIPANTS_MESSAGE)
+        .transform(Number)
+        .pipe(
+          z.number().min(2, CALL_MAX_PARTICIPANTS_MESSAGE).max(24, CALL_MAX_PARTICIPANTS_MESSAGE),
+        ),
+    ),
+  CALL_RING_TIMEOUT_SECONDS: z
+    .string()
+    .default('30')
+    .pipe(
+      z
+        .string()
+        .regex(/^\d+$/, CALL_RING_TIMEOUT_MESSAGE)
+        .transform(Number)
+        .pipe(z.number().min(5, CALL_RING_TIMEOUT_MESSAGE).max(120, CALL_RING_TIMEOUT_MESSAGE)),
+    ),
 });
 
 type Env = NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -110,5 +139,7 @@ export function loadRealtimeConfig(env: Env): RealtimeConfig {
     apiInternalUrl: values.API_INTERNAL_URL,
     internalServiceSecret: values.INTERNAL_SERVICE_SECRET,
     reconnectionWindowSeconds: values.RECONNECTION_WINDOW_SECONDS,
+    callMaxParticipants: values.CALL_MAX_PARTICIPANTS,
+    callRingTimeoutSeconds: values.CALL_RING_TIMEOUT_SECONDS,
   };
 }

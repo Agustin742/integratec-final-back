@@ -40,6 +40,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Messages **MUST NOT** carry authority: roles, permissions, and user identity come from the authenticated session, never from the payload.
 - Clients **SHOULD** send intents (for example movement input) and receive authoritative state; they **MUST NOT** set other users' state.
 - Per-connection rate limits **MUST** exist to bound abuse: at most **30 messages per second** per connection, with the excess dropped silently and without side effects (approved by Agustin on 2026-11-10).
+- Call signaling (`call:signal`) has its own limit of **150 messages per second** per connection, because joining a mesh call bursts ICE candidates to each peer; call state messages (`call:self`, `call:emote`, `call:moderate`, `call:end`) are limited to 20 per second.
 - The presence list shows who is online in the same classroom; users of other classrooms or schools **MUST NOT** appear.
 
 ## Classroom controls and broadcasts
@@ -47,7 +48,7 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Control messages (freeze, mute everyone, collaboration lock, disable games) are accepted only from a user whose current teacher-level authority over the classroom NestJS has confirmed; any other sender is ignored without side effects. See [Live classroom tools](./live-classroom-tools.md).
 - **Freeze** assigns each student avatar a seat and locks it there (the teacher is not locked); the lock is ephemeral room state, applied to later joins and reconnections, and reversed by an explicit unfreeze.
 - **Chat mute** and **games disabled** are persisted classroom states (the persistent write is by NestJS) and are broadcast to connected clients after the commit (`chat:muted`, a games-state event). A client that connects later receives the current state on join.
-- **Mute everyone** is enforced by the media service permissions as well as announced to clients; the broadcast alone is not enforcement.
+- **Mute everyone** uses media-service permissions except in the bounded P2P voice-call exception [D21](../docs/technical-justification.md#d21-bounded-p2p-voice-call-exception). Its audio-enforcement limits and moderation-lifetime requirements follow [Live classroom tools](./live-classroom-tools.md#mute-everyone); synchronized state alone does not block P2P audio.
 - Illustrative events such as `classroom:frozen`, `chat:muted`, and `whiteboard:update` are not final until specified under [API contracts](./api-contracts.md).
 
 ## Collaborative whiteboard sync
@@ -90,7 +91,7 @@ Tests **MUST** cover: join without a credential, with an expired credential, to 
 Approved by Agustin on 2026-11-10.
 
 - Clients send **intents**, not positions: `avatar:input` carries a direction `{ x, z }` with each component in `[-1, 1]`; `{ x: 0, z: 0 }` means stop. The server normalizes the direction and moves the avatar at a **fixed speed**, so a client cannot change its speed.
-- The server simulates at a fixed step of **20 Hz** and sends state patches at **20 Hz**. Every step clamps the avatar to the classroom bounds and blocks obstacle boxes (the step is subdivided so a fast move cannot tunnel through a thin obstacle).
+- The server simulates at a fixed step of **20 Hz** and sends state patches at **20 Hz**. Every step clamps the avatar to the classroom bounds and blocks obstacle boxes and the layout's floor props (`isWalkable`, the same walkable surface the NPC routines respect, #147; the step is subdivided so a fast move cannot tunnel through a thin obstacle).
 - Remote avatars are interpolated by the frontend. There is **no client-side prediction or reconciliation** for now; revisit it only if measured latency requires it.
 - The last input received from any of a user's connections wins.
 - Movement **MUST NOT** write to PostgreSQL.
@@ -119,9 +120,9 @@ Approved by Agustin on 2026-11-10.
 
 ## Realtime contract
 
-Message and close-code definitions are in [API contracts](./api-contracts.md#realtime-contract). The synchronized state is `ClassroomState.avatars`, a map keyed by `userId` whose `Avatar` entries hold `userId`, `displayName`, `role`, `x`, `z`, `rotation`, and `status` (`'online'` or `'reconnecting'`); the client types are generated with `@colyseus/schema` codegen and committed (D8).
+Message and close-code definitions are in [API contracts](./api-contracts.md#realtime-contract). The synchronized state is `ClassroomState.avatars`, a map keyed by `userId` whose `Avatar` entries hold `userId`, `displayName`, `role`, `x`, `z`, `rotation`, and `status` (`'online'` or `'reconnecting'`). Since the NPC routines (#147) it also holds `ClassroomState.npcs`, a map keyed by `npcId` whose `Npc` entries hold `id`, `x`, `z`, `rotation`, `state`, `emote`, `reaction`, `phraseId`, `reactingSessionId`, and `reactionSeq`; the `npc:interact` command that triggers reactions is specified in the same table. The client types are generated with `@colyseus/schema` codegen and committed (D8).
 
 ## Open decisions
 
-- **Per-classroom layout (decided by Agustin on 2026-11-20, issue #79):** each room builds its walkable surface with `buildClassroomLayout(deskCount)` from `packages/contracts`, so the frontend scene and the server agree. The base room is 16 by 12 units with a front teacher desk and 12 student desks; student desks go in rows of four, and a new row appears with the first desk that does not fit (13 desks give 4 rows), pushing the back wall by one row spacing. The count comes from the API join verification and, while a room is live, from the `/internal/classroom-layout` push the API sends after a desk auto-expansion (#22) commits. The room syncs `deskCount` in its state so clients build the same layout. The layout only grows (desks are never deleted), and avatars left on a spot that is no longer walkable move to a free spawn point. Desk counts above `MAX_CLASSROOM_DESKS` (200) are rejected as malformed.
+- **Per-classroom layout (decided by Agustin on 2026-11-20, issue #79):** each room builds its walkable surface with `buildClassroomLayout(deskCount)` from `packages/contracts`, so the frontend scene and the server agree. The base room is 16 by 12 units with a front teacher desk, 12 student desks, and the floor props the NPC routines anchor to (#147); student desks go in rows of four, and a new row appears with the first desk that does not fit (13 desks give 4 rows), pushing the back wall by one row spacing. The count comes from the API join verification and, while a room is live, from the `/internal/classroom-layout` push the API sends after a desk auto-expansion (#22) commits. The room syncs `deskCount` in its state so clients build the same layout. The layout only grows (desks are never deleted), and avatars left on a spot that is no longer walkable move to a free spawn point. Desk counts above `MAX_CLASSROOM_DESKS` (200) are rejected as malformed.
 - Collaboration sync mechanism (Colyseus state or Yjs).
