@@ -1,4 +1,5 @@
 import { ApiProperty, getSchemaPath } from '@nestjs/swagger';
+import { TUTOR_BOT_SKINS, type TutorBotSkin } from '@aula/contracts';
 import { ClassroomPanelKey } from '../../access/classroom-panel-key';
 import type {
   ClassroomAccessRole,
@@ -99,6 +100,14 @@ export class ClassroomListItemDto {
     description: 'Whether interactive classroom games are disabled',
   })
   gamesDisabled!: boolean;
+
+  @ApiProperty({
+    enum: TUTOR_BOT_SKINS,
+    enumName: 'TutorBotSkin',
+    example: 'none',
+    description: 'Skin of the classroom tutor bot chosen by its staff',
+  })
+  tutorBotSkin!: TutorBotSkin;
 
   @ApiProperty({
     enum: CLASSROOM_ACCESS_ROLES,

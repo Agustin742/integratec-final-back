@@ -3273,7 +3273,7 @@
     },
     "/classrooms/{id}/me/equipment": {
       "get": {
-        "description": "Returns one equipped purchase per slot (head, face, back, desk_decor) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.",
+        "description": "Returns one equipped purchase per slot (head, face, back, desk_decor, hand, neck, ears) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.",
         "operationId": "EquipmentController_getEquipment",
         "parameters": [
           {
@@ -4274,7 +4274,7 @@
     },
     "/classrooms/{id}/desks": {
       "get": {
-        "description": "Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.",
+        "description": "Available to enrolled students, classroom teachers and the school Owner/Admin. Includes free and expanded desks, each with the equipped desk_decor item of its student, ordered by deskIndex ascending. One unpaginated physical layout; no mutations or implicit repair. Parent-only access is excluded.",
         "operationId": "ClassroomDesksController_read",
         "parameters": [
           {
@@ -5770,6 +5770,20 @@
         },
         "required": ["name"]
       },
+      "TutorBotSkin": {
+        "type": "string",
+        "enum": [
+          "none",
+          "boca",
+          "seleccion",
+          "folklore",
+          "guardapolvo",
+          "scientist",
+          "graduate",
+          "gamer"
+        ],
+        "description": "Skin of the classroom tutor bot chosen by its staff"
+      },
       "ClassroomPetSummaryDto": {
         "type": "object",
         "properties": {
@@ -5852,6 +5866,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -5921,6 +5940,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -5980,6 +6000,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -6038,6 +6063,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -6138,6 +6164,11 @@
             "example": false,
             "description": "Whether interactive classroom games are disabled"
           },
+          "tutorBotSkin": {
+            "example": "none",
+            "description": "Skin of the classroom tutor bot chosen by its staff",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
+          },
           "myRole": {
             "type": "string",
             "enum": ["OWNER", "ADMIN", "TEACHER", "STUDENT", "PARENT"],
@@ -6213,6 +6244,7 @@
           "chatMuted",
           "collaborationLocked",
           "gamesDisabled",
+          "tutorBotSkin",
           "myRole",
           "capabilities",
           "createdAt",
@@ -6257,6 +6289,11 @@
             "type": "boolean",
             "example": false,
             "description": "Whether interactive classroom games are disabled"
+          },
+          "tutorBotSkin": {
+            "example": "guardapolvo",
+            "description": "Skin of the classroom tutor bot, free to change; `none` removes it. Pushed to the live room",
+            "allOf": [{ "$ref": "#/components/schemas/TutorBotSkin" }]
           }
         }
       },
@@ -7460,7 +7497,10 @@
           }
         }
       },
-      "EquippedSlotName": { "type": "string", "enum": ["head", "face", "back", "desk_decor"] },
+      "EquippedSlotName": {
+        "type": "string",
+        "enum": ["head", "face", "back", "desk_decor", "hand", "neck", "ears"]
+      },
       "EquippedSlotDto": {
         "type": "object",
         "properties": {
@@ -7483,7 +7523,15 @@
               "$ref": "#/components/schemas/EquippedSlotDto",
               "nullable": true
             },
-            "example": { "head": null, "face": null, "back": null, "desk_decor": null },
+            "example": {
+              "head": null,
+              "face": null,
+              "back": null,
+              "desk_decor": null,
+              "hand": null,
+              "neck": null,
+              "ears": null
+            },
             "description": "Equipped purchase per slot; null when the slot is empty."
           }
         },
@@ -8182,6 +8230,21 @@
         },
         "required": ["id", "userId", "displayName", "role", "avatar"]
       },
+      "AppearanceSlotName": {
+        "type": "string",
+        "enum": ["head", "face", "back", "desk_decor", "hand", "neck", "ears"]
+      },
+      "EquippedItemPayloadDto": {
+        "type": "object",
+        "properties": {
+          "slot": { "allOf": [{ "$ref": "#/components/schemas/AppearanceSlotName" }] },
+          "shopItemId": { "type": "string", "format": "uuid" },
+          "shopItemCode": { "type": "string", "maxLength": 80, "example": "head_cap" },
+          "shopItemName": { "type": "string", "maxLength": 120, "example": "Blue Classroom Cap" },
+          "kind": { "allOf": [{ "$ref": "#/components/schemas/ShopItemKind" }] }
+        },
+        "required": ["slot", "shopItemId", "shopItemCode", "shopItemName", "kind"]
+      },
       "ClassroomDeskDto": {
         "type": "object",
         "properties": {
@@ -8206,9 +8269,15 @@
             "format": "uuid",
             "nullable": true,
             "description": "Assigned student user identifier, or null for a free desk. No directory profile data."
+          },
+          "deskDecor": {
+            "nullable": true,
+            "description": "The assigned student's equipped desk_decor item in this classroom, whether or not they are connected. Null for a free desk or an empty slot.",
+            "type": "object",
+            "allOf": [{ "$ref": "#/components/schemas/EquippedItemPayloadDto" }]
           }
         },
-        "required": ["id", "deskIndex", "membershipId", "userId"]
+        "required": ["id", "deskIndex", "membershipId", "userId", "deskDecor"]
       },
       "ClassroomDeskMapDto": {
         "type": "object",

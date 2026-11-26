@@ -129,6 +129,7 @@ describe('S4 desk map PostgreSQL HTTP acceptance (isolated task26 database)', ()
     for (const desk of initial.items) {
       expect(desk.membershipId).toBeNull();
       expect(desk.userId).toBeNull();
+      expect(desk.deskDecor).toBeNull();
     }
     const generated = await request(app.getHttpServer())
       .post(`/classrooms/${classroomId}/join-code`)
@@ -152,7 +153,8 @@ describe('S4 desk map PostgreSQL HTTP acceptance (isolated task26 database)', ()
         deskIndex: expect.any(Number),
       });
       if (!enrolled.desk) throw new Error('Public student enrollment must return its desk');
-      expected.set(userId, { ...enrolled.desk, membershipId: enrolled.membershipId, userId });
+      const { membershipId } = enrolled;
+      expected.set(userId, { ...enrolled.desk, membershipId, userId, deskDecor: null });
     };
     const assertAssignments = (layout: ClassroomDeskMapDto) => {
       const assigned = layout.items.filter((desk) => desk.userId !== null);
@@ -200,6 +202,7 @@ describe('S4 desk map PostgreSQL HTTP acceptance (isolated task26 database)', ()
       deskIndex: released.deskIndex,
       membershipId: null,
       userId: null,
+      deskDecor: null,
     });
     await request(app.getHttpServer())
       .get(`/classrooms/${classroomId}/desks`)

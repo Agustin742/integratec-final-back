@@ -16,6 +16,8 @@ const IDENTITY = {
   appearanceRevision: 1,
   appearance: makeStubAppearance(),
   deskCount: 12,
+  tutorBotSkin: 'none' as const,
+  tutorBotSkinRevision: 0,
 };
 
 const verifierReturning = (impl: JoinVerifier['verify']) => ({

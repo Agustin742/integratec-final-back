@@ -77,6 +77,8 @@ export class ClassroomState extends Schema {
    * against with `buildClassroomLayout(deskCount)` (#79), so this always mirrors the server's layout.
    */
   @type('uint16') deskCount = 12;
+  /** Tutor bot skin chosen by classroom staff, a `TUTOR_BOT_SKINS` value (#154). */
+  @type('string') tutorBotSkin = 'none';
   @type({ map: Avatar }) avatars = new MapSchema<Avatar>();
   /** A class voice call is running; clients show the join banner (#149). */
   @type('boolean') classCallActive = false;

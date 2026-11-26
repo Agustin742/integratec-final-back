@@ -8,7 +8,7 @@ export type SeedShopItem = Prisma.ShopItemCreateManyInput & {
   defaultPrice: number;
 };
 
-type AccessorySlot = 'head' | 'face' | 'back';
+type AccessorySlot = 'head' | 'face' | 'back' | 'hand' | 'neck' | 'ears';
 
 /** Colors mirror the front avatar catalog; update both together. */
 const ACCESSORIES: ReadonlyArray<{
@@ -75,6 +75,54 @@ const ACCESSORIES: ReadonlyArray<{
     price: 220,
   },
   { slot: 'back', assetId: 'wings', name: 'Alas', color: '#FFF9EB', price: 250 },
+  { slot: 'hand', assetId: 'pencil', name: 'Lápiz', color: '#F7D86B', price: 80 },
+  { slot: 'hand', assetId: 'book', name: 'Libro', color: '#5B4F96', price: 90 },
+  { slot: 'hand', assetId: 'ruler', name: 'Regla', color: '#A9E7F4', price: 80 },
+  { slot: 'hand', assetId: 'mug', name: 'Taza', color: '#E66861', price: 100 },
+  { slot: 'hand', assetId: 'phone', name: 'Celular', color: '#353849', price: 150 },
+  { slot: 'hand', assetId: 'mate', name: 'Mate', color: '#AF7B52', price: 130 },
+  { slot: 'hand', assetId: 'magnifying-glass', name: 'Lupa', color: '#75B7DA', price: 120 },
+  { slot: 'hand', assetId: 'paintbrush', name: 'Pincel', color: '#C77DAA', price: 100 },
+  { slot: 'hand', assetId: 'tablet', name: 'Tablet', color: '#62CFC7', price: 180 },
+  { slot: 'hand', assetId: 'trophy', name: 'Trofeo', color: '#F7D86B', price: 250 },
+  { slot: 'neck', assetId: 'scarf', name: 'Bufanda', color: '#E66861', price: 110 },
+  { slot: 'neck', assetId: 'necklace', name: 'Collar', color: '#B5A7D6', price: 130 },
+  { slot: 'neck', assetId: 'bow-tie', name: 'Moño', color: '#5B4F96', price: 90 },
+  {
+    slot: 'neck',
+    assetId: 'lanyard-badge',
+    name: 'Credencial colgante',
+    color: '#62CFC7',
+    price: 80,
+  },
+  { slot: 'neck', assetId: 'bandana', name: 'Pañuelo', color: '#7EBA8B', price: 90 },
+  {
+    slot: 'neck',
+    assetId: 'achievement-medal',
+    name: 'Medalla de logro',
+    color: '#F7D86B',
+    price: 220,
+  },
+  { slot: 'ears', assetId: 'earrings', name: 'Aros', color: '#F5B5AB', price: 100 },
+  {
+    slot: 'ears',
+    assetId: 'star-earrings',
+    name: 'Aros de estrella',
+    color: '#F7D86B',
+    price: 140,
+  },
+  { slot: 'ears', assetId: 'ear-cuffs', name: 'Aros cuff', color: '#B5A7D6', price: 120 },
+];
+
+/** Desk decor shares the single `desk_decor` slot; asset ids match the front desk-decor models. */
+const DESK_DECOR: ReadonlyArray<{ assetId: string; name: string; price: number }> = [
+  { assetId: 'mug', name: 'Taza de escritorio', price: 80 },
+  { assetId: 'plant', name: 'Planta de escritorio', price: 100 },
+  { assetId: 'photo-frame', name: 'Portarretrato', price: 120 },
+  { assetId: 'puzzle-cube', name: 'Cubo mágico', price: 140 },
+  { assetId: 'mini-globe', name: 'Mini globo terráqueo', price: 180 },
+  { assetId: 'lamp', name: 'Lámpara de escritorio', price: 200 },
+  { assetId: 'figurine', name: 'Figura coleccionable', price: 220 },
 ];
 
 /** Keyed by paid style id so a missing or extra entry fails type checking. */
@@ -124,6 +172,19 @@ function accessoryItems(): SeedShopItem[] {
   }));
 }
 
+function deskDecorItems(): SeedShopItem[] {
+  return DESK_DECOR.map(({ assetId, name, price }) => ({
+    code: `desk_${snake(assetId)}`,
+    name,
+    description: `${name} para decorar tu escritorio.`,
+    kind: ShopItemKind.DESK_UPGRADE,
+    defaultPrice: price,
+    isActive: true,
+    isImplemented: true,
+    metadata: { assetId, slot: 'desk_decor' },
+  }));
+}
+
 function styleItems(
   styleType: AvatarStyleKind,
   styles: Record<string, { name: string; price: number }>,
@@ -143,9 +204,13 @@ function styleItems(
   }));
 }
 
-/** Synthetic local-only shop catalog: 21 avatar accessories and 25 paid hair/top styles. */
+/**
+ * Synthetic local-only shop catalog: 40 avatar accessories, 7 desk decor items and 25 paid
+ * hair/top styles.
+ */
 export const SHOP_CATALOG: readonly SeedShopItem[] = [
   ...accessoryItems(),
+  ...deskDecorItems(),
   ...styleItems('hair', HAIR_STYLES),
   ...styleItems('top', TOP_STYLES),
 ];

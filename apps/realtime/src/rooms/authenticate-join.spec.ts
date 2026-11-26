@@ -14,6 +14,8 @@ const IDENTITY = {
   appearanceRevision: 1,
   appearance: makeStubAppearance(),
   deskCount: 13,
+  tutorBotSkin: 'none' as const,
+  tutorBotSkinRevision: 0,
 };
 
 const verifierReturning = (impl: JoinVerifier['verify']) => ({
@@ -44,6 +46,8 @@ describe('authenticateJoin', () => {
       appearanceRevision: IDENTITY.appearanceRevision,
       appearance: IDENTITY.appearance,
       deskCount: 13,
+      tutorBotSkin: IDENTITY.tutorBotSkin,
+      tutorBotSkinRevision: IDENTITY.tutorBotSkinRevision,
     });
     expect(verifier.verify).toHaveBeenCalledExactlyOnceWith('token-1', CLASSROOM_ID);
   });

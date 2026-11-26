@@ -36,3 +36,7 @@ Backend delivery B adds authenticated [context invalidation hints](classroom-con
 ## Verification boundary
 
 Exact-array helper tests cover all five roles, fresh arrays, mutation isolation and reserved pet exclusion. HTTP tests use the actual controller, classroom service, access service and established session guard with predicate-aware in-memory Prisma fixtures; they cover role projection, ID/role tampering, denial statuses and unchanged role/capability semantics without modifying stored data. These fixtures do not prove PostgreSQL behavior or frontend rendering.
+
+## Tutor bot skin
+
+Classroom detail, creation, update and list responses carry `tutorBotSkin`: one of `none` (default), `boca`, `seleccion`, `folklore`, `guardapolvo`, `scientist`, `graduate` or `gamer`. Staff who may update classroom settings (school Owner/Admin or the classroom's teacher) change it with `PATCH /classrooms/:id`; it is free and involves no points or shop. Students and parents receive `403`. An unknown value is a `400`. Live rooms receive the change in their [synchronized state](../rules/realtime-and-presence.md#realtime-contract).

@@ -17,6 +17,7 @@ import { assertResourceAuthorization } from '../testing/resource-authorization';
 import { ClassroomInvitationsService } from './classroom-invitations.service';
 import { ClassroomsController } from './classrooms.controller';
 import { ClassroomsService } from './classrooms.service';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const actorId = id(1);
@@ -60,6 +61,8 @@ const classroom = () => ({
   chatMuted: false,
   collaborationLocked: false,
   gamesDisabled: false,
+  tutorBotSkin: 'scientist',
+  tutorBotSkinRevision: 2,
   deletedAt: null,
   pet: null,
   _count: { desks: 12 },
@@ -97,6 +100,7 @@ describe('classroom context HTTP — panel availability is not authorization', (
       providers: [
         ClassroomsService,
         { provide: ClassroomInvitationsService, useValue: {} },
+        { provide: RealtimeEventsRecorder, useValue: {} },
         {
           provide: ClassroomContextRecorder,
           useValue: {
@@ -173,6 +177,8 @@ describe('classroom context HTTP — panel availability is not authorization', (
     expect(response.body.availablePanels).toEqual(panels);
     expect(response.body.myRole).toBe(role);
     expect(response.body.capabilities).toEqual(computeClassroomCapabilities(role));
+    expect(response.body.tutorBotSkin).toBe('scientist');
+    expect(response.body).not.toHaveProperty('tutorBotSkinRevision');
     expect(response.body).not.toHaveProperty('linkedChildIds');
     expect(response.body.availablePanels).not.toContain('pet');
     expect({ row, schoolMembers, members, links }).toEqual(before);

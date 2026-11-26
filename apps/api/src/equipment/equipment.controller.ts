@@ -46,7 +46,7 @@ export class EquipmentController {
   @ApiOperation({
     summary: "Read the authenticated student's classroom-scoped equipment state",
     description:
-      'Returns one equipped purchase per slot (head, face, back, desk_decor) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.',
+      'Returns one equipped purchase per slot (head, face, back, desk_decor, hand, neck, ears) or null when the slot is empty. Classroom-scoped: purchases and equipment never cross classrooms.',
   })
   @ApiOkResponse({
     type: EquipmentStateDto,

@@ -10,6 +10,7 @@ const room = (result = 1) => ({
   evict: vi.fn().mockReturnValue(result),
   applyAppearance: vi.fn().mockReturnValue(result > 0),
   applyDeskCount: vi.fn(),
+  applyTutorBotSkin: vi.fn(),
   applyCallStatus: vi.fn(),
   sendToUser: vi.fn().mockReturnValue(1),
   broadcastChatMessage: vi.fn(),
@@ -23,7 +24,15 @@ const APPEARANCE = {
     hairColor: '#353849',
     clothingColor: '#75B7DA',
   },
-  items: { head: null, face: null, back: null, desk_decor: null },
+  items: {
+    head: null,
+    face: null,
+    back: null,
+    desk_decor: null,
+    hand: null,
+    neck: null,
+    ears: null,
+  },
 } as const;
 const CLASSROOM = '7b1f3c52-8d1e-4f0a-9a57-2c6f5e8d9a10';
 const FOREIGN = '5e2a4d7c-3f81-4e6a-8c0b-9d4a1b2c3d02';
@@ -144,6 +153,19 @@ describe('RoomDirectory', () => {
     expect(a.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
     expect(twin.applyDeskCount).toHaveBeenCalledExactlyOnceWith(13);
     expect(other.applyDeskCount).not.toHaveBeenCalled();
+  });
+
+  it('applies a tutor bot skin to the rooms of that classroom only (#154)', () => {
+    const directory = new RoomDirectory();
+    const a = room();
+    const other = room();
+    directory.register(CLASSROOM, a);
+    directory.register(FOREIGN, other);
+
+    directory.applyTutorBotSkin(CLASSROOM, 'boca', 2);
+
+    expect(a.applyTutorBotSkin).toHaveBeenCalledExactlyOnceWith('boca', 2);
+    expect(other.applyTutorBotSkin).not.toHaveBeenCalled();
   });
 
   it('applies a desk count to nothing for an unknown classroom', () => {

@@ -30,6 +30,7 @@ import {
 } from './classrooms.constants';
 import { ClassroomsModule } from './classrooms.module';
 import { ClassroomsService } from './classrooms.service';
+import { RealtimeEventsRecorder } from '../platform/realtime/realtime-events.recorder';
 
 const ACTOR_TEACHER_ID = '11111111-1111-4111-8111-111111111111';
 const ACTOR_OWNER_ID = '22222222-2222-4222-8222-222222222222';
@@ -138,6 +139,31 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
     });
 
     describe('DTO Validation (400 VALIDATION_FAILED)', () => {
+      it('rejects an unknown tutor bot skin on PATCH (#154)', async () => {
+        const res = await request(app.getHttpServer())
+          .patch(`/classrooms/${CLASSROOM_ID}`)
+          .set('Authorization', 'Bearer valid-token')
+          .send({ tutorBotSkin: 'river' })
+          .expect(400);
+
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+        expect(mockClassroomsService.update).not.toHaveBeenCalled();
+      });
+
+      it('accepts a known tutor bot skin on PATCH (#154)', async () => {
+        mockClassroomsService.update.mockResolvedValue({ id: CLASSROOM_ID });
+
+        await request(app.getHttpServer())
+          .patch(`/classrooms/${CLASSROOM_ID}`)
+          .set('Authorization', 'Bearer valid-token')
+          .send({ tutorBotSkin: 'gamer' })
+          .expect(200);
+
+        expect(mockClassroomsService.update).toHaveBeenCalledWith(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          tutorBotSkin: 'gamer',
+        });
+      });
+
       it('rejects POST /classrooms when name is missing or whitespace-only', async () => {
         const res = await request(app.getHttpServer())
           .post('/classrooms')
@@ -457,6 +483,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         mockPrisma as unknown as PrismaService,
         accessService,
         new ClassroomContextRecorder({ record } as unknown as OutboxWriter),
+        new RealtimeEventsRecorder({ record } as unknown as OutboxWriter),
       );
     });
 
@@ -471,6 +498,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         chatMuted: false,
         collaborationLocked: false,
         gamesDisabled: false,
+        tutorBotSkin: 'none',
         createdAt: now,
         updatedAt: now,
         ...over,
@@ -560,6 +588,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
           chatMuted: false,
           collaborationLocked: false,
           gamesDisabled: false,
+          tutorBotSkin: 'none',
           deskCount: DEFAULT_INITIAL_DESK_COUNT,
           pet: {
             id: PET_ID,
@@ -671,6 +700,8 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
                 chatMuted: false,
                 collaborationLocked: false,
                 gamesDisabled: false,
+                tutorBotSkin: 'none',
+                tutorBotSkinRevision: 0,
                 deletedAt: null,
                 createdAt: now,
                 updatedAt: now,
@@ -716,6 +747,8 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         chatMuted: false,
         collaborationLocked: false,
         gamesDisabled: false,
+        tutorBotSkin: 'none',
+        tutorBotSkinRevision: 0,
         createdAt: now,
         updatedAt: now,
         pet: null,
@@ -743,6 +776,7 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         expect(response).toEqual({
           ...row,
           ...dto,
+          tutorBotSkinRevision: undefined,
           deskCount: 12,
           _count: undefined,
           myRole: 'TEACHER',
@@ -753,6 +787,30 @@ describe('ClassroomsModule & ClassroomsService (HU-AUL-001)', () => {
         expect(record).toHaveBeenCalledExactlyOnceWith(mockPrisma, {
           type: 'classroom.context.changed',
           payload: { classroomId: CLASSROOM_ID },
+        });
+        expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+      });
+
+      it('records the live tutor bot skin change in the same transaction (#154)', async () => {
+        mockPrisma.classroom.update.mockResolvedValueOnce({
+          ...row,
+          tutorBotSkin: 'boca',
+          tutorBotSkinRevision: 3,
+        });
+
+        const response = await service.update(ACTOR_TEACHER_ID, CLASSROOM_ID, {
+          tutorBotSkin: 'boca',
+        });
+
+        expect(response.tutorBotSkin).toBe('boca');
+        expect(mockPrisma.classroom.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: { tutorBotSkin: 'boca', tutorBotSkinRevision: { increment: 1 } },
+          }),
+        );
+        expect(record).toHaveBeenCalledWith(mockPrisma, {
+          type: 'realtime.classroom-tutor-bot-skin-changed',
+          payload: { classroomId: CLASSROOM_ID, tutorBotSkin: 'boca', tutorBotSkinRevision: 3 },
         });
         expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
       });

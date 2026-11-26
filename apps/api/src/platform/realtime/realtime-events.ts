@@ -3,7 +3,7 @@
  * handlers must be idempotent.
  */
 
-import type { MemberAppearance } from '@aula/contracts';
+import type { MemberAppearance, TutorBotSkin } from '@aula/contracts';
 
 /**
  * A user's access to one classroom ended (membership deactivated or removed).
@@ -41,6 +41,20 @@ export const REALTIME_CLASSROOM_APPEARANCE_CHANGED_EVENT = 'realtime.classroom-a
  * transaction. Desks are never deleted, so realtime only ever grows a room's layout from it.
  */
 export const REALTIME_CLASSROOM_LAYOUT_CHANGED_EVENT = 'realtime.classroom-layout-changed';
+
+/**
+ * Classroom staff changed the tutor bot skin (#154). Payload:
+ * `{ classroomId, tutorBotSkin, tutorBotSkinRevision }`. The skin can change back and forth, so the
+ * revision (monotonic per classroom) lets realtime discard stale at-least-once deliveries.
+ */
+export const REALTIME_CLASSROOM_TUTOR_BOT_SKIN_CHANGED_EVENT =
+  'realtime.classroom-tutor-bot-skin-changed';
+
+export interface ClassroomTutorBotSkinChangedPayload {
+  classroomId: string;
+  tutorBotSkin: TutorBotSkin;
+  tutorBotSkinRevision: number;
+}
 
 export interface ClassroomLayoutChangedPayload {
   classroomId: string;

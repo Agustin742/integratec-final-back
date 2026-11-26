@@ -2,6 +2,7 @@ import type { Application } from 'express';
 import { z } from 'zod';
 import { mountAppearanceRoute } from './appearance-route';
 import { mountClassroomLayoutRoute } from './classroom-layout-route';
+import { mountClassroomTutorBotSkinRoute } from './classroom-tutor-bot-skin-route';
 import { hasValidServiceSecret } from './service-auth';
 import type { RoomDirectoryLike } from '../rooms/room-directory';
 
@@ -21,8 +22,8 @@ const evictionSchema = z.strictObject({
 
 /**
  * Mounts the internal service-to-service routes of this process: evictions (a user lost access)
- * appearance updates (a member's look changed, #114) and classroom layout updates (desks were
- * added, #79). They share the service secret and the
+ * appearance updates (a member's look changed, #114), classroom layout updates (desks were
+ * added, #79) and tutor bot skin changes (#154). They share the service secret and the
  * room directory, so they are mounted together by this one call, which `server.ts` makes when
  * internal options are present. These routes are for service-to-service use only: the reverse
  * proxy must never route `/internal/*`, and every call needs the service secret. Each answers a
@@ -44,4 +45,5 @@ export function mountEvictionRoute(app: Application, options: EvictionRouteOptio
   });
   mountAppearanceRoute(app, options);
   mountClassroomLayoutRoute(app, options);
+  mountClassroomTutorBotSkinRoute(app, options);
 }

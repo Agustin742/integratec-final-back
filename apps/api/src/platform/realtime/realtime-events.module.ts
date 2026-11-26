@@ -18,10 +18,15 @@ import { RealtimeEvictionHandler } from './realtime-eviction.handler';
 import { RealtimeEventsRecorder } from './realtime-events.recorder';
 import { HttpRealtimeLayoutClient, REALTIME_LAYOUT_PORT } from './realtime-layout.client';
 import { RealtimeLayoutHandler } from './realtime-layout.handler';
+import {
+  HttpRealtimeTutorBotSkinClient,
+  REALTIME_TUTOR_BOT_SKIN_PORT,
+} from './realtime-tutor-bot-skin.client';
+import { RealtimeTutorBotSkinHandler } from './realtime-tutor-bot-skin.handler';
 
 /**
  * Keeps live classroom state in step with committed changes: modules that change live access or a
- * member's appearance, a classroom's desks or its chat import it and record an event in their transaction; its
+ * member's appearance, a classroom's desks, tutor bot skin or its chat import it and record an event in their transaction; its
  * handlers deliver the events to the realtime server's internal routes.
  */
 @Module({
@@ -31,6 +36,7 @@ import { RealtimeLayoutHandler } from './realtime-layout.handler';
     RealtimeEvictionHandler,
     RealtimeAppearanceHandler,
     RealtimeLayoutHandler,
+    RealtimeTutorBotSkinHandler,
     RealtimeChatEventHandler,
     {
       provide: REALTIME_EVICTION_PORT,
@@ -55,6 +61,15 @@ import { RealtimeLayoutHandler } from './realtime-layout.handler';
       inject: [API_CONFIG],
       useFactory: (config: ApiConfig) =>
         new HttpRealtimeLayoutClient({
+          baseUrl: config.realtimeInternalUrl,
+          serviceSecret: config.internalServiceSecret,
+        }),
+    },
+    {
+      provide: REALTIME_TUTOR_BOT_SKIN_PORT,
+      inject: [API_CONFIG],
+      useFactory: (config: ApiConfig) =>
+        new HttpRealtimeTutorBotSkinClient({
           baseUrl: config.realtimeInternalUrl,
           serviceSecret: config.internalServiceSecret,
         }),

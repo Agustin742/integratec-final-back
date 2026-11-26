@@ -43,6 +43,8 @@ Colyseus owns live, ephemeral classroom state. It is never the source of truth f
 - Call signaling (`call:signal`) has its own limit of **150 messages per second** per connection, because joining a mesh call bursts ICE candidates to each peer; call state messages (`call:self`, `call:emote`, `call:moderate`, `call:end`) are limited to 20 per second.
 - The presence list shows who is online in the same classroom; users of other classrooms or schools **MUST NOT** appear.
 
+- **Avatar emotes (#154):** `avatar:emote` accepts only the five clip names in `AVATAR_EMOTES`; the sender comes from the session. The server enforces a 3-second cooldown per member (all connections together) on top of the per-connection rate limit, broadcasts `avatar:emoted` to the room and stores nothing. Any live member may emote: chat mute and mute everyone govern chat and media, not emotes, and freeze rejects movement only. Whether a frozen student may emote belongs to the open freeze decision in [Live classroom tools](./live-classroom-tools.md) and **MUST** be revisited when freeze is implemented.
+
 ## Classroom controls and broadcasts
 
 - Control messages (freeze, mute everyone, collaboration lock, disable games) are accepted only from a user whose current teacher-level authority over the classroom NestJS has confirmed; any other sender is ignored without side effects. See [Live classroom tools](./live-classroom-tools.md).
@@ -121,6 +123,8 @@ Approved by Agustin on 2026-11-10.
 ## Realtime contract
 
 Message and close-code definitions are in [API contracts](./api-contracts.md#realtime-contract). The synchronized state is `ClassroomState.avatars`, a map keyed by `userId` whose `Avatar` entries hold `userId`, `displayName`, `role`, `x`, `z`, `rotation`, and `status` (`'online'` or `'reconnecting'`). Since the NPC routines (#147) it also holds `ClassroomState.npcs`, a map keyed by `npcId` whose `Npc` entries hold `id`, `x`, `z`, `rotation`, `state`, `emote`, `reaction`, `phraseId`, `reactingSessionId`, and `reactionSeq`; the `npc:interact` command that triggers reactions is specified in the same table. The client types are generated with `@colyseus/schema` codegen and committed (D8).
+
+`ClassroomState.tutorBotSkin` (#154) is the skin classroom staff chose for the tutor bot. A new room takes it from the API join verification and re-verification; while a room is live, a change committed through `PATCH /classrooms/:id` reaches it through the outbox and the service-only `POST /internal/classroom-tutor-bot-skin` route (12 attempts, never routed by the reverse proxy). Both paths carry a per-classroom revision, and the room ignores an older one. The skin is cosmetic, so a verification without these fields, or with a skin the realtime build does not know, reads as `none` (revision `0` when absent) and never denies the join.
 
 ## Open decisions
 

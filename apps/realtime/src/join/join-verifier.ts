@@ -1,4 +1,4 @@
-import type { MemberAppearance } from '@aula/contracts';
+import type { MemberAppearance, TutorBotSkin } from '@aula/contracts';
 
 /** Roles allowed in a live room. Parents have no live access (rules/realtime-and-presence.md). */
 export const CLASSROOM_ROLES = ['OWNER', 'ADMIN', 'TEACHER', 'STUDENT'] as const;
@@ -18,6 +18,10 @@ export interface VerifiedJoin {
   appearanceRevision: number;
   /** Student desks the classroom has; the room lays out its walkable surface from it (#79). */
   deskCount: number;
+  /** Tutor bot skin of the classroom (#154). */
+  tutorBotSkin: TutorBotSkin;
+  /** Monotonic per-classroom skin version for rejecting delayed deliveries. */
+  tutorBotSkinRevision: number;
 }
 
 /**
@@ -35,6 +39,8 @@ export interface ClassroomAuth {
   appearance: MemberAppearance;
   appearanceRevision: number;
   deskCount: number;
+  tutorBotSkin: TutorBotSkin;
+  tutorBotSkinRevision: number;
 }
 
 export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
@@ -46,6 +52,8 @@ export const toClassroomAuth = (identity: VerifiedJoin): ClassroomAuth => ({
   appearance: identity.appearance,
   appearanceRevision: identity.appearanceRevision,
   deskCount: identity.deskCount,
+  tutorBotSkin: identity.tutorBotSkin,
+  tutorBotSkinRevision: identity.tutorBotSkinRevision,
 });
 
 /** A connection that was verified at join and now asks to come back. */

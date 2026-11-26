@@ -238,7 +238,15 @@ describe('EquipmentService (real PostgreSQL)', () => {
     expect(state).toMatchObject({
       classroomId: ids.classroom,
       studentId: ids.student,
-      slots: { head: null, face: null, back: null, desk_decor: null },
+      slots: {
+        head: null,
+        face: null,
+        back: null,
+        desk_decor: null,
+        hand: null,
+        neck: null,
+        ears: null,
+      },
     });
     expect(
       await prisma.equippedItem.count({
@@ -279,6 +287,49 @@ describe('EquipmentService (real PostgreSQL)', () => {
         where: { classroomId: ids.classroom, studentId: ids.student },
       }),
     ).toBe(2);
+  });
+
+  it('equips hand, neck and ears together and reads all three back (#154)', async () => {
+    const accessories = (['hand', 'neck', 'ears'] as const).map((slot) => ({
+      slot,
+      id: randomUUID(),
+    }));
+    await prisma.shopItem.createMany({
+      data: accessories.map(({ slot, id }) => ({
+        id,
+        code: `${slot}_${id}`,
+        name: `Synthetic ${slot} accessory`,
+        description: 'Accessory',
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+        defaultPrice: 10,
+        isActive: true,
+        isImplemented: true,
+        metadata: { assetId: slot, slot },
+      })),
+    });
+    await fundStudent(ids.student, 500);
+    for (const { slot, id } of accessories) {
+      await purchaseItem(ids.student, id);
+      await equipment.setSlot(ids.student, ids.classroom, slot, { shopItemId: id });
+    }
+
+    const state = await equipment.getEquipment(ids.student, ids.classroom);
+
+    for (const { slot, id } of accessories) {
+      expect(state.slots[slot]).toMatchObject({
+        slot,
+        shopItemId: id,
+        kind: ShopItemKind.AVATAR_ACCESSORY,
+      });
+    }
+    expect(state.slots.head).toBeNull();
+    const rows = await prisma.equippedItem.findMany({
+      where: { classroomId: ids.classroom, studentId: ids.student },
+      select: { slot: true },
+    });
+    expect(rows.map((row) => row.slot).sort()).toEqual(
+      [EquippedSlot.EARS, EquippedSlot.HAND, EquippedSlot.NECK].sort(),
+    );
   });
 
   it('is idempotent when equipping the same purchased item twice', async () => {
@@ -578,6 +629,9 @@ describe('EquipmentService (real PostgreSQL)', () => {
             face: null,
             back: null,
             desk_decor: null,
+            hand: null,
+            neck: null,
+            ears: null,
           },
         },
       });
@@ -619,6 +673,9 @@ describe('EquipmentService (real PostgreSQL)', () => {
         face: null,
         back: null,
         desk_decor: null,
+        hand: null,
+        neck: null,
+        ears: null,
       });
     });
 

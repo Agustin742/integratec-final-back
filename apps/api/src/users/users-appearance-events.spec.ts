@@ -277,6 +277,9 @@ describe('PATCH /users/me/avatar realtime appearance events (#114)', () => {
       face: null,
       back: null,
       desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
     });
     expect(byClassroom.get(ids.classroomB)?.items).toEqual({
       head: {
@@ -289,12 +292,18 @@ describe('PATCH /users/me/avatar realtime appearance events (#114)', () => {
       face: null,
       back: null,
       desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
     });
     expect(byClassroom.get(ids.classroomC)?.items).toEqual({
       head: null,
       face: null,
       back: null,
       desk_decor: null,
+      hand: null,
+      neck: null,
+      ears: null,
     });
   });
 
