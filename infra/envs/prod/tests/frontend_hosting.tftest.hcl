@@ -108,7 +108,7 @@ run "spa_rewrite_rule_is_exact" {
 
   # Must stay identical to the rewrite rule in the front docs/routing.md.
   assert {
-    condition     = module.frontend_hosting.app_settings.custom_rules[0].source == "</^[^.]+$|\\.(?!(css|gif|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp|wasm)$)([^.]+$)/>"
+    condition     = module.frontend_hosting.app_settings.custom_rules[0].source == "</^[^.]+$|\\.(?!(css|gif|glb|ico|jpg|js|png|txt|svg|woff|woff2|ttf|map|json|webp|wasm)$)([^.]+$)/>"
     error_message = "The rewrite source must match the front docs/routing.md rule exactly."
   }
 
